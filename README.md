@@ -8,7 +8,7 @@ Using `conda`to manage packages and dependencies is recommended.  The [Minconda]
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio opencv pandas
+conda install -c conda-forge rasterio opencv pandas pyyaml
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
@@ -23,6 +23,7 @@ The following dependencies are installed in the process above.  The `rasterio` a
   - rasterio >= 1.2
   - opencv >= 4.5
   - pandas >= 1.2
+  - pyyaml >= 5.4
 
 ## License
 [MIT](LICENSE)

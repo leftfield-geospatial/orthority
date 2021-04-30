@@ -1,0 +1,17 @@
+camera:
+  name: Integraph DMC           # Not used
+  focal_length: 120.            # Focal length in mm
+  ccd_size: [92.160, 165.888]   # CCD [width, height] dimensions in mm
+  image_size: [7680., 13824.]   # Image [width, height] dimensions in pixels
+
+dem:
+  interp: cubic_spline          # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
+
+ortho:
+  interp: bilinear              # Interpolation type for ortho-image  (average, bilinear, cubic, lanczos, nearest)
+  resolution: [0.5, 0.5]        # Resolution [x, y] in m
+  compression: deflate          # GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none)
+  tile_size: [512, 512]         # Tile/block [x, y] size in pixels  ([512, 512] recommended)
+
+ext_ori:
+  format: pci                   # How to specify format of file

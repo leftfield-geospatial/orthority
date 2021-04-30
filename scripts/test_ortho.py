@@ -6,6 +6,11 @@ import pandas as pd
 import pathlib
 from simple_ortho import get_logger
 import datetime
+import yaml
+# TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
+# also, make a default config file?
+# with open('config.yml', 'r') as f:
+#     cfg = yaml.safe_load(f)
 # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
 # and https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
 
@@ -100,6 +105,7 @@ if True:
     # X = np.array([[-3962.2, -3755180.2, 200], [-2274.3, -3758214.2, 500], [-728.8, -3761226.9, 1400], [-728.8, -3761226.9, 1400]]).T
     # X = X[:, 0].reshape(-1, 1)
     ij = unproject(X, R, T, K)
+    # ij, _ = cv2.projectPoints(X, cv2.Rodrigues(R)[0], T, K, None)
 
     X2 = project_to_z(ij, X[2,:], R, T, K)
     # ij = unproject(X, R, T, K)
@@ -200,11 +206,17 @@ with rio.Env():
 
 time_rec['write'] += (datetime.datetime.now() - start)
 time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
-print(time_rec)
+
 timed = pd.DataFrame.from_dict(time_rec, orient='index')
 print(timed.sort_values(by=0))
-# TODO can we enable multithreading to write out raster / do compression
+
 # memory planning
 # we want to keep the whole unrect image in memory, perhaps one band at a time, so we can freely do "lookups"/ remaps
 # then it probably makes sense to force a tiled output file, and remap one tile at a time.
 # possibly also resampling one dem roi corresponding to a tile at a time
+
+# speed planning
+# dem resampling is bottleneck.  we can try warpvrt for comparison as first option.
+# then, probably more sensibly, once we know the ortho size, we resample the dem over that whole area, so that it is
+# identical spatially etc to ortho.  Store in float32 perhaps.  Then we use ortho_win to read out relevant part of the dem array for each tile.
+# this would avoid repeat reading and resampling over same overlapping areas, and perhaps also some read overheads.
