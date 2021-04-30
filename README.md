@@ -8,20 +8,21 @@ Using `conda`to manage packages and dependencies is recommended.  The [Minconda]
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio opencv 
-```
+conda install -c conda-forge rasterio opencv pandas
+````
 2) Clone the git repository and link into the conda environment:
-```shell
+``` shell
 git clone https://github.com/dugalh/simple_ortho.git
-pip install -e ortholite
+pip install -e simple_ortho
 ```
 
 ### Requirements  
-The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  
+The following dependencies are installed in the process above.  The `rasterio` and `opencv` packages have binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  
   
   - python >= 3.8
   - rasterio >= 1.2
   - opencv >= 4.5
+  - pandas >= 1.2
 
 ## License
 [MIT](LICENSE)

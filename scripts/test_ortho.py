@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import pathlib
 from simple_ortho import get_logger
+import datetime
 # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
 # and https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
 
@@ -47,13 +48,8 @@ def project_to_z(ij, Z, R, T, K):
     assert(ij.shape[0] == 2 and ij.shape[1] > 0)
     ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
     X_ = np.dot(np.linalg.inv(K), ij_)
-    if False:
-        X_ = X_ * (Z - T[2])    # approx assuming small omega / phi TODO - possible to find this exactly?
-        X = np.dot(R, X_) + T
-    else:
-        X_R = np.dot(R, X_) # rotate first (camera to world)
-        X_R = X_R/X_R[2,:]  # scale distance along vector to Z=1
-        X = (X_R * (Z - T[2])) + T  # scale to desired Z and offset from camera to world
+    X_R = np.dot(R, X_) # rotate first (camera to world)
+    X = (X_R * (Z - T[2])/X_R[2,:]) + T  # scale to desired Z and offset to world
     return X
 
 # construct extrinsic  matrix
@@ -116,10 +112,15 @@ dem_im = rio.open(dem_filename)
 if raw_im.crs != dem_im.crs:
     logger.warning('DEM and image co-ordinate systems are different')
 
+time_rec = dict(dem_min=datetime.timedelta(0), raw_im_read=datetime.timedelta(0), grid_creation=datetime.timedelta(0),
+                dem_reproject=datetime.timedelta(0), unproject=datetime.timedelta(0), raw_remap=datetime.timedelta(0),
+                write=datetime.timedelta(0))
+start_ttl = start = datetime.datetime.now()
 with rio.Env():
     with rio.open(im_filename, 'r') as raw_im:
         # find min of dem over raw_im bounds
         dem_min = 0
+        start = datetime.datetime.now()
         with rio.open(dem_filename, 'r') as dem_im:
             # option 1: transform raw_im bounds to dem_im bounds to dem im window
             # use reproject or vrt to read directly into raw_im ROI
@@ -129,46 +130,46 @@ with rio.Env():
                                               transform=dem_im.transform)
             dem_im_array = dem_im.read(1, window=dem_win)
             dem_min = np.max([dem_im_array.min(), 0])
+        time_rec['dem_min'] += (datetime.datetime.now()-start)
 
         # read the whole raw im (band) into memory for use in remap
         # TODO: loop through bands to save mem
+        start = datetime.datetime.now()
         raw_bands = list(range(1, raw_im.count+1))
         raw_im_array = raw_im.read(raw_bands)
+        time_rec['raw_im_read'] += (datetime.datetime.now()-start)
+
         ortho_win_off = np.array([0, 0])  # test
         ortho_profile = raw_im.profile
-        # TODO: change/round resolution here
-        # TODO: change size to fit spatial extents here, raw res may not be enough, or may be too much
-        # TODO: make this grid north up
 
-        # roughly find the bounds of the ortho by projecting image ul and lr onto dem_min plane
-        # TODO: the below does not account for rotation e.g. tr corner is higher than tl - we should project all corners then find min/max of x/y
-        # TODO: also, in case the rotation is big we should do sanity check against the old extents and choose the greater. or something.
-
+        # find the bounds of the ortho by projecting image corners onto Z plane = dem_min
         ortho_cnrs = project_to_z(np.array([[0, 0], [raw_im.width, 0], [raw_im.width, raw_im.height], [0, raw_im.height]]).T,
                                   dem_min, R, T, K)[:2, :]
+        raw_cnrs = np.array([[raw_im.bounds.left, raw_im.bounds.bottom], [raw_im.bounds.right, raw_im.bounds.bottom],
+                             [raw_im.bounds.right, raw_im.bounds.top], [raw_im.bounds.left, raw_im.bounds.top]]).T
+        ortho_cnrs = np.column_stack([ortho_cnrs, raw_cnrs])    # probably unnecessary, but ensure we encompass the raw image
         ortho_bl = ortho_cnrs.min(axis=1)   # TODO is min also west & north for any projection?
         ortho_tr = ortho_cnrs.max(axis=1)
-        # ortho_tl = project_to_z(np.array([0, 0]).reshape(-1, 1), dem_min, R, T, K).squeeze()[:2]
-        # ortho_br = project_to_z(np.array([raw_im.width, raw_im.height]).reshape(-1, 1), dem_min, R, T, K).squeeze()[:2]
         ortho_wh = np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2]/ortho_res))
 
-        # ortho_transform = rio.transform.from_origin(raw_im.bounds.left, raw_im.bounds.top, ortho_res[0], ortho_res[1])
         ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], ortho_res[0], ortho_res[1])
-        # ortho_transform = rio.transform.from_bounds(ortho_tl[0], ortho_br[1], ortho_br[0], ortho_tl[1], ortho_wh[0], ortho_wh[1])
         ortho_profile.update(nodata=0, compress='deflate', tiled=True, blockxsize=512, blockysize=512, transform=ortho_transform,
-                             width=ortho_wh[0], height=ortho_wh[1])  #, count=1, dtype='float32')
+                             width=ortho_wh[0], height=ortho_wh[1], num_threads='all_cpus')  #, count=1, dtype='float32')
 
         with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
             for ji, ortho_win in ortho_im.block_windows(1):
                 print((ji, ortho_win))
                 # print(win_transform)
                 # TODO: move this outside the loop if possible
+                start = datetime.datetime.now()
                 j_range = np.arange(ortho_win.col_off, ortho_win.col_off + ortho_win.width)
                 i_range = np.arange(ortho_win.row_off, ortho_win.row_off + ortho_win.height)
                 ortho_jj, ortho_ii = np.meshgrid(j_range, i_range, indexing='xy')
                 ortho_xx, ortho_yy = ortho_im.transform * [ortho_jj, ortho_ii]
+                time_rec['grid_creation'] += (datetime.datetime.now() - start)
 
                 with rio.open(dem_filename, 'r') as dem_im:
+                    start = datetime.datetime.now()
                     dem_win_transform = ortho_im.window_transform(ortho_win)
                     ortho_zz = np.zeros((ortho_win.height, ortho_win.width), dem_im.dtypes[0])
                     # dem_win_transform = calculate_default_transform(ortho_im.crs, dem_im.crs, block_win.width, block_win.height, left=win_transform.xoff, top=win_transform.yoff)
@@ -177,25 +178,32 @@ with rio.Env():
                     # TODO: check if this is reading the whole DEM every time or just win_transform
                     reproject(rio.band(dem_im, 1), ortho_zz, dst_transform=dem_win_transform, dst_crs=ortho_im.crs,
                               resampling=Resampling.cubic_spline, src_transform=dem_im.transform, src_crs=dem_im.crs)
+                    time_rec['dem_reproject'] += (datetime.datetime.now() - start)
 
-                    if False:
-                        im_ji, _ = cv2.projectPoints(np.array([ortho_xx.reshape(-1, 1), ortho_yy.reshape(-1, 1), ortho_zz.reshape(-1, 1)]),
-                                                R.T, -T, K, None)
-                        # ortho_im.write(dem_win_reproj, indexes=1, window=block_win)
-                        im_jj = np.float32(im_ji[:, 0, 0].reshape(ortho_win.height, ortho_win.width))
-                        im_ii = np.float32(im_ji[:, 0, 1].reshape(ortho_win.height, ortho_win.width))
-                    else:
-                        im_ji = unproject(np.array([ortho_xx.flatten(), ortho_yy.flatten(), ortho_zz.flatten()]), R, T, K)
-                        # ortho_im.write(dem_win_reproj, indexes=1, window=block_win)
-                        im_jj = np.float32(im_ji[0, :].reshape(ortho_win.height, ortho_win.width))
-                        im_ii = np.float32(im_ji[1, :].reshape(ortho_win.height, ortho_win.width))
+                    start = datetime.datetime.now()
+                    im_ji = unproject(np.array([ortho_xx.flatten(), ortho_yy.flatten(), ortho_zz.flatten()]), R, T, K)
+                    # ortho_im.write(dem_win_reproj, indexes=1, window=block_win)
+                    im_jj = np.float32(im_ji[0, :].reshape(ortho_win.height, ortho_win.width))
+                    im_ii = np.float32(im_ji[1, :].reshape(ortho_win.height, ortho_win.width))
+                    time_rec['unproject'] += (datetime.datetime.now() - start)
 
+                    start = datetime.datetime.now()
                     ortho_im_win_array = np.zeros((raw_im.count, ortho_win.height, ortho_win.width), dtype=raw_im.dtypes[0])
                     for band_i in range(0, raw_im.count):
                         ortho_im_win_array[band_i, :, :] = cv2.remap(raw_im_array[band_i, :, :], im_jj, im_ii,
                                                                      cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+                    time_rec['raw_remap'] += (datetime.datetime.now() - start)
+                    start = datetime.datetime.now()
                     ortho_im.write(ortho_im_win_array, indexes=raw_bands, window=ortho_win)
+                    time_rec['write'] += (datetime.datetime.now() - start)
+                    start = datetime.datetime.now()
 
+time_rec['write'] += (datetime.datetime.now() - start)
+time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
+print(time_rec)
+timed = pd.DataFrame.from_dict(time_rec, orient='index')
+print(timed.sort_values(by=0))
+# TODO can we enable multithreading to write out raster / do compression
 # memory planning
 # we want to keep the whole unrect image in memory, perhaps one band at a time, so we can freely do "lookups"/ remaps
 # then it probably makes sense to force a tiled output file, and remap one tile at a time.
