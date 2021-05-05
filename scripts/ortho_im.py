@@ -42,4 +42,12 @@ camera_config = config['camera']
 camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], camera_config['im_size'],
                              geo_transform, position, orientation)
 
+X = np.array([[-22544.1, -3736338.7, 200], [-20876.7, -3739374.3, 200], [-19430.2, -3742345.8, 200],
+              [-19430.2, -3742345.8, 200]]).T
+ij = camera.unproject(X)
+X2 = camera.project_to_z(ij, X[2, :])
+print(ij)
+print(X - X2)
+
 ortho_im = simple_ortho.OrthoIm(im_filename, dem_filename, camera, config=config['ortho'])
+ortho_im.orthorectify()

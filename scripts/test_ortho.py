@@ -198,6 +198,7 @@ with rio.Env():
                     for band_i in range(0, raw_im.count):
                         ortho_im_win_array[band_i, :, :] = cv2.remap(raw_im_array[band_i, :, :], im_jj, im_ii,
                                                                      cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
+                    # print(datetime.datetime.now() - start)
                     time_rec['raw_remap'] += (datetime.datetime.now() - start)
                     start = datetime.datetime.now()
                     ortho_im.write(ortho_im_win_array, indexes=raw_bands, window=ortho_win)
