@@ -11,7 +11,6 @@ import pandas as pd
 
 logger = get_logger(__name__)
 
-
 class Camera():
     def __init__(self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dtype='float32'):
         """
@@ -78,6 +77,7 @@ class Camera():
                             [0, 0, 1]])
 
         self._R = np.dot(np.dot(omega_r, phi_r), kappa_r).astype(self._dtype)
+        self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
     def update_intrinsic(self, geo_transform, kappa=None):
@@ -111,7 +111,7 @@ class Camera():
                             [0, 0, 1]], dtype=self._dtype)
         return
 
-    def unproject(self, X):
+    def unproject(self, X, use_cv=False):
         """
         Unproject from 3D world co-ordinates to 2D image co-ordinates
 
@@ -128,12 +128,17 @@ class Camera():
         """
         # x,y,z down 1st dimension
         if not(X.shape[0] == 3 and X.shape[1] > 0):
-            raise Exception('not(X.shape[0] == 3 and X.shape[1] > 0')
+            raise Exception('X must have 3 rows and more than one column')
 
-        # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
-        X_ = np.dot(self._R.T, (X - self._T))
-        # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
-        ij = np.dot(self._K, X_/X_[2, :])[:2, :]
+        # TODO: will this be faster as a single matrix mult in homog co-ords?
+        if use_cv:  # use opencv
+            ij, _ = cv2.projectPoints(X - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K, distCoeffs=None)
+            ij = np.squeeze(ij).T
+        else:
+            # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
+            X_ = np.dot(self._R.T, (X - self._T))
+            # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
+            ij = np.dot(self._K, X_/X_[2, :])[:2, :]
 
         return ij
 
@@ -303,7 +308,6 @@ class OrthoIm():
         return ortho_bl, ortho_tr
 
     def orthorectify(self):
-        # TODO: all the filenames could be passed here rather than in init?
         time_rec = dict(dem_min=datetime.timedelta(0), raw_im_read=datetime.timedelta(0),
                         grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
                         unproject=datetime.timedelta(0), raw_remap=datetime.timedelta(0), write=datetime.timedelta(0))
@@ -326,6 +330,12 @@ class OrthoIm():
             ortho_profile.update(nodata=0, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
                                  height=ortho_wh[1], num_threads='all_cpus', interleave='band')  # , count=1, dtype='float32')
+
+            j_range = np.arange(0, self.tile_size[0], dtype='float32')
+            i_range = np.arange(0, self.tile_size[1], dtype='float32')
+            jj, ii = np.meshgrid(j_range, i_range, indexing='xy')
+            xx, yy = ortho_transform * [jj, ii]
+
             time_rec['grid_creation'] += (datetime.datetime.now() - start)
 
             # reproject and resample DEM to ortho bounds, CRS and grid
@@ -359,18 +369,25 @@ class OrthoIm():
                             # TODO: move this outside the loop if possible
                             # TODO: check data types and array views below for efficiency
                             start = datetime.datetime.now()
-                            j_range = np.arange(ortho_win.col_off, ortho_win.col_off + ortho_win.width, dtype='float32')
-                            i_range = np.arange(ortho_win.row_off, ortho_win.row_off + ortho_win.height, dtype='float32')
-                            ortho_jj, ortho_ii = np.meshgrid(j_range, i_range, indexing='xy')
+                            if False:
+                                j_range = np.arange(ortho_win.col_off, ortho_win.col_off + ortho_win.width, dtype='float32')
+                                i_range = np.arange(ortho_win.row_off, ortho_win.row_off + ortho_win.height, dtype='float32')
+                                ortho_jj, ortho_ii = np.meshgrid(j_range, i_range, indexing='xy')
+                                ortho_xx, ortho_yy = ortho_im.transform * [ortho_jj, ortho_ii]
+                            else:
+                                # ortho_jj = jj + ortho_win.col_off
+                                # ortho_ii = ii + ortho_win.row_off
+                                ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
+                                ortho_xx = xx[:ortho_win.width, :ortho_win.height] + (ortho_win_transform.xoff - ortho_im.transform.xoff)
+                                ortho_yy = yy[:ortho_win.width, :ortho_win.height] + (ortho_win_transform.yoff - ortho_im.transform.yoff)
                             # TODO: efficiency of this affine transform?  maybe use numpy or cv2?
-                            ortho_xx, ortho_yy = ortho_im.transform * [ortho_jj, ortho_ii]
                             ortho_zz = dem_zz[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
                                        ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
                             time_rec['grid_creation'] += (datetime.datetime.now() - start)
 
                             start = datetime.datetime.now()
-                            im_ji = self._camera.unproject(
-                                np.array([ortho_xx.reshape(-1,), ortho_yy.reshape(-1,), ortho_zz.reshape(-1,)]))
+                            im_ji = self._camera.unproject(np.array([ortho_xx.reshape(-1,), ortho_yy.reshape(-1,),
+                                                                     ortho_zz.reshape(-1,)]))
                             # ortho_im.write(dem_win_reproj, indexes=1, window=block_win)
                             im_jj = im_ji[0, :].reshape(ortho_win.height, ortho_win.width)
                             im_ii = im_ji[1, :].reshape(ortho_win.height, ortho_win.width)
@@ -384,6 +401,114 @@ class OrthoIm():
                             ortho_im.write(ortho_band_win, band_i, window=ortho_win)
                             time_rec['write'] += (datetime.datetime.now() - start)
                             start = datetime.datetime.now()
+
+        time_rec['write'] += (datetime.datetime.now() - start)
+        time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
+
+        timed = pd.DataFrame.from_dict(time_rec, orient='index')
+        print(timed.sort_values(by=0))
+
+    def orthorectify_allband(self):
+
+        # init process time dict
+        time_rec = dict(dem_min=datetime.timedelta(0), raw_im_read=datetime.timedelta(0),
+                        grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
+                        unproject=datetime.timedelta(0), raw_remap=datetime.timedelta(0), write=datetime.timedelta(0))
+        start_ttl = start = datetime.datetime.now()
+
+        with rio.Env():
+
+            start = datetime.datetime.now()
+            dem_min = self._get_dem_min()
+            time_rec['dem_min'] += (datetime.datetime.now() - start)
+
+            # set up ortho profile based on raw profile
+            with rio.open(self._raw_im_filename, 'r') as raw_im:
+                ortho_profile = raw_im.profile
+
+            #
+            start = datetime.datetime.now()
+            ortho_bl, ortho_tr = self._get_ortho_bounds(dem_min=dem_min)
+            # TODO: does changing interleave help with compression and or rw speed
+            ortho_wh = np.int32(np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2] / self.resolution)))
+            ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0], self.resolution[1])
+            ortho_profile.update(nodata=0, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
+                                 blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
+                                 height=ortho_wh[1], num_threads='all_cpus', interleave=self.ortho_interleave)  # , count=1, dtype='float32')
+
+            j_range = np.arange(0, self.tile_size[0], dtype='float32')
+            i_range = np.arange(0, self.tile_size[1], dtype='float32')
+            jj, ii = np.meshgrid(j_range, i_range, indexing='xy')
+            xx, yy = ortho_transform * [jj, ii]
+
+            time_rec['grid_creation'] += (datetime.datetime.now() - start)
+
+            # reproject and resample DEM to ortho bounds, CRS and grid
+            start = datetime.datetime.now()
+            with rio.open(self._dem_filename, 'r') as dem_im:
+                dem_zz = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
+                # reproject and resample the DEM to ortho CRS and resolution
+                reproject(rio.band(dem_im, self.dem_band), dem_zz, dst_transform=ortho_transform,
+                          dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
+                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count())
+            time_rec['dem_reproject'] += (datetime.datetime.now() - start)
+
+            with rio.open(self._raw_im_filename, 'r') as raw_im:
+                with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
+                    # process a band at a time to save memory
+                    raw_bands = list(range(1, raw_im.count + 1))
+                    # TODO: is it maybe faster to rw all bands at once?  Especially if interleaved?
+                    # for band_i in range(1, raw_im.count + 1):  # TODO: can we remap all bands in one shot? yes
+                    start = datetime.datetime.now()
+                    raw_im_array = raw_im.read(raw_bands)
+                    time_rec['raw_im_read'] += (datetime.datetime.now() - start)
+
+                    # Trade-off here between memory and processor efficiency.  If we loop through a band at a time on
+                    # the outer loop, we need to reconstruct the grid below for each tile of each band.  So there is
+                    # repetition and processor inefficiency.  If we loop through the tiles on the outer loop, we need
+                    # to read all raw bands at once, which for some multi/hyper-spectral images could be difficult to
+                    # fit in memory.
+                    for ji, ortho_win in ortho_im.block_windows(1):
+                        print((ji, ortho_win))
+                        # print(win_transform)
+                        # TODO: move this outside the loop if possible
+                        # TODO: check data types and array views below for efficiency
+                        start = datetime.datetime.now()
+                        if False:
+                            j_range = np.arange(ortho_win.col_off, ortho_win.col_off + ortho_win.width, dtype='float32')
+                            i_range = np.arange(ortho_win.row_off, ortho_win.row_off + ortho_win.height, dtype='float32')
+                            ortho_jj, ortho_ii = np.meshgrid(j_range, i_range, indexing='xy')
+                            ortho_xx, ortho_yy = ortho_im.transform * [ortho_jj, ortho_ii]
+                        else:
+                            # ortho_jj = jj + ortho_win.col_off
+                            # ortho_ii = ii + ortho_win.row_off
+                            ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
+                            ortho_xx = xx[:ortho_win.width, :ortho_win.height] + (ortho_win_transform.xoff - ortho_im.transform.xoff)
+                            ortho_yy = yy[:ortho_win.width, :ortho_win.height] + (ortho_win_transform.yoff - ortho_im.transform.yoff)
+                        # TODO: efficiency of this affine transform?  maybe use numpy or cv2?
+                        ortho_zz = dem_zz[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
+                                   ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
+                        time_rec['grid_creation'] += (datetime.datetime.now() - start)
+
+                        start = datetime.datetime.now()
+                        im_ji = self._camera.unproject(np.array([ortho_xx.reshape(-1,), ortho_yy.reshape(-1,),
+                                                                 ortho_zz.reshape(-1,)]))
+                        # ortho_im.write(dem_win_reproj, indexes=1, window=block_win)
+                        im_jj = im_ji[0, :].reshape(ortho_win.height, ortho_win.width)
+                        im_ii = im_ji[1, :].reshape(ortho_win.height, ortho_win.width)
+                        time_rec['unproject'] += (datetime.datetime.now() - start)
+
+                        start = datetime.datetime.now()
+                        ortho_im_win_array = np.zeros((raw_im.count, ortho_win.height, ortho_win.width),
+                                                      dtype=raw_im.dtypes[0])
+                        for band_i in raw_bands:
+                            ortho_im_win_array[band_i-1, :, :] = cv2.remap(raw_im_array[band_i-1, :, :], im_jj, im_ii, self.ortho_interp,
+                                                   borderMode=cv2.BORDER_CONSTANT)
+                        time_rec['raw_remap'] += (datetime.datetime.now() - start)
+                        start = datetime.datetime.now()
+                        ortho_im.write(ortho_im_win_array, raw_bands, window=ortho_win)
+                        time_rec['write'] += (datetime.datetime.now() - start)
+                        start = datetime.datetime.now()
 
         time_rec['write'] += (datetime.datetime.now() - start)
         time_rec['ttl'] = (datetime.datetime.now() - start_ttl)

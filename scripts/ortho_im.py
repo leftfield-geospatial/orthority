@@ -9,9 +9,10 @@ from simple_ortho import simple_ortho
 import datetime
 from scripts import root_path
 import yaml
+import tracemalloc
 
 logger = get_logger(__name__)
-np.set_printoptions(precision=3)
+np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 
 im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_07_0298_RGB_PRE.tif")
@@ -40,14 +41,24 @@ position = np.array([im_ext['easting'], im_ext['northing'], im_ext['altitude']])
 
 camera_config = config['camera']
 camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], camera_config['im_size'],
-                             geo_transform, position, orientation)
+                             geo_transform, position, orientation, dtype='float32')
 
 X = np.array([[-22544.1, -3736338.7, 200], [-20876.7, -3739374.3, 200], [-19430.2, -3742345.8, 200],
-              [-19430.2, -3742345.8, 200]]).T
-ij = camera.unproject(X)
+              [-19430.2, -3742345.8, 200]], dtype='float32').T
+start = datetime.datetime.now()
+for j in range(0, 10000):
+    ij = camera.unproject(X, use_cv=False)
+print(f'unproject {datetime.datetime.now()-start}')
+
 X2 = camera.project_to_z(ij, X[2, :])
 print(ij)
 print(X - X2)
 
+# ij2, _ = cv2.projectPoints(X-camera._T, camera._R, np.array([0.,0.,0.], dtype='float32'), camera._K, distCoeffs=np.array([0], dtype='float32'))
+
+tracemalloc.start()
 ortho_im = simple_ortho.OrthoIm(im_filename, dem_filename, camera, config=config['ortho'])
-ortho_im.orthorectify()
+ortho_im.orthorectify_allband()
+current, peak = tracemalloc.get_traced_memory()
+print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
+tracemalloc.stop()
