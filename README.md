@@ -26,7 +26,7 @@ The following dependencies are installed in the process above.  The `rasterio` a
   - pyyaml >= 5.4
 
 ## License
-[MIT](LICENSE)
+This project is licensed under the terms of the [MIT license](LICENSE).
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
