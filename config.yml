@@ -12,6 +12,7 @@ ortho:
   compression: deflate      # GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
   ortho_interleave: band    # Interleave by 'pixel' or 'band' (pixel, band)
+  ortho_nodata: 0           # NODATA value
 
 ext_ori:
   format: pci                   # How to specify format of file

@@ -15,11 +15,14 @@ logger = get_logger(__name__)
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_07_0298_RGB_PRE.tif")
+im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_07_0298_RGB_PRE.tif")
 # im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_08_0321_RGB_PRE.tif")
-im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0451_RGB_PRE.tif")
+# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0451_RGB_PRE.tif")
+# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3323D_2015_1001\RGBN\3323d_2015_1001_02_0078_RGBN_CMP.tif")
 dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM\SUDEM_3318B_D_5m.tif")
+# dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM L3 Unedited\x3323db_2015_L3a.tif")
 ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3318D_2016_1143_lo19wgs84n_e_rect.txt")
+# ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3323D_2015_1001_lo23wgs84n_e_rect.txt")
 
 # TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
 # also, make a default config file?
@@ -47,7 +50,7 @@ X = np.array([[-22544.1, -3736338.7, 200], [-20876.7, -3739374.3, 200], [-19430.
               [-19430.2, -3742345.8, 200]], dtype='float32').T
 start = datetime.datetime.now()
 for j in range(0, 10000):
-    ij = camera.unproject(X, use_cv=False)
+    ij = camera.unproject(X, use_cv=True)
 print(f'unproject {datetime.datetime.now()-start}')
 
 X2 = camera.project_to_z(ij, X[2, :])
@@ -58,7 +61,7 @@ print(X - X2)
 
 tracemalloc.start()
 ortho_im = simple_ortho.OrthoIm(im_filename, dem_filename, camera, config=config['ortho'])
-ortho_im.orthorectify(per_band=False)
+ortho_im.orthorectify(per_band=True)
 current, peak = tracemalloc.get_traced_memory()
 print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
 tracemalloc.stop()
