@@ -236,7 +236,6 @@ class OrthoIm():
         self.time_rec = dict(dem_min=datetime.timedelta(0), raw_im_read=datetime.timedelta(0),
                         grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
                         unproject=datetime.timedelta(0), raw_remap=datetime.timedelta(0), write=datetime.timedelta(0))
-        # TODO: some error checking like does DEM cover raw image
         # TODO: test the case where input is not geotiff
 
     def _check_rasters(self):
@@ -257,8 +256,15 @@ class OrthoIm():
                                                            [raw_im.bounds.left, raw_im.bounds.right],
                                                            [raw_im.bounds.top, raw_im.bounds.bottom])
                     raw_bounds = rio.coords.BoundingBox(dem_xbounds[0], dem_ybounds[1], dem_xbounds[1], dem_ybounds[0])
-                    if rio.coords.disjoint_bounds(dem_im.bounds, raw_bounds):
-                        raise Exception(f'Raw image does not overlap DEM')
+
+                    def _bound_coverage(raw_b, dem_b):
+                        if ((raw_b.top <= dem_b.top) and (raw_b.bottom >= dem_b.bottom)
+                            and (raw_b.left >= dem_b.left) and (raw_b.right <= dem_b.right)):
+                            return True
+                        return False
+
+                    if not(_bound_coverage(raw_bounds, dem_im.bounds)):
+                        raise Exception(f'DEM does not cover raw image')
 
     def _parse_config(self, config):
         """
@@ -306,7 +312,7 @@ class OrthoIm():
 
                     # read DEM in raw image ROI and find minimum
                     dem_im_array = dem_im.read(1, window=dem_win)
-                    dem_min = np.max([dem_im_array.min(), 0])   # TODO: deal with the case of no dem coverage
+                    dem_min = np.max([dem_im_array.min(), 0])   # TODO: test/deal with the case of no dem coverage
 
         return dem_min
 
@@ -522,7 +528,8 @@ class OrthoIm():
                 dem_array = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
-                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count())
+                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.ortho_nodata,
+                          init_dest_nodata=True)
             self.time_rec['dem_reproject'] += (datetime.datetime.now() - start)
 
             if per_band == False:
