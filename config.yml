@@ -2,17 +2,18 @@ camera:
   name: Integraph DMC             # Not used
   focal_len: 120.                 # Focal length in mm
   sensor_size: [92.160, 165.888]  # Sensor/CCD [width, height] dimensions in mm
-  im_size: [7680., 13824.]     # Image [width, height] dimensions in pixels
+  im_size: [7680., 13824.]        # Image [width, height] dimensions in pixels
 
 ortho:
   dem_interp: cubic_spline  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
   dem_band: 1               # 1-based index of band in DEM raster to use
-  ortho_interp: bilinear    # Interpolation type for ortho-image (average, bilinear, cubic, lanczos, nearest)
+  interp: bilinear          # Interpolation type for ortho-image (average, bilinear, cubic, lanczos, nearest)
   resolution: [0.5, 0.5]    # Output pixel size [x, y] in m
   compression: deflate      # GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  ortho_interleave: band    # Interleave by 'pixel' or 'band' (pixel, band)
-  ortho_nodata: 0           # NODATA value
+  interleave: band          # Interleave by 'pixel' or 'band' (pixel, band)
+  nodata: 0                 # NODATA value
+  per_band: False           # Remap the raw image to the ortho per-band (True), or all bands at once (False - recommended)
 
 ext_ori:
-  format: pci                   # How to specify format of file
+  format: pci               # How to specify format of file

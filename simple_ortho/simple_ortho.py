@@ -225,8 +225,8 @@ class OrthoIm():
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 
         if config is None: # set defaults:
-            config = dict(dem_interp='cubic_spline', ortho_interp='bilinear', resolution=[0.5, 0.5],
-                          compression='deflate', tile_size=[512, 512])
+            config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
+                          compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False)
 
         self._parse_config(config)
         self._check_rasters()
@@ -243,13 +243,14 @@ class OrthoIm():
         Check that the raw image is not 12 bit and that DEM and raw image overlap
         """
         with rio.Env():
+            raw_data = gdal.Open(str(self._raw_im_filename))
+            raw_band = raw_data.GetRasterBand(self.dem_band)
+            raw_struc = raw_band.GetMetadata('IMAGE_STRUCTURE')
+            if 'NBITS' in raw_struc and raw_struc['NBITS'] == '12':
+                logger.warning(f'NBITS==12 is not supported by conda GDAL (and others), '
+                               f'you may need to reformat the raw file: {self._raw_im_filename}')
+            del(raw_band, raw_data)
             with rio.open(self._raw_im_filename, 'r') as raw_im:
-                raw_data = gdal.Open(str(self._raw_im_filename))
-                raw_band = raw_data.GetRasterBand(self.dem_band)
-                raw_struc = raw_band.GetMetadata('IMAGE_STRUCTURE')
-                if 'NBITS' in raw_struc and raw_struc['NBITS'] == '12':
-                    raise Exception(f'NBITS==12 is not supported, you need to reformat the raw file: {self._raw_im_filename}')
-
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find raw image bounds in DEM CRS
                     [dem_xbounds, dem_ybounds] = transform(raw_im.crs, dem_im.crs,
@@ -289,10 +290,10 @@ class OrthoIm():
         cv_interp_dict = dict(average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC,
                               lanczos=cv2.INTER_LANCZOS4, nearest=cv2.INTER_NEAREST)
 
-        if self.ortho_interp not in cv_interp_dict:
+        if self.interp not in cv_interp_dict:
             raise Exception(f'Unknown ortho_interp configuration type: {config["ortho_interp"]}')
         else:
-            self.ortho_interp = cv_interp_dict[self.ortho_interp]
+            self.interp = cv_interp_dict[self.interp]
 
     def _get_dem_min(self):
         """
@@ -312,7 +313,7 @@ class OrthoIm():
 
                     # read DEM in raw image ROI and find minimum
                     dem_im_array = dem_im.read(1, window=dem_win)
-                    dem_min = np.max([dem_im_array.min(), 0])   # TODO: test/deal with the case of no dem coverage
+                    dem_min = np.max([dem_im_array.min(), 0])
 
         return dem_min
 
@@ -349,10 +350,12 @@ class OrthoIm():
 
         return ortho_bl, ortho_tr
 
-    def _remap_all_bands(self, ortho_profile, dem_array):
+
+    def _remap_raw_to_ortho(self, ortho_profile, dem_array):
         """
-        Interpolate the ortho image from the raw image.  Read/write all bands at once - the fastest option for YCbCr
-        encoded jpegs.  Needs sufficient memory to hold all raw bands though.
+        Interpolate the ortho image from the raw image.
+            self.per_band = True: Read/write one band at a time - memory efficient
+            self.per_band = False: Read/write all bands at once - processor efficient (recommended)
 
         Parameters
         ----------
@@ -370,76 +373,12 @@ class OrthoIm():
 
         with rio.open(self._raw_im_filename, 'r') as raw_im:
             with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
-                bands = list(range(1, raw_im.count + 1))
-                start = datetime.datetime.now()
-                raw_im_array = raw_im.read(bands)
-                self.time_rec['raw_im_read'] += (datetime.datetime.now() - start)
+                if self.per_band:
+                    bands = np.array([range(1, raw_im.count + 1)]).T    # RW one row of bands i.e. one band at a time
+                else:
+                    bands = np.array([range(1, raw_im.count + 1)])      # RW one row of bands i.e. all bands at once
 
-                for ji, ortho_win in ortho_im.block_windows(1):
-                    print((ji, ortho_win))
-
-                    # offset tile grids to ortho_win
-                    start = datetime.datetime.now()
-                    ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
-                    ortho_xgrid = xgrid[:ortho_win.height, :ortho_win.width] + (
-                            ortho_win_transform.xoff - ortho_im.transform.xoff)
-                    ortho_ygrid = ygrid[:ortho_win.height, :ortho_win.width] + (
-                            ortho_win_transform.yoff - ortho_im.transform.yoff)
-
-                    # extract ortho_win from dem_array
-                    ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
-                               ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
-                    self.time_rec['grid_creation'] += (datetime.datetime.now() - start)
-
-                    # find the 2D raw image pixel co-ords corresponding to ortho image 3D co-ords
-                    start = datetime.datetime.now()
-                    raw_ji = self._camera.unproject(np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ),
-                                                             ortho_zgrid.reshape(-1, )]))
-                    raw_jj = raw_ji[0, :].reshape(ortho_win.height, ortho_win.width)
-                    raw_ii = raw_ji[1, :].reshape(ortho_win.height, ortho_win.width)
-                    self.time_rec['unproject'] += (datetime.datetime.now() - start)
-
-                    # Interpolate the ortho tile from the raw image based on warped/unprojected grids
-                    start = datetime.datetime.now()
-                    ortho_im_win_array = np.zeros((raw_im.count, ortho_win.height, ortho_win.width),
-                                                  dtype=raw_im.dtypes[0])
-                    for bi in bands:    # remap by band - for some reason this is faster than doing at all at once
-                        ortho_im_win_array[bi - 1, :, :] = cv2.remap(raw_im_array[bi - 1, :, :], raw_jj, raw_ii,
-                                                                     self.ortho_interp,
-                                                                     borderMode=cv2.BORDER_CONSTANT,
-                                                                     borderValue=self.ortho_nodata)
-                    self.time_rec['raw_remap'] += (datetime.datetime.now() - start)
-
-                    # write out the ortho tile to disk
-                    start = datetime.datetime.now()
-                    ortho_im.write(ortho_im_win_array, bands, window=ortho_win)
-                    self.time_rec['write'] += (datetime.datetime.now() - start)
-                    start = datetime.datetime.now()
-        self.time_rec['write'] += (datetime.datetime.now() - start)
-
-    def _remap_per_band(self, ortho_profile, dem_array):
-        """
-        Interpolate the ortho image from the raw image.  Read/write one band at a time.  More memory efficient, but
-        generally less processor efficient than _remap_all_bands()
-
-        Parameters
-        ----------
-        ortho_profile : dict
-                        rasterio profile for ortho image
-        dem_array     : numpy.array
-                        array of altitude values on corresponding to ortho image i.e. on the same grid
-        """
-
-        # initialse tile grid here once off (save cpu) - to offset later (requires N-up geotransform)
-        j_range = np.arange(0, self.tile_size[0], dtype='float32')
-        i_range = np.arange(0, self.tile_size[1], dtype='float32')
-        jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
-        xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
-
-        with rio.open(self._raw_im_filename, 'r') as raw_im:
-            with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
-                bands = list(range(1, raw_im.count + 1))
-                for bi in bands:
+                for bi in bands.tolist():
                     start = datetime.datetime.now()
                     raw_im_array = raw_im.read(bi)
                     self.time_rec['raw_im_read'] += (datetime.datetime.now() - start)
@@ -470,9 +409,12 @@ class OrthoIm():
 
                         # Interpolate the ortho tile from the raw image based on warped/unprojected grids
                         start = datetime.datetime.now()
-                        # ortho_im_win_array = np.zeros((ortho_win.height, ortho_win.width), dtype=raw_im.dtypes[bi-1])
-                        ortho_im_win_array = cv2.remap(raw_im_array, raw_jj, raw_ii, self.ortho_interp,
-                                                       borderMode=cv2.BORDER_CONSTANT, borderValue=self.ortho_nodata)
+                        ortho_im_win_array = np.zeros((raw_im_array.shape[0], ortho_win.height, ortho_win.width),
+                                                      dtype=ortho_im.dtypes[0])
+                        for oi in range(0, raw_im_array.shape[0]):  # for per_band=True, this will loop once only
+                            ortho_im_win_array[oi, :, :] = cv2.remap(raw_im_array[oi, :, :], raw_jj, raw_ii,
+                                                                     self.interp, borderMode=cv2.BORDER_CONSTANT,
+                                                                     borderValue=self.nodata)
                         self.time_rec['raw_remap'] += (datetime.datetime.now() - start)
 
                         # write out the ortho tile to disk
@@ -483,7 +425,7 @@ class OrthoIm():
         self.time_rec['write'] += (datetime.datetime.now() - start)
 
 
-    def orthorectify(self, per_band=False):
+    def orthorectify(self):
         """
         Orthorectify the raw image based on specified camera model and DEM.
 
@@ -511,9 +453,9 @@ class OrthoIm():
 
             ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0], self.resolution[1])
             # TODO: can we specify different output data type?
-            ortho_profile.update(nodata=self.ortho_nodata, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
+            ortho_profile.update(nodata=self.nodata, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
-                                 height=ortho_wh[1], num_threads='all_cpus', interleave=self.ortho_interleave)
+                                 height=ortho_wh[1], num_threads='all_cpus', interleave=self.interleave)
 
             # initialse tile grid here once off (save cpu) - to offset later
             j_range = np.arange(0, self.tile_size[0], dtype='float32')
@@ -528,14 +470,11 @@ class OrthoIm():
                 dem_array = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
-                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.ortho_nodata,
+                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.nodata,
                           init_dest_nodata=True)
             self.time_rec['dem_reproject'] += (datetime.datetime.now() - start)
 
-            if per_band == False:
-                self._remap_all_bands(ortho_profile, dem_array)
-            else:
-                self._remap_per_band(ortho_profile, dem_array)
+            self._remap_raw_to_ortho(ortho_profile, dem_array)
 
         self.time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
         timed = pd.DataFrame.from_dict(self.time_rec, orient='index')
