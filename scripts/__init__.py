@@ -1,5 +1,5 @@
 import pathlib
-import os
+import os, sys
 import logging
 
 if '__file__' in globals():
@@ -7,4 +7,4 @@ if '__file__' in globals():
 else:
     root_path = pathlib.Path(os.getcwd())
 
-logging.basicConfig(format='%(levelname)s %(name)s: %(message)s')
+logging.basicConfig(stream=sys.stdout, format='%(message)s')

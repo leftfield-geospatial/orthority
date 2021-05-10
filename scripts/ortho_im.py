@@ -1,6 +1,4 @@
-import cv2
 import rasterio as rio
-from rasterio.warp import calculate_default_transform, reproject, Resampling,  transform
 import numpy as np
 import pandas as pd
 import pathlib
@@ -10,26 +8,42 @@ import datetime
 from scripts import root_path
 import yaml
 import tracemalloc
+import argparse
 
 logger = get_logger(__name__)
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 
+parser = argparse.ArgumentParser()
+parser.add_argument("dem_file", help="path to the DEM file", type=str)
+parser.add_argument("src_im_file", help="path to the source image file", type=str)
+parser.add_argument("pos_ori_file", help="path to the camera position and orientaion file", type=str)
+parser.add_argument("-o", "--ortho", help="ortho image file path to create (default: append '_ORTHO' to src_im)", type=str)
+parser.add_argument("-c", "--config", help="path to custom configuration file (default: use config.yml in app root)", type=str)
+parser.add_argument("-wc", "--write-config", help="file to write the default config to", type=str)
+parser.add_argument("-v", "--verbosity", help="logging level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)", type=int)
+parser.parse_args()
+
+
+
 # im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_07_0298_RGB_PRE.tif")
 # im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_08_0321_RGB_PRE.tif")
-im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0451_RGB_PRE.tif")
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3323D_2015_1001\RGBN\3323d_2015_1001_02_0078_RGBN_CMP.tif")
+# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0451_RGB_PRE.tif")
+im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3323D_2015_1001\RGBN\3323d_2015_1001_02_0078_RGBN_CMP.img")
 # im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0449_RGB_PRE.tif")
 
-dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM\SUDEM_3318B_D_5m.tif")
-# dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM L3 Unedited\x3323db_2015_L3a.tif")
-ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3318D_2016_1143_lo19wgs84n_e_rect.txt")
-# ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3323D_2015_1001_lo23wgs84n_e_rect.txt")
+# dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM\SUDEM_3318B_D_5m.tif")
+dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM L3 Unedited\x3323db_2015_L3a.tif")
+# ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3318D_2016_1143_lo19wgs84n_e_rect.txt")
+ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3323D_2015_1001_lo23wgs84n_e_rect.txt")
 
 # TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
 # also, make a default config file?
 with open(root_path.joinpath('config.yml'), 'r') as f:
     config = yaml.safe_load(f)
+
+with open(root_path.joinpath('config_out.yml'), 'w') as f:
+    yaml.dump(config, stream=f)
 
 with rio.open(im_filename) as raw_im:
     geo_transform = raw_im.transform

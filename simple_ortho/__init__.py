@@ -1,7 +1,7 @@
-import logging
-logging.basicConfig(format='%(levelname)s %(name)s: %(message)s')
+import logging, sys
+logging.basicConfig(stream=sys.stdout, format='%(message)s')
 
-def get_logger(name):
+def get_logger(name, level=logging.INFO):
 	logger = logging.getLogger(name)
-	logger.setLevel(logging.DEBUG)
+	logger.setLevel(level)
 	return logger

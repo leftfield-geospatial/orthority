@@ -2,10 +2,11 @@
     Copyright (c) 2021 Dugal Harris - dugalh@gmail.com
     This project is licensed under the terms of the MIT license.
 """
+# TODO: I think it is better if we change to opencv's Apache license - it is more restrictive
 
 from simple_ortho import get_logger
 import numpy as np
-import os
+import os, sys
 import cv2
 import gdal
 import rasterio as rio
@@ -14,6 +15,7 @@ import pathlib
 import datetime
 import multiprocessing
 import pandas as pd
+import tracemalloc
 
 logger = get_logger(__name__)
 
@@ -51,7 +53,31 @@ class Camera():
         self._focal_len = focal_len
 
         self.update_intrinsic(geo_transform)
+        logger.debug(f'Camera configuration: {dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size)}')
+        logger.debug(f'Position: {position}')
+        logger.debug(f'Orientation: {orientation}')
 
+
+    # def __init__(self, config, geo_transform, position, orientation, dtype='float32'):
+    #     """
+    #     Camera class to project from camera 2D pixel co-ordinates to world 3D (x,y,z) co-ordinates, and vice-versa
+    #
+    #     Parameters
+    #     ----------
+    #     config:         dict
+    #                     {'focal_len': <focal length in mm>, 'sensor_size': <sensor (ccd) [width, height] in mm>,
+    #                     'im_size': <image [width, height]] in pixels>}
+    #     geo_transform :     numpy.array_like
+    #                         gdal or rasterio 6 element image transform
+    #     position :      numpy.array_like
+    #                     column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
+    #     orientation :   numpy.array_like
+    #                     camera orientation [omega, phi, kappa] angles in degrees
+    #     dtype :         numpy.dtype
+    #                     Data type to use for camera parameters (to avoid e.g. unproject forcing float32 to 64)
+    #     """
+    #     self.__init__(config['focal_len'], config['sensor_size'], config['im_size'], geo_transform, position,
+    #                   orientation, dtype=dtype)
 
     def update_extrinsic(self, position, orientation):
         """
@@ -141,7 +167,6 @@ class Camera():
         if not(X.shape[0] == 3 and X.shape[1] > 0):
             raise Exception('X must have 3 rows and more than one column')
 
-        # TODO: will this be faster as a single matrix mult in homog co-ords?
         if use_cv:  # use opencv
             ij, _ = cv2.projectPoints(X - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K, distCoeffs=None)
             ij = np.squeeze(ij).T
@@ -226,7 +251,8 @@ class OrthoIm():
 
         if config is None: # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
-                          compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False)
+                          compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False,
+                          format=None, dtype=None)
 
         self._parse_config(config)
         self._check_rasters()
@@ -236,7 +262,10 @@ class OrthoIm():
         self.time_rec = dict(dem_min=datetime.timedelta(0), raw_im_read=datetime.timedelta(0),
                         grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
                         unproject=datetime.timedelta(0), raw_remap=datetime.timedelta(0), write=datetime.timedelta(0))
-        # TODO: test the case where input is not geotiff
+
+        logger.debug(f'Ortho configuration: {config}')
+        logger.debug(f'DEM: {self._dem_filename.parts[-1]}')
+
 
     def _check_rasters(self):
         """
@@ -267,7 +296,7 @@ class OrthoIm():
                     if not(_bound_coverage(raw_bounds, dem_im.bounds)):
                         raise Exception(f'DEM does not cover raw image')
 
-    def _parse_config(self, config):
+    def _parse_config(self, config, print_vals=True):
         """
         Parse dict config items where necessary
 
@@ -294,6 +323,7 @@ class OrthoIm():
             raise Exception(f'Unknown ortho_interp configuration type: {config["ortho_interp"]}')
         else:
             self.interp = cv_interp_dict[self.interp]
+
 
     def _get_dem_min(self):
         """
@@ -350,7 +380,6 @@ class OrthoIm():
 
         return ortho_bl, ortho_tr
 
-
     def _remap_raw_to_ortho(self, ortho_profile, dem_array):
         """
         Interpolate the ortho image from the raw image.
@@ -371,6 +400,7 @@ class OrthoIm():
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
         xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
+        block_count = 0
         with rio.open(self._raw_im_filename, 'r') as raw_im:
             with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
                 if self.per_band:
@@ -378,13 +408,15 @@ class OrthoIm():
                 else:
                     bands = np.array([range(1, raw_im.count + 1)])      # RW one row of bands i.e. all bands at once
 
+                ttl_blocks = np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) * \
+                             np.ceil(ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
+
                 for bi in bands.tolist():
                     start = datetime.datetime.now()
                     raw_im_array = raw_im.read(bi)
                     self.time_rec['raw_im_read'] += (datetime.datetime.now() - start)
 
                     for ji, ortho_win in ortho_im.block_windows(1):
-                        print((ji, ortho_win))
 
                         # offset tile grids to ortho_win
                         start = datetime.datetime.now()
@@ -412,6 +444,7 @@ class OrthoIm():
                         ortho_im_win_array = np.zeros((raw_im_array.shape[0], ortho_win.height, ortho_win.width),
                                                       dtype=ortho_im.dtypes[0])
                         for oi in range(0, raw_im_array.shape[0]):  # for per_band=True, this will loop once only
+                            # TODO: this is the only use of opencv - can we replace it with numpy or scipy?
                             ortho_im_win_array[oi, :, :] = cv2.remap(raw_im_array[oi, :, :], raw_jj, raw_ii,
                                                                      self.interp, borderMode=cv2.BORDER_CONSTANT,
                                                                      borderValue=self.nodata)
@@ -422,6 +455,22 @@ class OrthoIm():
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
                         self.time_rec['write'] += (datetime.datetime.now() - start)
                         start = datetime.datetime.now()
+
+                        # print progress
+                        block_count += 1
+                        progress = (block_count / ttl_blocks)
+                        sys.stdout.write('\r')
+                        sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100*progress))
+                        sys.stdout.flush()
+
+                        # if np.ceil(100 * block_count / ttl_blocks) >= prog_update:
+                        #     sys.stdout.write('\r')
+                        #     # the exact output you're looking for:
+                        #     sys.stdout.write("[%-50s] %d%%" % ('=' * int((100/2) * (block_count / ttl_blocks)), prog_update))
+                        #     sys.stdout.flush()
+                        #     prog_update += 2
+
+        sys.stdout.write('\n')
         self.time_rec['write'] += (datetime.datetime.now() - start)
 
 
@@ -437,6 +486,8 @@ class OrthoIm():
         """
 
         # init process time dict
+        tracemalloc.start()
+        logger.info(f'Orthorectifying {self._raw_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
         start_ttl = start = datetime.datetime.now()
         with rio.Env():
             start = datetime.datetime.now()
@@ -452,10 +503,13 @@ class OrthoIm():
             ortho_wh = np.int32(np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2] / self.resolution))) # image size
 
             ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0], self.resolution[1])
-            # TODO: can we specify different output data type?
             ortho_profile.update(nodata=self.nodata, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
                                  height=ortho_wh[1], num_threads='all_cpus', interleave=self.interleave)
+            if self.format is not None:
+                ortho_profile['driver'] = self.format
+            if self.dtype is not None:
+                ortho_profile['dtype'] = self.dtype
 
             # initialse tile grid here once off (save cpu) - to offset later
             j_range = np.arange(0, self.tile_size[0], dtype='float32')
@@ -476,6 +530,12 @@ class OrthoIm():
 
             self._remap_raw_to_ortho(ortho_profile, dem_array)
 
+        current, peak = tracemalloc.get_traced_memory()
+        logger.debug(f"Memory usage - current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB")
+
         self.time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
-        timed = pd.DataFrame.from_dict(self.time_rec, orient='index')
-        print(timed.sort_values(by=0))
+        timed = pd.DataFrame.from_dict(self.time_rec, orient='index', columns=['Duration']).sort_values(by='Duration')
+        logger.debug(f'Processing time: \n{timed}')
+
+##
+

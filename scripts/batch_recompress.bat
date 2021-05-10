@@ -12,5 +12,7 @@ for %%i in (*_RGB.tif) do (
 set jj=%%i
 REM gdalwarp -r bilinear -srcnodata 0 -dstnodata 0 -co "TILED=YES" -co "COMPRESS=DEFLATE" -co "PREDICTOR=2" -co "NUM_THREADS=ALL_CPUS" -co "BLOCKXSIZE=512" -co "BLOCKYSIZE=512" -wm 4000 %%~ni.tif %%~ni_PRE.tif && echo SUCCESS
 gdal_translate -r bilinear -a_nodata 0 -co "TILED=YES" -co "COMPRESS=DEFLATE" -co "PREDICTOR=2" -co "NUM_THREADS=ALL_CPUS" -co "BLOCKXSIZE=512" -co "BLOCKYSIZE=512" %%~ni.tif %%~ni_DFL.tif && echo SUCCESS
+gdal_translate -r bilinear -a_nodata 0 -co "TILED=YES" -co "COMPRESS=DEFLATE" -co "PREDICTOR=2" -co "NUM_THREADS=ALL_CPUS" -co "BLOCKXSIZE=512" -co "BLOCKYSIZE=512" %%~ni.tif %%~ni_DFL.tif && echo SUCCESS
+
 )
 pause
