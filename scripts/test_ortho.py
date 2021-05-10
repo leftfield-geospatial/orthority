@@ -28,7 +28,7 @@ ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Do
 
 # TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
 # also, make a default config file?
-with open(root_path.joinpath('config.yml'), 'r') as f:
+with open(root_path.joinpath('config.yaml'), 'r') as f:
     config = yaml.safe_load(f)
 
 with open(root_path.joinpath('config_out.yml'), 'w') as f:

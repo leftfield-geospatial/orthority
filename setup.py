@@ -17,7 +17,7 @@ setup(
     install_requires=[
         # 'python>=3.6',
         'rasterio>=1.2',
-        'opencv>=4.5',     # how to we get pip to see this?
+        # 'opencv>=4.5',     # how to we get pip to see this?
         'pandas>=1.2',
         'pyyaml>=5.4'
     ],

@@ -1,0 +1,31 @@
+# Config file for conda package
+#
+#  To build, install & remove the development version:
+#    git clone git+https://github.com/dugalh/simple_ortho.git
+#    conda build .
+#    conda install -c conda-forge --use-local map-thicket-agc
+#    conda remove -c conda-forge --use-local map-thicket-agc
+
+package:
+  name: simple-orthp
+  version: 0.1.0
+
+source:
+  git_url: https://github.com/dugalh/simple_ortho.git
+
+requirements:
+  run:
+    - python >= 3.8
+    - rasterio >= 1.2
+    - opencv >= 4.5
+    - pandas >= 1.2
+    - pyyaml >= 5.4
+
+build:
+  number: 0
+  noarch: python
+  script: pip install -e .
+
+about:
+  home: https://github.com/dugalh/simple_ortho
+  license: MIT
