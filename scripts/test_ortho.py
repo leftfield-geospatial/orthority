@@ -7,7 +7,7 @@ import pathlib
 from simple_ortho import get_logger
 from simple_ortho import simple_ortho
 import datetime
-from scripts import root_path
+from simple_ortho import root_path
 import yaml
 import tracemalloc
 

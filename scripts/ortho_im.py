@@ -4,80 +4,88 @@ import pandas as pd
 import pathlib
 from simple_ortho import get_logger
 from simple_ortho import simple_ortho
-import datetime
-from scripts import root_path
+from simple_ortho import root_path
 import yaml
-import tracemalloc
 import argparse
 
 logger = get_logger(__name__)
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
-
+# TODO try catch and log errors
 parser = argparse.ArgumentParser()
 parser.add_argument("dem_file", help="path to the DEM file", type=str)
 parser.add_argument("src_im_file", help="path to the source image file", type=str)
 parser.add_argument("pos_ori_file", help="path to the camera position and orientaion file", type=str)
 parser.add_argument("-o", "--ortho", help="ortho image file path to create (default: append '_ORTHO' to src_im)", type=str)
-parser.add_argument("-c", "--config", help="path to custom configuration file (default: use config.yml in app root)", type=str)
-parser.add_argument("-wc", "--write-config", help="file to write the default config to", type=str)
-parser.add_argument("-v", "--verbosity", help="logging level: 10=DEBUG, 20=INFO, 30=WARNING, 40=ERROR (default: 20)", type=int)
-parser.parse_args()
+parser.add_argument("-rc", "--readconf", help="path to custom configuration file(default: use config.yml in app root)", type=str)
+parser.add_argument("-wc", "--writeconf", help="file to write the default config to", type=str) # TODO make this so it doesn't require positionsal args
+parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4], help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
+args = parser.parse_args()
 
+# set logging level
+if args.verbosity is not None:
+    logger.setLevel(10*args.verbosity)
+    simple_ortho.logger.setLevel(10*args.verbosity)
 
+# read configuration
+if args.readconf is None:
+    config_filename = root_path.joinpath('config.yml')
+else:
+    config_filename = pathlib.Path(args.readconf)
 
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_07_0298_RGB_PRE.tif")
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_08_0321_RGB_PRE.tif")
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0451_RGB_PRE.tif")
-im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3323D_2015_1001\RGBN\3323d_2015_1001_02_0078_RGBN_CMP.img")
-# im_filename = pathlib.Path(r"V:\Data\NGI\UnRectified\3318D_2016_1143\3318D_2016_1143_11_0449_RGB_PRE.tif")
+if not config_filename.exists():
+    raise Exception(f'Config file {config_filename} does not exist')
 
-# dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM\SUDEM_3318B_D_5m.tif")
-dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Data\CGA\SUDEM L3 Unedited\x3323db_2015_L3a.tif")
-# ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3318D_2016_1143_lo19wgs84n_e_rect.txt")
-ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3323D_2015_1001_lo23wgs84n_e_rect.txt")
-
-# TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
-# also, make a default config file?
-with open(root_path.joinpath('config.yml'), 'r') as f:
+with open(config_filename, 'r') as f:
     config = yaml.safe_load(f)
 
-with open(root_path.joinpath('config_out.yml'), 'w') as f:
-    yaml.dump(config, stream=f)
+# write configuration if requested and exit
+if args.writeconf is not None:
+    out_config_filename = pathlib.Path(args.writeconf)
+    with open(out_config_filename, 'w') as f:
+        yaml.dump(f, config)
+    logger.info(f'Wrote config to {out_config_filename}')
+    exit(0)
 
-with rio.open(im_filename) as raw_im:
+# check files exist
+if not pathlib.Path(args.src_im_file).exists():
+    raise Exception(f'Source image file {args.src_im_file} does not exist')
+
+if not pathlib.Path(args.dem_file).exists():
+    raise Exception(f'DEM file {args.pos_ori_file} does not exist')
+
+# read camera position and orientation and find row for src_im_file
+if not pathlib.Path(args.pos_ori_file).exists():
+    raise Exception(f'Camera position and orientaion file {args.pos_ori_file} does not exist')
+
+cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
+                   names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+
+src_im_file_stem = pathlib.Path(args.src_im_file).stem[:-4] # TODO remove -4 i.e. make a new cam ori file(s)
+if not src_im_file_stem in cam_pos_orid.index:
+    raise Exception(f'Could not find {src_im_file_stem} in {args.pos_ori_file}')
+
+im_pos_ori = cam_pos_orid.loc[src_im_file_stem]
+orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
+position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
+
+# set ortho filename
+if args.ortho is not None:
+    ortho_im_filename = pathlib.Path(args.ortho)
+else:
+    ortho_im_filename = None
+
+# Get src geotransform
+with rio.open(args.src_im_file) as raw_im:  # TODO change raw to src
     geo_transform = raw_im.transform
     im_size = np.float64([raw_im.width, raw_im.height])
 
-cam_extorid = pd.read_csv(ext_filename, header=None, sep=' ', index_col=0,
-                   names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
-
-im_filestem = pathlib.Path(im_filename).stem[:-4]
-im_ext = cam_extorid.loc[im_filestem]
-
-orientation = np.pi * im_ext[['omega', 'phi', 'kappa']] / 180.
-position = np.array([im_ext['easting'], im_ext['northing'], im_ext['altitude']])
-
+# create Camera
 camera_config = config['camera']
 camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], camera_config['im_size'],
                              geo_transform, position, orientation, dtype='float32')
 
-X = np.array([[-22544.1, -3736338.7, 200], [-20876.7, -3739374.3, 200], [-19430.2, -3742345.8, 200],
-              [-19430.2, -3742345.8, 200]], dtype='float32').T
-start = datetime.datetime.now()
-for j in range(0, 10000):
-    ij = camera.unproject(X, use_cv=True)
-print(f'unproject {datetime.datetime.now()-start}')
-
-X2 = camera.project_to_z(ij, X[2, :])
-print(ij)
-print(X - X2)
-
-# ij2, _ = cv2.projectPoints(X-camera._T, camera._R, np.array([0.,0.,0.], dtype='float32'), camera._K, distCoeffs=np.array([0], dtype='float32'))
-
-tracemalloc.start()
-ortho_im = simple_ortho.OrthoIm(im_filename, dem_filename, camera, config=config['ortho'])
+# create OrthoIm  and orthorectify
+ortho_im = simple_ortho.OrthoIm(args.src_im_file, args.dem_file, camera, config=config['ortho'],
+                                ortho_im_filename=ortho_im_filename)
 ortho_im.orthorectify()
-current, peak = tracemalloc.get_traced_memory()
-print(f"Current memory usage is {current / 10**6}MB; Peak was {peak / 10**6}MB")
-tracemalloc.stop()

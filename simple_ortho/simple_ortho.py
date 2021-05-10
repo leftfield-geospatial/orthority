@@ -245,7 +245,8 @@ class OrthoIm():
         self._camera = camera
 
         if ortho_im_filename is None:
-            self._ortho_im_filename = self._raw_im_filename.parent.joinpath(self._raw_im_filename.stem + '_ORTHO.TIF')
+            self._ortho_im_filename = self._raw_im_filename.parent.joinpath(self._raw_im_filename.stem + '_ORTHO' +
+                                                                            self._raw_im_filename.suffix)
         else:
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 

@@ -13,11 +13,11 @@ setup(
     url='https://github.com/dugalh/simple_ortho/blob/develop/setup.py',
     license='MIT',
     packages=find_packages(),
-    python_requires='>=3.6',
+    python_requires='>=3.8',
     install_requires=[
         # 'python>=3.6',
         'rasterio>=1.2',
-        'opencv>=4.5',
+        'opencv>=4.5',     # how to we get pip to see this?
         'pandas>=1.2',
         'pyyaml>=5.4'
     ],
