@@ -459,7 +459,7 @@ class OrthoIm():
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
-        logger.info(f'\nOrthorectifying {self._src_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
+        logger.info(f'Orthorectifying {self._src_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
         start_ttl = datetime.datetime.now()
         with rio.Env():
             dem_min = self._get_dem_min()   # get min of DEM over image area

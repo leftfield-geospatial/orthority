@@ -13,6 +13,9 @@ from simple_ortho import root_path
 import yaml
 import argparse
 
+# print formatting
+np.set_printoptions(precision=4)
+np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
 
 def parse_arguments():
@@ -64,19 +67,25 @@ def process_args(args):
 
     return config
 
-def main():
-    # print formatting
-    np.set_printoptions(precision=4)
-    np.set_printoptions(suppress=True)
+def main(args, cam_pos_orid=None, config=None):
+    """
+    Orthorectify an image
+
+    Parameters
+    ----------
+    args :  ArgumentParser.parse_args() object containing requisite parameters
+
+    """
 
     try:
-        # parse the command line
-        args = parse_arguments()
-        config = process_args(args)
+        # check args and get config
+        if config is None:
+            config = process_args(args)
 
         # read camera position and orientation and find row for src_im_file
-        cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
-                           names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+        if cam_pos_orid is None:
+            cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
+                               names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
 
         src_im_file_stem = pathlib.Path(args.src_im_file).stem[:-4] # TODO remove -4 i.e. make a new cam ori file(s)
         if not src_im_file_stem in cam_pos_orid.index:
@@ -112,4 +121,5 @@ def main():
         raise ex
 
 if __name__ == "__main__":
-    main()
+    args = parse_arguments()
+    main(args)
