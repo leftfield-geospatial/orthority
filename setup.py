@@ -15,9 +15,8 @@ setup(
     packages=find_packages(),
     python_requires='>=3.8',
     install_requires=[
-        # 'python>=3.6',
         'rasterio>=1.2',
-        # 'opencv>=4.5',     # how to we get pip to see this?
+        # 'opencv>=4.5',     # pip does not see the conda installed opencv, so I have commented out for now
         'pandas>=1.2',
         'pyyaml>=5.4'
     ],

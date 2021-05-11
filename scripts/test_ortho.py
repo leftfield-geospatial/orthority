@@ -26,7 +26,6 @@ dem_filename = pathlib.Path(r"D:\Data\Development\Projects\PhD GeoInformatics\Da
 # ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3318D_2016_1143_lo19wgs84n_e_rect.txt")
 ext_filename = pathlib.Path(r"C:\Data\Development\Projects\PhD GeoInformatics\Docs\PCI\NGI Orthorectification\extori3323D_2015_1001_lo23wgs84n_e_rect.txt")
 
-# TODO require cmd line spec of dem, raw, and ext_ori filenames, optional out file and res, overwrite in cfg if they are specified
 # also, make a default config file?
 with open(root_path.joinpath('config.yaml'), 'r') as f:
     config = yaml.safe_load(f)

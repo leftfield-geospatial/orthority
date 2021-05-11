@@ -16,7 +16,8 @@ import datetime
 import multiprocessing
 import pandas as pd
 import tracemalloc
-import cProfile
+import cProfile, pstats
+# from scipy.ndimage import map_coordinates
 
 logger = get_logger(__name__)
 
@@ -239,10 +240,10 @@ class OrthoIm():
         self._check_rasters()
         self.dem_min = 0.
 
-        # init dict for profiling processor times
-        self.time_rec = dict(dem_min=datetime.timedelta(0), src_im_read=datetime.timedelta(0),
-                        grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
-                        unproject=datetime.timedelta(0), src_remap=datetime.timedelta(0), write=datetime.timedelta(0))
+        # init dict for profiling processor times - handled with cProfile now
+        # self.time_rec = dict(dem_min=datetime.timedelta(0), src_im_read=datetime.timedelta(0),
+        #                 grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
+        #                 unproject=datetime.timedelta(0), src_remap=datetime.timedelta(0), write=datetime.timedelta(0))
 
         logger.debug(f'Ortho configuration: {config}')
         logger.debug(f'DEM: {self._dem_filename.parts[-1]}')
@@ -393,14 +394,12 @@ class OrthoIm():
                              np.ceil(ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
 
                 for bi in bands.tolist():
-                    start = datetime.datetime.now()
+                    # read source image and create interpolator functions
                     src_im_array = src_im.read(bi)
-                    self.time_rec['src_im_read'] += (datetime.datetime.now() - start)
 
                     for ji, ortho_win in ortho_im.block_windows(1):
 
                         # offset tile grids to ortho_win
-                        start = datetime.datetime.now()
                         ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
                         ortho_xgrid = xgrid[:ortho_win.height, :ortho_win.width] + (
                                 ortho_win_transform.xoff - ortho_im.transform.xoff)
@@ -410,32 +409,27 @@ class OrthoIm():
                         # extract ortho_win from dem_array
                         ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
                                    ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
-                        self.time_rec['grid_creation'] += (datetime.datetime.now() - start)
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
-                        start = datetime.datetime.now()
                         src_ji = self._camera.unproject(np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ),
                                                                  ortho_zgrid.reshape(-1, )]))
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width)
                         src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width)
-                        self.time_rec['unproject'] += (datetime.datetime.now() - start)
 
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids
-                        start = datetime.datetime.now()
                         ortho_im_win_array = np.zeros((src_im_array.shape[0], ortho_win.height, ortho_win.width),
                                                       dtype=ortho_im.dtypes[0])
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
-                            # TODO: this is the only use of opencv - can we replace it with numpy or scipy?
                             ortho_im_win_array[oi, :, :] = cv2.remap(src_im_array[oi, :, :], src_jj, src_ii,
                                                                      self.interp, borderMode=cv2.BORDER_CONSTANT,
                                                                      borderValue=self.nodata)
-                        self.time_rec['src_remap'] += (datetime.datetime.now() - start)
+                            # below is the scipy equivalent to cv2.remap.  it is 2-3x slower.
+                            # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
+                            #                                                order=1, mode='constant', cval=self.nodata,
+                            #                                                prefilter=False)
 
                         # write out the ortho tile to disk
-                        start = datetime.datetime.now()
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
-                        self.time_rec['write'] += (datetime.datetime.now() - start)
-                        start = datetime.datetime.now()
 
                         # print progress
                         block_count += 1
@@ -444,15 +438,8 @@ class OrthoIm():
                         sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100*progress))
                         sys.stdout.flush()
 
-                        # if np.ceil(100 * block_count / ttl_blocks) >= prog_update:
-                        #     sys.stdout.write('\r')
-                        #     # the exact output you're looking for:
-                        #     sys.stdout.write("[%-50s] %d%%" % ('=' * int((100/2) * (block_count / ttl_blocks)), prog_update))
-                        #     sys.stdout.flush()
-                        #     prog_update += 2
 
         sys.stdout.write('\n')
-        self.time_rec['write'] += (datetime.datetime.now() - start)
 
 
     def orthorectify(self):
@@ -472,15 +459,12 @@ class OrthoIm():
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
-        logger.info(f'Orthorectifying {self._src_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
-        start_ttl = start = datetime.datetime.now()
+        logger.info(f'\nOrthorectifying {self._src_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
+        start_ttl = datetime.datetime.now()
         with rio.Env():
-            start = datetime.datetime.now()
             dem_min = self._get_dem_min()   # get min of DEM over image area
-            self.time_rec['dem_min'] += (datetime.datetime.now() - start)
 
             # set up ortho profile based on source profile and predicted bounds
-            start = datetime.datetime.now()
             with rio.open(self._src_im_filename, 'r') as src_im:
                 ortho_profile = src_im.profile
 
@@ -501,28 +485,30 @@ class OrthoIm():
             i_range = np.arange(0, self.tile_size[1], dtype='float32')
             jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
             xgrid, ygrid = ortho_transform * [jgrid, igrid]
-            self.time_rec['grid_creation'] += (datetime.datetime.now() - start)
 
             # reproject and resample DEM to ortho bounds, CRS and grid
-            start = datetime.datetime.now()
             with rio.open(self._dem_filename, 'r') as dem_im:
                 dem_array = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
                           src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.nodata,
                           init_dest_nodata=True)
-            self.time_rec['dem_reproject'] += (datetime.datetime.now() - start)
 
             self._remap_src_to_ortho(ortho_profile, dem_array)
 
         ttl_time = (datetime.datetime.now() - start_ttl)
-        logger.info(f'Complete in {ttl_time.total_seconds():.2f} secs')
+        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
         if logger.level == logging.DEBUG:   # print profiling info
             proc_profile.disable()
-            proc_profile.print_stats(sort='time')
+            # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
+            # plus all functions that this function called
+            proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
+            logger.debug(f'Processing time:')
+            proc_stats.print_stats(20)
+
             current, peak = tracemalloc.get_traced_memory()
-            logger.debug(f"Memory usage - current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB")
+            logger.debug(f"Memory usage: current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB")
 
             self.time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
             timed = pd.DataFrame.from_dict(self.time_rec, orient='index', columns=['Duration']).sort_values(by='Duration')
