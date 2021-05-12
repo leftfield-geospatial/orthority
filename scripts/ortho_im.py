@@ -12,6 +12,7 @@ from simple_ortho import simple_ortho
 from simple_ortho import root_path
 import yaml
 import argparse
+import datetime
 
 # print formatting
 np.set_printoptions(precision=4)
@@ -60,7 +61,7 @@ def process_args(args):
         raise Exception(f'Source image file {args.src_im_file} does not exist')
 
     if not pathlib.Path(args.dem_file).exists():
-        raise Exception(f'DEM file {args.pos_ori_file} does not exist')
+        raise Exception(f'DEM file {args.dem_file} does not exist')
 
     if not pathlib.Path(args.pos_ori_file).exists():
         raise Exception(f'Camera position and orientaion file {args.pos_ori_file} does not exist')
@@ -87,7 +88,7 @@ def main(args, cam_pos_orid=None, config=None):
             cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
                                names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
 
-        src_im_file_stem = pathlib.Path(args.src_im_file).stem[:-4] # TODO remove -4 i.e. make a new cam ori file(s)
+        src_im_file_stem = pathlib.Path(args.src_im_file).stem      # TODO remove -4 i.e. make a new cam ori file(s)
         if not src_im_file_stem in cam_pos_orid.index:
             raise Exception(f'Could not find {src_im_file_stem} in {args.pos_ori_file}')
 
@@ -112,12 +113,23 @@ def main(args, cam_pos_orid=None, config=None):
                                      geo_transform, position, orientation, dtype='float32')
 
         # create OrthoIm  and orthorectify
+        logger.info(f'Orthorectifying {pathlib.Path(args.src_im_file).parts[-1]}')
+        start_ttl = datetime.datetime.now()
         ortho_im = simple_ortho.OrthoIm(args.src_im_file, args.dem_file, camera, config=config['ortho'],
                                         ortho_im_filename=ortho_im_filename)
         ortho_im.orthorectify()
+        ttl_time = (datetime.datetime.now() - start_ttl)
+        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+
+        if config['ortho']['build_ovw']:
+            start_ttl = datetime.datetime.now()
+            logger.info(f'Building overviews for {pathlib.Path(args.src_im_file).parts[-1]}')
+            ortho_im.build_ortho_overviews()
+            ttl_time = (datetime.datetime.now() - start_ttl)
+            logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
     except Exception as ex:
-        logger.error(ex)
+        logger.error('Exception: ' + str(ex))
         raise ex
 
 if __name__ == "__main__":

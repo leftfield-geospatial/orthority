@@ -17,3 +17,5 @@ ortho:
   per_band: False           # Remap the raw image to the ortho per-band (True), or all bands at once (False - recommended)
   format: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as raw image)
   dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as raw image)
+  build_ovw: True           # Build internal overviews
+  overwrite: True           # Overwrite ortho if it exists

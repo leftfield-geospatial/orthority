@@ -231,6 +231,7 @@ class OrthoIm():
         else:
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 
+
         if config is None: # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
                           compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False,
@@ -258,7 +259,7 @@ class OrthoIm():
             src_band = src_data.GetRasterBand(self.dem_band)
             src_struc = src_band.GetMetadata('IMAGE_STRUCTURE')
             if 'NBITS' in src_struc and src_struc['NBITS'] == '12':
-                logger.warning(f'NBITS==12 is not supported by conda GDAL (and others), '
+                logger.warning(f'Warning: NBITS==12 is not supported by conda GDAL (and others), '
                                f'you may need to reformat the source file: {self._src_im_filename}')
             del(src_band, src_data)
             with rio.open(self._src_im_filename, 'r') as src_im:
@@ -276,7 +277,8 @@ class OrthoIm():
                         return False
 
                     if not(_bound_coverage(src_bounds, dem_im.bounds)):
-                        raise Exception(f'DEM does not cover source image')
+                        raise Exception(f'DEM {self._dem_filename.parts[-1]} does not cover source image '
+                                        f'{self._src_im_filename.parts[-1]}')
 
     def _parse_config(self, config, print_vals=True):
         """
@@ -293,18 +295,20 @@ class OrthoIm():
             setattr(self, key, value)
 
         try:
-            self.dem_interp = Resampling[config['dem_interp']]
+            self.dem_interp = Resampling[self.dem_interp]
         except:
-            logger.error(f'Unknown dem_interp configuration type: {config["dem_interp"]}')
-            raise
+            raise Exception(f'Unknown "dem_interp" configuration type: {self.dem_interp}')
 
         cv_interp_dict = dict(average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC,
                               lanczos=cv2.INTER_LANCZOS4, nearest=cv2.INTER_NEAREST)
 
         if self.interp not in cv_interp_dict:
-            raise Exception(f'Unknown ortho_interp configuration type: {config["ortho_interp"]}')
+            raise Exception(f'Unknown "interp" configuration type: {self.interp}')
         else:
             self.interp = cv_interp_dict[self.interp]
+
+        if (not self.overwrite) and self._ortho_im_filename.exists():
+            raise Exception(f'Ortho file {self._ortho_im_filename} exists and "overwrite" configuration set to False')
 
 
     def _get_dem_min(self):
@@ -433,8 +437,6 @@ class OrthoIm():
                             nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8))
                             ortho_im_win_array[:, nodata_mask_d.astype(np.bool, copy=False)] = self.nodata
 
-
-
                         # write out the ortho tile to disk
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
 
@@ -445,9 +447,12 @@ class OrthoIm():
                         sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100*progress))
                         sys.stdout.flush()
 
+            sys.stdout.write('\n')
 
-        sys.stdout.write('\n')
-
+    def build_ortho_overviews(self):
+        if self.build_ovw and self._ortho_im_filename.exists():  # build internal overviews
+            with rio.open(self._ortho_im_filename, 'r+') as ortho_im:
+                ortho_im.build_overviews([2, 4, 8, 16, 32], Resampling.average)
 
     def orthorectify(self):
         """
@@ -466,8 +471,6 @@ class OrthoIm():
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
-        logger.info(f'Orthorectifying {self._src_im_filename.parts[-1]} to {self._ortho_im_filename.parts[-1]}:')
-        start_ttl = datetime.datetime.now()
         with rio.Env():
             dem_min = self._get_dem_min()   # get min of DEM over image area
 
@@ -503,8 +506,6 @@ class OrthoIm():
 
             self._remap_src_to_ortho(ortho_profile, dem_array)
 
-        ttl_time = (datetime.datetime.now() - start_ttl)
-        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
         if logger.level == logging.DEBUG:   # print profiling info
             proc_profile.disable()
@@ -516,10 +517,6 @@ class OrthoIm():
 
             current, peak = tracemalloc.get_traced_memory()
             logger.debug(f"Memory usage: current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB")
-
-            self.time_rec['ttl'] = (datetime.datetime.now() - start_ttl)
-            timed = pd.DataFrame.from_dict(self.time_rec, orient='index', columns=['Duration']).sort_values(by='Duration')
-            logger.debug(f'Processing time: \n{timed}')
 
 ##
 

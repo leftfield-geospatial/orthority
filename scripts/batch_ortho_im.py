@@ -54,7 +54,7 @@ def process_args(args):
             args.src_im_wildcard = args.src_im_wildcard + '*.tif'
 
     if not pathlib.Path(args.dem_file).exists():
-        raise Exception(f'DEM file {args.pos_ori_file} does not exist')
+        raise Exception(f'DEM file {args.dem_file} does not exist')
 
     if not pathlib.Path(args.pos_ori_file).exists():
         raise Exception(f'Camera position and orientaion file {args.pos_ori_file} does not exist')
@@ -70,19 +70,20 @@ def main(args):
         # read camera position and orientation and find row for src_im_file
         cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
                            names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
-
-        logger.info(f'Batch orthorectifying {len(glob.glob(args.src_im_wildcard))} file(s) matching {args.src_im_wildcard}')
-        for src_im_filename in glob.glob(args.src_im_wildcard):
+        src_im_list = glob.glob(args.src_im_wildcard)
+        logger.info(f'Batch orthorectifying {len(src_im_list)} file(s) matching {args.src_im_wildcard}')
+        for src_i, src_im_filename in enumerate(src_im_list):
             try:
                 args.src_im_file = str(pathlib.Path(src_im_filename))
                 args.ortho = None
+                logger.info(f'Processing {args.src_im_file} - file {src_i+1} of {len(src_im_list)}:')
                 ortho_im.main(args, cam_pos_orid=cam_pos_orid, config=config)
 
-            except Exception as ex:
-                logger.error('Exception: ' + str(ex))
+            except:
+                pass    # logged in ortho_im
 
     except Exception as ex:
-        logger.error(ex)
+        logger.error('Exception: ' + str(ex))
         raise ex
 
 if __name__ == "__main__":
