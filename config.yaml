@@ -8,7 +8,7 @@ camera:
 ortho:
   dem_interp: cubic_spline  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
   dem_band: 1               # 1-based index of band in DEM raster to use
-  interp: bilinear          # Interpolation type for ortho-image (nearest, average, bilinear, cubic, lanczos)
+  interp: nearest           # Interpolation type for ortho-image (nearest, average, bilinear, cubic, lanczos)
   resolution: [0.5, 0.5]    # Output pixel size [x, y] in m
   compression: deflate      # GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
@@ -18,4 +18,5 @@ ortho:
   format: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as raw image)
   dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as raw image)
   build_ovw: True           # Build internal overviews
-  overwrite: True           # Overwrite ortho if it exists
+  overwrite: False          # Overwrite ortho if it exists
+

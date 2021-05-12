@@ -317,7 +317,7 @@ class OrthoIm():
         """
 
         dem_min = 0.
-        with rio.Env():
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im:
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find source image bounds in DEM CRS
@@ -451,8 +451,9 @@ class OrthoIm():
 
     def build_ortho_overviews(self):
         if self.build_ovw and self._ortho_im_filename.exists():  # build internal overviews
-            with rio.open(self._ortho_im_filename, 'r+') as ortho_im:
-                ortho_im.build_overviews([2, 4, 8, 16, 32], Resampling.average)
+            with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
+                with rio.open(self._ortho_im_filename, 'r+', num_threads='all_cpus') as ortho_im:
+                    ortho_im.build_overviews([2, 4, 8, 16, 32], Resampling.average)
 
     def orthorectify(self):
         """
@@ -471,7 +472,7 @@ class OrthoIm():
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
-        with rio.Env():
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             dem_min = self._get_dem_min()   # get min of DEM over image area
 
             # set up ortho profile based on source profile and predicted bounds
