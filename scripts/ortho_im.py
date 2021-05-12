@@ -88,7 +88,7 @@ def main(args, cam_pos_orid=None, config=None):
             cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
                                names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
 
-        src_im_file_stem = pathlib.Path(args.src_im_file).stem      # TODO remove -4 i.e. make a new cam ori file(s)
+        src_im_file_stem = pathlib.Path(args.src_im_file).stem
         if not src_im_file_stem in cam_pos_orid.index:
             raise Exception(f'Could not find {src_im_file_stem} in {args.pos_ori_file}')
 
