@@ -3,7 +3,6 @@
     This project is licensed under the terms of the MIT license.
 """
 
-import rasterio as rio
 import numpy as np
 import pandas as pd
 import pathlib

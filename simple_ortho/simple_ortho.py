@@ -17,7 +17,7 @@ import multiprocessing
 import pandas as pd
 import tracemalloc
 import cProfile, pstats
-# from scipy.ndimage import map_coordinates
+from scipy.ndimage import map_coordinates
 
 logger = get_logger(__name__)
 
@@ -423,10 +423,17 @@ class OrthoIm():
                             ortho_im_win_array[oi, :, :] = cv2.remap(src_im_array[oi, :, :], src_jj, src_ii,
                                                                      self.interp, borderMode=cv2.BORDER_CONSTANT,
                                                                      borderValue=self.nodata)
-                            # below is the scipy equivalent to cv2.remap.  it is 2-3x slower.
+                            # below is the scipy equivalent to cv2.remap.  it is ~3x slower but doesn't blur with nodata
                             # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
-                            #                                                order=1, mode='constant', cval=self.nodata,
+                            #                                                order=2, mode='constant', cval=self.nodata,
                             #                                                prefilter=False)
+                        # remove blurring with nodata at the boundary where necessary
+                        nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
+                        if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
+                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8))
+                            ortho_im_win_array[:, nodata_mask_d.astype(np.bool, copy=False)] = self.nodata
+
+
 
                         # write out the ortho tile to disk
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
