@@ -146,7 +146,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 - The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera postion information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [batch_recompress](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
 
 ## License
-This project is licensed under the terms of the [MIT license](LICENSE).
+This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
