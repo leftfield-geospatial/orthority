@@ -137,7 +137,7 @@ Detailed configuration information, not passed explicitly the command line, is s
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
 
 ## Example
-Shows four NGI images before and after orthorectification with simple_ortho.  No radiometric adjustments have been applied, this will be addressed in a separate tool. 
+Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric adjustments have been applied, this will be addressed in a separate tool. 
 
 <img src="data/readme_eg.jpeg" data-canonical-src="data/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
 
@@ -150,3 +150,6 @@ This project is licensed under the terms of the [MIT license](LICENSE).
 
 ## Author
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
+
+## Acknowledgements
+Special thanks to [National Geo-spatial Information (NGI)](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) and the [Centre for Geographical Analysis (CGA)](www0.sun.ac.za/cga/) for providing imagery, DEM and aero-triangulation data.
