@@ -103,19 +103,19 @@ Detailed configuration information, not passed as arguments on the command line,
 | | `focal_len` | Focal length in mm
 | | `sensor_size` | Sensor/CCD `[width, height]` dimensions in mm.
 | | `im_size` | Image `[width, height]` dimensions in pixels.
-| `ortho` | `dem_interp` | Interpolation method for resampling the DEM (`average, bilinear, cubic, cubic_spline, gauss, lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
+| `ortho` | `dem_interp` | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
 | | `dem_band` | Index of band in DEM raster to use (1-based).
-| | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest, average, bilinear, cubic, lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
+| | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
 | | `resolution` | Output pixel size `[x, y]` in m.
-| | `compression` | Ortho image compression type (`deflate, jpeg, jpeg2000, lzw, zstd, none`).  `deflate` recommended in most instances.
+| | `compression` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances.
 | | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
-| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel, band`).  `interleave=band` is recommended for `compression=deflate`.
+| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compression=deflate`.
 | | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
-| | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True, False`).
+| | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
 | | `format` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
-| | `dtype` | Data type of ortho image (`uint8, uint16, float32 etc`).  If no `dtype` is specified the same type as the source image will be used (recommended).
-| | `build_ovw` | Build internal overviews (`True, False`).
-| | `overwrite` | Overwrite ortho image(s) if it/they exist (`True, False`).
+| | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
+| | `build_ovw` | Build internal overviews (`True`, `False`).
+| | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
 
 ### Camera position and orientation
 Camera position and orientation corresponding for image(s) is specified in a space-separated text file.  The file format is the same as that used by PCI Geomatica's OrthoEgine i.e. each row specifies the camera position and orientation for an image as follows:    
