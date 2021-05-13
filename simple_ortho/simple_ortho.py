@@ -308,7 +308,8 @@ class OrthoIm():
             self.interp = cv_interp_dict[self.interp]
 
         if (not self.overwrite) and self._ortho_im_filename.exists():
-            raise Exception(f'Ortho file {self._ortho_im_filename} exists and "overwrite" configuration set to False')
+            raise Exception(f'Skipping ortho file {self._ortho_im_filename.stem}, '
+                            f'it exists and "overwrite" configuration is False')
 
 
     def _get_dem_min(self):
@@ -453,7 +454,7 @@ class OrthoIm():
         if self.build_ovw and self._ortho_im_filename.exists():  # build internal overviews
             with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
                 with rio.open(self._ortho_im_filename, 'r+', num_threads='all_cpus') as ortho_im:
-                    ortho_im.build_overviews([2, 4, 8, 16, 32], Resampling.average)
+                    ortho_im.build_overviews([2, 4, 8, 16, 32, 64], Resampling.average)
 
     def orthorectify(self):
         """

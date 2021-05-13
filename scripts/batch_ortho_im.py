@@ -74,9 +74,10 @@ def main(args):
         logger.info(f'Batch orthorectifying {len(src_im_list)} file(s) matching {args.src_im_wildcard}')
         for src_i, src_im_filename in enumerate(src_im_list):
             try:
-                args.src_im_file = str(pathlib.Path(src_im_filename))
+                src_im_filename = pathlib.Path(src_im_filename)
+                args.src_im_file = str(src_im_filename)
                 args.ortho = None
-                logger.info(f'Processing {args.src_im_file} - file {src_i+1} of {len(src_im_list)}:')
+                logger.info(f'Processing {src_im_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
                 ortho_im.main(args, cam_pos_orid=cam_pos_orid, config=config)
 
             except:

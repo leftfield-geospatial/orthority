@@ -18,4 +18,4 @@ ortho:
   format: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
   dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
   build_ovw: True           # Build internal overviews
-  overwrite: True           # Overwrite ortho raster if it exists
+  overwrite: False          # Overwrite ortho raster if it exists

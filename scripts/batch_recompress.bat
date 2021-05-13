@@ -1,7 +1,7 @@
 @echo off
 REM Preprocess NGI unrectified imagery for orthorectification with simple_ortho
 REM 
-REM Recompress with deflate to get around conda gdal's incompatibility with 12 bit jpegs and resample to be north up.
+REM Recompress with deflate to get around conda gdal's incompatibility with 12 bit jpegs.
 REM NOTE: Requires OSGeo4W with GDAL
 
 if -%1-==-- call :printhelp & exit /b
@@ -20,14 +20,16 @@ setlocal EnableDelayedExpansion
 for %%i in (%1) do (
 echo "%%i":
 REM echo %%~dpni_CMP.tif
-gdal_translate -r bilinear -a_nodata 0 -co "TILED=YES" -co "COMPRESS=DEFLATE" -co "PREDICTOR=2" -co "NUM_THREADS=ALL_CPUS" -co "BLOCKXSIZE=512" -co "BLOCKYSIZE=512" "%%i" %%~dpni_CMP.tif && echo SUCCESS
+gdal_translate -r bilinear -a_nodata 0 -co "TILED=YES" -co "COMPRESS=DEFLATE" -co "PREDICTOR=2" -co "NUM_THREADS=ALL_CPUS" -co "BLOCKXSIZE=512" -co "BLOCKYSIZE=512" "%%i" %%~dpni_CMP.tif
+gdaladdo -ro -r average --config COMPRESS_OVERVIEW DEFLATE -oo NUM_THREADS=ALL_CPUS %%~dpni_CMP.tif 2 4 8 16 32 64
+echo SUCCESS
 )
 
 goto :eof
 
 :printhelp
 echo.
-echo Preprocess NGI unrectified imagery for simple_ortho (recompress and resample to N-up)
+echo Preprocess NGI unrectified imagery for simple_ortho (recompress and add overviews)
 echo Requires OSGeo4W with GDAL
 echo Usage: batch_recompress [file pattern]
 echo    [file pattern]: A wildcard pattern matching .tif files to be recompressed, eg C:/dirName/*_RGBN.tif

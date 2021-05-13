@@ -25,7 +25,7 @@ The following dependencies are installed in the process above.  The `rasterio` p
   - pyyaml >= 5.4
 
 ## Scripts
-simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the `simple_ortho` folder.
+simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho folder.
 
 ### [ortho_im](scripts/ortho_im.py)
 Orthorectifies an image. 
@@ -44,7 +44,7 @@ Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit.
 `-o` `<ortho_path>` | `--ortho` `<ortho_path>` | Write the orthorectified file to the specified `<ortho_path>` filename.  (Default: name the orthorectified image '`<src_im_file>`_ORTHO.tif').
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (Default read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
+`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
 `-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.  
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
@@ -69,7 +69,7 @@ Argument  | Description
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (Default read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
+`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Example
@@ -79,7 +79,7 @@ python scripts/batch_ortho_im.py -v 2 -rc ./config.yaml source_*.tif dem.tif cam
 
 
 ### [batch_recompress](scripts/batch_recompress.bat)
-An auxiliary batchfile script to recompress images matching a wildcard using DEFLATE compression.  
+An auxiliary batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
 
 If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  DEFLATE compressed tiffs can then be processed with [`ortho_im`](#ortho_im) or [`batch_ortho_im`](#batch_ortho_im).  
 
@@ -93,9 +93,28 @@ Argument  | Description
 
 
 ## File formats
+### Camera position and orientation
+Camera position and orientation for image(s) is specified in a space-separated text file.  The file format is the same as that used by PCI Geomatica's OrthoEgine i.e. each row specifies the camera position and orientation for an image as follows:    
+```
+<Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
+```
+Where `<Image file stem>` is the source file name excluding extension.  
+
+For [ortho_im](#ortho_im), there should be a row with an `<Image file stem>` corresponding to the `src_im_file` argument.  Similarly, for [batch_ortho_im](#batch_ortho_im), there should be rows corresponding to the images matching the `src_im_wildcard` argument.
+
+**Note** that the camera (Easting, Northing) position must be specified in the same co-ordinate reference system (CRS) as that of the source image.
+
+Example file:
+```
+...
+3323d_2015_1001_01_0001_RGBN 43333.970620 -3709166.407240 5672.686250 0.448258 -0.200394 -0.184258
+3323d_2015_1001_01_0002_RGBN 44710.649080 -3709211.341900 5672.299410 -0.168341 0.013147 -0.380978
+3323d_2015_1001_01_0003_RGBN 46091.888940 -3709233.718060 5676.132710 -1.493311 -0.004520 -0.158283
+...
+```
 ### Configuration
 
-Detailed configuration information, not passed as arguments on the command line, is specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [ortho_im](ortho_im) and [batch_ortho_im](batch_ortho_im) with the `-rc <config_path>` optional argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Detailed configuration information, not passed explicitly the command line, is specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` optional argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -117,33 +136,14 @@ Detailed configuration information, not passed as arguments on the command line,
 | | `build_ovw` | Build internal overviews (`True`, `False`).
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
 
-### Camera position and orientation
-Camera position and orientation corresponding for image(s) is specified in a space-separated text file.  The file format is the same as that used by PCI Geomatica's OrthoEgine i.e. each row specifies the camera position and orientation for an image as follows:    
-```
-<Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
-```
-Where `<Image file stem>` is the source file name excluding extension.  
+## Example
+Shows four NGI images before and after orthorectification with simple_ortho.  No radiometric adjustments have been applied, this will be addressed in a separate tool. 
 
-For [ortho_im](#ortho_im), there should be a row with an `<Image file stem>` corresponding to the `src_im_file` argument.  Similarly, for [batch_ortho_im](#batch_ortho_im), there should be rows corresponding to the images matching the `src_im_wildcard` argument.
-
-**Note** that the camera (Easting, Northing) position must be specified in the same co-ordinate reference system (CRS) as that of the source image.
-
-Example file:
-```
-...
-3323d_2015_1001_01_0001_RGBN 43333.970620 -3709166.407240 5672.686250 0.448258 -0.200394 -0.184258
-3323d_2015_1001_01_0002_RGBN 44710.649080 -3709211.341900 5672.299410 -0.168341 0.013147 -0.380978
-3323d_2015_1001_01_0003_RGBN 46091.888940 -3709233.718060 5676.132710 -1.493311 -0.004520 -0.158283
-...
-```
+<img src="data/readme_eg.jpeg" data-canonical-src="data/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
 
 ## Known limitations
 
-- The `conda` `gdal` dependency does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option.  [batch_recompress](#batch_recompress) uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
-
-## Example
-
-
+- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option.  [batch_recompress](#batch_recompress) uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
 
 ## License
 This project is licensed under the terms of the [MIT license](LICENSE).
