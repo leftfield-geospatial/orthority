@@ -1,5 +1,4 @@
 from setuptools import setup, find_packages
-import glob
 
 # To install local development version use:
 #    pip install -e .

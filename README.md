@@ -45,7 +45,7 @@ Argument | Long form | Description
 `-h` | `--help` | Print help and exit.
 `-o` `<ortho_path>` | `--ortho` `<ortho_path>` | Write the orthorectified file to the specified `<ortho_path>` filename.  (Default: name the orthorectified image '`<src_im_file>`_ORTHO.tif').
 `-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
-`-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.  
+`-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Example
@@ -114,7 +114,7 @@ Example file:
 ```
 ### Configuration
 
-Detailed configuration information, not passed explicitly the command line, is specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` optional argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Detailed configuration information, not passed explicitly on the command line, is specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` optional argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -143,7 +143,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 ## Known limitations
 
-- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option.  [batch_recompress](#batch_recompress) uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
+- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera postion information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [batch_recompress](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
 
 ## License
 This project is licensed under the terms of the [MIT license](LICENSE).

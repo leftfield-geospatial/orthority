@@ -1,6 +1,17 @@
 """
-    Copyright (c) 2021 Dugal Harris - dugalh@gmail.com
-    This project is licensed under the terms of the MIT license.
+   Copyright 2021 Dugal Harris - dugalh@gmail.com
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 """
 
 import numpy as np
@@ -20,7 +31,7 @@ np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
 
 def parse_arguments():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description='Orthorectify images with known DEM and camera model.')
     parser.add_argument("src_im_wildcard", help="source image wildcard pattern or directory (e.g. '.' or '*_CMP.TIF')", type=str)
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
     parser.add_argument("pos_ori_file", help="path to the camera position and orientaion file", type=str)

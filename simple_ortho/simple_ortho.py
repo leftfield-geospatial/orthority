@@ -1,8 +1,19 @@
 """
-    Copyright (c) 2021 Dugal Harris - dugalh@gmail.com
-    This project is licensed under the terms of the MIT license.
+   Copyright 2021 Dugal Harris - dugalh@gmail.com
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 """
-# TODO: I think it is better if we change to opencv's Apache license - it is more restrictive
+
 import logging
 from simple_ortho import get_logger
 import numpy as np
@@ -186,8 +197,9 @@ class Camera():
 
         return X
 
+
 class OrthoIm():
-    def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None, ):
+    def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
         """
         Class to orthorectify image with known DEM and camera model
 
@@ -235,16 +247,11 @@ class OrthoIm():
         if config is None: # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
                           compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False,
-                          format=None, dtype=None)
+                          format='GTiff', dtype=None, build_ovw=True, overwrite=True)
 
         self._parse_config(config)
         self._check_rasters()
         self.dem_min = 0.
-
-        # init dict for profiling processor times - handled with cProfile now
-        # self.time_rec = dict(dem_min=datetime.timedelta(0), src_im_read=datetime.timedelta(0),
-        #                 grid_creation=datetime.timedelta(0), dem_reproject=datetime.timedelta(0),
-        #                 unproject=datetime.timedelta(0), src_remap=datetime.timedelta(0), write=datetime.timedelta(0))
 
         logger.debug(f'Ortho configuration: {config}')
         logger.debug(f'DEM: {self._dem_filename.parts[-1]}')
@@ -308,8 +315,7 @@ class OrthoIm():
             self.interp = cv_interp_dict[self.interp]
 
         if (not self.overwrite) and self._ortho_im_filename.exists():
-            raise Exception(f'Skipping ortho file {self._ortho_im_filename.stem}, '
-                            f'it exists and "overwrite" configuration is False')
+            raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
 
 
     def _get_dem_min(self):
