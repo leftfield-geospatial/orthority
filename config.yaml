@@ -14,9 +14,8 @@ ortho:
   tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
   interleave: band          # Interleave by 'pixel' or 'band' (pixel, band)
   nodata: 0                 # NODATA value
-  per_band: False           # Remap the raw raster to the ortho per-band (True), or all bands at once (False - recommended)
-  format: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as raw image)
-  dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as raw image)
+  per_band: False           # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
+  format: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
+  dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
   build_ovw: True           # Build internal overviews
-  overwrite: False          # Overwrite ortho raster if it exists
-
+  overwrite: True           # Overwrite ortho raster if it exists
