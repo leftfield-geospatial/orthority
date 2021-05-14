@@ -7,7 +7,7 @@ Using `conda` to manage packages and dependencies is recommended.  The [Minconda
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio opencv pandas pyyaml
+conda install -c conda-forge rasterio gdal=3.1 opencv pandas pyyaml
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
@@ -16,9 +16,10 @@ pip install -e simple_ortho
 ```
 
 ### Requirements  
-The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  
+The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  `gdal` is forced to 3.1 currently as later versions are buggy.     
   
   - python >= 3.8
+  - gdal = 3.1
   - rasterio >= 1.2
   - opencv >= 4.5
   - pandas >= 1.2

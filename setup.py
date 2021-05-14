@@ -15,6 +15,7 @@ setup(
     python_requires='>=3.8',
     install_requires=[
         'rasterio>=1.2',
+        'gdal>=3.1'
         # 'opencv>=4.5',     # pip does not see the conda installed opencv, so commented out for now
         'pandas>=1.2',
         'pyyaml>=5.4'
