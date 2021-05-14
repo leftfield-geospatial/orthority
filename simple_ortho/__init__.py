@@ -15,8 +15,10 @@
 """
 
 import logging
-import sys, os
+import os
 import pathlib
+import sys
+
 logging.basicConfig(stream=sys.stdout, format='%(message)s')
 
 if '__file__' in globals():
@@ -26,7 +28,8 @@ else:
     root_path = pathlib.Path(os.getcwd())
     print(root_path)
 
+
 def get_logger(name, level=logging.INFO):
-	logger = logging.getLogger(name)
-	logger.setLevel(level)
-	return logger
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    return logger

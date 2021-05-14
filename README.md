@@ -94,13 +94,13 @@ Argument  | Description
 
 ## File formats
 ### Camera position and orientation
-Camera position and orientation for image(s) is specified in a space-separated text file.  The file format is the same as that used by PCI Geomatica's OrthoEgine i.e. each row specifies the camera position and orientation for an image as follows:    
+Camera position and orientation for an image is specified in a space-separated text file.  The file format is the same as that used by PCI Geomatica's OrthoEngine i.e. each row specifies the camera position and orientation for an image as follows:    
 ```
 <Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
 ```
 Where `<Image file stem>` is the source file name excluding extension.  
 
-For [ortho_im](#ortho_im), there should be a row with an `<Image file stem>` corresponding to the `src_im_file` argument.  Similarly, for [batch_ortho_im](#batch_ortho_im), there should be rows corresponding to the images matching the `src_im_wildcard` argument.
+For [`ortho_im`](#ortho_im), there should be a row with an `<Image file stem>` corresponding to the `src_im_file` argument.  Similarly, for [`batch_ortho_im`](#batch_ortho_im), there should be rows corresponding to the images matching the `src_im_wildcard` argument.
 
 **Note** that the camera (Easting, Northing) position must be specified in the same co-ordinate reference system (CRS) as that of the source image.
 
@@ -137,13 +137,13 @@ Detailed configuration information, not passed explicitly on the command line, i
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
 
 ## Example
-Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric adjustments have been applied, this will be addressed in a separate tool. 
+Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
 
 <img src="data/readme_eg.jpeg" data-canonical-src="data/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
 
 ## Known limitations
 
-- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera postion information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [batch_recompress](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
+- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
@@ -152,4 +152,4 @@ This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 **Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
 
 ## Acknowledgements
-Special thanks to [National Geo-spatial Information (NGI)](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) and the [Centre for Geographical Analysis (CGA)](www0.sun.ac.za/cga/) for providing imagery, DEM and aero-triangulation data.
+Special thanks to [National Geo-spatial Information (NGI)](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) and the [Centre for Geographical Analysis (CGA)](http://www0.sun.ac.za/cga/) for providing imagery, DEM and aero-triangulation data.

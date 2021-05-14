@@ -14,30 +14,38 @@
    limitations under the License.
 """
 
-import numpy as np
-import pandas as pd
-import pathlib
-from simple_ortho import get_logger
-from simple_ortho import simple_ortho
-from simple_ortho import root_path
-import yaml
 import argparse
 import glob
+import pathlib
+
+import numpy as np
+import pandas as pd
+import yaml
+
 from scripts import ortho_im
+from simple_ortho import get_logger
+from simple_ortho import root_path
+from simple_ortho import simple_ortho
 
 # print formatting
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Orthorectify images with known DEM and camera model.')
-    parser.add_argument("src_im_wildcard", help="source image wildcard pattern or directory (e.g. '.' or '*_CMP.TIF')", type=str)
+    parser.add_argument("src_im_wildcard", help="source image wildcard pattern or directory (e.g. '.' or '*_CMP.TIF')",
+                        type=str)
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
-    parser.add_argument("pos_ori_file", help="path to the camera position and orientaion file", type=str)
-    parser.add_argument("-rc", "--readconf", help="read custom config from this path (default: use config.yaml in simple_ortho root)", type=str)
-    parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4], help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
+    parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
+    parser.add_argument("-rc", "--readconf",
+                        help="read custom config from this path (default: use config.yaml in simple_ortho root)",
+                        type=str)
+    parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4],
+                        help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
     return parser.parse_args()
+
 
 def process_args(args):
     # set logging level
@@ -68,35 +76,35 @@ def process_args(args):
         raise Exception(f'DEM file {args.dem_file} does not exist')
 
     if not pathlib.Path(args.pos_ori_file).exists():
-        raise Exception(f'Camera position and orientaion file {args.pos_ori_file} does not exist')
+        raise Exception(f'Camera position and orientation file {args.pos_ori_file} does not exist')
 
     return config
 
-def main(args):
 
+def main(args):
     try:
         # parse the command line
         config = process_args(args)
 
         # read camera position and orientation and find row for src_im_file
         cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
-                           names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+                                   names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
         src_im_list = glob.glob(args.src_im_wildcard)
         logger.info(f'Batch orthorectifying {len(src_im_list)} file(s) matching {args.src_im_wildcard}')
         for src_i, src_im_filename in enumerate(src_im_list):
+            src_im_filename = pathlib.Path(src_im_filename)
+            args.src_im_file = str(src_im_filename)
+            args.ortho = None
+            logger.info(f'Processing {src_im_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
             try:
-                src_im_filename = pathlib.Path(src_im_filename)
-                args.src_im_file = str(src_im_filename)
-                args.ortho = None
-                logger.info(f'Processing {src_im_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
                 ortho_im.main(args, cam_pos_orid=cam_pos_orid, config=config)
-
             except:
-                pass    # logged in ortho_im
+                pass  # logged in ortho_im.main, suppress here so we can process the rest of the files
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
         raise ex
+
 
 if __name__ == "__main__":
     args = parse_arguments()

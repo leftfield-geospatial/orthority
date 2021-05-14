@@ -14,23 +14,27 @@
    limitations under the License.
 """
 
+import cProfile
 import logging
-from simple_ortho import get_logger
-import numpy as np
-import os, sys
+import multiprocessing
+import os
+import pathlib
+import pstats
+import sys
+import tracemalloc
+
 import cv2
 import gdal
+import numpy as np
 import rasterio as rio
-from rasterio.warp import reproject, Resampling,  transform
-import pathlib
-import datetime
-import multiprocessing
-import pandas as pd
-import tracemalloc
-import cProfile, pstats
-from scipy.ndimage import map_coordinates
+from rasterio.warp import reproject, Resampling, transform
+
+from simple_ortho import get_logger
+
+# from scipy.ndimage import map_coordinates
 
 logger = get_logger(__name__)
+
 
 class Camera():
     def __init__(self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dtype='float32'):
@@ -130,7 +134,7 @@ class Camera():
         # image signed dimensions for orientation (origin and kappa)
         image_size_s = -np.sign(np.cos(kappa)) * np.float64(
             [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
-        sigma_xy = self._focal_len * image_size_s / self._sensor_size   # x,y signed focal lengths in pixels
+        sigma_xy = self._focal_len * image_size_s / self._sensor_size  # x,y signed focal lengths in pixels
 
         self._K = np.array([[sigma_xy[0], 0, self._im_size[0] / 2],
                             [0, sigma_xy[1], self._im_size[1] / 2],
@@ -156,17 +160,18 @@ class Camera():
              2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
         """
         # x,y,z down 1st dimension
-        if not(X.shape[0] == 3 and X.shape[1] > 0):
+        if not (X.shape[0] == 3 and X.shape[1] > 0):
             raise Exception('X must have 3 rows and more than one column')
 
         if use_cv:  # use opencv
-            ij, _ = cv2.projectPoints(X - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K, distCoeffs=None)
+            ij, _ = cv2.projectPoints(X - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K,
+                                      distCoeffs=None)
             ij = np.squeeze(ij).T
         else:
             # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
             X_ = np.dot(self._R.T, (X - self._T))
             # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
-            ij = np.dot(self._K, X_/X_[2, :])[:2, :]
+            ij = np.dot(self._K, X_ / X_[2, :])[:2, :]
 
         return ij
 
@@ -187,13 +192,13 @@ class Camera():
             3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates.
             (x,y,z) along the first dimension.
         """
-        if not(ij.shape[0] == 2 and ij.shape[1] > 0):
+        if not (ij.shape[0] == 2 and ij.shape[1] > 0):
             raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
 
         ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
         X_ = np.dot(np.linalg.inv(self._K), ij_)
-        X_R = np.dot(self._R, X_) # rotate first (camera to world)
-        X = (X_R * (Z - self._T[2])/X_R[2, :]) + self._T  # scale to desired Z and offset to world
+        X_R = np.dot(self._R, X_)  # rotate first (camera to world)
+        X = (X_R * (Z - self._T[2]) / X_R[2, :]) + self._T  # scale to desired Z and offset to world
 
         return X
 
@@ -243,8 +248,7 @@ class OrthoIm():
         else:
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 
-
-        if config is None: # set defaults:
+        if config is None:  # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
                           compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False,
                           format='GTiff', dtype=None, build_ovw=True, overwrite=True)
@@ -255,7 +259,6 @@ class OrthoIm():
 
         logger.debug(f'Ortho configuration: {config}')
         logger.debug(f'DEM: {self._dem_filename.parts[-1]}')
-
 
     def _check_rasters(self):
         """
@@ -268,7 +271,7 @@ class OrthoIm():
             if 'NBITS' in src_struc and src_struc['NBITS'] == '12':
                 logger.warning(f'Warning: NBITS==12 is not supported by conda GDAL (and others), '
                                f'you may need to reformat the source file: {self._src_im_filename}')
-            del(src_band, src_data)
+            del (src_band, src_data)
             with rio.open(self._src_im_filename, 'r') as src_im:
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find source image bounds in DEM CRS
@@ -279,11 +282,11 @@ class OrthoIm():
 
                     def _bound_coverage(src_b, dem_b):
                         if ((src_b.top <= dem_b.top) and (src_b.bottom >= dem_b.bottom)
-                            and (src_b.left >= dem_b.left) and (src_b.right <= dem_b.right)):
+                                and (src_b.left >= dem_b.left) and (src_b.right <= dem_b.right)):
                             return True
                         return False
 
-                    if not(_bound_coverage(src_bounds, dem_im.bounds)):
+                    if not (_bound_coverage(src_bounds, dem_im.bounds)):
                         raise Exception(f'DEM {self._dem_filename.parts[-1]} does not cover source image '
                                         f'{self._src_im_filename.parts[-1]}')
 
@@ -316,7 +319,6 @@ class OrthoIm():
 
         if (not self.overwrite) and self._ortho_im_filename.exists():
             raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
-
 
     def _get_dem_min(self):
         """
@@ -363,13 +365,16 @@ class OrthoIm():
                     np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
                     dem_min)[:2, :]
 
-                src_cnrs = np.array(
-                    [[src_im.bounds.left, src_im.bounds.bottom], [src_im.bounds.right, src_im.bounds.bottom],
-                     [src_im.bounds.right, src_im.bounds.top], [src_im.bounds.left, src_im.bounds.top]]).T
+                # src_cnrs = np.array(
+                #     [[src_im.bounds.left, src_im.bounds.bottom], [src_im.bounds.right, src_im.bounds.bottom],
+                #      [src_im.bounds.right, src_im.bounds.top], [src_im.bounds.left, src_im.bounds.top]]).T
+                #
+                # ortho_cnrs = np.column_stack([ortho_cnrs, src_cnrs])  # make double sure we encompass the source image
 
-                ortho_cnrs = np.column_stack([ortho_cnrs, src_cnrs])  # make double sure we encompass the source image
-                ortho_bl = ortho_cnrs.min(axis=1)   # bottom left
-                ortho_tr = ortho_cnrs.max(axis=1)   # top right
+                # in some cases the source bounds may be invalid, so rather ommit
+                ortho_cnrs = np.column_stack([ortho_cnrs])
+                ortho_bl = ortho_cnrs.min(axis=1)  # bottom left
+                ortho_tr = ortho_cnrs.max(axis=1)  # top right
 
         return ortho_bl, ortho_tr
 
@@ -397,12 +402,12 @@ class OrthoIm():
         with rio.open(self._src_im_filename, 'r') as src_im:
             with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
                 if self.per_band:
-                    bands = np.array([range(1, src_im.count + 1)]).T    # RW one row of bands i.e. one band at a time
+                    bands = np.array([range(1, src_im.count + 1)]).T  # RW one row of bands i.e. one band at a time
                 else:
-                    bands = np.array([range(1, src_im.count + 1)])      # RW one row of bands i.e. all bands at once
+                    bands = np.array([range(1, src_im.count + 1)])  # RW one row of bands i.e. all bands at once
 
-                ttl_blocks = np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) * \
-                             np.ceil(ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
+                ttl_blocks = np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) * np.ceil(
+                    ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
 
                 for bi in bands.tolist():
                     # read source image and create interpolator functions
@@ -419,11 +424,11 @@ class OrthoIm():
 
                         # extract ortho_win from dem_array
                         ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
-                                   ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
+                                      ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
                         src_ji = self._camera.unproject(np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ),
-                                                                 ortho_zgrid.reshape(-1, )]))
+                                                                  ortho_zgrid.reshape(-1, )]))
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width)
                         src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width)
 
@@ -441,7 +446,8 @@ class OrthoIm():
                         # remove blurring with nodata at the boundary where necessary
                         nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
                         if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
-                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8))
+                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False),
+                                                       np.ones((3, 3), np.uint8))
                             ortho_im_win_array[:, nodata_mask_d.astype(np.bool, copy=False)] = self.nodata
 
                         # write out the ortho tile to disk
@@ -451,7 +457,7 @@ class OrthoIm():
                         block_count += 1
                         progress = (block_count / ttl_blocks)
                         sys.stdout.write('\r')
-                        sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100*progress))
+                        sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100 * progress))
                         sys.stdout.flush()
 
             sys.stdout.write('\n')
@@ -480,17 +486,19 @@ class OrthoIm():
             proc_profile.enable()
 
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
-            dem_min = self._get_dem_min()   # get min of DEM over image area
+            dem_min = self._get_dem_min()  # get min of DEM over image area
 
             # set up ortho profile based on source profile and predicted bounds
             with rio.open(self._src_im_filename, 'r') as src_im:
                 ortho_profile = src_im.profile
 
-            ortho_bl, ortho_tr = self._get_ortho_bounds(dem_min=dem_min)    # find extreme case (z=dem_min) image bounds
-            ortho_wh = np.int32(np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2] / self.resolution))) # image size
+            ortho_bl, ortho_tr = self._get_ortho_bounds(dem_min=dem_min)  # find extreme case (z=dem_min) image bounds
+            ortho_wh = np.int32(np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2] / self.resolution)))  # image size
 
-            ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0], self.resolution[1])
-            ortho_profile.update(nodata=self.nodata, compress=self.compression, tiled=True, blockxsize=self.tile_size[0],
+            ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0],
+                                                        self.resolution[1])
+            ortho_profile.update(nodata=self.nodata, compress=self.compression, tiled=True,
+                                 blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
                                  height=ortho_wh[1], num_threads='all_cpus', interleave=self.interleave)
             if self.format is not None:
@@ -514,8 +522,7 @@ class OrthoIm():
 
             self._remap_src_to_ortho(ortho_profile, dem_array)
 
-
-        if logger.level == logging.DEBUG:   # print profiling info
+        if logger.level == logging.DEBUG:  # print profiling info
             proc_profile.disable()
             # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
             # plus all functions that this function called
@@ -524,7 +531,6 @@ class OrthoIm():
             proc_stats.print_stats(20)
 
             current, peak = tracemalloc.get_traced_memory()
-            logger.debug(f"Memory usage: current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB")
+            logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
 
 ##
-

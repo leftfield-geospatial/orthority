@@ -14,32 +14,40 @@
    limitations under the License.
 """
 
-import rasterio as rio
-import numpy as np
-import pandas as pd
-import pathlib
-from simple_ortho import get_logger
-from simple_ortho import simple_ortho
-from simple_ortho import root_path
-import yaml
 import argparse
 import datetime
+import pathlib
+
+import numpy as np
+import pandas as pd
+import rasterio as rio
+import yaml
+
+from simple_ortho import get_logger
+from simple_ortho import root_path
+from simple_ortho import simple_ortho
 
 # print formatting
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
 
+
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Orthorectify an image with known DEM and camera model.')
     parser.add_argument("src_im_file", help="path to the source image file", type=str)
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
-    parser.add_argument("pos_ori_file", help="path to the camera position and orientaion file", type=str)
-    parser.add_argument("-o", "--ortho", help="write ortho image to this path (default: append '_ORTHO' to src_im_file)", type=str)
-    parser.add_argument("-rc", "--readconf", help="read custom config from this path (default: use config.yaml in simple_ortho root)", type=str)
-    parser.add_argument("-wc", "--writeconf", help="write default config to this path and exit", type=str) # TODO make this so it doesn't require positionsal args
-    parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4], help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
+    parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
+    parser.add_argument("-o", "--ortho",
+                        help="write ortho image to this path (default: append '_ORTHO' to src_im_file)", type=str)
+    parser.add_argument("-rc", "--readconf",
+                        help="read custom config from this path (default: use config.yaml in simple_ortho root)",
+                        type=str)
+    parser.add_argument("-wc", "--writeconf", help="write default config to this path and exit", type=str)
+    parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4],
+                        help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
     return parser.parse_args()
+
 
 def process_args(args):
     # set logging level
@@ -75,9 +83,10 @@ def process_args(args):
         raise Exception(f'DEM file {args.dem_file} does not exist')
 
     if not pathlib.Path(args.pos_ori_file).exists():
-        raise Exception(f'Camera position and orientaion file {args.pos_ori_file} does not exist')
+        raise Exception(f'Camera position and orientation file {args.pos_ori_file} does not exist')
 
     return config
+
 
 def main(args, cam_pos_orid=None, config=None):
     """
@@ -85,8 +94,12 @@ def main(args, cam_pos_orid=None, config=None):
 
     Parameters
     ----------
-    args :  ArgumentParser.parse_args() object containing requisite parameters
-
+    args :  ArgumentParser.parse_args()
+            Run `python ortho_im.py -h` to see help on arguments
+    cam_pos_orid :  pandas.DataFrame
+                   A pandas dataframe containing the camera position and orientation for each image
+    config : dict
+             Configuration dictionary - see config.yaml or the readme for details
     """
 
     try:
@@ -97,10 +110,10 @@ def main(args, cam_pos_orid=None, config=None):
         # read camera position and orientation and find row for src_im_file
         if cam_pos_orid is None:
             cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
-                               names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+                                       names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
 
         src_im_file_stem = pathlib.Path(args.src_im_file).stem
-        if not src_im_file_stem in cam_pos_orid.index:
+        if src_im_file_stem not in cam_pos_orid.index:
             raise Exception(f'Could not find {src_im_file_stem} in {args.pos_ori_file}')
 
         im_pos_ori = cam_pos_orid.loc[src_im_file_stem]
@@ -120,8 +133,8 @@ def main(args, cam_pos_orid=None, config=None):
 
         # create Camera
         camera_config = config['camera']
-        camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], camera_config['im_size'],
-                                     geo_transform, position, orientation, dtype='float32')
+        camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], im_size,
+                                     geo_transform, position, orientation, dtype=np.float32)
 
         # create OrthoIm  and orthorectify
         logger.info(f'Orthorectifying {pathlib.Path(args.src_im_file).parts[-1]}')
@@ -142,6 +155,7 @@ def main(args, cam_pos_orid=None, config=None):
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
         raise ex
+
 
 if __name__ == "__main__":
     args = parse_arguments()
