@@ -39,6 +39,9 @@ def parse_arguments():
                         type=str)
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
     parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
+    parser.add_argument("-od", "--ortho-dir",
+                        help="write ortho images to this directory (default: write to source directory)", type=str)
+
     parser.add_argument("-rc", "--readconf",
                         help="read custom config from this path (default: use config.yaml in simple_ortho root)",
                         type=str)
@@ -78,6 +81,11 @@ def process_args(args):
     if not pathlib.Path(args.pos_ori_file).exists():
         raise Exception(f'Camera position and orientation file {args.pos_ori_file} does not exist')
 
+    # set ortho filename
+    if args.ortho_dir is not None:
+        if not pathlib.Path(args.ortho_dir).exists():
+            raise Exception(f'Directory {args.ortho_dir} does not exist')
+
     return config
 
 
@@ -94,7 +102,11 @@ def main(args):
         for src_i, src_im_filename in enumerate(src_im_list):
             src_im_filename = pathlib.Path(src_im_filename)
             args.src_im_file = str(src_im_filename)
-            args.ortho = None
+            if args.ortho_dir is not None:
+                args.ortho = str(pathlib.Path(args.ortho_dir).joinpath(src_im_filename.stem + '_ORTHO' + src_im_filename.suffix))
+            else:
+                args.ortho = None
+
             logger.info(f'Processing {src_im_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
             try:
                 ortho_im.main(args, cam_pos_orid=cam_pos_orid, config=config)
