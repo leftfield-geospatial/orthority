@@ -449,9 +449,13 @@ class OrthoIm():
                             nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False),
                                                        np.ones((3, 3), np.uint8))
                             ortho_im_win_array[:, nodata_mask_d.astype(np.bool, copy=False)] = self.nodata
+                        else:
+                            nodata_mask_d = nodata_mask
 
                         # write out the ortho tile to disk
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
+                        if self.write_mask:
+                            ortho_im.write_mask(np.logical_not(nodata_mask_d), window=ortho_win)
 
                         # print progress
                         block_count += 1
@@ -485,7 +489,7 @@ class OrthoIm():
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GDAL_TIFF_INTERNAL_MASK=True):
             dem_min = self._get_dem_min()  # get min of DEM over image area
 
             # set up ortho profile based on source profile and predicted bounds
@@ -505,6 +509,8 @@ class OrthoIm():
                 ortho_profile['driver'] = self.format
             if self.dtype is not None:
                 ortho_profile['dtype'] = self.dtype
+            if self.photometric is not None:
+                ortho_profile['photometric'] = self.photometric
 
             # initialse tile grid here once off (save cpu) - to offset later
             j_range = np.arange(0, self.tile_size[0], dtype='float32')

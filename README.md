@@ -130,12 +130,14 @@ Detailed configuration information, not passed explicitly on the command line, i
 | | `compression` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances.
 | | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
 | | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compression=deflate`.
+| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image)
 | | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 | | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
 | | `format` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
 | | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
 | | `build_ovw` | Build internal overviews (`True`, `False`).
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
+| |  `write_mask` | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
 
 ## Example
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
