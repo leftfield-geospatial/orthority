@@ -143,7 +143,7 @@ Detailed configuration information, not passed explicitly on the command line, i
 ## Example
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
 
-Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example] directory.
+Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.
 
 <img src="data/outputs/test_example/readme_eg.jpeg" data-canonical-src="data/outputs/test_example/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
 
