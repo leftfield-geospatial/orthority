@@ -70,15 +70,16 @@ class TestSimpleOrthoModule(unittest.TestCase):
 
     def test_ortho_im_class(self):
         """
-        Test ortho_im support functionality and orthorectify()
+        Test ortho_im support functionality and orthorectify the test_example data
         """
 
         # hard code camera and config
         camera = create_camera()
         config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[5, 5],
-                      compression=None, tile_size=[256, 256], interleave='pixel', photometric=None, nodata=0,
+                      compress=None, tile_size=[256, 256], interleave='pixel', photometric=None, nodata=0,
                       per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=True)
 
+        # point to the test_example data
         src_im_filename = root_path.joinpath('data/inputs/test_example/3324c_2015_1004_05_0182_RGB.tif')
         dem_filename = root_path.joinpath('data/inputs/test_example/dem.tif')
         ortho_im_filename = root_path.joinpath('data/outputs/test_example/3324c_2015_1004_05_0182_RGB_ORTHO_TEST.tif')
@@ -87,7 +88,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
             os.remove(ortho_im_filename)
 
         ortho_im = simple_ortho.OrthoIm(src_im_filename, dem_filename, camera, config=config,
-                                        ortho_im_filename=ortho_im_filename)
+                                        ortho_im_filename=ortho_im_filename)            # create OrthoIm object
 
         # test config set correctly
         for k, v in config.items():
@@ -108,7 +109,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         self.assertTrue(np.allclose(ortho_tr, ortho_tr_check, atol=1e-2), msg="Ortho TR corner OK")
 
         try:
-            ortho_im.orthorectify()
+            ortho_im.orthorectify()         # run the orthorectification
             ortho_im.build_ortho_overviews()
 
             # do some sparse checks on ortho_im

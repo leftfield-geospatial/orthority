@@ -227,7 +227,7 @@ class OrthoIm():
                                 'ortho_interp': Interpolation type for ortho-image (average, bilinear, cubic, lanczos,
                                                 nearest), default = 'bilinear'
                                 'resolution':   Output pixel size [x, y] in m, default = [0.5, 0.5]
-                                'compression':  GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none),
+                                'compress':  GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none),
                                                 default = 'deflate'
                                 'tile_size':    Tile/block [x, y] size in pixels, default = [512, 512]
         """
@@ -250,7 +250,7 @@ class OrthoIm():
 
         if config is None:  # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
-                          compression='deflate', tile_size=[512, 512], interleave='band', photometric=None, nodata=0,
+                          compress='deflate', tile_size=[512, 512], interleave='band', photometric=None, nodata=0,
                           per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=False)
 
         self._parse_config(config)
@@ -298,7 +298,7 @@ class OrthoIm():
         ----------
         config :  dict
                   e.g. dict(dem_interp='cubic_spline', ortho_interp='bilinear', resolution=[0.5, 0.5],
-                          compression='deflate', tile_size=[512, 512])
+                          compress='deflate', tile_size=[512, 512])
         """
 
         for key, value in config.items():
@@ -509,7 +509,7 @@ class OrthoIm():
                                  height=ortho_wh[1], num_threads='all_cpus')
 
             # overwrite source attributes in ortho_profile where config is not None
-            attrs_to_check = ['driver', 'dtype', 'compression', 'interleave', 'photometric']
+            attrs_to_check = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
             for attr in attrs_to_check:
                 val = getattr(self, attr)
                 if val is not None:

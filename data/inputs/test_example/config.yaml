@@ -1,22 +1,22 @@
 # simple_ortho configuration
 camera:
-  name: Integraph DMC             # Not used
-  focal_len: 120.                 # Focal length in mm
+  name: Integraph DMC               # Not used
+  focal_len: 120.                   # Focal length in mm
   sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in mm
 
 ortho:
-  dem_interp: cubic_spline      # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
+  dem_interp: cubic_spline  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
   dem_band: 1               # 1-based index of band in DEM raster to use
-  interp: bilinear             # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
+  interp: bilinear          # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
   resolution: [ 5., 5. ]    # Output pixel size [x, y] in m
   tile_size: [ 256, 256 ]   # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  compression: jpeg         # GeoTIFF compression type (deflate, jpeg, jpeg2000, lzw, zstd, none) (None = same as source image)
+  compress: jpeg         # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none) (None = same as source image)
   interleave: pixel         # Interleave by 'pixel' or 'band' (pixel, band) (None = same as source image)
   photometric: ycbcr        # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for details (None = same as source image)
   nodata: 0                 # NODATA value
   per_band: False           # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
   driver: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
   dtype: uint8              # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
-  build_ovw: True          # Build internal overviews
+  build_ovw: True           # Build internal overviews
   overwrite: True           # Overwrite ortho raster if it exists
   write_mask: True          # Write a separate mask band (True), can help remove jpeg noise in nodata area (False - recommended)

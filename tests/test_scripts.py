@@ -47,13 +47,16 @@ class TestScripts(unittest.TestCase):
                          readconf=str(root_path.joinpath('data/inputs/test_example/config.yaml')),
                          ortho_dir=str(root_path.joinpath('data/outputs/test_example')), verbosity=2)
 
+        # delete the ortho files if they exist
+        ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example/*_ORTHO.tif'))
+        for ortho_im_filename in glob.glob(ortho_im_wildcard):
+            os.remove(ortho_im_filename)
+
         # run the script
         batch_ortho_im.main(args)
 
-        # check there are the same number of ortho files as source files
-        ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example/*_ORTHO.tif'))
-
         try:
+            # check there are the same number of ortho files as source files
             self.assertEqual(len(glob.glob(args.src_im_wildcard)), len(glob.glob(ortho_im_wildcard)),
                              msg='Number of ortho files == number of source files')
 
@@ -113,10 +116,7 @@ class TestScripts(unittest.TestCase):
                                             msg=f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}')
 
         finally:
-            # delete the ortho files
-            for ortho_im_filename in glob.glob(ortho_im_wildcard):
-                if pathlib.Path(ortho_im_filename).exists():
-                    os.remove(ortho_im_filename)
+            pass    # leave the ortho images in the outputs dir so they can be manually checked if necessary
 
 
 if __name__ == '__main__':
