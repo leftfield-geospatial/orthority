@@ -50,7 +50,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def process_args(args):
+def _process_args(args):
     # set logging level
     if args.verbosity is not None:
         logger.setLevel(10 * args.verbosity)
@@ -92,7 +92,7 @@ def process_args(args):
 def main(args):
     try:
         # parse the command line
-        config = process_args(args)
+        config = _process_args(args)
 
         # read camera position and orientation and find row for src_im_file
         cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,

@@ -49,7 +49,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def process_args(args):
+def _process_args(args):
     # set logging level
     if args.verbosity is not None:
         logger.setLevel(10 * args.verbosity)
@@ -105,7 +105,7 @@ def main(args, cam_pos_orid=None, config=None):
     try:
         # check args and get config
         if config is None:
-            config = process_args(args)
+            config = _process_args(args)
 
         # read camera position and orientation and find row for src_im_file
         if cam_pos_orid is None:

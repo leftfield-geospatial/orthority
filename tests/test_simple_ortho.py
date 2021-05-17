@@ -1,24 +1,37 @@
-import argparse
-import datetime
-import pathlib
+"""
+   Copyright 2021 Dugal Harris - dugalh@gmail.com
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+"""
+
+"""
+Test classes in simple_ortho module
+"""
+
 import os
+import unittest
 
 import numpy as np
-import pandas as pd
 import rasterio as rio
-import yaml
 
-from simple_ortho import get_logger
 from simple_ortho import root_path
 from simple_ortho import simple_ortho
 
-import unittest
 
 def create_camera():
     """
     Create a camera for downsampled NGI 3324c_2015_1004_05_0182_RGB image (as in data/inputs/test_sample)
     """
-    # 3324c_2015_1004_05_0182_RGB -55094.504480 -3727407.037480 5258.307930 -0.349216 0.298484 -179.086702
 
     # hard code camera parameters
     position = np.array([-55094.504480, -3727407.037480, 5258.307930])
@@ -28,14 +41,13 @@ def create_camera():
 
     # create camera
     return simple_ortho.Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation,
-                                 dtype=np.float32)
+                               dtype=np.float32)
 
 
-class TestCamera(unittest.TestCase):
-
+class TestSimpleOrthoModule(unittest.TestCase):
     def test_camera(self):
         """
-        Test all camera functionality
+        Test camera functionality including projection
         """
 
         camera = create_camera()
@@ -56,11 +68,9 @@ class TestCamera(unittest.TestCase):
         # check original and re-projected co-ords are approx equal
         self.assertTrue(np.allclose(X, X2, atol=1e-4), msg="Image <-> world projections ok")
 
-
-class TestOrthoImClass(unittest.TestCase):
     def test_ortho_im_class(self):
         """
-        Test ortho_im support functionality that exludes orthorectify()
+        Test ortho_im support functionality and orthorectify()
         """
 
         # hard code camera and config
@@ -87,7 +97,7 @@ class TestOrthoImClass(unittest.TestCase):
 
         # test _get_dem_min() with hard coded vals
         dem_min = ortho_im._get_dem_min()
-        self.assertAlmostEqual(dem_min, 162.65, places=1 ,msg="DEM min OK")
+        self.assertAlmostEqual(dem_min, 162.65, places=1, msg="DEM min OK")
 
         # test _get_ortho_bounds() with hard coded vals
         ortho_bl, ortho_tr = ortho_im._get_ortho_bounds(dem_min)
@@ -103,7 +113,7 @@ class TestOrthoImClass(unittest.TestCase):
 
             # do some sparse checks on ortho_im
             self.assertTrue(ortho_im_filename.exists(), msg="Ortho file exists")
-            with rio.open(ortho_im_filename, 'r') as o_im:
+            with rio.open(ortho_im_filename, 'r', num_threads='all_cpus') as o_im:
                 self.assertEqual(o_im.res, tuple(config['resolution']), 'Ortho resolution ok')
                 self.assertEqual(o_im.block_shapes[0], tuple(config['tile_size']), 'Tile size ok')
                 self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
@@ -112,21 +122,19 @@ class TestOrthoImClass(unittest.TestCase):
                 # check the ortho and source image means and sizes in same order of magnitude
                 o_band = o_im.read(1)
                 o_band = o_band[o_band != config['nodata']]
-                with rio.open(src_im_filename, 'r') as s_im:
+                with rio.open(src_im_filename, 'r', num_threads='all_cpus') as s_im:
                     s_band = s_im.read(1)
-                    self.assertAlmostEqual(o_band.mean()/10, s_band.mean()/10, places=0,
+                    self.assertAlmostEqual(o_band.mean() / 10, s_band.mean() / 10, places=0,
                                            msg='Ortho and source means in same order of magnitude')
                     self.assertAlmostEqual(o_band.size / s_band.size, 1, places=0,
                                            msg='Ortho and source sizes in same order of magnitude')
 
         finally:
             if ortho_im_filename.exists():
-                os.remove(ortho_im_filename)    # tidy up
-
+                os.remove(ortho_im_filename)  # tidy up
 
 
 if __name__ == '__main__':
     unittest.main()
 
 ##
-
