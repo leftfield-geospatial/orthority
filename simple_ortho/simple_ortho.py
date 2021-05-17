@@ -51,11 +51,11 @@ class Camera():
         im_size :       numpy.array_like
                         image [width, height]] in pixels
         geo_transform :     numpy.array_like
-                            gdal or rasterio 6 element image transform
+                            gdal or rasterio 6 element image transform (only the pixel scale is used)
         position :      numpy.array_like
                         column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
         orientation :   numpy.array_like
-                        camera orientation [omega, phi, kappa] angles in degrees
+                        camera orientation [omega, phi, kappa] angles in radians
         dtype :         numpy.dtype
                         Data type to use for camera parameters (to avoid e.g. unproject forcing float32 to 64)
         """
@@ -250,8 +250,8 @@ class OrthoIm():
 
         if config is None:  # set defaults:
             config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
-                          compression='deflate', tile_size=[512, 512], interleave='band', nodata=0, per_band=False,
-                          format='GTiff', dtype=None, build_ovw=True, overwrite=True)
+                          compression='deflate', tile_size=[512, 512], interleave='band', photometric=None, nodata=0,
+                          per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=False)
 
         self._parse_config(config)
         self._check_rasters()
@@ -448,14 +448,17 @@ class OrthoIm():
                         if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
                             nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False),
                                                        np.ones((3, 3), np.uint8))
-                            ortho_im_win_array[:, nodata_mask_d.astype(np.bool, copy=False)] = self.nodata
+                            ortho_im_win_array[:, nodata_mask_d.astype(bool, copy=False)] = self.nodata
                         else:
                             nodata_mask_d = nodata_mask
 
                         # write out the ortho tile to disk
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
                         if self.write_mask:
-                            ortho_im.write_mask(np.logical_not(nodata_mask_d), window=ortho_win)
+                            with np.testing.suppress_warnings() as sup:
+                                sup.filter(DeprecationWarning, "")      # suppress the np.bool warning as it is buggy
+                                ortho_im.write_mask(np.logical_not(nodata_mask_d).astype(np.uint8, copy=False),
+                                                    window=ortho_win)
 
                         # print progress
                         block_count += 1
@@ -501,18 +504,18 @@ class OrthoIm():
 
             ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0],
                                                         self.resolution[1])
-            ortho_profile.update(nodata=self.nodata, compress=self.compression, tiled=True,
-                                 blockxsize=self.tile_size[0],
+            ortho_profile.update(nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
-                                 height=ortho_wh[1], num_threads='all_cpus', interleave=self.interleave)
-            if self.format is not None:
-                ortho_profile['driver'] = self.format
-            if self.dtype is not None:
-                ortho_profile['dtype'] = self.dtype
-            if self.photometric is not None:
-                ortho_profile['photometric'] = self.photometric
+                                 height=ortho_wh[1], num_threads='all_cpus')
 
-            # initialse tile grid here once off (save cpu) - to offset later
+            # overwrite source attributes in ortho_profile where config is not None
+            attrs_to_check = ['driver', 'dtype', 'compression', 'interleave', 'photometric']
+            for attr in attrs_to_check:
+                val = getattr(self, attr)
+                if val is not None:
+                    ortho_profile[attr] = val
+
+            # initialise tile grid here once off (save cpu) - to offset later
             j_range = np.arange(0, self.tile_size[0], dtype='float32')
             i_range = np.arange(0, self.tile_size[1], dtype='float32')
             jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')

@@ -70,6 +70,7 @@ Argument  | Description
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit
+`-od`  | `--ortho-dir` | Write orthorectified images to this directory (default: write to source directory).
 `-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
@@ -127,13 +128,13 @@ Detailed configuration information, not passed explicitly on the command line, i
 | | `dem_band` | Index of band in DEM raster to use (1-based).
 | | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
 | | `resolution` | Output pixel size `[x, y]` in m.
-| | `compression` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances.
+| | `compression` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
 | | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
-| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compression=deflate`.
-| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image)
+| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compression=deflate`. (None = same as source image).
+| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
 | | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 | | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
-| | `format` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
+| | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
 | | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
 | | `build_ovw` | Build internal overviews (`True`, `False`).
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).

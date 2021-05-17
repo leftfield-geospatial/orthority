@@ -18,7 +18,7 @@
 Downsample an image by an integer factor, keeping the grid alignment and bounds.  
 Scale to uint8 and compress with JPEG YCBCR.
 
-Intended to convert NGI images into a small enough file to keep in git repo and use for quick tests.  
+Intended to convert NGI images into a small enough file to keep in git repo and use for unit tests.  
 """
 
 import rasterio as rio
