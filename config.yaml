@@ -19,4 +19,4 @@ ortho:
   dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
   build_ovw: True           # Build internal overviews
   overwrite: True           # Overwrite ortho raster if it exists
-  write_mask: True          # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
+  write_mask: False         # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
