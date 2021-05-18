@@ -7,7 +7,7 @@
 #    conda remove -c conda-forge --use-local map-thicket-agc
 
 package:
-  name: simple-orthp
+  name: simple-ortho
   version: 0.1.0
 
 source:
@@ -20,6 +20,7 @@ requirements:
     - opencv >= 4.5
     - pandas >= 1.2
     - pyyaml >= 5.4
+    - gdal = 3.1
 
 build:
   number: 0

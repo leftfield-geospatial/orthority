@@ -36,7 +36,7 @@ from simple_ortho import get_logger
 logger = get_logger(__name__)
 
 
-class Camera():
+class Camera:
     def __init__(self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dtype='float32'):
         """
         Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
@@ -141,13 +141,13 @@ class Camera():
                             [0, 0, 1]], dtype=self._dtype)
         return
 
-    def unproject(self, X, use_cv=False):
+    def unproject(self, x, use_cv=False):
         """
         Unproject from 3D world co-ordinates to 2D image co-ordinates
 
         Parameters
         ----------
-        X : numpy.array_like
+        x : numpy.array_like
             3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates to unproject.
             (x,y,z) along the first dimension.
         use_cv : bool (optional)
@@ -160,22 +160,22 @@ class Camera():
              2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
         """
         # x,y,z down 1st dimension
-        if not (X.shape[0] == 3 and X.shape[1] > 0):
-            raise Exception('X must have 3 rows and more than one column')
+        if not (x.shape[0] == 3 and x.shape[1] > 0):
+            raise Exception('x must have 3 rows and more than one column')
 
         if use_cv:  # use opencv
-            ij, _ = cv2.projectPoints(X - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K,
+            ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K,
                                       distCoeffs=None)
             ij = np.squeeze(ij).T
         else:
             # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
-            X_ = np.dot(self._R.T, (X - self._T))
+            x_ = np.dot(self._R.T, (x - self._T))
             # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
-            ij = np.dot(self._K, X_ / X_[2, :])[:2, :]
+            ij = np.dot(self._K, x_ / x_[2, :])[:2, :]
 
         return ij
 
-    def project_to_z(self, ij, Z):
+    def project_to_z(self, ij, z):
         """
         Project from 2D image co-ordinates to 3D world co-ordinates at a specified Z
 
@@ -183,12 +183,12 @@ class Camera():
         ----------
         ij : numpy.array_like
              2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
-        Z :  numpy.array_like
+        z :  numpy.array_like
              1-by-N array of Z (altitude) values to project to
 
         Returns
         -------
-        X : numpy.array_like
+        x : numpy.array_like
             3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates.
             (x,y,z) along the first dimension.
         """
@@ -196,14 +196,14 @@ class Camera():
             raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
 
         ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-        X_ = np.dot(np.linalg.inv(self._K), ij_)
-        X_R = np.dot(self._R, X_)  # rotate first (camera to world)
-        X = (X_R * (Z - self._T[2]) / X_R[2, :]) + self._T  # scale to desired Z and offset to world
+        x_ = np.dot(np.linalg.inv(self._K), ij_)
+        x_r = np.dot(self._R, x_)  # rotate first (camera to world)
+        x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T  # scale to desired z and offset to world
 
-        return X
+        return x
 
 
-class OrthoIm():
+class OrthoIm:
     def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
         """
         Class to orthorectify image with known DEM and camera model
@@ -214,22 +214,36 @@ class OrthoIm():
                             Filename of source image to orthorectified
         dem_filename :      str
                             Filename of DEM covering source image
-        camera :            simple_orth.Camera
+        camera :            simple_ortho.Camera
                             camera object relevant to source image
         ortho_im_filename : str
                             (optional) specify the filename of the orthorectified image to create.  If not specified,
                             appends '_ORTHO' to the src_im_filename
         config :            dict
-                            (optional) dictionary of configuration parameters.  With key, value pairs as follows:
-                                'dem_interp':   Interpolation type for resampling DEM (average, bilinear, cubic,
-                                                cubic_spline, gauss, lanczos) default = 'cubic_spline'
-                                'dem_band':     1-based index of band in DEM raster to use, default=1
-                                'ortho_interp': Interpolation type for ortho-image (average, bilinear, cubic, lanczos,
-                                                nearest), default = 'bilinear'
-                                'resolution':   Output pixel size [x, y] in m, default = [0.5, 0.5]
-                                'compress':  GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none),
-                                                default = 'deflate'
-                                'tile_size':    Tile/block [x, y] size in pixels, default = [512, 512]
+                            (optional) dictionary of configuration parameters.  If None, sensible defaults are used.
+                            Key, value pairs as follows:
+                                dem_interp: Interpolation type for resampling DEM (average, bilinear, cubic,
+                                    cubic_spline, gauss, lanczos)
+                                dem_band: 1-based index of band in DEM raster to use
+                                interp: Interpolation type for generating ortho-image (nearest, average, bilinear,
+                                    cubic, lanczos)
+                                resolution: Output pixel size [x, y] in m
+                                compress: GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
+                                interleave: Interleave by 'pixel' or 'band' (pixel, band)
+                                photometric: Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html
+                                    for options (None = same format as source image, recommended)
+                                tile_size: Tile/block [x, y] size in pixels  ([512, 512] recommended)
+                                nodata: NODATA value
+                                per_band: Remap the source raster to the ortho per-band (True), or all bands at once
+                                    (False - recommended)
+                                driver: Format of ortho raster - see www.gdal.org/formats_list.html (None = same format
+                                    as source image)
+                                dtype: Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as
+                                    source image)
+                                build_ovw: Build internal overviews
+                                overwrite: Overwrite ortho raster if it exists
+                                write_mask: True = write an internal mask band, can help remove jpeg noise in nodata
+                                    area (False - recommended)
         """
         if not os.path.exists(src_im_filename):
             raise Exception(f"Source image file {src_im_filename} does not exist")
@@ -290,7 +304,7 @@ class OrthoIm():
                         raise Exception(f'DEM {self._dem_filename.parts[-1]} does not cover source image '
                                         f'{self._src_im_filename.parts[-1]}')
 
-    def _parse_config(self, config, print_vals=True):
+    def _parse_config(self, config):
         """
         Parse dict config items where necessary
 
@@ -325,7 +339,6 @@ class OrthoIm():
         Find minimum of the DEM over the bounds of the source image
         """
 
-        dem_min = 0.
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im:
                 with rio.open(self._dem_filename, 'r') as dem_im:
@@ -360,7 +373,7 @@ class OrthoIm():
 
         with rio.Env():
             with rio.open(self._src_im_filename, 'r') as src_im:
-                # find the bounds of the ortho by projecting 2D image pixel corners onto 3D Z plane = dem_min
+                # find the bounds of the ortho by projecting 2D image pixel corners onto 3D z plane = dem_min
                 ortho_cnrs = self._camera.project_to_z(
                     np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
                     dem_min)[:2, :]
@@ -424,7 +437,7 @@ class OrthoIm():
 
                         # extract ortho_win from dem_array
                         ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
-                                      ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
+                                                ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
                         src_ji = self._camera.unproject(np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ),
@@ -456,7 +469,7 @@ class OrthoIm():
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
                         if self.write_mask:
                             with np.testing.suppress_warnings() as sup:
-                                sup.filter(DeprecationWarning, "")      # suppress the np.bool warning as it is buggy
+                                sup.filter(DeprecationWarning, "")  # suppress the np.bool warning as it is buggy
                                 ortho_im.write_mask(np.logical_not(nodata_mask_d).astype(np.uint8, copy=False),
                                                     window=ortho_win)
 
@@ -478,12 +491,6 @@ class OrthoIm():
     def orthorectify(self):
         """
         Orthorectify the source image based on specified camera model and DEM.
-
-        Parameters
-        ----------
-        per_band :  bool
-                    True = remap the source image per-band (memory efficient)
-                    False = remap the source image as a whole (processor efficient)
         """
 
         # init profiling
@@ -514,12 +521,6 @@ class OrthoIm():
                 val = getattr(self, attr)
                 if val is not None:
                     ortho_profile[attr] = val
-
-            # initialise tile grid here once off (save cpu) - to offset later
-            j_range = np.arange(0, self.tile_size[0], dtype='float32')
-            i_range = np.arange(0, self.tile_size[1], dtype='float32')
-            jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
-            xgrid, ygrid = ortho_transform * [jgrid, igrid]
 
             # reproject and resample DEM to ortho bounds, CRS and grid
             with rio.open(self._dem_filename, 'r') as dem_im:

@@ -14,13 +14,6 @@
    limitations under the License.
 """
 
-"""
-Downsample an image by an integer factor, keeping the grid alignment and bounds.  
-Scale to uint8 and compress with JPEG YCBCR.
-
-Intended to convert NGI images into a small enough file to keep in git repo and use for unit tests.  
-"""
-
 import rasterio as rio
 from rasterio.warp import Resampling
 import numpy as np
@@ -28,18 +21,29 @@ import pathlib
 import argparse
 import glob
 
+"""
+Downsample an image by an integer factor, keeping the grid alignment and bounds.  
+Scale to uint8 and compress with JPEG YCBCR.
+
+Intended to convert NGI images into a small enough file to keep in git repo and use for unit tests.  
+"""
+
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 
+
 def parse_arguments():
-    parser = argparse.ArgumentParser(description='Downsample an image by an integer factor, keeping the grid alignment and bounds. Intended for NGI unrectified imagery.')
+    parser = argparse.ArgumentParser(
+        description='Downsample an image by an integer factor, keeping the grid alignment and bounds. '
+                    'Intended for NGI unrectified imagery.')
     parser.add_argument("src_im_wildcard", help="source image wildcard pattern or directory (e.g. '.' or '*_CMP.TIF')",
                         type=str)
-    parser.add_argument("-s", "--scale", help="scale factor to downsample by (default=12)", default=12, choices=range(1, 1000), type=int)
+    parser.add_argument("-s", "--scale", help="scale factor to downsample by (default=12)", default=12,
+                        choices=range(1, 1000), type=int)
     return parser.parse_args()
 
-def process_args(args):
 
+def process_args(args):
     # check files exist
     if len(glob.glob(args.src_im_wildcard)) == 0:
         if len(glob.glob(args.src_im_wildcard + '*.tif')) == 0:
@@ -54,7 +58,7 @@ def main(args):
     # parse the command line
     process_args(args)
     ds_factor = args.scale
-    bands = [0, 1, 2]       # use first 3 bands
+    bands = [0, 1, 2]  # use first 3 bands
 
     src_im_list = glob.glob(args.src_im_wildcard)
     print(f'Batch downsampling {len(src_im_list)} file(s) matching {args.src_im_wildcard} by factor of {ds_factor}')

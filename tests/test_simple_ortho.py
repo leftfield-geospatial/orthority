@@ -14,10 +14,6 @@
    limitations under the License.
 """
 
-"""
-Test classes in simple_ortho module
-"""
-
 import os
 import unittest
 
@@ -59,14 +55,14 @@ class TestSimpleOrthoModule(unittest.TestCase):
 
         # create arbitrary world co-ords and unproject to image co-ords
         start_x = np.array([-52359.614680, -3727390.785280, 500])
-        X = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
-        ij = camera.unproject(X, use_cv=False)
+        x = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
+        ij = camera.unproject(x, use_cv=False)
 
-        # re-project image co-ords to world space at original Z
-        X2 = camera.project_to_z(ij, X[2, :])
+        # re-project image co-ords to world space at original z
+        x2 = camera.project_to_z(ij, x[2, :])
 
         # check original and re-projected co-ords are approx equal
-        self.assertTrue(np.allclose(X, X2, atol=1e-4), msg="Image <-> world projections ok")
+        self.assertTrue(np.allclose(x, x2, atol=1e-4), msg="Image <-> world projections ok")
 
     def test_ortho_im_class(self):
         """

@@ -14,10 +14,6 @@
    limitations under the License.
 """
 
-"""
-Testing of batch_ortho_im and ortho_im scripts
-"""
-
 import glob
 import os
 import pathlib
@@ -102,9 +98,8 @@ class TestScripts(unittest.TestCase):
                             ortho_data2 = ortho_im2.read(1, window=win2)
 
                             # common valid data mask
-                            common_mask = (ortho_im1.read_masks(1, window=win1) & ortho_im2.read_masks(1,
-                                                                                                       window=win2)).astype(
-                                bool, copy=False)
+                            common_mask = (ortho_im1.read_masks(1, window=win1) &
+                                           ortho_im2.read_masks(1, window=win2)).astype(bool, copy=False)
 
                             # find R2 corr coefficient between the valid data in the overlapping image regions
                             c = np.corrcoef(ortho_data1[common_mask], ortho_data2[common_mask])

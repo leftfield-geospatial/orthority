@@ -9,7 +9,7 @@ ortho:
   dem_band: 1               # 1-based index of band in DEM raster to use
   interp: nearest           # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
   resolution: [0.5, 0.5]    # Output pixel size [x, y] in m
-  compress: deflate      # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
+  compress: deflate         # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   interleave: band          # Interleave by 'pixel' or 'band' (pixel, band)
   photometric:              # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
   tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
