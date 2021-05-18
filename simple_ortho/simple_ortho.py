@@ -24,7 +24,6 @@ import sys
 import tracemalloc
 
 import cv2
-import gdal
 import numpy as np
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, transform
@@ -278,15 +277,16 @@ class OrthoIm:
         """
         Check that the source image is not 12 bit and that DEM and source image overlap
         """
-        with rio.Env():
-            src_data = gdal.Open(str(self._src_im_filename))
-            src_band = src_data.GetRasterBand(self.dem_band)
-            src_struc = src_band.GetMetadata('IMAGE_STRUCTURE')
-            if 'NBITS' in src_struc and src_struc['NBITS'] == '12':
-                logger.warning(f'Warning: NBITS==12 is not supported by conda GDAL (and others), '
-                               f'you may need to reformat the source file: {self._src_im_filename}')
-            del (src_band, src_data)
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im:
+                try:
+                    # check that we can read the source image, if we can't assume it is a 12bit JPEG
+                    tmp_array = src_im.read(1, window=src_im.block_window(1, 0, 0))
+                except Exception as ex:
+                    raise Exception(f'Could not read {self._src_im_filename.stem}\n'
+                                    f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), '
+                                    f'you probably need to recompress this file.\n'
+                                    f'    See the README for details.')
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find source image bounds in DEM CRS
                     [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs,

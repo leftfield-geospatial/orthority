@@ -7,7 +7,7 @@ Using `conda` to manage packages and dependencies is recommended.  The [Minconda
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio gdal=3.1 opencv pandas pyyaml
+conda install -c conda-forge rasterio opencv pandas pyyaml shapely
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
@@ -19,11 +19,11 @@ pip install -e simple_ortho
 The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  `gdal` is forced to 3.1 currently as later versions are buggy.     
   
   - python >= 3.8
-  - gdal = 3.1
   - rasterio >= 1.2
   - opencv >= 4.5
   - pandas >= 1.2
   - pyyaml >= 5.4
+  - shapely >= 1.7
 
 ## Scripts
 simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory.
@@ -147,7 +147,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
 ```shell
->python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+$ python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ## Known limitations
