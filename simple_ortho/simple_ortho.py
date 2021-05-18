@@ -283,10 +283,13 @@ class OrthoIm:
                     # check that we can read the source image, if we can't assume it is a 12bit JPEG
                     tmp_array = src_im.read(1, window=src_im.block_window(1, 0, 0))
                 except Exception as ex:
-                    raise Exception(f'Could not read {self._src_im_filename.stem}\n'
-                                    f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), '
-                                    f'you probably need to recompress this file.\n'
-                                    f'    See the README for details.')
+                    if src_im.profile['compress'] == 'jpeg':
+                        raise Exception(f'Could not read {self._src_im_filename.stem}\n'
+                                        f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), '
+                                        f'you probably need to recompress this file.\n'
+                                        f'    See the README for details.')
+                    else:
+                        raise ex
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find source image bounds in DEM CRS
                     [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs,
