@@ -26,7 +26,7 @@ The following dependencies are installed in the process above.  The `rasterio` p
   - pyyaml >= 5.4
 
 ## Scripts
-simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho folder.
+simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory.
 
 ### [ortho_im](scripts/ortho_im.py)
 Orthorectifies an image. 
@@ -143,9 +143,12 @@ Detailed configuration information, not passed explicitly on the command line, i
 ## Example
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
 
-Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.
-
 <img src="data/outputs/test_example/readme_eg.jpeg" data-canonical-src="data/outputs/test_example/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
+
+Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
+```shell
+>python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+```
 
 ## Known limitations
 
