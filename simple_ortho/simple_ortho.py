@@ -338,10 +338,6 @@ class OrthoIm:
         if (not self.overwrite) and self._ortho_im_filename.exists():
             raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
 
-        # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
-        if self.write_mask and self.compress != 'jpeg':
-            self.write_mask = False
-            logger.warning('Setting write_mask=False, write_mask=True should only be used with compress=jpeg')
 
 
     def _get_dem_min(self):
@@ -532,6 +528,11 @@ class OrthoIm:
                 val = getattr(self, attr)
                 if val is not None:
                     ortho_profile[attr] = val
+
+            # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
+            if self.write_mask and self.compress != 'jpeg':
+                self.write_mask = False
+                logger.warning('Setting write_mask=False, write_mask=True should only be used with compress=jpeg')
 
             # reproject and resample DEM to ortho bounds, CRS and grid
             with rio.open(self._dem_filename, 'r') as dem_im:
