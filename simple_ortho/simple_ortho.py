@@ -335,8 +335,12 @@ class OrthoIm:
         else:
             self.interp = cv_interp_dict[self.interp]
 
-        if (not self.overwrite) and self._ortho_im_filename.exists():
-            raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
+        if self._ortho_im_filename.exists():
+            if self.overwrite:
+                logger.warning(f'Deleting exisitng ortho file: {self._ortho_im_filename.stem}')
+                os.remove(self._ortho_im_filename)
+            else:
+                raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
 
 
 
@@ -530,7 +534,7 @@ class OrthoIm:
                     ortho_profile[attr] = val
 
             # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
-            if self.write_mask and self.compress != 'jpeg':
+            if self.write_mask and ortho_profile['compress'] != 'jpeg':
                 self.write_mask = False
                 logger.warning('Setting write_mask=False, write_mask=True should only be used with compress=jpeg')
 
