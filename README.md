@@ -51,7 +51,7 @@ Argument | Long form | Description
 
 ### Example
 ```shell
-python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o ./data/outputs/test_example/ortho.tif ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o ./data/outputs/test_example/ortho.tif ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ### [batch_ortho_im](scripts/batch_ortho_im.py)
