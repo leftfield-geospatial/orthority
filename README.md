@@ -50,9 +50,9 @@ Argument | Long form | Description
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Example
+```shell
+python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o ./data/outputs/test_example/ortho.tif ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
-python scripts/ortho_im.py -v 2 -rc ./config.yaml -o ortho_1.tif source_1.tif dem.tif cam_pos_ori.txt
-``````
 
 ### [batch_ortho_im](scripts/batch_ortho_im.py)
 Orthorectifies a group of images matching a wildcard.  
@@ -75,10 +75,9 @@ Argument | Long form | Description
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Example
+```shell
+$ python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
-python scripts/batch_ortho_im.py -v 2 -rc ./config.yaml source_*.tif dem.tif cam_pos_ori.txt
-``````
-
 
 ### [batch_recompress](scripts/batch_recompress.bat)
 An auxiliary batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
