@@ -494,6 +494,10 @@ class OrthoIm:
             sys.stdout.write('\n')
 
     def build_ortho_overviews(self):
+        """
+        Builds internal overviews for an existing ortho-image
+        """
+
         if self.build_ovw and self._ortho_im_filename.exists():  # build internal overviews
             with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
                 with rio.open(self._ortho_im_filename, 'r+', num_threads='all_cpus') as ortho_im:
