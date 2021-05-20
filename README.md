@@ -70,7 +70,7 @@ Argument  | Description
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit
-`-od`  | `--ortho-dir` | Write orthorectified images to <ortho_dir> (default: write to source directory).
+`-od`  | `--ortho-dir` | Write orthorectified images to `<ortho_dir>` (default: write to source directory).
 `-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
@@ -118,7 +118,7 @@ Example file:
 ```
 ### Configuration
 
-Default configuration settings, not passed explicitly on the command line, are specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -131,7 +131,7 @@ Default configuration settings, not passed explicitly on the command line, are s
 | | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
 | | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
 | | `build_ovw` | Build internal overviews (`True`, `False`).
-| | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
+| | `overwrite` | Overwrite ortho image(s) if they exist (`True`, `False`).
 | |  `write_mask` | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
 | | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
 | | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
