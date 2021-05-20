@@ -16,7 +16,7 @@ pip install -e simple_ortho
 ```
 
 ### Requirements  
-The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  `gdal` is forced to 3.1 currently as later versions are buggy.     
+The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  
   
   - python >= 3.8
   - rasterio >= 1.2
@@ -26,7 +26,7 @@ The following dependencies are installed in the process above.  The `rasterio` p
   - shapely >= 1.7
 
 ## Scripts
-simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory.
+simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory, or you can add the [scripts](scripts) directory to your path.
 
 ### [ortho_im](scripts/ortho_im.py)
 Orthorectifies an image. 
@@ -38,14 +38,14 @@ Argument  | Description
 ----------|--------------
 `src_im_file` | Path to the source unrectified image file.
 `dem_file` | Path to a DEM, that covers `src_im_file`.  
-`pos_ori_file` | Path to a text file specifying the camera position and orientation file for `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
+`pos_ori_file` | Path to a text file specifying the camera position and orientation for `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
 
 #### Optional arguments
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit.
-`-o` `<ortho_path>` | `--ortho` `<ortho_path>` | Write the orthorectified file to the specified `<ortho_path>` filename.  (Default: name the orthorectified image '`<src_im_file>`_ORTHO.tif').
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
+`-o` `<ortho_path>` | `--ortho` `<ortho_path>` | Write the orthorectified file to the specified `<ortho_path>` filename.  (Default: name the orthorectified image `<src_im_file>`_ORTHO.tif).
+`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
 `-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
@@ -57,12 +57,12 @@ $ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o 
 ### [batch_ortho_im](scripts/batch_ortho_im.py)
 Orthorectifies a group of images matching a wildcard.  
 
-**Usage:** `python  scripts/batch_ortho_im.py [-h] [-rc <config_path>] [-v {1,2,3,4}] src_im_wildcard dem_file pos_ori_file`
+**Usage:** `python  scripts/batch_ortho_im.py [-h] [-od <ortho_dir>] [-rc <config_path>] [-v {1,2,3,4}] src_im_wildcard dem_file pos_ori_file`
 
 #### Required arguments
 Argument  | Description
 ----------|--------------
-`src_im_wildcard` | Source image wildcard pattern or directory (e.g. '.' or './*_CMP.TIF')
+`src_im_wildcard` | Source image wildcard pattern (e.g. './*_RGB.TIF')
 `dem_file` | Path to a DEM, that covers the images matching `src_im_wildcard`.  
 `pos_ori_file` | Path to a text file specifying the camera position and orientation for the images matching `src_im_wildcard`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
 
@@ -70,8 +70,8 @@ Argument  | Description
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit
-`-od`  | `--ortho-dir` | Write orthorectified images to this directory (default: write to source directory).
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  (The default is to read configuration from [config.yaml](config.yaml)).  See [configuration](#configuration) for more details.  
+`-od`  | `--ortho-dir` | Write orthorectified images to <ortho_dir> (default: write to source directory).
+`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Example
@@ -90,8 +90,11 @@ Run ```scripts\batch_recompress.bat``` without arguments to get help.
 #### Required arguments
 Argument  | Description
 ----------|--------------
-`src_im_wildcard` | Process images matching this wildcard pattern (e.g. './*_RGB.TIF').  Recompressed files are written to new files named '\*_CMP.tif'.
-
+`src_im_wildcard` | Process images matching this wildcard pattern (e.g. './*_RGB.TIF').  Recompressed files are written to new files named '*_CMP.tif'.
+### Example
+```shell
+$ scripts\batch_recompress.bat .\data\inputs\test_example\*_RGB.tif
+```
 
 ## File formats
 ### Camera position and orientation
@@ -115,7 +118,7 @@ Example file:
 ```
 ### Configuration
 
-Detailed configuration information, not passed explicitly on the command line, is specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` optional argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Default configuration settings, not passed explicitly on the command line, are specified in [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) and [`batch_ortho_im`](#batch_ortho_im) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -126,20 +129,20 @@ Detailed configuration information, not passed explicitly on the command line, i
 | `ortho` | `dem_interp` | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
 | | `dem_band` | Index of band in DEM raster to use (1-based).
 | | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
-| | `resolution` | Output pixel size `[x, y]` in m.
-| | `compress` | Ortho image compress type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
-| | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
-| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compress=deflate`. (None = same as source image).
-| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
-| | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 | | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
-| | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
-| | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
 | | `build_ovw` | Build internal overviews (`True`, `False`).
 | | `overwrite` | Overwrite ortho image(s) if it/they exist (`True`, `False`).
 | |  `write_mask` | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
+| | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
+| | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
+| | `resolution` | Output pixel size `[x, y]` in m.
+| | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
+| | `compress` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
+| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compress=deflate`. (None = same as source image).
+| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
+| | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 
-## Example
+## Example Application
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
 
 <img src="data/outputs/test_example/readme_eg.jpeg" data-canonical-src="data/outputs/test_example/readme_eg.jpeg" alt="Before and after simple_ortho rectification" width="800"/>
@@ -150,7 +153,6 @@ $ python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.ya
 ```
 
 ## Known limitations
-
 - The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im) and [batch_ortho_im](#batch_ortho_im).
 
 ## License
