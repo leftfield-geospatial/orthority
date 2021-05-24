@@ -283,7 +283,7 @@ class OrthoIm:
                     # check that we can read the source image
                     tmp_array = src_im.read(1, window=src_im.block_window(1, 0, 0))
                 except Exception as ex:
-                    if src_im.profile['compress'] == 'jpeg': # assume it is a 12bit JPEG
+                    if src_im.profile['compress'] == 'jpeg':  # assume it is a 12bit JPEG
                         raise Exception(f'Could not read {self._src_im_filename.stem}\n'
                                         f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), \n'
                                         f'    you probably need to recompress this file.\n'
@@ -341,8 +341,6 @@ class OrthoIm:
                 os.remove(self._ortho_im_filename)
             else:
                 raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
-
-
 
     def _get_dem_min(self):
         """
@@ -478,10 +476,10 @@ class OrthoIm:
                         # write out the ortho tile to disk
                         ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
 
-                        if self.write_mask and np.all(bi==bands[0]):   # write mask once for all bands
+                        if self.write_mask and np.all(bi == bands[0]):  # write mask once for all bands
                             with np.testing.suppress_warnings() as sup:
                                 sup.filter(DeprecationWarning, "")  # suppress the np.bool warning as it is buggy
-                                ortho_im.write_mask(np.bitwise_not(255*nodata_mask_d).astype(np.uint8, copy=False),
+                                ortho_im.write_mask(np.bitwise_not(255 * nodata_mask_d).astype(np.uint8, copy=False),
                                                     window=ortho_win)
 
                         # print progress
