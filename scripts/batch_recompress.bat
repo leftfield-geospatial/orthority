@@ -13,7 +13,8 @@ echo OSGEO4W_ROOT does not exist - you need to install OSGEO4W with GDAL
 exit /b
 )
 
-%%OSGEO4W_ROOT%%\osgeo4w.bat  REM setup environment for osgeo4w and support for 12bit jpegs
+call %%OSGEO4W_ROOT%%\osgeo4w.bat  REM setup environment for osgeo4w and support for 12bit jpegs
+@echo off
 
 echo Recompressing....
 setlocal EnableDelayedExpansion

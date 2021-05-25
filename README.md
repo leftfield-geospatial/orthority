@@ -29,7 +29,7 @@ The following dependencies are installed in the process above.  The `rasterio` p
 simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory, or you can add the [scripts](scripts) directory to your path.
 
 ### [ortho_im](scripts/ortho_im.py)
-Orthorectifies an image. 
+Orthorectify image(s). 
 
 **Usage:** `python scripts/ortho_im.py [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
 
@@ -37,8 +37,8 @@ Orthorectifies an image.
 Argument  | Description
 ----------|--------------
 `src_im_file` | One or more path(s) and or wildcard(s) specifying the source unrectified image file(s).
-`dem_file` | Path to a DEM, that covers `src_im_file`.  
-`pos_ori_file` | Path to a text file specifying the camera position and orientation for `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
+`dem_file` | Path to a DEM, that covers all image(s) specified by `src_im_file`.  
+`pos_ori_file` | Path to a text file specifying the camera position and orientation for  all image(s) specified by `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
 
 #### Optional arguments
 Argument | Long form | Description
@@ -50,13 +50,13 @@ Argument | Long form | Description
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Examples
-Orthorectify a single image with a user provided configuration.
+Orthorectify a single image with a user provided configuration, writing to a specified folder.
 ```shell
-$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o ./data/outputs/test_example/ortho.tif ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example/ ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 Orthorectify images matching a wildcard, with a user provided configuration, writing to a specified folder.
 ```shell
-$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ### [batch_recompress](scripts/batch_recompress.bat)
@@ -73,7 +73,7 @@ Argument  | Description
 `src_im_wildcard` | Process images matching this wildcard pattern (e.g. './*_RGB.TIF').  Recompressed files are written to new files named '*_CMP.tif'.
 ### Example
 ```shell
-$ scripts\batch_recompress.bat .\data\inputs\test_example\*_RGB.tif
+scripts\batch_recompress.bat .\data\inputs\test_example\*_RGB.tif
 ```
 
 ## File formats
@@ -129,7 +129,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
 ```shell
-$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ## Known limitations
