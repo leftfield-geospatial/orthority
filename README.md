@@ -31,12 +31,12 @@ simple_ortho functionality is accessed by calling scripts, located in the [scrip
 ### [ortho_im](scripts/ortho_im.py)
 Orthorectifies an image. 
 
-**Usage:** `python scripts/ortho_im.py [-h] [-o <ortho_path>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file dem_file pos_ori_file`
+**Usage:** `python scripts/ortho_im.py [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
 
 #### Required arguments
 Argument  | Description
 ----------|--------------
-`src_im_file` | Path to the source unrectified image file.
+`src_im_file` | One or more path(s) and or wildcard(s) specifying the source unrectified image file(s).
 `dem_file` | Path to a DEM, that covers `src_im_file`.  
 `pos_ori_file` | Path to a text file specifying the camera position and orientation for `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
 
@@ -44,39 +44,19 @@ Argument  | Description
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit.
-`-o` `<ortho_path>` | `--ortho` `<ortho_path>` | Write the orthorectified file to the specified `<ortho_path>` filename.  (Default: name the orthorectified image `<src_im_file>`_ORTHO.tif).
+`-od` `<ortho_dir>` | `--ortho-dir` `<ortho_dir>` | Write orthorectified images to `<ortho_dir>` (default: write to source directory).
 `-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
 `-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
-### Example
+### Examples
+Orthorectify a single image with a user provided configuration.
 ```shell
 $ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -o ./data/outputs/test_example/ortho.tif ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
-
-### [batch_ortho_im](scripts/batch_ortho_im.py)
-Orthorectifies a group of images matching a wildcard.  
-
-**Usage:** `python  scripts/batch_ortho_im.py [-h] [-od <ortho_dir>] [-rc <config_path>] [-v {1,2,3,4}] src_im_wildcard dem_file pos_ori_file`
-
-#### Required arguments
-Argument  | Description
-----------|--------------
-`src_im_wildcard` | Source image wildcard pattern (e.g. './*_RGB.TIF')
-`dem_file` | Path to a DEM, that covers the images matching `src_im_wildcard`.  
-`pos_ori_file` | Path to a text file specifying the camera position and orientation for the images matching `src_im_wildcard`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
-
-#### Optional arguments
-Argument | Long form | Description
----------|-----------|------------
-`-h` | `--help` | Print help and exit
-`-od`  | `--ortho-dir` | Write orthorectified images to `<ortho_dir>` (default: write to source directory).
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
-`-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
-
-### Example
+Orthorectify images matching a wildcard, with a user provided configuration, writing to a specified folder.
 ```shell
-$ python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ### [batch_recompress](scripts/batch_recompress.bat)
@@ -149,7 +129,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
 ```shell
-$ python scripts/batch_ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+$ python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ## Known limitations

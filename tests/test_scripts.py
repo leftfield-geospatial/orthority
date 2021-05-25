@@ -24,24 +24,23 @@ import numpy as np
 import rasterio as rio
 import yaml
 from rasterio import windows
+from scripts import ortho_im as ortho_im_script
 from shapely.geometry import box
-
-from scripts import batch_ortho_im
 from simple_ortho import root_path
 
 
 class TestScripts(unittest.TestCase):
-    def test_batch_ortho_im(self):
+    def test_ortho_im(self):
         """
-        Test batch_ortho_im script on images in data/inputs/test_example
+        Test ortho_im script on images in data/inputs/test_example
         """
 
         # construct script args to orthorectify images in data/inputs/test_example
-        args = Namespace(src_im_wildcard=str(root_path.joinpath('data/inputs/test_example/*_RGB.tif')),
+        args = Namespace(src_im_file=[str(root_path.joinpath('data/inputs/test_example/*_RGB.tif'))],
                          dem_file=str(root_path.joinpath('data/inputs/test_example/dem.tif')),
                          pos_ori_file=str(root_path.joinpath('data/inputs/test_example/camera_pos_ori.txt')),
                          readconf=str(root_path.joinpath('data/inputs/test_example/config.yaml')),
-                         ortho_dir=str(root_path.joinpath('data/outputs/test_example')), verbosity=2)
+                         ortho_dir=str(root_path.joinpath('data/outputs/test_example')), verbosity=2, writeconf=None)
 
         # delete the ortho files if they exist
         ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example/*_ORTHO.tif'))
@@ -49,11 +48,10 @@ class TestScripts(unittest.TestCase):
             os.remove(ortho_im_filename)
 
         # run the script
-        batch_ortho_im.main(args)
-
+        ortho_im_script.main(args)
         try:
             # check there are the same number of ortho files as source files
-            self.assertEqual(len(glob.glob(args.src_im_wildcard)), len(glob.glob(ortho_im_wildcard)),
+            self.assertEqual(len(glob.glob(args.src_im_file[0])), len(glob.glob(ortho_im_wildcard)),
                              msg='Number of ortho files == number of source files')
 
             # load the config so we know nodata
@@ -62,7 +60,7 @@ class TestScripts(unittest.TestCase):
                 nodata = config['ortho']['nodata']
 
             # compare source and ortho files to check their means are similar and they overlap
-            for src_im_filename, ortho_im_filename in zip(glob.glob(args.src_im_wildcard),
+            for src_im_filename, ortho_im_filename in zip(glob.glob(args.src_im_file[0]),
                                                           glob.glob(ortho_im_wildcard)):
                 with rio.open(src_im_filename, 'r', num_threads='all_cpus') as src_im:
                     src_array = src_im.read(1)
@@ -111,7 +109,7 @@ class TestScripts(unittest.TestCase):
                                             msg=f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}')
 
         finally:
-            pass    # leave the ortho images in the outputs dir so they can be manually checked if necessary
+            pass  # leave the ortho images in the outputs dir so they can be manually checked if necessary
 
 
 if __name__ == '__main__':

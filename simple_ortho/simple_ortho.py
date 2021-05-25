@@ -337,7 +337,7 @@ class OrthoIm:
 
         if self._ortho_im_filename.exists():
             if self.overwrite:
-                logger.warning(f'Deleting exisitng ortho file: {self._ortho_im_filename.stem}')
+                logger.warning(f'Deleting existing ortho file: {self._ortho_im_filename.stem}')
                 os.remove(self._ortho_im_filename)
             else:
                 raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')

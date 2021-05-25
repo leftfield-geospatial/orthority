@@ -16,13 +16,13 @@
 
 import argparse
 import datetime
+import os
 import pathlib
 
 import numpy as np
 import pandas as pd
 import rasterio as rio
 import yaml
-
 from simple_ortho import get_logger
 from simple_ortho import root_path
 from simple_ortho import simple_ortho
@@ -35,11 +35,13 @@ logger = get_logger(__name__)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Orthorectify an image with known DEM and camera model.')
-    parser.add_argument("src_im_file", help="path to the source image file", type=str)
+    parser.add_argument("src_im_file", help="path or wildcard specifying the source image file(s)", type=str,
+                        metavar='src_im_file', nargs='+')
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
     parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
-    parser.add_argument("-o", "--ortho",
-                        help="write ortho image to this path (default: append '_ORTHO' to src_im_file)", type=str)
+    parser.add_argument("-od", "--ortho-dir",
+                        help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
+                        type=str)
     parser.add_argument("-rc", "--readconf",
                         help="read custom config from this path (default: use config.yaml in simple_ortho root)",
                         type=str)
@@ -76,8 +78,10 @@ def _process_args(args):
         exit(0)
 
     # check files exist
-    if not pathlib.Path(args.src_im_file).exists():
-        raise Exception(f'Source image file {args.src_im_file} does not exist')
+    for src_im_file_spec in args.src_im_file:
+        src_im_file_path = pathlib.Path(src_im_file_spec)
+        if len(list(src_im_file_path.parent.glob(src_im_file_path.name))) == 0:
+            raise Exception(f'Could not find any source image(s) matching {src_im_file_spec}')
 
     if not pathlib.Path(args.dem_file).exists():
         raise Exception(f'DEM file {args.dem_file} does not exist')
@@ -85,10 +89,18 @@ def _process_args(args):
     if not pathlib.Path(args.pos_ori_file).exists():
         raise Exception(f'Camera position and orientation file {args.pos_ori_file} does not exist')
 
+    if args.ortho_dir is not None:
+        ortho_dir = pathlib.Path(args.ortho_dir)
+        if not ortho_dir.is_dir():
+            raise Exception(f'Ortho directory {args.ortho_dir} is not a valid directory')
+        if not ortho_dir.exists():
+            logger.warning(f'Creating ortho directory {args.ortho_dir}')
+            os.mkdir(str(ortho_dir))
+
     return config
 
 
-def main(args, cam_pos_orid=None, config=None):
+def main(args):
     """
     Orthorectify an image
 
@@ -104,53 +116,59 @@ def main(args, cam_pos_orid=None, config=None):
 
     try:
         # check args and get config
-        if config is None:
-            config = _process_args(args)
+        config = _process_args(args)
 
         # read camera position and orientation and find row for src_im_file
-        if cam_pos_orid is None:
-            cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
-                                       names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+        cam_pos_orid = pd.read_csv(args.pos_ori_file, header=None, sep=' ', index_col=0,
+                                   names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
 
-        src_im_file_stem = pathlib.Path(args.src_im_file).stem
-        if src_im_file_stem not in cam_pos_orid.index:
-            raise Exception(f'Could not find {src_im_file_stem} in {args.pos_ori_file}')
+        # loop through image file(s) or wildcard(s), or combinations thereof
+        for src_im_file_spec in args.src_im_file:
+            src_im_file_path = pathlib.Path(src_im_file_spec)
+            for src_im_filename in src_im_file_path.parent.glob(src_im_file_path.name):
+                try:
+                    if src_im_filename.stem not in cam_pos_orid.index:
+                        raise Exception(f'Could not find {src_im_filename.stem} in {args.pos_ori_file}')
 
-        im_pos_ori = cam_pos_orid.loc[src_im_file_stem]
-        orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
-        position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
+                    im_pos_ori = cam_pos_orid.loc[src_im_filename.stem]
+                    orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
+                    position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
 
-        # set ortho filename
-        if args.ortho is not None:
-            ortho_im_filename = pathlib.Path(args.ortho)
-        else:
-            ortho_im_filename = None
+                    # set ortho filename
+                    if args.ortho_dir is not None:
+                        ortho_im_filename = pathlib.Path(args.ortho_dir).joinpath(src_im_filename.stem + '_ORTHO.tif')
+                    else:
+                        ortho_im_filename = None
 
-        # Get src geotransform
-        with rio.open(args.src_im_file) as src_im:
-            geo_transform = src_im.transform
-            im_size = np.float64([src_im.width, src_im.height])
+                    # Get src geotransform
+                    with rio.open(src_im_filename) as src_im:
+                        geo_transform = src_im.transform
+                        im_size = np.float64([src_im.width, src_im.height])
 
-        # create Camera
-        camera_config = config['camera']
-        camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], im_size,
-                                     geo_transform, position, orientation, dtype=np.float32)
+                    # create Camera
+                    camera_config = config['camera']
+                    camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], im_size,
+                                                 geo_transform, position, orientation, dtype=np.float32)
 
-        # create OrthoIm  and orthorectify
-        logger.info(f'Orthorectifying {pathlib.Path(args.src_im_file).parts[-1]}')
-        start_ttl = datetime.datetime.now()
-        ortho_im = simple_ortho.OrthoIm(args.src_im_file, args.dem_file, camera, config=config['ortho'],
-                                        ortho_im_filename=ortho_im_filename)
-        ortho_im.orthorectify()
-        ttl_time = (datetime.datetime.now() - start_ttl)
-        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+                    # create OrthoIm  and orthorectify
+                    logger.info(f'Orthorectifying {src_im_filename.name}')
+                    start_ttl = datetime.datetime.now()
+                    ortho_im = simple_ortho.OrthoIm(src_im_filename, args.dem_file, camera, config=config['ortho'],
+                                                    ortho_im_filename=ortho_im_filename)
+                    ortho_im.orthorectify()
+                    ttl_time = (datetime.datetime.now() - start_ttl)
+                    logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
-        if config['ortho']['build_ovw']:
-            start_ttl = datetime.datetime.now()
-            logger.info(f'Building overviews for {pathlib.Path(args.src_im_file).parts[-1]}')
-            ortho_im.build_ortho_overviews()
-            ttl_time = (datetime.datetime.now() - start_ttl)
-            logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+                    if config['ortho']['build_ovw']:
+                        start_ttl = datetime.datetime.now()
+                        logger.info(f'Building overviews for {src_im_filename.name}')
+                        ortho_im.build_ortho_overviews()
+                        ttl_time = (datetime.datetime.now() - start_ttl)
+                        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+
+                except Exception as ex:
+                    # catch exceptions so that problem image(s) don't prevent processing of a batch
+                    logger.error('Exception: ' + str(ex))
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
