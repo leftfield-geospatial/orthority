@@ -293,6 +293,7 @@ class OrthoIm:
 
                 with rio.open(self._dem_filename, 'r') as dem_im:
                     # find source image bounds in DEM CRS
+                    # TODO: use transform_bounds and shapely
                     [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs,
                                                            [src_im.bounds.left, src_im.bounds.right],
                                                            [src_im.bounds.top, src_im.bounds.bottom])
