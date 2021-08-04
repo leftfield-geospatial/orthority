@@ -26,12 +26,12 @@ The following dependencies are installed in the process above.  The `rasterio` p
   - shapely >= 1.7
 
 ## Scripts
-simple_ortho functionality is accessed by calling scripts, located in the [scripts](scripts) directory.  They can be run from a `conda` prompt in the simple_ortho directory, or you can add the [scripts](scripts) directory to your path.
+Orthorectification is performed by running `simple-ortho` from the `conda` command line.
 
-### [ortho_im](scripts/ortho_im.py)
+### [simple-ortho](simple_ortho/command_line.py)
 Orthorectify image(s). 
 
-**Usage:** `python scripts/ortho_im.py [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
+**Usage:** `simple-ortho [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
 
 #### Required arguments
 Argument  | Description
@@ -52,28 +52,28 @@ Argument | Long form | Description
 ### Examples
 Orthorectify a single image with a user provided configuration, writing to a specified folder.
 ```shell
-python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example/ ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example/ ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 Orthorectify images matching a wildcard, with a user provided configuration, writing to a specified folder.
 ```shell
-python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ### [batch_recompress](scripts/batch_recompress.bat)
-An auxiliary batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
+An auxiliary (windows) batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
 
 If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  DEFLATE compressed tiffs can then be processed with [`ortho_im`](#ortho_im).  
 
-Run ```scripts\batch_recompress.bat``` without arguments to get help.
+Run ```batch_recompress``` without arguments to get help.
 
-**Usage:** `scripts\batch_recompress.bat src_im_wildcard`
+**Usage:** `batch_recompress src_im_wildcard`
 #### Required arguments
 Argument  | Description
 ----------|--------------
 `src_im_wildcard` | Process images matching this wildcard pattern (e.g. './*_RGB.TIF').  Recompressed files are written to new files named '*_CMP.tif'.
 ### Example
 ```shell
-scripts\batch_recompress.bat .\data\inputs\test_example\*_RGB.tif
+batch_recompress .\data\inputs\test_example\*_RGB.tif
 ```
 
 ## File formats
@@ -129,7 +129,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
 ```shell
-python scripts/ortho_im.py -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```
 
 ## Known limitations

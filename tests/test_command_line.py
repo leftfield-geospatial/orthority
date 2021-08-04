@@ -24,9 +24,8 @@ import numpy as np
 import rasterio as rio
 import yaml
 from rasterio import windows
-from scripts import ortho_im as ortho_im_script
 from shapely.geometry import box
-from simple_ortho import root_path
+from simple_ortho import root_path, command_line
 
 
 class TestScripts(unittest.TestCase):
@@ -48,7 +47,7 @@ class TestScripts(unittest.TestCase):
             os.remove(ortho_im_filename)
 
         # run the script
-        ortho_im_script.main(args)
+        command_line.main(args)
         try:
             # check there are the same number of ortho files as source files
             self.assertEqual(len(glob.glob(args.src_im_file[0])), len(glob.glob(ortho_im_wildcard)),

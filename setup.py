@@ -10,7 +10,7 @@ setup(
     author='Dugal Harris',
     author_email='dugalh@gmail.com',
     url='https://github.com/dugalh/simple_ortho/blob/develop/setup.py',
-    license='MIT',
+    license='Apache-2.0',
     packages=find_packages(),
     python_requires='>=3.8',
     install_requires=[
@@ -20,4 +20,6 @@ setup(
         'pyyaml>=5.4'
         'shapely>=1.7'
     ],
+    entry_points = {'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},
+    scripts=['scripts/ortho_im.py', 'scripts/batch_recompress.bat']
 )

@@ -55,7 +55,7 @@ class Camera:
                         column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
         orientation :   numpy.array_like
                         camera orientation [omega, phi, kappa] angles in radians
-        dtype :         numpy.dtype
+        dtype :         numpy.dtype, Type
                         Data type to use for camera parameters (to avoid e.g. unproject forcing float32 to 64)
         """
 
@@ -209,13 +209,13 @@ class OrthoIm:
 
         Parameters
         ----------
-        src_im_filename :   str
+        src_im_filename :   str, pathlib.Path
                             Filename of source image to orthorectified
-        dem_filename :      str
+        dem_filename :      str, pathlib.Path
                             Filename of DEM covering source image
         camera :            simple_ortho.Camera
                             camera object relevant to source image
-        ortho_im_filename : str
+        ortho_im_filename : str, pathlib.Path
                             (optional) specify the filename of the orthorectified image to create.  If not specified,
                             appends '_ORTHO' to the src_im_filename
         config :            dict
