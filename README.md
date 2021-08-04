@@ -62,7 +62,7 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 ### [batch_recompress](scripts/batch_recompress.bat)
 An auxiliary (windows) batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
 
-If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  DEFLATE compressed tiffs can then be processed with [`ortho_im`](#ortho_im).  
+If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  DEFLATE compressed tiffs can then be processed with [`simple-ortho`](#simple-ortho).  
 
 Run ```batch_recompress``` without arguments to get help.
 
@@ -84,7 +84,7 @@ Camera position and orientation for an image is specified in a space-separated t
 ```
 Where `<Image file stem>` is the source file name excluding extension.  
 
-For [`ortho_im`](#ortho_im), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
+For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
 **Note** that the camera (Easting, Northing) position must be specified in the same co-ordinate reference system (CRS) as that of the source image.
 
@@ -98,7 +98,7 @@ Example file:
 ```
 ### Configuration
 
-Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`ortho_im`](#ortho_im) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -133,7 +133,7 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 ```
 
 ## Known limitations
-- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [ortho_im](#ortho_im).
+- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [`simple-ortho`](#simple-ortho).
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
