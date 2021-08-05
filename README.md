@@ -2,7 +2,7 @@
 Fast and simple orthorectification of images with known DEM and camera model.  Designed and tested on [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) aerial imagery.  
 
 ## Installation
-Using `conda` to manage packages and dependencies is recommended.  The [Minconda](https://docs.conda.io/en/latest/miniconda.html) installation includes a minimal `conda`.
+Using `conda` is the simplest way to resolve `simple-ortho` binary dependencies.  The [Minconda](https://docs.conda.io/en/latest/miniconda.html) installation includes a minimal `conda`.
 1) Create a conda environment and install dependencies:
 ```shell
 conda create -n <environment name> python=3.8 -c conda-forge 
@@ -16,7 +16,7 @@ pip install -e simple_ortho
 ```
 
 ### Requirements  
-The following dependencies are installed in the process above.  The `rasterio` package has binary dependencies that are not directly available through `pip`, hence the recommendation for using `conda`.  
+The following dependencies are installed in the process above.
   
   - python >= 3.8
   - rasterio >= 1.2
@@ -25,8 +25,8 @@ The following dependencies are installed in the process above.  The `rasterio` p
   - pyyaml >= 5.4
   - shapely >= 1.7
 
-## Scripts
-Orthorectification is performed by running `simple-ortho` from the `conda` command line.
+## Usage
+`simple-ortho` functionality can be accessed from the `conda` command line.
 
 ### [simple-ortho](simple_ortho/command_line.py)
 Orthorectify image(s). 
@@ -45,8 +45,8 @@ Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit.
 `-od` `<ortho_dir>` | `--ortho-dir` `<ortho_dir>` | Write orthorectified images to `<ortho_dir>` (default: write to source directory).
-`-rc` `<config_path>` | `--readconf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
-`-wc` `<config_path>` | `--writeconf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
+`-rc` `<config_path>` | `--read_conf` `<config_path>` | Read a custom configuration from the specified `<config_path>`.  If not specified, sensible defaults are read from [config.yaml](config.yaml).  See [configuration](#configuration) for more details.  
+`-wc` `<config_path>` | `--write_conf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
 ### Examples
@@ -98,7 +98,7 @@ Example file:
 ```
 ### Configuration
 
-Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below.  You can also take a look at the comments in [config.yaml](config.yaml).  Note that YAML, like python, is indentation sensitive.
+Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below and commented in [config.yaml](config.yaml).  
 
 | Section | Parameter  | Description
 |--------|------------|------------
@@ -133,7 +133,7 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 ```
 
 ## Known limitations
-- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  You should ensure that the image geo-referenced position is not changed by this conversion, as that would invalidate existing camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [`simple-ortho`](#simple-ortho).
+- The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  Ensure that the image geo-location is not changed by this conversion, as that would invalidate camera position information. `gdal_translate` supplied by [OSGeo4W](https://trac.osgeo.org/osgeo4w/) is one option for conversion.  The [`batch_recompress`](#batch_recompress) script uses `gdal_translate` to perform this conversion.  Converted files can then be processed with [`simple-ortho`](#simple-ortho).
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).

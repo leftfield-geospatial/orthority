@@ -17,5 +17,4 @@
 from simple_ortho import command_line
 
 if __name__ == "__main__":
-    args = command_line.parse_arguments()
-    command_line.main(args)
+    command_line.main_entry()
