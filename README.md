@@ -62,7 +62,7 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 ### [batch_recompress](scripts/batch_recompress.bat)
 An auxiliary (windows) batchfile script to recompress images matching a wildcard, using DEFLATE compression.  
 
-If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  DEFLATE compressed tiffs can then be processed with [`simple-ortho`](#simple-ortho).  
+If necessary, this script can be used to address the incompatibility of `conda`'s `gdal` package with 12bit jpeg compressed tiffs sometimes used by [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery).   [OSGeo4W](https://trac.osgeo.org/osgeo4w/) with `gdal` is required.  Recompressed tiffs can then be processed with [`simple-ortho`](#simple-ortho).  
 
 Run ```batch_recompress``` without arguments to get help.
 
