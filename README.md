@@ -31,7 +31,7 @@ The following dependencies are installed in the process above.
 ### [simple-ortho](simple_ortho/command_line.py)
 Orthorectify image(s). 
 
-**Usage:** `simple-ortho [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
+`simple-ortho [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
 
 #### Required arguments
 Argument  | Description
@@ -66,11 +66,11 @@ If necessary, this script can be used to address the incompatibility of `conda`'
 
 Run ```batch_recompress``` without arguments to get help.
 
-**Usage:** `batch_recompress src_im_wildcard`
+`batch_recompress src_im_wildcard`
 #### Required arguments
 Argument  | Description
 ----------|--------------
-`src_im_wildcard` | Process images matching this wildcard pattern (e.g. './*_RGB.TIF').  Recompressed files are written to new files named '*_CMP.tif'.
+`src_im_wildcard` | Process images matching this wildcard pattern (e.g. './\*_RGB.TIF').  Recompressed files are written to new files named '\*_CMP.tif'.
 ### Example
 ```shell
 batch_recompress .\data\inputs\test_example\*_RGB.tif
