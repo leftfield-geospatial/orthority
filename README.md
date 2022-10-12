@@ -138,8 +138,5 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
 
-## Author
-**Dugal Harris** - [dugalh@gmail.com](mailto:dugalh@gmail.com)
-
 ## Acknowledgements
 Special thanks to [National Geo-spatial Information (NGI)](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) and the [Centre for Geographical Analysis (CGA)](http://www0.sun.ac.za/cga/) for providing imagery, DEM and aero-triangulation data.
