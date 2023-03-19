@@ -1,4 +1,7 @@
 # Simple orthorectification
+
+![banner](./data/outputs/readme_banner.webp)
+
 Fast and simple orthorectification of images with known DEM and camera model.  Designed and tested on [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) aerial imagery.  
 
 ## Installation
