@@ -14,8 +14,8 @@ conda install -c conda-forge rasterio opencv pandas pyyaml shapely
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
-git clone https://github.com/dugalh/simple_ortho.git
-pip install -e simple_ortho
+git clone https://github.com/leftfield-geospatial/simple-ortho.git
+pip install -e simple-ortho
 ```
 
 ### Requirements  
@@ -126,7 +126,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 | | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 
 ## Example Application
-Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple_ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
+Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple-ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 
 
 ![example](./data/outputs/test_example/readme_eg.webp)
 

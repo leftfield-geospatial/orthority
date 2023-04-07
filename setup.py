@@ -9,7 +9,7 @@ setup(
     description='Orthorectification with known camera model and DEM',
     author='Dugal Harris',
     author_email='dugalh@gmail.com',
-    url='https://github.com/dugalh/simple_ortho/blob/develop/setup.py',
+    url='https://github.com/leftfield-geospatial/simple-ortho',
     license='Apache-2.0',
     packages=find_packages(),
     python_requires='>=3.8',

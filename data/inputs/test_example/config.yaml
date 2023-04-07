@@ -1,4 +1,4 @@
-# simple_ortho configuration
+# simple-ortho configuration
 camera:
   name: Integraph DMC               # Not used
   focal_len: 120.                   # Focal length in mm

@@ -1,7 +1,7 @@
 # Config file for conda package
 #
 #  To build, install & remove the development version:
-#    git clone git+https://github.com/dugalh/simple_ortho.git
+#    git clone git+https://github.com/leftfield-geospatial/simple-ortho.git
 #    conda build .
 #    conda install -c conda-forge --use-local map-thicket-agc
 #    conda remove -c conda-forge --use-local map-thicket-agc
@@ -11,7 +11,7 @@ package:
   version: 0.1.0
 
 source:
-  git_url: https://github.com/dugalh/simple_ortho.git
+  git_url: https://github.com/leftfield-geospatial/simple-ortho.git
 
 requirements:
   run:
@@ -28,6 +28,6 @@ build:
   script: pip install -e .
 
 about:
-  home: https://github.com/dugalh/simple_ortho
+  home: https://github.com/leftfield-geospatial/simple-ortho
   license: Apache-2.0
   license_file: LICENSE
