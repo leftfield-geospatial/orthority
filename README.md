@@ -130,7 +130,7 @@ Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-ima
 
 ![example](./data/outputs/test_example/readme_eg.webp)
 
-Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple_ortho directory):
+Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple-ortho directory):
 ```shell
 simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
 ```

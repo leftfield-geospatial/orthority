@@ -45,7 +45,7 @@ def parse_args():
                         help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
                         type=str)
     parser.add_argument("-rc", "--read-conf",
-                        help="read custom config from this path (default: use config.yaml in simple_ortho root)",
+                        help="read custom config from this path (default: use config.yaml in simple-ortho root)",
                         type=str)
     parser.add_argument("-wc", "--write-conf", help="write default config to this path and exit", type=str)
     parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4],
