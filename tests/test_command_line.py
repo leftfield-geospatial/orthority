@@ -35,14 +35,14 @@ class TestCommandLine(unittest.TestCase):
         """
 
         # construct script args to orthorectify images in data/inputs/test_example
-        args = dict(src_im_file=[str(root_path.joinpath('data/inputs/test_example/*_RGB.tif'))],
-                    dem_file=str(root_path.joinpath('data/inputs/test_example/dem.tif')),
-                    pos_ori_file=str(root_path.joinpath('data/inputs/test_example/camera_pos_ori.txt')),
-                    read_conf=str(root_path.joinpath('data/inputs/test_example/config.yaml')),
-                    ortho_dir=str(root_path.joinpath('data/outputs/test_example')), verbosity=2, write_conf=None)
+        args = dict(src_im_file=[str(root_path.joinpath('data/inputs/test_example2/*_RGB.tif'))],
+                    dem_file=str(root_path.joinpath('data/inputs/test_example2/dem.tif')),
+                    pos_ori_file=str(root_path.joinpath('data/inputs/test_example2/camera_pos_ori.txt')),
+                    read_conf=str(root_path.joinpath('data/inputs/test_example2/config.yaml')),
+                    ortho_dir=str(root_path.joinpath('data/outputs/test_example2')), verbosity=2, write_conf=None)
 
         # delete the ortho files if they exist
-        ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example/*_ORTHO.tif'))
+        ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example2/*_ORTHO.tif'))
         for ortho_im_filename in glob.glob(ortho_im_wildcard):
             os.remove(ortho_im_filename)
 
