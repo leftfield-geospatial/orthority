@@ -109,13 +109,13 @@ class Camera:
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
-    def update_intrinsic(self, geo_transform, kappa=None):
+    def update_intrinsic(self, geo_transform=None, kappa=None):
         """
         Update camera intrinsic parameters
 
         Parameters
         ----------
-        geo_transform : numpy.array_like
+        geo_transform : (optional) numpy.array_like
                         gdal or rasterio 6 element image transform
         kappa :         float
                         (optional) kappa angle in degrees - if not specified kappa from last call of update_extrinsic()
@@ -124,15 +124,21 @@ class Camera:
 
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
-        if np.size(geo_transform) < 6:
+        if geo_transform and np.size(geo_transform) < 6:
             raise Exception('len(geo_transform) < 6')
 
         if kappa is None:
             kappa = self._kappa
 
-        # image signed dimensions for orientation (origin and kappa)
-        image_size_s = -np.sign(np.cos(kappa)) * np.float64(
-            [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
+        if False:
+            # TODO: can this be removed in favour of the general option below?
+            # image signed dimensions for orientation (origin and kappa)
+            image_size_s = -np.sign(np.cos(kappa)) * np.float64(
+                [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
+        else:
+            # TODO: understand this sign convention and check its generality
+            image_size_s = np.float64([-1 * self._im_size[0], self._im_size[1]])
+
         sigma_xy = self._focal_len * image_size_s / self._sensor_size  # x,y signed focal lengths in pixels
 
         self._K = np.array([[sigma_xy[0], 0, self._im_size[0] / 2],
@@ -399,6 +405,55 @@ class OrthoIm:
                 ortho_tr = ortho_cnrs.max(axis=1)  # top right
 
         return ortho_bl, ortho_tr
+
+    def __get_ortho_bounds(self, dem_min=0):
+        """
+        Get the bounds of the output ortho image in its CRS
+
+        Parameters
+        ----------
+        dem_min : (optional) minimum altitude over the image area in m, default=0
+
+        Returns
+        -------
+        ortho_bl: numpy.array_like
+                  [x, y] co-ordinates of the bottom left corner
+        ortho_tr: numpy.array_like
+                  [x, y] co-ordinates of the top right corner
+        """
+
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
+            with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
+
+                dem_min = 0
+                dem_min_prev = 1000
+                while np.abs(dem_min - dem_min_prev) > 1:
+                    # find the bounds of the ortho by projecting 2D image pixel corners onto 3D z plane = dem_min
+                    dem_min_prev = dem_min
+                    ortho_cnrs = self._camera.project_to_z(
+                        np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
+                        dem_min)[:2, :]
+                    # ortho_bounds = [*ortho_cnrs.min(axis=1), *ortho_cnrs.max(axis=1)]
+
+                    [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :])
+                    dem_bounds = [np.min(dem_xbounds), np.min(dem_ybounds), np.max(dem_xbounds), np.max(dem_ybounds)]
+                    dem_win = rio.windows.from_bounds(*dem_bounds, transform=dem_im.transform)
+                    dem_im_array = dem_im.read(self.dem_band, window=dem_win)
+                    dem_min = np.max([dem_im_array.min(), 0])
+
+                    # src_cnrs = np.array(
+                    #     [[src_im.bounds.left, src_im.bounds.bottom], [src_im.bounds.right, src_im.bounds.bottom],
+                    #      [src_im.bounds.right, src_im.bounds.top], [src_im.bounds.left, src_im.bounds.top]]).T
+                    #
+                    # ortho_cnrs = np.column_stack([ortho_cnrs, src_cnrs])  # make double sure we encompass the source image
+
+                    # in some cases the source bounds may be invalid, so rather ommit
+                ortho_cnrs = np.column_stack([ortho_cnrs])
+                ortho_bl = ortho_cnrs.min(axis=1)  # bottom left
+                ortho_tr = ortho_cnrs.max(axis=1)  # top right
+
+        return ortho_bl, ortho_tr
+
 
     def _remap_src_to_ortho(self, ortho_profile, dem_array):
         """
