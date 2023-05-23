@@ -214,6 +214,11 @@ class OrthoIm:
     ortho_bound_max_iters = 10
     # stop iterating ortho bounds when the difference in min(DEM) estimates goes below this value (m)
     ortho_bound_stop_crit = 1
+    default_config = dict(
+        crs=None, dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5], compress='deflate',
+        tile_size=[512, 512], interleave='band', photometric=None, nodata=0, per_band=False, driver='GTiff', dtype=None,
+        build_ovw=True, overwrite=True, write_mask=False
+    )
 
     def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
         """
@@ -273,14 +278,13 @@ class OrthoIm:
         else:
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 
-        if config is None:  # set defaults:
-            config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5],
-                          compress='deflate', tile_size=[512, 512], interleave='band', photometric=None, nodata=0,
-                          per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=False)
+        # allow for partial or no config
+        _config = self.default_config.copy()
+        if config is not None:
+            _config.update(**config)
+        self._parse_config(_config)
 
-        self._parse_config(config)
         self._check_rasters()
-        self.dem_min = 0.
 
         logger.debug(f'Ortho configuration: {config}')
         logger.debug(f'DEM: {self._dem_filename.parts[-1]}')
@@ -293,7 +297,7 @@ class OrthoIm:
             with rio.open(self._src_im_filename, 'r') as src_im:
                 try:
                     # check that we can read the source image
-                    tmp_array = src_im.read(1, window=src_im.block_window(1, 0, 0))
+                    tmp_array = src_im.read(1, window=Window(0, 0, 1, 1))
                 except Exception as ex:
                     if src_im.profile['compress'] == 'jpeg':  # assume it is a 12bit JPEG
                         raise Exception(f'Could not read {self._src_im_filename.stem}\n'
@@ -317,25 +321,38 @@ class OrthoIm:
         for key, value in config.items():
             setattr(self, key, value)
 
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(self._src_im_filename, 'r') as src_im:
+            src_crs = src_im.crs
+
+        if not src_crs and not self.crs:
+            raise ValueError(f'"crs" configuration value must be specified when the source image has no projection.')
+        try:
+            # derive crs from configuration string if specified, otherwise use source image crs
+            self.crs = rio.CRS.from_string(self.crs) if self.crs else src_crs
+        except:
+            raise ValueError(f'Unsupported "crs" configuration value: {self.crs}.')
+        if (src_crs and self.crs) and (src_crs != self.crs):
+            raise ValueError(f'"crs" configuration value ({self.crs}), and source image CRS ({src_crs}) are different.')
+
         try:
             self.dem_interp = Resampling[self.dem_interp]
         except:
-            raise Exception(f'Unknown "dem_interp" configuration type: {self.dem_interp}')
+            raise ValueError(f'Unsupported "dem_interp" configuration type: {self.dem_interp}.')
 
         cv_interp_dict = dict(average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC,
                               lanczos=cv2.INTER_LANCZOS4, nearest=cv2.INTER_NEAREST)
 
         if self.interp not in cv_interp_dict:
-            raise Exception(f'Unknown "interp" configuration type: {self.interp}')
+            raise Exception(f'Unsupported "interp" configuration type: {self.interp}.')
         else:
             self.interp = cv_interp_dict[self.interp]
 
         if self._ortho_im_filename.exists():
             if self.overwrite:
-                logger.warning(f'Deleting existing ortho file: {self._ortho_im_filename.stem}')
+                logger.warning(f'Deleting existing ortho file: {self._ortho_im_filename.stem}.')
                 os.remove(self._ortho_im_filename)
             else:
-                raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
+                raise FileExistsError(f'Ortho file {self._ortho_im_filename.stem} exists, skipping.')
 
     def _get_ortho_bounds(self):
         """
@@ -359,7 +376,7 @@ class OrthoIm:
                         np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
                         dem_min)[:2, :]
                     # TODO: rather warp/transform the bounds themselves in case of CRS distortions?
-                    ortho_dem_cnrs = np.array(transform(src_im.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :]))
+                    ortho_dem_cnrs = np.array(transform(self.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :]))
                     ortho_dem_bounds = [*ortho_dem_cnrs.min(axis=1), *ortho_dem_cnrs.max(axis=1)]
                     ortho_dem_win = dem_im.window(*ortho_dem_bounds)
                     bounded_sub_win = ortho_dem_win.intersection(dem_win)
@@ -525,9 +542,11 @@ class OrthoIm:
             ortho_transform = rio.transform.from_origin(
                 ortho_bounds[0], ortho_bounds[3], self.resolution[0], self.resolution[1]
             )
-            ortho_profile.update(nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
-                                 blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
-                                 height=ortho_wh[1], num_threads='all_cpus')
+            ortho_profile.update(
+                crs=self.crs, nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
+                blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0], height=ortho_wh[1],
+                num_threads='all_cpus'
+            )
 
             # overwrite source attributes in ortho_profile where config is not None
             attrs_to_check = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
@@ -543,6 +562,7 @@ class OrthoIm:
 
             # reproject and resample DEM to ortho bounds, CRS and grid
             with rio.open(self._dem_filename, 'r') as dem_im:
+                # TODO: avoid reading dem_im twice (here and in _get_ortho_bounds)
                 dem_array = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
