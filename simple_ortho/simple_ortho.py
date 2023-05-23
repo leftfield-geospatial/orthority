@@ -303,24 +303,6 @@ class OrthoIm:
                     else:
                         raise ex
 
-                with rio.open(self._dem_filename, 'r') as dem_im:
-                    # find source image bounds in DEM CRS
-                    # TODO: use transform_bounds and shapely
-                    [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs,
-                                                           [src_im.bounds.left, src_im.bounds.right],
-                                                           [src_im.bounds.top, src_im.bounds.bottom])
-                    src_bounds = rio.coords.BoundingBox(dem_xbounds[0], dem_ybounds[1], dem_xbounds[1], dem_ybounds[0])
-
-                    def _bound_coverage(src_b, dem_b):
-                        if ((src_b.top <= dem_b.top) and (src_b.bottom >= dem_b.bottom)
-                                and (src_b.left >= dem_b.left) and (src_b.right <= dem_b.right)):
-                            return True
-                        return False
-
-                    if not (_bound_coverage(src_bounds, dem_im.bounds)):
-                        raise Exception(f'DEM {self._dem_filename.parts[-1]} does not cover source image '
-                                        f'{self._src_im_filename.parts[-1]}')
-
     def _parse_config(self, config):
         """
         Parse dict config items where necessary
