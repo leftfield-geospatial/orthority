@@ -16,8 +16,8 @@
 
 import glob
 import os
-import pathlib
 import unittest
+from pathlib import Path
 
 import numpy as np
 import rasterio as rio
@@ -29,20 +29,21 @@ from simple_ortho import root_path, command_line
 
 
 class TestCommandLine(unittest.TestCase):
-    def test_ortho_im(self):
+    def _test_ortho_im(self, input_dir='data/inputs/test_example', output_dir='data/outputs/test_example'):
         """
         Test ortho_im script on images in data/inputs/test_example
         """
-
+        input_path = root_path.joinpath(input_dir)
+        output_path = root_path.joinpath(output_dir)
         # construct script args to orthorectify images in data/inputs/test_example
-        args = dict(src_im_file=[str(root_path.joinpath('data/inputs/test_example2/*_RGB.tif'))],
-                    dem_file=str(root_path.joinpath('data/inputs/test_example2/dem.tif')),
-                    pos_ori_file=str(root_path.joinpath('data/inputs/test_example2/camera_pos_ori.txt')),
-                    read_conf=str(root_path.joinpath('data/inputs/test_example2/config.yaml')),
-                    ortho_dir=str(root_path.joinpath('data/outputs/test_example2')), verbosity=2, write_conf=None)
+        args = dict(src_im_file=[str(input_path.joinpath('*_RGB.tif'))],
+                    dem_file=str(input_path.joinpath('dem.tif')),
+                    pos_ori_file=str(input_path.joinpath('camera_pos_ori.txt')),
+                    read_conf=str(input_path.joinpath('config.yaml')),
+                    ortho_dir=str(output_path), verbosity=2, write_conf=None)
 
         # delete the ortho files if they exist
-        ortho_im_wildcard = str(root_path.joinpath('data/outputs/test_example2/*_ORTHO.tif'))
+        ortho_im_wildcard = str(output_path.joinpath('*_ORTHO.tif'))
         for ortho_im_filename in glob.glob(ortho_im_wildcard):
             os.remove(ortho_im_filename)
 
@@ -84,9 +85,9 @@ class TestCommandLine(unittest.TestCase):
 
                         box1 = box(*ortho_im1.bounds)
                         box2 = box(*ortho_im2.bounds)
+                        common_geom = box1.intersection(box2)
 
-                        if box1.intersects(box2):  # the images overlap
-                            common_geom = box1.intersection(box2)
+                        if common_geom.area/box1.area > 0.2:  # the images overlap by > 20%
 
                             # find windows for the overlap area in each image and read
                             win1 = windows.from_bounds(*common_geom.bounds, transform=ortho_im1.transform)
@@ -100,8 +101,8 @@ class TestCommandLine(unittest.TestCase):
 
                             # find R2 corr coefficient between the valid data in the overlapping image regions
                             c = np.corrcoef(ortho_data1[common_mask], ortho_data2[common_mask])
-                            ortho_im_filestem1 = pathlib.Path(ortho_im_filename1).stem
-                            ortho_im_filestem2 = pathlib.Path(ortho_im_filename2).stem
+                            ortho_im_filestem1 = Path(ortho_im_filename1).stem
+                            ortho_im_filestem2 = Path(ortho_im_filename2).stem
 
                             print(f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}: {c[0, 1]:.4f}')
                             self.assertTrue(c[0, 1] > 0.5,
@@ -110,6 +111,9 @@ class TestCommandLine(unittest.TestCase):
         finally:
             pass  # leave the ortho images in the outputs dir so they can be manually checked if necessary
 
+    def test_ortho_im(self):
+        self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
+        self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
 
 if __name__ == '__main__':
     unittest.main()
