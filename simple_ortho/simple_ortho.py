@@ -27,6 +27,7 @@ import cv2
 import numpy as np
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, transform
+from rasterio.windows import Window
 
 from simple_ortho import get_logger
 
@@ -209,6 +210,11 @@ class Camera:
 
 
 class OrthoIm:
+    # maximum number of ortho bounds iterations
+    ortho_bound_max_iters = 10
+    # stop iterating ortho bounds when the difference in min(DEM) estimates goes below this value (m)
+    ortho_bound_stop_crit = 1
+
     def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
         """
         Class to orthorectify image with known DEM and camera model
@@ -349,110 +355,67 @@ class OrthoIm:
             else:
                 raise Exception(f'Ortho file {self._ortho_im_filename.stem} exists, skipping')
 
-    def _get_dem_min(self):
-        """
-        Find minimum of the DEM over the bounds of the source image
-        """
-
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
-            with rio.open(self._src_im_filename, 'r') as src_im:
-                with rio.open(self._dem_filename, 'r') as dem_im:
-                    # find source image bounds in DEM CRS
-                    [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs,
-                                                           [src_im.bounds.left, src_im.bounds.right],
-                                                           [src_im.bounds.top, src_im.bounds.bottom])
-                    dem_win = rio.windows.from_bounds(dem_xbounds[0], dem_ybounds[1], dem_xbounds[1], dem_ybounds[0],
-                                                      transform=dem_im.transform)
-
-                    # read DEM in source image ROI and find minimum
-                    dem_im_array = dem_im.read(1, window=dem_win)
-                    dem_min = np.max([dem_im_array.min(), 0])
-
-        return dem_min
-
-    def _get_ortho_bounds(self, dem_min=0):
+    def _get_ortho_bounds(self):
         """
         Get the bounds of the output ortho image in its CRS
 
-        Parameters
-        ----------
-        dem_min : (optional) minimum altitude over the image area in m, default=0
-
         Returns
         -------
-        ortho_bl: numpy.array_like
-                  [x, y] co-ordinates of the bottom left corner
-        ortho_tr: numpy.array_like
-                  [x, y] co-ordinates of the top right corner
-        """
-
-        with rio.Env():
-            with rio.open(self._src_im_filename, 'r') as src_im:
-                # find the bounds of the ortho by projecting 2D image pixel corners onto 3D z plane = dem_min
-                ortho_cnrs = self._camera.project_to_z(
-                    np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
-                    dem_min)[:2, :]
-
-                # src_cnrs = np.array(
-                #     [[src_im.bounds.left, src_im.bounds.bottom], [src_im.bounds.right, src_im.bounds.bottom],
-                #      [src_im.bounds.right, src_im.bounds.top], [src_im.bounds.left, src_im.bounds.top]]).T
-                #
-                # ortho_cnrs = np.column_stack([ortho_cnrs, src_cnrs])  # make double sure we encompass the source image
-
-                # in some cases the source bounds may be invalid, so rather ommit
-                ortho_cnrs = np.column_stack([ortho_cnrs])
-                ortho_bl = ortho_cnrs.min(axis=1)  # bottom left
-                ortho_tr = ortho_cnrs.max(axis=1)  # top right
-
-        return ortho_bl, ortho_tr
-
-    def __get_ortho_bounds(self, dem_min=0):
-        """
-        Get the bounds of the output ortho image in its CRS
-
-        Parameters
-        ----------
-        dem_min : (optional) minimum altitude over the image area in m, default=0
-
-        Returns
-        -------
-        ortho_bl: numpy.array_like
-                  [x, y] co-ordinates of the bottom left corner
-        ortho_tr: numpy.array_like
-                  [x, y] co-ordinates of the top right corner
+        ortho_bounds: numpy.array_like
+                  [left, bottom, right, top]
         """
 
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
-
+                # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
                 dem_min = 0
-                dem_min_prev = 1000
-                while np.abs(dem_min - dem_min_prev) > 1:
-                    # find the bounds of the ortho by projecting 2D image pixel corners onto 3D z plane = dem_min
-                    dem_min_prev = dem_min
+                dem_array = dem_array_win = None
+                dem_win = Window(0, 0, dem_im.width, dem_im.height)
+                for i in range(1, self.ortho_bound_max_iters):
+                    # find the ortho bounds in DEM crs by projecting 2D image pixel corners onto 3D z plane = dem_min
                     ortho_cnrs = self._camera.project_to_z(
                         np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
                         dem_min)[:2, :]
-                    # ortho_bounds = [*ortho_cnrs.min(axis=1), *ortho_cnrs.max(axis=1)]
+                    # TODO: rather warp/transform the bounds themselves in case of CRS distortions?
+                    ortho_dem_cnrs = np.array(transform(src_im.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :]))
+                    ortho_dem_bounds = [*ortho_dem_cnrs.min(axis=1), *ortho_dem_cnrs.max(axis=1)]
+                    ortho_dem_win = dem_im.window(*ortho_dem_bounds)
+                    bounded_sub_win = ortho_dem_win.intersection(dem_win)
 
-                    [dem_xbounds, dem_ybounds] = transform(src_im.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :])
-                    dem_bounds = [np.min(dem_xbounds), np.min(dem_ybounds), np.max(dem_xbounds), np.max(dem_ybounds)]
-                    dem_win = rio.windows.from_bounds(*dem_bounds, transform=dem_im.transform)
-                    dem_im_array = dem_im.read(self.dem_band, window=dem_win)
-                    dem_min = np.max([dem_im_array.min(), 0])
+                    if bounded_sub_win.width * bounded_sub_win.height <= 0:
+                        raise ValueError(
+                            f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
+                        )
 
-                    # src_cnrs = np.array(
-                    #     [[src_im.bounds.left, src_im.bounds.bottom], [src_im.bounds.right, src_im.bounds.bottom],
-                    #      [src_im.bounds.right, src_im.bounds.top], [src_im.bounds.left, src_im.bounds.top]]).T
-                    #
-                    # ortho_cnrs = np.column_stack([ortho_cnrs, src_cnrs])  # make double sure we encompass the source image
+                    if dem_array is None:
+                        # read the max DEM extent (dem_min=0) from file once
+                        # TODO: test boundless with ortho bounds outside of dem bounds
+                        # TODO: implement boundless read internally for speed
+                        dem_array = dem_im.read(self.dem_band, window=bounded_sub_win)
+                        dem_array_win = bounded_sub_win
 
-                    # in some cases the source bounds may be invalid, so rather ommit
-                ortho_cnrs = np.column_stack([ortho_cnrs])
-                ortho_bl = ortho_cnrs.min(axis=1)  # bottom left
-                ortho_tr = ortho_cnrs.max(axis=1)  # top right
+                    # find the minimum DEM value inside ortho_dem_bounds
+                    dem_array_slices = Window(
+                        bounded_sub_win.col_off - dem_array_win.col_off,
+                        bounded_sub_win.row_off - dem_array_win.row_off,
+                        bounded_sub_win.width, bounded_sub_win.height
+                    ).toslices()
+                    dem_min_prev = dem_min
+                    dem_min = np.max([dem_array[dem_array_slices].min(), 0])
 
-        return ortho_bl, ortho_tr
+                    # exit on convergence
+                    if np.abs(dem_min_prev - dem_min) <= self.ortho_bound_stop_crit:
+                        break
+
+                if (bounded_sub_win.width * bounded_sub_win.height < ortho_dem_win.width * ortho_dem_win.height):
+                    logger.warning(
+                        f'Ortho {self._ortho_im_filename.name} not fully covered by DEM {self._dem_filename.name}'
+                    )
+
+                if i >= self.ortho_bound_max_iters - 1:
+                    logger.warning(f'Ortho {self._ortho_im_filename.name} bounds iteration did not converge')
+
+        return [*ortho_cnrs.min(axis=1), *ortho_cnrs.max(axis=1)]
 
 
     def _remap_src_to_ortho(self, ortho_profile, dem_array):
@@ -569,17 +532,17 @@ class OrthoIm:
             proc_profile.enable()
 
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GDAL_TIFF_INTERNAL_MASK=True):
-            dem_min = self._get_dem_min()  # get min of DEM over image area
-
             # set up ortho profile based on source profile and predicted bounds
             with rio.open(self._src_im_filename, 'r') as src_im:
                 ortho_profile = src_im.profile
 
-            ortho_bl, ortho_tr = self._get_ortho_bounds(dem_min=dem_min)  # find extreme case (z=dem_min) image bounds
-            ortho_wh = np.int32(np.ceil(np.abs((ortho_bl - ortho_tr).squeeze()[:2] / self.resolution)))  # image size
+            ortho_bounds = self._get_ortho_bounds()  # find extreme case (z=min(DEM)) image bounds
+            ortho_dims = np.array(ortho_bounds[2:]) - np.array(ortho_bounds[:2]) # width, height in meters
+            ortho_wh = np.int32(np.ceil(ortho_dims / self.resolution))  # width, height in pixels
 
-            ortho_transform = rio.transform.from_origin(ortho_bl[0], ortho_tr[1], self.resolution[0],
-                                                        self.resolution[1])
+            ortho_transform = rio.transform.from_origin(
+                ortho_bounds[0], ortho_bounds[3], self.resolution[0], self.resolution[1]
+            )
             ortho_profile.update(nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
                                  blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0],
                                  height=ortho_wh[1], num_threads='all_cpus')

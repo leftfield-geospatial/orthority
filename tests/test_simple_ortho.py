@@ -92,17 +92,11 @@ class TestSimpleOrthoModule(unittest.TestCase):
             if 'interp' not in k:
                 self.assertEqual(getattr(ortho_im, k), config[k], msg=f'OrthoIm {k} config attribute set ok')
 
-        # test _get_dem_min() with hard coded vals
-        dem_min = ortho_im._get_dem_min()
-        self.assertAlmostEqual(dem_min, 162.65, places=1, msg="DEM min OK")
-
         # test _get_ortho_bounds() with hard coded vals
-        ortho_bl, ortho_tr = ortho_im._get_ortho_bounds(dem_min)
-        ortho_bl_check, ortho_tr_check = (np.array([-57129.40050924, -3731013.2329742]),
-                                          np.array([-53104.17740962, -3723906.88999849]))
+        ortho_bounds = ortho_im._get_ortho_bounds()
+        ortho_bounds_check = [-57129.40050924, -3731013.2329742, -53104.17740962, -3723906.88999849]
 
-        self.assertTrue(np.allclose(ortho_bl, ortho_bl_check, atol=1e-2), msg="Ortho BL corner OK")
-        self.assertTrue(np.allclose(ortho_tr, ortho_tr_check, atol=1e-2), msg="Ortho TR corner OK")
+        self.assertTrue(np.allclose(ortho_bounds, ortho_bounds_check, atol=1e-2), msg="Ortho bounds corner OK")
 
         try:
             ortho_im.orthorectify()         # run the orthorectification
@@ -114,7 +108,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
                 self.assertEqual(o_im.res, tuple(config['resolution']), 'Ortho resolution ok')
                 self.assertEqual(o_im.block_shapes[0], tuple(config['tile_size']), 'Tile size ok')
                 self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
-                self.assertTrue(np.allclose(np.array([o_im.bounds.left, o_im.bounds.bottom]), ortho_bl), 'BL cnr ok')
+                self.assertTrue(np.allclose([o_im.bounds.left, o_im.bounds.bottom], ortho_bounds[:2]), 'BL cnr ok')
 
                 # check the ortho and source image means and sizes in same order of magnitude
                 o_band = o_im.read(1)
