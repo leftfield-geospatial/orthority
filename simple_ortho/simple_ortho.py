@@ -581,7 +581,7 @@ class OrthoIm:
                 dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.float32('nan'), dtype='float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
-                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.nodata,
+                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.float32('nan'),
                           init_dest_nodata=True)
 
             self._remap_src_to_ortho(ortho_profile, dem_array)
