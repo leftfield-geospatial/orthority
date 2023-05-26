@@ -29,14 +29,16 @@ from simple_ortho import root_path, command_line
 
 
 class TestCommandLine(unittest.TestCase):
-    def _test_ortho_im(self, input_dir='data/inputs/test_example', output_dir='data/outputs/test_example'):
+    def _test_ortho_im(
+        self, input_dir='data/inputs/test_example', output_dir='data/outputs/test_example', input_wildcard='*_RGB.tif'
+    ):
         """
         Test ortho_im script on images in data/inputs/test_example
         """
         input_path = root_path.joinpath(input_dir)
         output_path = root_path.joinpath(output_dir)
         # construct script args to orthorectify images in data/inputs/test_example
-        args = dict(src_im_file=[str(input_path.joinpath('*_RGB.tif'))],
+        args = dict(src_im_file=[str(input_path.joinpath(input_wildcard))],
                     dem_file=str(input_path.joinpath('dem.tif')),
                     pos_ori_file=str(input_path.joinpath('camera_pos_ori.txt')),
                     read_conf=str(input_path.joinpath('config.yaml')),
@@ -114,6 +116,9 @@ class TestCommandLine(unittest.TestCase):
     def test_ortho_im(self):
         self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
         self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
+        # self._test_ortho_im(
+        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard = '*.JPG'
+        # )
 
 if __name__ == '__main__':
     unittest.main()

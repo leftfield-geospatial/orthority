@@ -138,7 +138,9 @@ class Camera:
                 [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
         else:
             # TODO: understand this sign convention and check its generality
-            image_size_s = np.float64([-1 * self._im_size[0], self._im_size[1]])
+            # TODO: does the source having a geotransform affect the signing below e.g. affect the orientation of read array
+            image_size_s = np.float64([-1 * self._im_size[0], self._im_size[1]])  # NGI
+            # image_size_s = np.float64([-1 * self._im_size[0], -1 * self._im_size[1]])     # ODM
 
         sigma_xy = self._focal_len * image_size_s / self._sensor_size  # x,y signed focal lengths in pixels
 
@@ -363,7 +365,6 @@ class OrthoIm:
         ortho_bounds: numpy.array_like
                   [left, bottom, right, top]
         """
-
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
                 # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
@@ -387,10 +388,11 @@ class OrthoIm:
                         )
 
                     if dem_array is None:
-                        # read the max DEM extent (dem_min=0) from file once
+                        # read the maximum extent (dem_min=0) from file once, using masking to exclude nodata from the
+                        # the call to .min() below
                         # TODO: test boundless with ortho bounds outside of dem bounds
                         # TODO: implement boundless read internally for speed
-                        dem_array = dem_im.read(self.dem_band, window=bounded_sub_win)
+                        dem_array = dem_im.read(self.dem_band, window=bounded_sub_win, masked=True)
                         dem_array_win = bounded_sub_win
 
                     # find the minimum DEM value inside ortho_dem_bounds
@@ -461,7 +463,7 @@ class OrthoIm:
                         ortho_ygrid = ygrid[:ortho_win.height, :ortho_win.width] + (
                                 ortho_win_transform.yoff - ortho_im.transform.yoff)
 
-                        # extract ortho_win from dem_array
+                        # extract ortho_win from dem_array, will be nan outside dem bounds or in dem nodata
                         ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
                                                 ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
 
@@ -471,10 +473,16 @@ class OrthoIm:
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width)
                         src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width)
 
-                        # Interpolate the ortho tile from the source image based on warped/unprojected grids
-                        ortho_im_win_array = np.zeros((src_im_array.shape[0], ortho_win.height, ortho_win.width),
-                                                      dtype=ortho_im.dtypes[0])
+                        # Interpolate the ortho tile from the source image based on warped/unprojected grids.
+                        ortho_im_win_array = np.full(
+                            (src_im_array.shape[0], ortho_win.height, ortho_win.width), fill_value=self.nodata,
+                            dtype=ortho_im.dtypes[0]
+                        )
+                        # TODO: check how this works with source nodata.  generally the source image will be rectangular
+                        #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
+                        #  would work
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
+                            # ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata
                             ortho_im_win_array[oi, :, :] = cv2.remap(src_im_array[oi, :, :], src_jj, src_ii,
                                                                      self.interp, borderMode=cv2.BORDER_CONSTANT,
                                                                      borderValue=self.nodata)
@@ -563,7 +571,14 @@ class OrthoIm:
             # reproject and resample DEM to ortho bounds, CRS and grid
             with rio.open(self._dem_filename, 'r') as dem_im:
                 # TODO: avoid reading dem_im twice (here and in _get_ortho_bounds)
-                dem_array = np.zeros((ortho_wh[1], ortho_wh[0]), 'float32')
+                # TODO: also, for orthorectifying multiple images with the same dem, it would make sense to read it once
+                #  for the batch, so perhaps a separate dem class
+                # TODO: read only the relevant sub-window from the dem, dems may be high res / large memory - does
+                #  passing rio.band(dem_im) do this automatically?
+                # TODO: generalise the dtype, to allow float64 internal computation - see https://github.com/leftfield-geospatial/simple-ortho/issues/3
+                # Reproject dem to ortho crs and grid. Use nan for dem nodata internally, so that portions of the
+                # ortho in dem nodata, or outside the dem, will be set to self.nodata in self._remap_src_to_ortho.
+                dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.float32('nan'), dtype='float32')
                 reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                           dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
                           src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=self.nodata,
