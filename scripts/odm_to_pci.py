@@ -6,7 +6,7 @@ import cv2
 
 def angle_axis_to_opk(angle_exis):
     # ODM orientations are in angle/axis format (see https://github.com/mapillary/OpenSfM/issues/121)
-    R = cv2.Rodrigues(np.array(angle_exis))[0]
+    R = cv2.Rodrigues(np.array(angle_exis))[0].T
     # adapted from https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega = np.arctan2(-R[1, 2], R[2, 2])
     phi = np.arcsin(R[0, 2])
@@ -35,8 +35,8 @@ with open(Path(input_dir).joinpath(cam_pos_ori_file), 'w', newline='', encoding=
         src_dict = cam_pos_ori_dict[src_path.name]
         # opk = hrp2opk(*np.rad2deg(src_dict['ori']))
         # src_dict['pos'][-1] += 15
-        opk = np.rad2deg(angle_axis_to_opk(src_dict['ori']))
+        opk = np.degrees(angle_axis_to_opk(src_dict['ori']))
         writer.writerow([src_path.stem, *src_dict['pos'], *opk])
+        # writer.writerow([src_path.stem, *src_dict['pos'], *src_dict['ori']])
         # writer.writerow([src_path.stem, *src_dict['pos'], *(np.rad2deg(src_dict['ori']))])
         # writer.writerow([src_path.stem, *src_dict['pos'], *(opk)])
-
