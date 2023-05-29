@@ -71,12 +71,14 @@ class TestCommandLine(unittest.TestCase):
                         ortho_array_masked = ortho_array[ortho_array != nodata]
 
                         # compare source and ortho means
-                        self.assertAlmostEqual(ortho_array_masked.mean() / 10, src_array.mean() / 10, places=0,
+                        source_mean = src_array.mean()
+                        self.assertAlmostEqual(ortho_array_masked.mean(), source_mean, delta=source_mean/10,
                                                msg='Ortho and source means in same order of magnitude')
 
-                        # compare source and ortho bounds
-                        self.assertTrue(not rio.coords.disjoint_bounds(src_im.bounds, ortho_im.bounds),
-                                        msg='Ortho and source bounds overlap')
+                        if src_im.crs and not src_im.transform == rio.Affine.identity():
+                            # compare source and ortho bounds
+                            self.assertTrue(not rio.coords.disjoint_bounds(src_im.bounds, ortho_im.bounds),
+                                            msg='Ortho and source bounds overlap')
 
             # check overlapping regions between pairwise combinations of ortho-images are roughly similar
             ortho_im_list = glob.glob(ortho_im_wildcard)
@@ -116,9 +118,9 @@ class TestCommandLine(unittest.TestCase):
     def test_ortho_im(self):
         self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
         self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
-        # self._test_ortho_im(
-        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard = '*.JPG'
-        # )
+        self._test_ortho_im(
+            input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard = '*.JPG'
+        )
 
 if __name__ == '__main__':
     unittest.main()
