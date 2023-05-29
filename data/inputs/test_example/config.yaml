@@ -3,6 +3,9 @@ camera:
   name: Integraph DMC               # Not used
   focal_len: 120.                   # Focal length in mm
   sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in mm
+# the above but in normalised units
+#  focal_len: 1.3021                   # Focal length in mm
+#  sensor_size: [ 1, 1.8 ]     # Sensor/CCD [width, height] dimensions in mm
 ortho:
   crs:                        # CRS of the camera locations, (source) and ortho image
   dem_interp: cubic_spline    # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)

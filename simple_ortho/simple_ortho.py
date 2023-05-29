@@ -107,6 +107,8 @@ class Camera:
                             [0, 0, 1]])
 
         self._R = np.dot(np.dot(omega_r, phi_r), kappa_r).astype(self._dtype)
+        # self._R = np.dot(np.dot(kappa_r, phi_r), omega_r).astype(self._dtype)
+        # self._R = cv2.Rodrigues(np.array(orientation))[0].astype(self._dtype).T
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
@@ -131,22 +133,34 @@ class Camera:
         if kappa is None:
             kappa = self._kappa
 
-        if False:
-            # TODO: can this be removed in favour of the general option below?
-            # image signed dimensions for orientation (origin and kappa)
-            image_size_s = -np.sign(np.cos(kappa)) * np.float64(
-                [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
-        else:
-            # TODO: understand this sign convention and check its generality
-            # TODO: does the source having a geotransform affect the signing below e.g. affect the orientation of read array
-            image_size_s = np.float64([-1 * self._im_size[0], self._im_size[1]])  # NGI
-            # image_size_s = np.float64([-1 * self._im_size[0], -1 * self._im_size[1]])     # ODM
+        # if False:
+        #     # TODO: can this be removed in favour of the general option below?
+        #     # image signed dimensions for orientation (origin and kappa)
+        #     image_size_s = -np.sign(np.cos(kappa)) * np.float64(
+        #         [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
+        # else:
+        #     # TODO: understand this sign convention and check its generality
+        #     # TODO: does the source having a geotransform affect the signing below e.g. affect the orientation of read array
+        #     image_size_s = np.float64([self._im_size[0], self._im_size[1]])  # NGI
+        #     # image_size_s = np.float64([self._im_size[0], self._im_size[1]])     # ODM
 
-        sigma_xy = self._focal_len * image_size_s / self._sensor_size  # x,y signed focal lengths in pixels
+        sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
 
-        self._K = np.array([[sigma_xy[0], 0, self._im_size[0] / 2],
+        # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
+        # looking through the camera at the scene) to pixel co-ords (x->right, y->down convention).
+        self._K = np.array([[-sigma_xy[0], 0, self._im_size[0] / 2],
                             [0, sigma_xy[1], self._im_size[1] / 2],
                             [0, 0, 1]], dtype=self._dtype)
+
+        # Kc = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=self._dtype) # ODM
+        # Kc = np.array([[1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=self._dtype) # NGI
+
+        # self._K = np.dot(Kc, self._K)
+        # self._K = np.dot(self._K, Kc)
+        # NGI
+        # self._K = np.array([[sigma_xy[0], 0, self._im_size[0] / 2],
+        #                     [0, sigma_xy[1], self._im_size[1] / 2],
+        #                     [0, 0, 1]], dtype=self._dtype)
         return
 
     def unproject(self, x, use_cv=False):
@@ -179,7 +193,7 @@ class Camera:
             # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
             x_ = np.dot(self._R.T, (x - self._T))
             # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
-            ij = np.dot(self._K, x_ / x_[2, :])[:2, :]
+            ij = (np.dot(self._K, x_ ) / x_[2, :])[:2, :]
 
         return ij
 
@@ -204,10 +218,12 @@ class Camera:
             raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
 
         ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
+        # TODO: store inverse rather than recalculate each time
         x_ = np.dot(np.linalg.inv(self._K), ij_)
-        x_r = np.dot(self._R, x_)  # rotate first (camera to world)
-        x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T  # scale to desired z and offset to world
-
+        # rotate first (camera to world) so that we have world aligned axes with origin on the camera
+        x_r = np.dot(self._R, x_)
+        # scale to desired z (offset for camera z) with origin on camera, then offset to world
+        x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
         return x
 
 
@@ -433,7 +449,7 @@ class OrthoIm:
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
 
-        # initialse tile grid here once off (save cpu) - to offset later (requires N-up geotransform)
+        # initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform)
         j_range = np.arange(0, self.tile_size[0], dtype='float32')
         i_range = np.arange(0, self.tile_size[1], dtype='float32')
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
@@ -449,6 +465,8 @@ class OrthoIm:
 
                 ttl_blocks = np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) * np.ceil(
                     ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
+
+                # TODO: if we want to allow for src nodata, then read masks here, and set src_im_array[mask] = nan below
 
                 for bi in bands.tolist():
                     # read source image band(s)

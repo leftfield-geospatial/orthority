@@ -32,6 +32,7 @@ np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
 
+# TODO: remove pandas dependency
 
 def parse_args():
     """ Parse arguments """
