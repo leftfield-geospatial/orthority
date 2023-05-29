@@ -7,7 +7,9 @@ import cv2
 def angle_axis_to_opk(angle_exis):
     # ODM orientations are in angle/axis format (see https://github.com/mapillary/OpenSfM/issues/121)
     R = cv2.Rodrigues(np.array(angle_exis))[0].T
-    # adapted from https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    # rotate ODM R into PATB orientation used by simple-ortho
+    R = np.dot(R, np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+    # extract OPK from R - adapted from https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega = np.arctan2(-R[1, 2], R[2, 2])
     phi = np.arcsin(R[0, 2])
     kappa =  np.arctan2(- R[0, 1], R[0, 0])
