@@ -66,8 +66,8 @@ class Camera:
         if np.size(sensor_size) != 2 or np.size(im_size) != 2:
             raise Exception('len(sensor_size) != 2 or len(image_size) != 2')
 
-        self._sensor_size = sensor_size
-        self._im_size = im_size
+        self._sensor_size = np.array(sensor_size)
+        self._im_size = np.array(im_size)
         self._focal_len = focal_len
 
         self.update_intrinsic(geo_transform)
@@ -192,8 +192,8 @@ class Camera:
         else:
             # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
             x_ = np.dot(self._R.T, (x - self._T))
-            # homogenise xyz/z and apply intrinsic matrix, discarding 3rd dimension
-            ij = (np.dot(self._K, x_ ) / x_[2, :])[:2, :]
+            # homogenise xyz/z and apply intrinsic matrix, then discard the 3rd dimension
+            ij = (np.dot(self._K, x_ / x_[2, :]))[:2, :]
 
         return ij
 
