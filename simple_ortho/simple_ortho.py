@@ -70,7 +70,7 @@ class Camera:
         self._im_size = np.array(im_size)
         self._focal_len = focal_len
 
-        self.update_intrinsic(geo_transform)
+        self.update_intrinsic()
         logger.debug(f'Camera configuration: {dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size)}')
         logger.debug(f'Position: {position}')
         logger.debug(f'Orientation: {orientation}')
@@ -112,21 +112,13 @@ class Camera:
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
-    def update_intrinsic(self, geo_transform=None):
+    def update_intrinsic(self):
         """
         Update camera intrinsic parameters
-
-        Parameters
-        ----------
-        geo_transform : (optional) numpy.array_like
-                        gdal or rasterio 6 element image transform
         """
 
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
-        if geo_transform and np.size(geo_transform) < 6:
-            raise Exception('len(geo_transform) < 6')
-
         sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
 
         # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
