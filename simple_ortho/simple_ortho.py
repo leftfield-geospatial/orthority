@@ -112,7 +112,7 @@ class Camera:
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
-    def update_intrinsic(self, geo_transform=None, kappa=None):
+    def update_intrinsic(self, geo_transform=None):
         """
         Update camera intrinsic parameters
 
@@ -120,9 +120,6 @@ class Camera:
         ----------
         geo_transform : (optional) numpy.array_like
                         gdal or rasterio 6 element image transform
-        kappa :         float
-                        (optional) kappa angle in degrees - if not specified kappa from last call of update_extrinsic()
-                        is used
         """
 
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
@@ -130,37 +127,13 @@ class Camera:
         if geo_transform and np.size(geo_transform) < 6:
             raise Exception('len(geo_transform) < 6')
 
-        if kappa is None:
-            kappa = self._kappa
-
-        # if False:
-        #     # TODO: can this be removed in favour of the general option below?
-        #     # image signed dimensions for orientation (origin and kappa)
-        #     image_size_s = -np.sign(np.cos(kappa)) * np.float64(
-        #         [np.sign(geo_transform[0]) * self._im_size[0], np.sign(geo_transform[4]) * self._im_size[1]])
-        # else:
-        #     # TODO: understand this sign convention and check its generality
-        #     # TODO: does the source having a geotransform affect the signing below e.g. affect the orientation of read array
-        #     image_size_s = np.float64([self._im_size[0], self._im_size[1]])  # NGI
-        #     # image_size_s = np.float64([self._im_size[0], self._im_size[1]])     # ODM
-
         sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
 
         # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
-        # looking through the camera at the scene) to pixel co-ords (x->right, y->down convention).
+        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
         self._K = np.array([[-sigma_xy[0], 0, self._im_size[0] / 2],
                             [0, sigma_xy[1], self._im_size[1] / 2],
                             [0, 0, 1]], dtype=self._dtype)
-
-        # Kc = np.array([[1, 0, 0], [0, 1, 0], [0, 0, -1]], dtype=self._dtype) # ODM
-        # Kc = np.array([[1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=self._dtype) # NGI
-
-        # self._K = np.dot(Kc, self._K)
-        # self._K = np.dot(self._K, Kc)
-        # NGI
-        # self._K = np.array([[sigma_xy[0], 0, self._im_size[0] / 2],
-        #                     [0, sigma_xy[1], self._im_size[1] / 2],
-        #                     [0, 0, 1]], dtype=self._dtype)
         return
 
     def unproject(self, x, use_cv=False):
@@ -220,7 +193,7 @@ class Camera:
         ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
         # TODO: store inverse rather than recalculate each time
         x_ = np.dot(np.linalg.inv(self._K), ij_)
-        # rotate first (camera to world) so that we have world aligned axes with origin on the camera
+        # rotate first (camera to world) to get world aligned axes with origin on the camera
         x_r = np.dot(self._R, x_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
         x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
@@ -406,8 +379,6 @@ class OrthoIm:
                     if dem_array is None:
                         # read the maximum extent (dem_min=0) from file once, using masking to exclude nodata from the
                         # the call to .min() below
-                        # TODO: test boundless with ortho bounds outside of dem bounds
-                        # TODO: implement boundless read internally for speed
                         dem_array = dem_im.read(self.dem_band, window=bounded_sub_win, masked=True)
                         dem_array_win = bounded_sub_win
 
@@ -433,7 +404,6 @@ class OrthoIm:
                     logger.warning(f'Ortho {self._ortho_im_filename.name} bounds iteration did not converge')
 
         return [*ortho_cnrs.min(axis=1), *ortho_cnrs.max(axis=1)]
-
 
     def _remap_src_to_ortho(self, ortho_profile, dem_array):
         """
