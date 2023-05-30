@@ -2,10 +2,9 @@ from setuptools import setup, find_packages
 
 # To install local development version use:
 #    pip install -e .
-
 setup(
     name='simple-ortho',
-    version='0.1.0',
+    version='0.2.0',
     description='Orthorectification with known camera model and DEM',
     author='Dugal Harris',
     author_email='dugalh@gmail.com',
@@ -21,5 +20,5 @@ setup(
         'shapely>=1.7'
     ],
     entry_points = {'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},
-    scripts=['scripts/ortho_im.py', 'scripts/batch_recompress.bat']
+    scripts=['scripts/batch_recompress.bat']
 )
