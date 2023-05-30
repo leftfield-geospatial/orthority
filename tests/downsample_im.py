@@ -38,8 +38,7 @@ def parse_arguments():
                     'Intended for NGI unrectified imagery.')
     parser.add_argument("src_im_wildcard", help="source image wildcard pattern or directory (e.g. '.' or '*_CMP.TIF')",
                         type=str)
-    parser.add_argument("-s", "--scale", help="scale factor to downsample by (default=12)", default=12,
-                        choices=range(1, 1000), type=int)
+    parser.add_argument("-s", "--scale", help="scale factor to downsample by (default=12)", default=12, type=int)
     return parser.parse_args()
 
 
