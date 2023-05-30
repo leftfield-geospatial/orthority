@@ -89,7 +89,7 @@ Where `<Image file stem>` is the source file name excluding extension.
 
 For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
-**Note** that the camera (Easting, Northing) position must be specified in the same co-ordinate reference system (CRS) as that of the source image.
+**Note** that if the source image is geo-referenced and has a co-ordinate reference system (CRS), the camera (Easting, Northing) position must be specified in the source CRS.  Where the source image has no CRS, the CRS of the camera (Easting, Northing) position must be specified in [``config.yaml``](#configuration).
 
 Example file:
 ```
@@ -103,27 +103,28 @@ Example file:
 
 Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Optionally, users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into 'camera' and 'ortho' sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below and commented in [config.yaml](config.yaml).  
 
-| Section | Parameter  | Description
-|--------|------------|------------
+| Section  | Parameter  | Description
+|----------|------------|------------
 | `camera` | `name` | Descriptive name
-| | `focal_len` | Focal length in mm
-| | `sensor_size` | Sensor/CCD `[width, height]` dimensions in mm.
-| | `im_size` | Image `[width, height]` dimensions in pixels.
-| `ortho` | `dem_interp` | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
-| | `dem_band` | Index of band in DEM raster to use (1-based).
-| | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
-| | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
-| | `build_ovw` | Build internal overviews (`True`, `False`).
-| | `overwrite` | Overwrite ortho image(s) if they exist (`True`, `False`).
-| |  `write_mask` | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
-| | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
-| | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
-| | `resolution` | Output pixel size `[x, y]` in m.
-| | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
-| | `compress` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
-| | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compress=deflate`. (None = same as source image).
-| | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
-| | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
+|          | `focal_len` | Focal length in mm
+|          | `sensor_size` | Sensor/CCD `[width, height]` dimensions in mm.
+|          | `im_size` | Image `[width, height]` dimensions in pixels.
+| `ortho`  | `crs` | CRS of the ortho image and camera positions as an EPSG or WKT string.  Can be omitted if the source image has a CRS.   
+|          | `dem_interp` | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
+|          | `dem_band` | Index of band in DEM raster to use (1-based).
+|          | `interp` | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
+|          | `per_band` | Remap the source to the ortho-image band-by-band (`True`), or all at once (`False`).  `per_band=False` is generally faster, but requires more memory.   (`True`, `False`).
+|          | `build_ovw` | Build internal overviews (`True`, `False`).
+|          | `overwrite` | Overwrite ortho image(s) if they exist (`True`, `False`).
+|          |  `write_mask` | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
+|          | `driver` | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
+|          | `dtype` | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
+|          | `resolution` | Output pixel size `[x, y]` in m.
+|          | `tile_size` | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
+|          | `compress` | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
+|          | `interleave` | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compress=deflate`. (None = same as source image).
+|          | `photometric` | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
+|          | `nodata` | NODATA numeric value for the ortho-image (0 recommended).
 
 ## Example Application
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple-ortho.  No radiometric (colour) adjustments have been applied, this will be addressed in a separate tool. 

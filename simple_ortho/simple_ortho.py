@@ -304,6 +304,7 @@ class OrthoIm:
         for key, value in config.items():
             setattr(self, key, value)
 
+        # TODO: can we drop the use of the source CRS entirely?
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(self._src_im_filename, 'r') as src_im:
             src_crs = src_im.crs
 
