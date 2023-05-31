@@ -173,7 +173,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
                     camera = Camera(
                         camera_config['focal_len'], camera_config['sensor_size'], im_size, geo_transform, position,
-                        orientation, dtype=np.float32, dist_coeff=dist_coeff
+                        orientation, dist_coeff=dist_coeff
                     )
 
                     # create OrthoIm  and orthorectify

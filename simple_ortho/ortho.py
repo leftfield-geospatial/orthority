@@ -263,9 +263,11 @@ class OrthoIm:
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
 
-        # initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform)
-        j_range = np.arange(0, self.tile_size[0], dtype='float32')
-        i_range = np.arange(0, self.tile_size[1], dtype='float32')
+        # Initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform).
+        # Note that numpy is left to its default float64 precision for building the xy ortho grids in geo-referenced
+        # co-ordinates.  This precision is needed for e.g. high resolution drone imagery.
+        j_range = np.arange(0, self.tile_size[0])
+        i_range = np.arange(0, self.tile_size[1])
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
         xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
@@ -311,8 +313,10 @@ class OrthoIm:
                         src_ji = self._camera.unproject(
                             np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )])
                         )
-                        src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width)
-                        src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width)
+                        # now that co-rds are in pixel units, they are converted to float32 for compatibility with
+                        # cv2.remap (without meaningful loss of precision).
+                        src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
+                        src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
 
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids.
                         ortho_im_win_array = np.full(
@@ -419,15 +423,13 @@ class OrthoIm:
                 #  for the batch, so perhaps a separate dem class
                 # TODO: read only the relevant sub-window from the dem, dems may be high res / large memory - does
                 #  passing rio.band(dem_im) do this automatically?
-                # TODO: generalise the dtype, to allow float64 internal computation - see
-                #  https://github.com/leftfield-geospatial/simple-ortho/issues/3
                 # Reproject dem to ortho crs and grid. Use nan for dem nodata internally, so that portions of the
                 # ortho in dem nodata, or outside the dem, will be set to self.nodata in self._remap_src_to_ortho.
-                dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.float32('nan'), dtype='float32')
+                dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.nan)
                 reproject(
                     rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                     dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
-                    src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.float32('nan'),
+                    src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.nan,
                     init_dest_nodata=True
                 )
 

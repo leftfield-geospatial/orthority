@@ -26,7 +26,7 @@ logger = get_logger(__name__)
 
 class Camera:
     def __init__(
-        self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dtype='float32', dist_coeff=None
+        self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dist_coeff=None
     ):
         """
         Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
@@ -46,11 +46,8 @@ class Camera:
                         column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
         orientation :   numpy.array_like
                         camera orientation [omega, phi, kappa] angles in radians
-        dtype :         numpy.dtype, Type
-                        Data type to use for camera parameters (to avoid e.g. unproject forcing float32 to 64)
         """
 
-        self._dtype = dtype
         self.update_extrinsic(position, orientation)
 
         if np.size(sensor_size) != 2 or np.size(im_size) != 2:
@@ -80,7 +77,7 @@ class Camera:
         """
         if np.size(position) != 3 or np.size(orientation) != 3:
             raise Exception('len(position) != 3 or len(orientation) != 3')
-        self._T = np.array(position, dtype=self._dtype).reshape(3, 1)
+        self._T = np.array(position).reshape(3, 1)
 
         self._omega, self._phi, self._kappa = orientation
 
@@ -105,7 +102,7 @@ class Camera:
              [0, 0, 1]]
         )
 
-        self._R = np.dot(np.dot(omega_r, phi_r), kappa_r).astype(self._dtype)
+        self._R = np.dot(np.dot(omega_r, phi_r), kappa_r)
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
@@ -124,7 +121,7 @@ class Camera:
         self._K = np.array(
             [[-sigma_xy[0], 0, self._im_size[0] / 2],
              [0, sigma_xy[1], self._im_size[1] / 2],
-             [0, 0, 1]], dtype=self._dtype
+             [0, 0, 1]]
         )
         return
 
@@ -152,7 +149,7 @@ class Camera:
 
         if use_cv:  # use opencv
             ij, _ = cv2.projectPoints(
-                x - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K, distCoeffs=self._dist_coeff
+                x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
             )
             ij = np.squeeze(ij).T
         else:

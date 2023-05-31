@@ -37,8 +37,7 @@ def create_camera():
                            -0.001324094632423112, 0.4699268845788538)
 
     # create camera
-    return Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation,
-                               dtype=np.float32)
+    return Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation)
 
 
 class TestSimpleOrthoModule(unittest.TestCase):
@@ -57,7 +56,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # create arbitrary world co-ords and unproject to image co-ords
         start_x = np.array([-52359.614680, -3727390.785280, 500])
         x = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
-        ij = camera.unproject(x, use_cv=False)
+        ij = camera.unproject(x)
 
         # re-project image co-ords to world space at original z
         x2 = camera.project_to_z(ij, x[2, :])
