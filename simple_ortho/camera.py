@@ -125,7 +125,7 @@ class Camera:
         )
         return
 
-    def unproject(self, x, use_cv=True):
+    def unproject(self, x, use_cv=False):
         """
         Unproject from 3D world co-ordinates to 2D image co-ordinates
 
@@ -147,7 +147,7 @@ class Camera:
         if not (x.shape[0] == 3 and x.shape[1] > 0):
             raise Exception('x must have 3 rows and more than one column')
 
-        if use_cv:  # use opencv
+        if use_cv or self._dist_coeff is not None:  # use opencv
             ij, _ = cv2.projectPoints(
                 x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
             )
@@ -180,9 +180,13 @@ class Camera:
         if not (ij.shape[0] == 2 and ij.shape[1] > 0):
             raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
 
-        ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-        # TODO: store inverse rather than recalculate each time
-        x_ = np.dot(np.linalg.inv(self._K), ij_)
+        if self._dist_coeff is not None:
+            x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
+            x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+        else:
+            # TODO: store inverse rather than recalculate each time
+            ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
+            x_ = np.dot(np.linalg.inv(self._K), ij_)
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         x_r = np.dot(self._R, x_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
