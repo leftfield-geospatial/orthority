@@ -293,12 +293,12 @@ class OrthoIm:
                         # offset tile grids to ortho_win
                         ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
                         ortho_xgrid = (
-                            xgrid[:ortho_win.height, :ortho_win.width] + ortho_win_transform.xoff -
-                            ortho_im.transform.xoff
+                            xgrid[:ortho_win.height, :ortho_win.width] + (ortho_win_transform.xoff -
+                            ortho_im.transform.xoff)
                         )
                         ortho_ygrid = (
-                            ygrid[:ortho_win.height, :ortho_win.width] + ortho_win_transform.yoff -
-                            ortho_im.transform.yoff
+                            ygrid[:ortho_win.height, :ortho_win.width] + (ortho_win_transform.yoff -
+                            ortho_im.transform.yoff)
                         )
 
                         # extract ortho_win from dem_array, will be nan outside dem bounds or in dem nodata

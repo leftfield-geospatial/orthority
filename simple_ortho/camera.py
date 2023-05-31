@@ -59,7 +59,7 @@ class Camera:
         self._sensor_size = np.array(sensor_size)
         self._im_size = np.array(im_size)
         self._focal_len = focal_len
-        self._dist_coeff = dist_coeff
+        self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
 
         self.update_intrinsic()
         config_dict = dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size, dist_coeff=dist_coeff)
