@@ -149,53 +149,48 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         for src_im_file_spec in src_im_file:
             src_im_file_path = pathlib.Path(src_im_file_spec)
             for src_im_filename in src_im_file_path.parent.glob(src_im_file_path.name):
-                try:
-                    if src_im_filename.stem not in cam_pos_orid.index:
-                        raise Exception(f'Could not find {src_im_filename.stem} in {pos_ori_file}')
+                if src_im_filename.stem not in cam_pos_orid.index:
+                    raise Exception(f'Could not find {src_im_filename.stem} in {pos_ori_file}')
 
-                    im_pos_ori = cam_pos_orid.loc[src_im_filename.stem]
-                    orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
-                    position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
+                im_pos_ori = cam_pos_orid.loc[src_im_filename.stem]
+                orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
+                position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
 
-                    # set ortho filename
-                    if ortho_dir is not None:
-                        ortho_im_filename = pathlib.Path(ortho_dir).joinpath(src_im_filename.stem + '_ORTHO.tif')
-                    else:
-                        ortho_im_filename = None
+                # set ortho filename
+                if ortho_dir is not None:
+                    ortho_im_filename = pathlib.Path(ortho_dir).joinpath(src_im_filename.stem + '_ORTHO.tif')
+                else:
+                    ortho_im_filename = None
 
-                    # Get src geotransform
-                    with rio.open(src_im_filename) as src_im:
-                        geo_transform = src_im.transform
-                        im_size = np.float64([src_im.width, src_im.height])
+                # Get src geotransform
+                with rio.open(src_im_filename) as src_im:
+                    geo_transform = src_im.transform
+                    im_size = np.float64([src_im.width, src_im.height])
 
-                    # create Camera
-                    camera_config = config['camera']
-                    dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
-                    camera = Camera(
-                        camera_config['focal_len'], camera_config['sensor_size'], im_size, geo_transform, position,
-                        orientation, dist_coeff=dist_coeff
-                    )
+                # create Camera
+                camera_config = config['camera']
+                dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
+                camera = Camera(
+                    camera_config['focal_len'], camera_config['sensor_size'], im_size, geo_transform, position,
+                    orientation, dist_coeff=dist_coeff
+                )
 
-                    # create OrthoIm  and orthorectify
-                    logger.info(f'Orthorectifying {src_im_filename.name}')
+                # create OrthoIm  and orthorectify
+                logger.info(f'Orthorectifying {src_im_filename.name}')
+                start_ttl = datetime.datetime.now()
+                ortho_im = OrthoIm(
+                    src_im_filename, dem_file, camera, config=config['ortho'], ortho_im_filename=ortho_im_filename
+                )
+                ortho_im.orthorectify()
+                ttl_time = (datetime.datetime.now() - start_ttl)
+                logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+
+                if config['ortho']['build_ovw']:
                     start_ttl = datetime.datetime.now()
-                    ortho_im = OrthoIm(
-                        src_im_filename, dem_file, camera, config=config['ortho'], ortho_im_filename=ortho_im_filename
-                    )
-                    ortho_im.orthorectify()
+                    logger.info(f'Building overviews for {src_im_filename.name}')
+                    ortho_im.build_ortho_overviews()
                     ttl_time = (datetime.datetime.now() - start_ttl)
                     logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
-
-                    if config['ortho']['build_ovw']:
-                        start_ttl = datetime.datetime.now()
-                        logger.info(f'Building overviews for {src_im_filename.name}')
-                        ortho_im.build_ortho_overviews()
-                        ttl_time = (datetime.datetime.now() - start_ttl)
-                        logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
-
-                except Exception as ex:
-                    # catch exceptions so that problem image(s) don't prevent processing of a batch
-                    logger.error('Exception: ' + str(ex))
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
