@@ -23,14 +23,16 @@ import numpy as np
 import pandas as pd
 import rasterio as rio
 import yaml
-from simple_ortho import get_logger
-from simple_ortho import root_path
-from simple_ortho import simple_ortho
+
+from simple_ortho import get_logger, root_path
+from simple_ortho.camera import Camera
+from simple_ortho.ortho import OrthoIm
 
 # print formatting
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
 logger = get_logger(__name__)
+
 
 # TODO: remove pandas dependency
 
@@ -38,19 +40,26 @@ def parse_args():
     """ Parse arguments """
 
     parser = argparse.ArgumentParser(description='Orthorectify an image with known DEM and camera model.')
-    parser.add_argument("src_im_file", help="path(s) and or wildcard(s) specifying the source image file(s)", type=str,
-                        metavar='src_im_file', nargs='+')
+    parser.add_argument(
+        "src_im_file", help="path(s) and or wildcard(s) specifying the source image file(s)", type=str,
+        metavar='src_im_file', nargs='+'
+    )
     parser.add_argument("dem_file", help="path to the DEM file", type=str)
     parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
-    parser.add_argument("-od", "--ortho-dir",
-                        help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
-                        type=str)
-    parser.add_argument("-rc", "--read-conf",
-                        help="read custom config from this path (default: use config.yaml in simple-ortho root)",
-                        type=str)
+    parser.add_argument(
+        "-od", "--ortho-dir",
+        help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
+        type=str
+    )
+    parser.add_argument(
+        "-rc", "--read-conf", help="read custom config from this path (default: use config.yaml in simple-ortho root)",
+        type=str
+    )
     parser.add_argument("-wc", "--write-conf", help="write default config to this path and exit", type=str)
-    parser.add_argument("-v", "--verbosity", choices=[1, 2, 3, 4],
-                        help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int)
+    parser.add_argument(
+        "-v", "--verbosity", choices=[1, 2, 3, 4],
+        help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int
+    )
     return parser.parse_args()
 
 
@@ -104,7 +113,8 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         # set logging level
         if verbosity is not None:
             logger.setLevel(10 * verbosity)
-            simple_ortho.logger.setLevel(10 * verbosity)
+            # TODO: test & fix logging
+            # simple_ortho.logger.setLevel(10 * verbosity)
 
         # read configuration
         if read_conf is None:
@@ -130,8 +140,10 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
         # read camera position and orientation and find row for src_im_file
-        cam_pos_orid = pd.read_csv(pos_ori_file, header=None, sep=' ', index_col=0,
-                                   names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+        cam_pos_orid = pd.read_csv(
+            pos_ori_file, header=None, sep=' ', index_col=0,
+            names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
+        )
 
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
@@ -158,14 +170,17 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
 
                     # create Camera
                     camera_config = config['camera']
-                    camera = simple_ortho.Camera(camera_config['focal_len'], camera_config['sensor_size'], im_size,
-                                                 geo_transform, position, orientation, dtype=np.float32)
+                    camera = Camera(
+                        camera_config['focal_len'], camera_config['sensor_size'], im_size, geo_transform, position,
+                        orientation, dtype=np.float32
+                    )
 
                     # create OrthoIm  and orthorectify
                     logger.info(f'Orthorectifying {src_im_filename.name}')
                     start_ttl = datetime.datetime.now()
-                    ortho_im = simple_ortho.OrthoIm(src_im_filename, dem_file, camera, config=config['ortho'],
-                                                    ortho_im_filename=ortho_im_filename)
+                    ortho_im = OrthoIm(
+                        src_im_filename, dem_file, camera, config=config['ortho'], ortho_im_filename=ortho_im_filename
+                    )
                     ortho_im.orthorectify()
                     ttl_time = (datetime.datetime.now() - start_ttl)
                     logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
@@ -184,6 +199,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
         raise ex
+
 
 def main_entry():
     """  Command line entry point """

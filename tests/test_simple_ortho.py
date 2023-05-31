@@ -21,7 +21,8 @@ import numpy as np
 import rasterio as rio
 
 from simple_ortho import root_path
-from simple_ortho import simple_ortho
+from simple_ortho.camera import Camera
+from simple_ortho.ortho import OrthoIm
 
 
 def create_camera():
@@ -36,7 +37,7 @@ def create_camera():
                            -0.001324094632423112, 0.4699268845788538)
 
     # create camera
-    return simple_ortho.Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation,
+    return Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation,
                                dtype=np.float32)
 
 
@@ -84,7 +85,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         if ortho_im_filename.exists():
             os.remove(ortho_im_filename)
 
-        ortho_im = simple_ortho.OrthoIm(src_im_filename, dem_filename, camera, config=config,
+        ortho_im = OrthoIm(src_im_filename, dem_filename, camera, config=config,
                                         ortho_im_filename=ortho_im_filename)            # create OrthoIm object
 
         # test config set correctly
