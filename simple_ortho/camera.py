@@ -16,8 +16,9 @@
 
 import cv2
 import numpy as np
-
+from typing import Union, Tuple
 from simple_ortho import get_logger
+
 
 # from scipy.ndimage import map_coordinates
 
@@ -26,7 +27,9 @@ logger = get_logger(__name__)
 
 class Camera:
     def __init__(
-        self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dist_coeff=None
+        self, focal_len: float, sensor_size: Union[Tuple[float], np.array], im_size: Union[Tuple[int], np.array],
+        position: Union[Tuple[float], np.array], orientation: Union[Tuple[float], np.array],
+        dist_coeff: Union[Tuple[float], np.array]=None
     ):
         """
         Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
@@ -34,18 +37,19 @@ class Camera:
 
         Parameters
         ----------
-        focal_len :     float
-                        focal length in mm
-        sensor_size :   numpy.array_like
-                        sensor (ccd) [width, height] in mm
-        im_size :       numpy.array_like
-                        image [width, height]] in pixels
-        geo_transform :     numpy.array_like
-                            gdal or rasterio 6 element image transform (only the pixel scale is used)
-        position :      numpy.array_like
-                        column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
-        orientation :   numpy.array_like
-                        camera orientation [omega, phi, kappa] angles in radians
+        focal_len: float
+            Focal length in mm.
+        sensor_size: np.array, tuple of float
+            Sensor (ccd) (width, height) in mm.
+        im_size: np.array, tuple of int
+            Image (width, height) in pixels
+        position: np.array, tuple of float
+            Camera location (x=easting, y=northing, z=altitude) co-ordinates, in image CRS.
+        orientation: np.array, tuple of float
+            Camera orientation (omega, phi, kappa) angles in radians (PATB convention).
+        dist_coeff: np.array, tuple of float, optional
+            Lens distortion coefficients in opencv order - see
+            https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d.
         """
 
         self.update_extrinsic(position, orientation)
@@ -57,8 +61,9 @@ class Camera:
         self._im_size = np.array(im_size)
         self._focal_len = focal_len
         self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
+        self._undistort_maps = None
 
-        self.update_intrinsic()
+        self._create_intrinsic()
         config_dict = dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size, dist_coeff=dist_coeff)
         logger.debug(f'Camera configuration: {config_dict}')
         logger.debug(f'Position: {position}')
@@ -106,11 +111,12 @@ class Camera:
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
-    def update_intrinsic(self):
+    def _create_intrinsic(self):
         """
         Update camera intrinsic parameters
         """
-
+        # TODO: this should be renamed and hidden from the user, I think the intrinsics will remain fixed for a
+        #  specific camera.  Consider different zooms and focal lengths for same camera though?
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
         # -Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
@@ -199,14 +205,14 @@ class Camera:
         x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
         return x
 
-    def undistort(self, array: np.array, nodata=0) -> np.array:
+    def undistort(self, array: np.array, nodata: Union[float, int]=0, interp: int=cv2.INTER_LINEAR) -> np.array:
         """
         Undistort an image.
 
         Parameters
         ----------
         array: np.array
-            Image array to undistort.  Can be a single 2D band, or multiple bands in rasterio format i.e. with bands
+            Image array to undistort.  Can be a single 2D band, or multiple bands in 3D rasterio format i.e. with bands
             along the first dimension.
 
         Returns
@@ -217,9 +223,19 @@ class Camera:
         if self._dist_coeff is None or np.all(self._dist_coeff == 0):
             return array
 
+        if self._undistort_maps is None:
+            # Find undistortion maps once off, and store for repeat use. (Opencv claims that using
+            # cv2.initUndistortRectifyMap(...m1type=cv2.CV_16SC2) speeds up cv2.remap - that isn't the case here, but
+            # it is still used to save some memory).
+            self._undistort_maps = cv2.initUndistortRectifyMap(
+                self._K, self._dist_coeff, None, None, self._im_size.astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
+            )
         def undistort_band(band_array: np.array) -> np.array:
             """ Undistort a 2D band array. """
-            return cv2.undistort(band_array, self._K, self._dist_coeff)
+            return cv2.remap(
+                band_array, *self._undistort_maps, interp, borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
+            )
+            # return cv2.undistort(band_array, self._K, self._dist_coeff)
 
         if array.ndim > 2:
             # Undistorting the 3D image in a single call requires conversion between rasterio and opencv 3D array

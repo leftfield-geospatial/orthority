@@ -145,6 +145,10 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
         )
 
+        camera = None
+        camera_config = config['camera']
+        dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
+
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
             src_im_file_path = pathlib.Path(src_im_file_spec)
@@ -164,15 +168,14 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
 
                 # Get src geotransform
                 with rio.open(src_im_filename) as src_im:
-                    geo_transform = src_im.transform
                     im_size = np.float64([src_im.width, src_im.height])
 
                 # create Camera
-                camera_config = config['camera']
-                dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
+                # TODO: create camera once per config, then update extrinsic / intrinsic per image file (so that any
+                #  distortion maps are not unnecessarily recreated)
                 camera = Camera(
-                    camera_config['focal_len'], camera_config['sensor_size'], im_size, geo_transform, position,
-                    orientation, dist_coeff=dist_coeff
+                    camera_config['focal_len'], camera_config['sensor_size'], im_size, position, orientation,
+                    dist_coeff=dist_coeff
                 )
 
                 # create OrthoIm  and orthorectify

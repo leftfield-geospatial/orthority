@@ -22,6 +22,7 @@ import pathlib
 import pstats
 import sys
 import tracemalloc
+import time
 
 import cv2
 import numpy as np
@@ -271,7 +272,6 @@ class OrthoIm:
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
         xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
-        import time
         time_ttl = dict(unproject=0, remap=0)
         block_count = 0
         with rio.open(self._src_im_filename, 'r') as src_im:
@@ -294,7 +294,10 @@ class OrthoIm:
                     # Undistort the source image so we can exclude the distortion model from the call to
                     # Camera.unproject() that builds the ortho maps below.  Overall, this is faster than using the
                     # source image as is, and including distortion in the ortho maps.
+                    s = time.time()
                     src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata)
+                    e = time.time()
+                    print(f'undistort time: {e-s}')
 
                     for ji, ortho_win in ortho_im.block_windows(1):
 
@@ -326,6 +329,7 @@ class OrthoIm:
                         # cv2.remap (without meaningful loss of precision).
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
                         src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
+                        # src_jj, src_ii = cv2.convertMaps(src_jj, src_ii, cv2.CV_16SC2)
 
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids.
                         ortho_im_win_array = np.full(
