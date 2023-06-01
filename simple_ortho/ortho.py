@@ -271,6 +271,8 @@ class OrthoIm:
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
         xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
+        import time
+        time_ttl = dict(unproject=0, remap=0)
         block_count = 0
         with rio.open(self._src_im_filename, 'r') as src_im:
             with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
@@ -289,6 +291,10 @@ class OrthoIm:
                 for bi in bands.tolist():
                     # read source image band(s)
                     src_im_array = src_im.read(bi)
+                    # Undistort the source image so we can exclude the distortion model from the call to
+                    # Camera.unproject() that builds the ortho maps below.  Overall, this is faster than using the
+                    # source image as is, and including distortion in the ortho maps.
+                    src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata)
 
                     for ji, ortho_win in ortho_im.block_windows(1):
 
@@ -310,9 +316,12 @@ class OrthoIm:
                         ]
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
+                        s = time.time()
                         src_ji = self._camera.unproject(
-                            np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )])
+                            np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
+                            distort=False
                         )
+                        time_ttl['unproject'] += time.time() - s
                         # now that co-rds are in pixel units, they are converted to float32 for compatibility with
                         # cv2.remap (without meaningful loss of precision).
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
@@ -326,6 +335,7 @@ class OrthoIm:
                         # TODO: check how this works with source nodata.  generally the source image will be rectangular
                         #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
                         #  would work
+                        s = time.time()
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
                             # ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata
                             ortho_im_win_array[oi, :, :] = cv2.remap(
@@ -336,6 +346,7 @@ class OrthoIm:
                             # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
                             #                                                order=2, mode='constant', cval=self.nodata,
                             #                                                prefilter=False)
+                        time_ttl['remap'] += time.time() - s
                         # remove blurring with nodata at the boundary where necessary
                         nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
                         if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
@@ -364,6 +375,8 @@ class OrthoIm:
                         sys.stdout.flush()
 
             sys.stdout.write('\n')
+            print(f'unproject avg time: {time_ttl["unproject"]/block_count}')
+            print(f'remap avg time: {time_ttl["remap"]/block_count}')
 
     def build_ortho_overviews(self):
         """
