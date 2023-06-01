@@ -125,29 +125,33 @@ class Camera:
         )
         return
 
-    def unproject(self, x, use_cv=False):
+    def unproject(self, x: np.array, distort: bool=False):
         """
         Unproject from 3D world co-ordinates to 2D image co-ordinates
 
+        When using this method to build orthorectification maps for use in e.g. ``cv2.remap()``, it is best to
+        leave ``distort=False``, and do the remap with an undistorted image (e.g. from ``Camera.undistort()``).
+        This is faster than remapping the distorted image with ``distort=True`` produced maps, as it avoids calling
+        ``cv2.projectPoints()`` (see below).
+
         Parameters
         ----------
-        x : numpy.array_like
+        x : np.array
             3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates to unproject.
             (x,y,z) along the first dimension.
-        use_cv : bool (optional)
-                 False = use the numpy implementation (faster - recommended)
-                 True = use the opencv implementation
+        distort : bool (optional)
+            Whether to include the distortion model (default: False).
 
         Returns
         -------
         ij : numpy.array_like
              2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
         """
-        # x,y,z down 1st dimension
         if not (x.shape[0] == 3 and x.shape[1] > 0):
             raise Exception('x must have 3 rows and more than one column')
 
-        if use_cv or self._dist_coeff is not None:  # use opencv
+        if distort and (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0)):
+            # include the distortion model via opencv
             ij, _ = cv2.projectPoints(
                 x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
             )
@@ -180,10 +184,12 @@ class Camera:
         if not (ij.shape[0] == 2 and ij.shape[1] > 0):
             raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
 
-        if self._dist_coeff is not None:
+        if (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0)):
+            # transform pixel co-ordinates to distortion corrected camera co-ordinates
             x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
             x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
         else:
+            # transform pixel co-ordinates to camera co-ordinates
             # TODO: store inverse rather than recalculate each time
             ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
             x_ = np.dot(np.linalg.inv(self._K), ij_)
@@ -192,3 +198,38 @@ class Camera:
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
         x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
         return x
+
+    def undistort(self, array: np.array, nodata=0) -> np.array:
+        """
+        Undistort an image.
+
+        Parameters
+        ----------
+        array: np.array
+            Image array to undistort.  Can be a single 2D band, or multiple bands in rasterio format i.e. with bands
+            along the first dimension.
+
+        Returns
+        -------
+        np.array
+            Undistorted array with the same shape and data type as ``array``.
+        """
+        if self._dist_coeff is None or np.all(self._dist_coeff == 0):
+            return array
+
+        def undistort_band(band_array: np.array) -> np.array:
+            """ Undistort a 2D band array. """
+            return cv2.undistort(band_array, self._K, self._dist_coeff)
+
+        if array.ndim > 2:
+            # Undistorting the 3D image in a single call requires conversion between rasterio and opencv 3D array
+            # ordering.  This leaves the output array ordering in a form that works with cv2.remap, but is slow.
+            # This can be fixed with an extra copy to repack the array, but we rather undistort by band here to avoid
+            # that and save a little memory.
+            out_array = np.full(array.shape, fill_value=nodata, dtype=array.dtype)
+            for bi in range(out_array.shape[0]):
+                out_array[bi] = undistort_band(array[bi])
+        else:
+            out_array = undistort_band(array)
+
+        return out_array
