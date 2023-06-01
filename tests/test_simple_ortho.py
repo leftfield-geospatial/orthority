@@ -33,11 +33,9 @@ def create_camera():
     # hard code camera parameters
     position = np.array([-55094.504480, -3727407.037480, 5258.307930])
     orientation = np.array([-0.349216, 0.298484, -179.086702]) * np.pi / 180.
-    transform = rio.Affine(-53284.28524772511, -0.469926884578832, -0.001324094632411565, -3730647.082199863,
-                           -0.001324094632423112, 0.4699268845788538)
 
     # create camera
-    return Camera(120, [92.160, 165.888], [640, 1152], transform, position, orientation)
+    return Camera(120, [92.160, 165.888], [640, 1152], position, orientation)
 
 
 class TestSimpleOrthoModule(unittest.TestCase):
