@@ -295,7 +295,7 @@ class OrthoIm:
                     # Camera.unproject() that builds the ortho maps below.  Overall, this is faster than using the
                     # source image as is, and including distortion in the ortho maps.
                     s = time.time()
-                    src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata)
+                    src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
                     e = time.time()
                     print(f'undistort time: {e-s}')
 

@@ -17,6 +17,7 @@
 import cv2
 import numpy as np
 from typing import Union, Tuple
+from enum import IntEnum
 from simple_ortho import get_logger
 
 
@@ -25,11 +26,17 @@ from simple_ortho import get_logger
 logger = get_logger(__name__)
 
 
+class DistortionType(IntEnum):
+    pinhole = 1
+    brown = 2
+    fisheye = 3
+
+
 class Camera:
     def __init__(
         self, focal_len: float, sensor_size: Union[Tuple[float], np.array], im_size: Union[Tuple[int], np.array],
         position: Union[Tuple[float], np.array], orientation: Union[Tuple[float], np.array],
-        dist_coeff: Union[Tuple[float], np.array]=None
+        dist_coeff: Union[Tuple[float], np.array]=None, dist_type: DistortionType = DistortionType.pinhole
     ):
         """
         Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
@@ -61,6 +68,9 @@ class Camera:
         self._im_size = np.array(im_size)
         self._focal_len = focal_len
         self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
+        # TODO: add some error checking
+        dist_type = DistortionType(dist_type) if dist_coeff else DistortionType.pinhole
+        self._cv = cv2.fisheye if dist_type == DistortionType.fisheye else cv2
         self._undistort_maps = None
 
         self._create_intrinsic()
@@ -87,8 +97,7 @@ class Camera:
         self._omega, self._phi, self._kappa = orientation
 
         # PATB convention
-        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
-        # -Parameters-defined
+        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         omega_r = np.array(
             [[1, 0, 0],
              [0, np.cos(self._omega), -np.sin(self._omega)],
@@ -156,11 +165,13 @@ class Camera:
         if not (x.shape[0] == 3 and x.shape[1] > 0):
             raise Exception('x must have 3 rows and more than one column')
 
-        if distort and (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0)):
+        if (distort and (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0))):
             # include the distortion model via opencv
-            ij, _ = cv2.projectPoints(
-                x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
-            )
+            # ij, _ = cv2.projectPoints(
+            #     x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
+            # )
+            x_cv = np.expand_dims((x - self._T).T, axis=0)
+            ij, _ = self._cv.projectPoints(x_cv, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
             ij = np.squeeze(ij).T
         else:
             # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
@@ -192,7 +203,9 @@ class Camera:
 
         if (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0)):
             # transform pixel co-ordinates to distortion corrected camera co-ordinates
-            x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
+            # x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
+            ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
+            x_ = self._cv.undistortPoints(ij_cv, self._K, self._dist_coeff)
             x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
         else:
             # transform pixel co-ordinates to camera co-ordinates
@@ -224,12 +237,17 @@ class Camera:
             return array
 
         if self._undistort_maps is None:
-            # Find undistortion maps once off, and store for repeat use. (Opencv claims that using
-            # cv2.initUndistortRectifyMap(...m1type=cv2.CV_16SC2) speeds up cv2.remap - that isn't the case here, but
+            # Find undistortion maps once off, and store for repeat use. (OpenCV docs say that using
+            # cv2.initUndistortRectifyMap(..., m1type=cv2.CV_16SC2) speeds up cv2.remap - that isn't the case here, but
             # it is still used to save some memory).
-            self._undistort_maps = cv2.initUndistortRectifyMap(
-                self._K, self._dist_coeff, None, None, self._im_size.astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
+            # self._undistort_maps = cv2.initUndistortRectifyMap(
+            #     self._K, self._dist_coeff, None, None, self._im_size.astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
+            # )
+
+            self._undistort_maps = self._cv.initUndistortRectifyMap(
+                self._K, self._dist_coeff, np.eye(3), self._K, self._im_size.astype(int), cv2.CV_16SC2 # cv2.CV_32FC1
             )
+
         def undistort_band(band_array: np.array) -> np.array:
             """ Undistort a 2D band array. """
             return cv2.remap(
@@ -241,7 +259,7 @@ class Camera:
             # Undistorting the 3D image in a single call requires conversion between rasterio and opencv 3D array
             # ordering.  This leaves the output array ordering in a form that works with cv2.remap, but is slow.
             # This can be fixed with an extra copy to repack the array, but we rather undistort by band here to avoid
-            # that and save a little memory.
+            # that and save some memory.
             out_array = np.full(array.shape, fill_value=nodata, dtype=array.dtype)
             for bi in range(out_array.shape[0]):
                 out_array[bi] = undistort_band(array[bi])
