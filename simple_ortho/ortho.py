@@ -214,12 +214,13 @@ class OrthoIm:
                     ortho_dem_cnrs = np.array(transform(self.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :]))
                     ortho_dem_bounds = [*ortho_dem_cnrs.min(axis=1), *ortho_dem_cnrs.max(axis=1)]
                     ortho_dem_win = dem_im.window(*ortho_dem_bounds)
-                    bounded_sub_win = ortho_dem_win.intersection(dem_win)
+                    bounded_sub_win = rio.windows._compute_intersection(ortho_dem_win, dem_win)
 
-                    if bounded_sub_win.width * bounded_sub_win.height <= 0:
+                    if bounded_sub_win[2] * bounded_sub_win[3] <= 0:
                         raise ValueError(
                             f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
                         )
+                    bounded_sub_win = Window(*bounded_sub_win)
 
                     if dem_array is None:
                         # read the maximum extent (dem_min=0) from file once, using masking to exclude nodata from the
