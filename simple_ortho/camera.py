@@ -307,7 +307,7 @@ class BrownCamera(Camera):
         https://opensfm.readthedocs.io/en/latest/geometry.html#pixel-coordinates):
             u = max(w, h) * xni + (w - 1) / 2
             v = max(w, h) * yni + (h - 1) / 2
-        where (w, h) is the image (width, height) in pixels.
+        where (w, h) are the image (width, height) in pixels.
 
         So the effective pixel offsets become: max(w, h) * (cx, cy).
         """
@@ -321,7 +321,7 @@ class BrownCamera(Camera):
         K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         undistort_maps = cv2.initUndistortRectifyMap(
-            K, dist_coeff, np.eye(3), None, np.array(im_size).astype(int), cv2.CV_32FC1
+            K, dist_coeff, None, None, np.array(im_size).astype(int), cv2.CV_16SC2
         )
         return undistort_maps
 
@@ -336,9 +336,7 @@ class BrownCamera(Camera):
             # TODO: can we make K/Kd less cryptic? if undistort and _undistort_maps were omitted, we could have K=Kd
             return PinholeCamera.world_to_pixel(self, x)
         # using Kd
-        ij, _ = cv2.projectPoints(
-            x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Kd, distCoeffs=self._dist_coeff
-        )
+        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Kd, self._dist_coeff)
         ij = np.squeeze(ij).T
         return ij
 
@@ -346,7 +344,7 @@ class BrownCamera(Camera):
 class FisheyeCamera(Camera):
     """
     Fisheye camera model for transforming between 2D pixel and 3D world co-ordinates.  Compatible with ODM and OpenCV
-    fisheye coefficients.
+    fisheye parameters.
     """
     def __init__(self, *args, dist_coeff=None, **kwargs):
         Camera.__init__(self, *args, **kwargs)
@@ -357,6 +355,7 @@ class FisheyeCamera(Camera):
     def _create_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
     )->Union[None, Tuple[np.ndarray, np.ndarray]]:
+        # specify default R & P (new camera matrix) params
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
             K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
         )
@@ -364,7 +363,7 @@ class FisheyeCamera(Camera):
 
     def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
         ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
-        x_ = cv2.fisheye.undistortPoints(ij_cv, self._K, self._dist_coeff, np.eye(3), np.eye(3))
+        x_ = cv2.fisheye.undistortPoints(ij_cv, self._K, self._dist_coeff)
         x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
         return x_
 
@@ -375,7 +374,6 @@ class FisheyeCamera(Camera):
         ij, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
         ij = np.squeeze(ij).T
         return ij
-
 
 
 def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
