@@ -156,6 +156,24 @@ class Camera:
         Rtv = cv2.Rodrigues(R.T)[0]
         return T, R, Rtv
 
+    @staticmethod
+    def _create_undistort_maps(
+        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
+    )->Union[None, Tuple[np.ndarray, np.ndarray]]:
+        """"
+        Create cv2.remap() maps for undistorting an image.
+        """
+        return None
+
+    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
+        """
+        Transform 2D pixel to normalised 3D camera co-ordinates.
+        """
+        ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
+        # TODO: store inverse rather than recalculate each time
+        x_ = np.dot(np.linalg.inv(self._K), ij_)
+        return x_
+
     def world_to_pixel(self, x: np.ndarray, distort: bool=False) -> np.ndarray:
         """
         Transform from 3D world to 2D pixel co-ordinates.
@@ -181,15 +199,6 @@ class Camera:
         # normalise xyz/z and apply intrinsic matrix, then discard the 3rd dimension
         ij = self._K.dot(x_ / x_[2, :])[:2, :]
         return ij
-
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        """
-        Transform 2D pixel co-ordinates to normalised 3D camera co-ordinates.
-        """
-        ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-        # TODO: store inverse rather than recalculate each time
-        x_ = np.dot(np.linalg.inv(self._K), ij_)
-        return x_
 
     def pixel_to_world_z(self, ij: np.ndarray, z: np.ndarray) -> np.ndarray:
         """
@@ -219,16 +228,7 @@ class Camera:
         x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
         return x
 
-    @staticmethod
-    def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
-    )->Union[None, Tuple[np.ndarray, np.ndarray]]:
-        """"
-        Create cv2.remap() maps for undistorting an image.
-        """
-        return None
-
-    def undistort(self, image: np.ndarray, nodata: Union[float, int]=0, interp: int=cv2.INTER_LINEAR) -> np.ndarray:
+    def undistort(self, image: np.ndarray, nodata: Union[float, int] = 0, interp: int=cv2.INTER_LINEAR) -> np.ndarray:
         """
         Undistort an image.
 
@@ -280,35 +280,67 @@ class PinholeCamera(Camera):
 class BrownCamera(Camera):
     """
     Brown camera model for transforming between 2D pixel and 3D world co-ordinates.  Compatible with ODM Brown model
-    coefficients.
+    parameters.
     """
-    def __init__(self, *args, dist_coeff=None, **kwargs):
+    def __init__(self, *args, dist_coeff: np.ndarray = None, cx: float = 0., cy: float = 0., **kwargs):
         Camera.__init__(self, *args, **kwargs)
         self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
-        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
+        # cx = -0.004891928269862716, cy = 0.001106653485186689   # test code for eg3
+        self._Kd = self._offset_intrinsic(self._K, self._im_size, cx=cx, cy=cy)
+        # create undistort maps after offsetting K
+        self._undistort_maps = self._create_undistort_maps(self._Kd, self._im_size, self._dist_coeff)
 
-    def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
-        if not distort:
-            return PinholeCamera.world_to_pixel(self, x)
-        ij, _ = cv2.projectPoints(
-            x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
-        )
-        ij = np.squeeze(ij).T
-        return ij
+    @staticmethod
+    def _offset_intrinsic(K: np.ndarray, im_size: np.ndarray, cx: float = 0., cy: float = 0.) -> np.ndarray:
+        """
+        Incorpotate ODM Brown model offsets not included in the OpenCV generic model.  See
+        https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates and
+        https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25.
 
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
-        return x_
+        Following the radial/tangential distortion, ODM has an affine transform as part of their Brown model:
+            xni = fx xu + cx
+            yni = fy yu + cy
+        where (xni, yni) are ODM "normalised image co-ordinates", and (fx, fy) & (cx, cy) are parameters specified in
+        their `cameras.json` output.
+
+        To get to pixel co-ordinates, they apply another affine transform (see
+        https://opensfm.readthedocs.io/en/latest/geometry.html#pixel-coordinates):
+            u = max(w, h) * xni + (w - 1) / 2
+            v = max(w, h) * yni + (h - 1) / 2
+        where (w, h) is the image (width, height) in pixels.
+
+        So the effective pixel offsets become: max(w, h) * (cx, cy).
+        """
+        Kd = K.copy()
+        # Kd[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
+        Kd[:2, 2] += im_size.max() * np.array([cx, cy])
+        return Kd
 
     @staticmethod
     def _create_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         undistort_maps = cv2.initUndistortRectifyMap(
-            K, dist_coeff, None, None, np.array(im_size).astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
+            K, dist_coeff, np.eye(3), None, np.array(im_size).astype(int), cv2.CV_32FC1
         )
         return undistort_maps
+
+    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
+        x_ = cv2.undistortPoints(ij.astype('float64'), self._Kd, self._dist_coeff)
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+        return x_
+
+    def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
+        if not distort:
+            # using original K (Kd is incorporated in self._undistort_maps)
+            # TODO: can we make K/Kd less cryptic? if undistort and _undistort_maps were omitted, we could have K=Kd
+            return PinholeCamera.world_to_pixel(self, x)
+        # using Kd
+        ij, _ = cv2.projectPoints(
+            x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Kd, distCoeffs=self._dist_coeff
+        )
+        ij = np.squeeze(ij).T
+        return ij
 
 
 class FisheyeCamera(Camera):
@@ -321,6 +353,21 @@ class FisheyeCamera(Camera):
         self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
         self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
 
+    @staticmethod
+    def _create_undistort_maps(
+        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
+    )->Union[None, Tuple[np.ndarray, np.ndarray]]:
+        undistort_maps = cv2.fisheye.initUndistortRectifyMap(
+            K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
+        )
+        return undistort_maps
+
+    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
+        ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
+        x_ = cv2.fisheye.undistortPoints(ij_cv, self._K, self._dist_coeff, np.eye(3), np.eye(3))
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+        return x_
+
     def world_to_pixel(self, x: np.ndarray, distort: bool=False) -> np.ndarray:
         if not distort:
             return PinholeCamera.world_to_pixel(self, x)
@@ -329,287 +376,6 @@ class FisheyeCamera(Camera):
         ij = np.squeeze(ij).T
         return ij
 
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
-        x_ = cv2.fisheye.undistortPoints(ij_cv, self._K, self._dist_coeff, np.eye(3), np.eye(3))
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
-        return x_
-
-    @staticmethod
-    def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
-    )->Union[None, Tuple[np.ndarray, np.ndarray]]:
-
-        undistort_maps = cv2.fisheye.initUndistortRectifyMap(
-            K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
-        )
-        return undistort_maps
-
-
-class _Camera:
-    def __init__(
-        self, focal_len: float, sensor_size: Union[Tuple[float], np.array], im_size: Union[Tuple[int], np.array],
-        position: Union[Tuple[float], np.array], orientation: Union[Tuple[float], np.array],
-        dist_coeff: Union[Tuple[float], np.array]=None, dist_type: CameraType = CameraType.pinhole
-    ):
-        """
-        Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
-        and vice-versa
-
-        Parameters
-        ----------
-        focal_len: float
-            Focal length in mm.
-        sensor_size: np.array, tuple of float
-            Sensor (ccd) (width, height) in mm.
-        im_size: np.array, tuple of int
-            Image (width, height) in pixels
-        position: np.array, tuple of float
-            Camera location (x=easting, y=northing, z=altitude) co-ordinates, in image CRS.
-        orientation: np.array, tuple of float
-            Camera orientation (omega, phi, kappa) angles in radians (PATB convention).
-        dist_coeff: np.array, tuple of float, optional
-            Lens distortion coefficients in opencv order - see
-            https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d.
-        """
-        # TODO: the sensor size could be omitted if the focal len is given in normalised (focal len / sensor width)
-        #  "units", and the pixels are square (i.e. the aspect ratio can be derived from the image pixel dims).  In
-        #  this case the sensor size is [1 h/w], (w, h) are image dims in pixels and w>h.
-        self.update_extrinsic(position, orientation)
-
-        if np.size(sensor_size) != 2 or np.size(im_size) != 2:
-            raise Exception('len(sensor_size) != 2 or len(image_size) != 2')
-
-        self._sensor_size = np.array(sensor_size)
-        self._im_size = np.array(im_size)
-        self._focal_len = focal_len
-        self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
-        # TODO: add some error checking
-        dist_type = DistortionType(dist_type) if dist_coeff else DistortionType.pinhole
-        self._cv = cv2.fisheye if dist_type == DistortionType.fisheye else cv2
-        self._undistort_maps = None
-
-        self._create_intrinsic()
-        config_dict = dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size, dist_coeff=dist_coeff)
-        logger.debug(f'Camera configuration: {config_dict}')
-        logger.debug(f'Position: {position}')
-        logger.debug(f'Orientation: {orientation}')
-
-    def update_extrinsic(self, position, orientation):
-        """
-        Update camera extrinsic parameters
-
-        Parameters
-        ----------
-        position :      numpy.array_like
-                        list of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
-        orientation :   numpy.array_like
-                        camera orientation [omega, phi, kappa] angles in degrees
-        """
-        if np.size(position) != 3 or np.size(orientation) != 3:
-            raise Exception('len(position) != 3 or len(orientation) != 3')
-        self._T = np.array(position).reshape(3, 1)
-
-        self._omega, self._phi, self._kappa = orientation
-
-        # Find rotation matriz from OPK in PATB convention
-        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
-        omega_r = np.array(
-            [[1, 0, 0],
-             [0, np.cos(self._omega), -np.sin(self._omega)],
-             [0, np.sin(self._omega), np.cos(self._omega)]]
-        )
-
-        phi_r = np.array(
-            [[np.cos(self._phi), 0, np.sin(self._phi)],
-             [0, 1, 0],
-             [-np.sin(self._phi), 0, np.cos(self._phi)]]
-        )
-
-        kappa_r = np.array(
-            [[np.cos(self._kappa), -np.sin(self._kappa), 0],
-             [np.sin(self._kappa), np.cos(self._kappa), 0],
-             [0, 0, 1]]
-        )
-
-        self._R = np.dot(np.dot(omega_r, phi_r), kappa_r)
-
-        # rotate from PATB (x->right, y->up, z->backwards looking through the camera at the scene) to ODM convention
-        # (x->right, y->down, z->forwards, looking through the camera at the scene)
-        self._R = self._R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
-        # store angle axis format for opencv
-        self._Rtv = cv2.Rodrigues(self._R.T)[0]
-        return
-
-    def _create_intrinsic(self):
-        """
-        Update camera intrinsic parameters
-        """
-        # TODO: this should be renamed and hidden from the user, I think the intrinsics will remain fixed for a
-        #  specific camera.  Consider different zooms and focal lengths for same camera though?
-        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
-        # -Parameters-defined
-        # and https://en.wikipedia.org/wiki/Camera_resectioning
-        sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
-        c_xy = (self._im_size - 1) / 2
-
-        # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
-        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
-        # self._K = np.array(
-        #     [[-sigma_xy[0], 0, c_xy[0]],
-        #      [0, sigma_xy[1],  c_xy[1]],
-        #      [0, 0, 1]]
-        # )
-        # Intrinsic matrix to convert from camera co-ords in ODM convention (x->right, y->down, z->forwards,
-        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
-        self._K = np.array(
-            [[sigma_xy[0], 0, c_xy[0]],
-             [0, sigma_xy[1],  c_xy[1]],
-             [0, 0, 1]]
-        )
-        return
-
-    def unproject(self, x: np.array, distort: bool=False):
-        """
-        Unproject from 3D world co-ordinates to 2D image co-ordinates
-
-        When using this method to build orthorectification maps for use in e.g. ``cv2.remap()``, it is faster to
-        leave ``distort=False``, and do the remap with an undistorted image (e.g. from ``Camera.undistort()``).
-        This is faster than remapping the distorted image with ``distort=True`` produced maps, as it avoids calling
-        ``cv2.projectPoints()`` (see below).
-
-        Parameters
-        ----------
-        x : np.array
-            3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates to unproject.
-            (x,y,z) along the first dimension.
-        distort : bool (optional)
-            Whether to include the distortion model (default: False).
-
-        Returns
-        -------
-        ij : numpy.array_like
-             2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
-        """
-        if not (x.shape[0] == 3 and x.shape[1] > 0):
-            raise Exception('x must have 3 rows and more than one column')
-
-        if (distort and (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0))):
-            # include the distortion model via opencv
-            # ij, _ = cv2.projectPoints(
-            #     x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, distCoeffs=self._dist_coeff
-            # )
-            x_cv = np.expand_dims((x - self._T).T, axis=0)
-            ij, _ = self._cv.projectPoints(x_cv, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
-            ij = np.squeeze(ij).T
-        else:
-            # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
-            x_ = np.dot(self._R.T, (x - self._T))
-            # homogenise xyz/z and apply intrinsic matrix, then discard the 3rd dimension
-            ij = (np.dot(self._K, x_ / x_[2, :]))[:2, :]
-
-        return ij
-
-    def project_to_z(self, ij, z):
-        """
-        Project from 2D image co-ordinates to 3D world co-ordinates at a specified Z
-
-        Parameters
-        ----------
-        ij : numpy.array_like
-             2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
-        z :  numpy.array_like
-             1-by-N array of Z (altitude) values to project to
-
-        Returns
-        -------
-        x : numpy.array_like
-            3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates.
-            (x,y,z) along the first dimension.
-        """
-        if not (ij.shape[0] == 2 and ij.shape[1] > 0):
-            raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
-
-        if (self._dist_coeff is not None) and (not np.all(self._dist_coeff == 0)):
-            # transform pixel co-ordinates to distortion corrected camera co-ordinates
-            # x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
-            ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
-            x_ = self._cv.undistortPoints(
-                ij_cv, self._K, self._dist_coeff, np.eye(3), np.eye(3)
-            )
-            x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
-        else:
-            # transform pixel co-ordinates to camera co-ordinates
-            # TODO: store inverse rather than recalculate each time
-            ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-            x_ = np.dot(np.linalg.inv(self._K), ij_)
-        # rotate first (camera to world) to get world aligned axes with origin on the camera
-        x_r = np.dot(self._R, x_)
-        # scale to desired z (offset for camera z) with origin on camera, then offset to world
-        x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
-        return x
-
-    def undistort(self, array: np.array, nodata: Union[float, int]=0, interp: int=cv2.INTER_LINEAR) -> np.array:
-        """
-        Undistort an image.
-
-        Parameters
-        ----------
-        array: np.array
-            Image array to undistort.  Can be a single 2D band, or multiple bands in 3D rasterio format i.e. with bands
-            along the first dimension.
-
-        Returns
-        -------
-        np.array
-            Undistorted array with the same shape and data type as ``array``.
-        """
-        if self._dist_coeff is None or np.all(self._dist_coeff == 0):
-            return array
-
-        if self._undistort_maps is None:
-            # Find undistortion maps once off, and store for repeat use. (OpenCV docs say that using
-            # cv2.initUndistortRectifyMap(..., m1type=cv2.CV_16SC2) speeds up cv2.remap - that isn't the case here, but
-            # it is still used to save some memory).
-            # self._undistort_maps = cv2.initUndistortRectifyMap(
-            #     self._K, self._dist_coeff, None, None, self._im_size.astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
-            # )
-            # TODO: why do we need newCamerMatrix = K below, but newCamerMatrix = eye(3) in cv2.fisheye.undistortPoints ?
-            self._undistort_maps = self._cv.initUndistortRectifyMap(
-                self._K, self._dist_coeff, np.eye(3), self._K, (self._im_size).astype(int), cv2.CV_32FC1
-            )
-
-            # debug code for testing odm brown distortion
-            # f = 0.6134313085596745
-            # c_x = -0.004891928269862716
-            # c_y = 0.001106653485186689
-            # # Knew = cv2.getOptimalNewCameraMatrix(self._K, self._dist_coeff, self._im_size.astype(int), 1)[0]
-            # Kodm = self._K.copy()
-            # Kodm[:2, 2] += np.array([c_x, c_y]) * np.abs(np.diag(self._K)[:2] / f)
-            # Kodm[0, 0] *= -1
-            # self._undistort_maps = self._cv.initUndistortRectifyMap(
-            #     Kodm, self._dist_coeff, np.eye(3), None, (self._im_size).astype(int), cv2.CV_32FC1
-            # )
-
-        def undistort_band(band_array: np.array) -> np.array:
-            """ Undistort a 2D band array. """
-            return cv2.remap(
-                band_array, *self._undistort_maps, interp, borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
-            )
-            # return cv2.undistort(band_array, self._K, self._dist_coeff)
-
-        if array.ndim > 2:
-            # Undistorting the 3D image in a single call requires conversion between rasterio and opencv 3D array
-            # ordering.  This leaves the output array ordering in a form that works with cv2.remap, but is slow.
-            # This can be fixed with an extra copy to repack the array, but we rather undistort by band here to avoid
-            # that and save some memory.
-            out_array = np.full(array.shape, fill_value=nodata, dtype=array.dtype)
-            for bi in range(out_array.shape[0]):
-                out_array[bi] = undistort_band(array[bi])
-        else:
-            out_array = undistort_band(array)
-
-        return out_array
 
 
 def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
