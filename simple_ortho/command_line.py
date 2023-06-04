@@ -25,7 +25,7 @@ import rasterio as rio
 import yaml
 
 from simple_ortho import get_logger, root_path
-from simple_ortho.camera import Camera
+from simple_ortho.camera import Camera, BrownCamera, FisheyeCamera, CameraType, create_camera
 from simple_ortho.ortho import OrthoIm
 
 # print formatting
@@ -139,7 +139,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         # checks paths etc
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
-        # read camera position and orientation and find row for src_im_file
+        # read camera position and rotation and find row for src_im_file
         cam_pos_orid = pd.read_csv(
             pos_ori_file, header=None, sep=' ', index_col=0,
             names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
@@ -157,7 +157,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     raise Exception(f'Could not find {src_im_filename.stem} in {pos_ori_file}')
 
                 im_pos_ori = cam_pos_orid.loc[src_im_filename.stem]
-                orientation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
+                rotation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
                 position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
 
                 # set ortho filename
@@ -173,9 +173,14 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 # create Camera
                 # TODO: create camera once per config, then update extrinsic / intrinsic per image file (so that any
                 #  distortion maps are not unnecessarily recreated)
-                camera = Camera(
-                    camera_config['focal_len'], camera_config['sensor_size'], im_size, position, orientation,
-                    dist_coeff=dist_coeff
+                # camera = Camera(
+                #     position, rotation, camera_config['focal_len'], im_size, camera_config['sensor_size'],
+                # )
+                cam_type = CameraType(camera_config.get('type', 'pinhole'))
+                kwargs = dict() if cam_type == CameraType.pinhole else dict(dist_coeff=dist_coeff)
+                camera = create_camera(
+                    cam_type, position, rotation, camera_config['focal_len'], im_size, camera_config['sensor_size'],
+                    **kwargs
                 )
 
                 # create OrthoIm  and orthorectify

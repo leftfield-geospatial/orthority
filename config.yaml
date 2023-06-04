@@ -1,6 +1,7 @@
 # simple-ortho configuration
 camera:
   name: Integraph DMC             # Not used
+  type: pinhole                   # Camera model type (pinhole, brown, fisheye, opencv)
   focal_len: 120.                 # Focal length in mm
   sensor_size: [92.160, 165.888]  # Sensor/CCD [width, height] dimensions in mm
 
