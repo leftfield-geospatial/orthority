@@ -17,7 +17,7 @@
 import cv2
 import numpy as np
 from typing import Union, Tuple
-from enum import IntEnum
+from enum import Enum
 from simple_ortho import get_logger
 
 
@@ -26,10 +26,11 @@ from simple_ortho import get_logger
 logger = get_logger(__name__)
 
 
-class DistortionType(IntEnum):
-    pinhole = 1
-    brown = 2
-    fisheye = 3
+class DistortionType(Enum):
+    pinhole = 'pinhole'
+    brown = 'brown'
+    fisheye = 'fisheye'
+    opencv = 'opencv'
 
 
 class Camera:
@@ -58,7 +59,9 @@ class Camera:
             Lens distortion coefficients in opencv order - see
             https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html#ga69f2545a8b62a6b0fc2ee060dc30559d.
         """
-
+        # TODO: the sensor size could be omitted if the focal len is given in normalised (focal len / sensor width)
+        #  "units", and the pixels are square (i.e. the aspect ratio can be derived from the image pixel dims).  In
+        #  this case the sensor size is [1 h/w], (w, h) are image dims in pixels and w>h.
         self.update_extrinsic(position, orientation)
 
         if np.size(sensor_size) != 2 or np.size(im_size) != 2:
@@ -96,7 +99,7 @@ class Camera:
 
         self._omega, self._phi, self._kappa = orientation
 
-        # PATB convention
+        # Find rotation matriz from OPK in PATB convention
         # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         omega_r = np.array(
             [[1, 0, 0],
@@ -117,6 +120,11 @@ class Camera:
         )
 
         self._R = np.dot(np.dot(omega_r, phi_r), kappa_r)
+
+        # rotate from PATB (x->right, y->up, z->backwards looking through the camera at the scene) to ODM convention
+        # (x->right, y->down, z->forwards, looking through the camera at the scene)
+        self._R = self._R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+        # store angle axis format for opencv
         self._Rtv = cv2.Rodrigues(self._R.T)[0]
         return
 
@@ -130,12 +138,20 @@ class Camera:
         # -Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
         sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
+        c_xy = (self._im_size - 1) / 2
 
         # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
         # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
+        # self._K = np.array(
+        #     [[-sigma_xy[0], 0, c_xy[0]],
+        #      [0, sigma_xy[1],  c_xy[1]],
+        #      [0, 0, 1]]
+        # )
+        # Intrinsic matrix to convert from camera co-ords in ODM convention (x->right, y->down, z->forwards,
+        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
         self._K = np.array(
-            [[-sigma_xy[0], 0, self._im_size[0] / 2],
-             [0, sigma_xy[1], self._im_size[1] / 2],
+            [[sigma_xy[0], 0, c_xy[0]],
+             [0, sigma_xy[1],  c_xy[1]],
              [0, 0, 1]]
         )
         return
@@ -144,7 +160,7 @@ class Camera:
         """
         Unproject from 3D world co-ordinates to 2D image co-ordinates
 
-        When using this method to build orthorectification maps for use in e.g. ``cv2.remap()``, it is best to
+        When using this method to build orthorectification maps for use in e.g. ``cv2.remap()``, it is faster to
         leave ``distort=False``, and do the remap with an undistorted image (e.g. from ``Camera.undistort()``).
         This is faster than remapping the distorted image with ``distort=True`` produced maps, as it avoids calling
         ``cv2.projectPoints()`` (see below).
@@ -205,7 +221,9 @@ class Camera:
             # transform pixel co-ordinates to distortion corrected camera co-ordinates
             # x_ = cv2.undistortPoints(ij.astype('float64'), self._K, self._dist_coeff)
             ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
-            x_ = self._cv.undistortPoints(ij_cv, self._K, self._dist_coeff)
+            x_ = self._cv.undistortPoints(
+                ij_cv, self._K, self._dist_coeff, np.eye(3), np.eye(3)
+            )
             x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
         else:
             # transform pixel co-ordinates to camera co-ordinates
@@ -243,10 +261,22 @@ class Camera:
             # self._undistort_maps = cv2.initUndistortRectifyMap(
             #     self._K, self._dist_coeff, None, None, self._im_size.astype(int), cv2.CV_16SC2  # cv2.CV_32FC1
             # )
-
+            # TODO: why do we need newCamerMatrix = K below, but newCamerMatrix = eye(3) in cv2.fisheye.undistortPoints ?
             self._undistort_maps = self._cv.initUndistortRectifyMap(
-                self._K, self._dist_coeff, np.eye(3), self._K, self._im_size.astype(int), cv2.CV_16SC2 # cv2.CV_32FC1
+                self._K, self._dist_coeff, np.eye(3), self._K, (self._im_size).astype(int), cv2.CV_32FC1
             )
+
+            # debug code for testing odm brown distortion
+            # f = 0.6134313085596745
+            # c_x = -0.004891928269862716
+            # c_y = 0.001106653485186689
+            # # Knew = cv2.getOptimalNewCameraMatrix(self._K, self._dist_coeff, self._im_size.astype(int), 1)[0]
+            # Kodm = self._K.copy()
+            # Kodm[:2, 2] += np.array([c_x, c_y]) * np.abs(np.diag(self._K)[:2] / f)
+            # Kodm[0, 0] *= -1
+            # self._undistort_maps = self._cv.initUndistortRectifyMap(
+            #     Kodm, self._dist_coeff, np.eye(3), None, (self._im_size).astype(int), cv2.CV_32FC1
+            # )
 
         def undistort_band(band_array: np.array) -> np.array:
             """ Undistort a 2D band array. """
