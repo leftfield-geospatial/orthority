@@ -29,6 +29,7 @@ import numpy as np
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, transform
 from rasterio.windows import Window
+from typing import Tuple, Union, Optional
 
 from simple_ortho import get_logger
 from simple_ortho.camera import Camera
@@ -67,6 +68,10 @@ class OrthoIm:
         config :            dict
                             (optional) dictionary of configuration parameters.  If None, sensible defaults are used.
                             Key, value pairs as follows:
+                                crs: Ortho image CRS as an EPSG or WKT string.  If omitted, the ortho will be created in
+                                    the source image CRS (if present).  Whether specified by this string or the source
+                                    image, the ortho image CRS must be the same as the ``camera`` position CRS
+                                    (see :class:`~simple_ortho.camera.Camera`).
                                 dem_interp: Interpolation type for resampling DEM (average, bilinear, cubic,
                                     cubic_spline, gauss, lanczos)
                                 dem_band: 1-based index of band in DEM raster to use
@@ -198,6 +203,18 @@ class OrthoIm:
         ortho_bounds: numpy.array_like
                   [left, bottom, right, top]
         """
+
+        def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
+            """
+            Expand rasterio window extents to the nearest whole numbers
+            """
+            col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
+            row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
+            width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
+            height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
+            exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
+            return exp_win
+
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
                 # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
@@ -206,7 +223,7 @@ class OrthoIm:
                 dem_win = Window(0, 0, dem_im.width, dem_im.height)
                 for i in range(1, self.ortho_bound_max_iters):
                     # find the ortho bounds in DEM crs by projecting 2D image pixel corners onto 3D z plane = dem_min
-                    ortho_cnrs = self._camera.project_to_z(
+                    ortho_cnrs = self._camera.pixel_to_world_z(
                         np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
                         dem_min
                     )[:2, :]
@@ -220,7 +237,7 @@ class OrthoIm:
                         raise ValueError(
                             f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
                         )
-                    bounded_sub_win = Window(*bounded_sub_win)
+                    bounded_sub_win = expand_window_to_grid(Window(*bounded_sub_win))
 
                     if dem_array is None:
                         # read the maximum extent (dem_min=0) from file once, using masking to exclude nodata from the
@@ -293,7 +310,7 @@ class OrthoIm:
                     # read source image band(s)
                     src_im_array = src_im.read(bi)
                     # Undistort the source image so we can exclude the distortion model from the call to
-                    # Camera.unproject() that builds the ortho maps below.  Overall, this is faster than using the
+                    # Camera.world_to_pixel() that builds the ortho maps below.  Overall, this is faster than using the
                     # source image as is, and including distortion in the ortho maps.
                     s = time.time()
                     src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
@@ -321,7 +338,7 @@ class OrthoIm:
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
                         s = time.time()
-                        src_ji = self._camera.unproject(
+                        src_ji = self._camera.world_to_pixel(
                             np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
                             distort=False
                         )
