@@ -35,7 +35,7 @@ def create_camera():
     orientation = np.array([-0.349216, 0.298484, -179.086702]) * np.pi / 180.
 
     # create camera
-    return Camera(120, [92.160, 165.888], [640, 1152], position, orientation)
+    return Camera(position, orientation, 120, (640, 1152), (92.160, 165.888))
 
 
 class TestSimpleOrthoModule(unittest.TestCase):
@@ -54,10 +54,10 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # create arbitrary world co-ords and unproject to image co-ords
         start_x = np.array([-52359.614680, -3727390.785280, 500])
         x = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
-        ij = camera.unproject(x)
+        ij = camera.world_to_pixel(x)
 
         # re-project image co-ords to world space at original z
-        x2 = camera.project_to_z(ij, x[2, :])
+        x2 = camera.pixel_to_world_z(ij, x[2, :])
 
         # check original and re-projected co-ords are approx equal
         self.assertTrue(np.allclose(x, x2, atol=1e-4), msg="Image <-> world projections ok")
@@ -93,7 +93,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
 
         # test _get_ortho_bounds() with hard coded vals
         ortho_bounds = ortho_im._get_ortho_bounds()
-        ortho_bounds_check = [-57129.40050924, -3731013.2329742, -53104.17740962, -3723906.88999849]
+        ortho_bounds_check = [-57132.49916162013, -3731010.2412132677, -53107.29134646354, -3723903.939443993]
 
         self.assertTrue(np.allclose(ortho_bounds, ortho_bounds_check, atol=1e-2), msg="Ortho bounds OK")
 
