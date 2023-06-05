@@ -16,7 +16,7 @@
 
 import cv2
 import numpy as np
-from typing import Union, Tuple, Optional
+from typing import Union, Tuple, Optional, Dict
 from enum import Enum
 from simple_ortho import get_logger
 
@@ -174,6 +174,21 @@ class Camera:
         x_ = np.dot(np.linalg.inv(self._K), ij_)
         return x_
 
+    def update_extrinsic(self, position: Union[Tuple[float], np.ndarray], rotation: Union[Tuple[float], np.ndarray]):
+        """
+        Update extrinsic parameters.
+
+        Parameters
+        ----------
+        position: tuple of float, ndarray
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  The CRS of these values must be
+            the same as any ortho image CRS being created with :class:`~simple_ortho.ortho.OrthoIm`.
+        rotation: tuple of float, ndarray
+            Camera rotation (omega, phi, kappa) angles in radians (PATB convention i.e. x->right, y->up and z->
+            backwards, looking through the camera at the scene).
+        """
+        self._T, self._R, self._Rtv = self._create_extrinsic(position, rotation)
+
     def world_to_pixel(self, x: np.ndarray, distort: bool=False) -> np.ndarray:
         """
         Transform from 3D world to 2D pixel co-ordinates.
@@ -282,13 +297,19 @@ class BrownCamera(Camera):
     Brown camera model for transforming between 2D pixel and 3D world co-ordinates.  Compatible with ODM Brown model
     parameters.
     """
-    def __init__(self, *args, dist_coeff: np.ndarray = None, cx: float = 0., cy: float = 0., **kwargs):
+    def __init__(
+        self, *args, k1: float = 0., k2: float = 0., p1: float = 0., p2: float = 0., k3: float = 0., cx: float = 0.,
+        cy: float = 0., **kwargs
+    ):
         Camera.__init__(self, *args, **kwargs)
-        self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
-        # cx = -0.004891928269862716, cy = 0.001106653485186689   # test code for eg3
-        self._Kd = self._offset_intrinsic(self._K, self._im_size, cx=cx, cy=cy)
-        # create undistort maps after offsetting K
-        self._undistort_maps = self._create_undistort_maps(self._Kd, self._im_size, self._dist_coeff)
+
+        self._dist_coeff = np.array([k1, k2, p1, p2, k3])
+
+        # incorporate ODM brown model offsets into self._Koff
+        self._Koff = self._offset_intrinsic(self._K, self._im_size, cx=cx, cy=cy)
+
+        # create undistort maps with self._Koff
+        self._undistort_maps = self._create_undistort_maps(self._Koff, self._im_size, self._dist_coeff)
 
     @staticmethod
     def _offset_intrinsic(K: np.ndarray, im_size: np.ndarray, cx: float = 0., cy: float = 0.) -> np.ndarray:
@@ -309,12 +330,12 @@ class BrownCamera(Camera):
             v = max(w, h) * yni + (h - 1) / 2
         where (w, h) are the image (width, height) in pixels.
 
-        So the effective pixel offsets become: max(w, h) * (cx, cy).
+        So the effective (additional) pixel offsets become: max(w, h) * (cx, cy).
         """
-        Kd = K.copy()
-        # Kd[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
-        Kd[:2, 2] += im_size.max() * np.array([cx, cy])
-        return Kd
+        Koff = K.copy()
+        # Koff[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
+        Koff[:2, 2] += im_size.max() * np.array([cx, cy])
+        return Koff
 
     @staticmethod
     def _create_undistort_maps(
@@ -326,17 +347,17 @@ class BrownCamera(Camera):
         return undistort_maps
 
     def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        x_ = cv2.undistortPoints(ij.astype('float64'), self._Kd, self._dist_coeff)
+        x_ = cv2.undistortPoints(ij.astype('float64'), self._Koff, self._dist_coeff)
         x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
         if not distort:
-            # using original K (Kd is incorporated in self._undistort_maps)
-            # TODO: can we make K/Kd less cryptic? if undistort and _undistort_maps were omitted, we could have K=Kd
+            # using original K (Koff is incorporated in self._undistort_maps)
+            # TODO: can we make K/Koff less cryptic? if undistort and _undistort_maps were omitted, we could have K=Koff
             return PinholeCamera.world_to_pixel(self, x)
-        # using Kd
-        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Kd, self._dist_coeff)
+        # using Koff
+        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Koff, self._dist_coeff)
         ij = np.squeeze(ij).T
         return ij
 
@@ -346,9 +367,10 @@ class FisheyeCamera(Camera):
     Fisheye camera model for transforming between 2D pixel and 3D world co-ordinates.  Compatible with ODM and OpenCV
     fisheye parameters.
     """
-    def __init__(self, *args, dist_coeff=None, **kwargs):
+    def __init__(self, *args, k1: float = 0., k2: float = 0., k3: float = 0., k4: float = 0., **kwargs):
         Camera.__init__(self, *args, **kwargs)
-        self._dist_coeff = np.array(dist_coeff) if dist_coeff else None
+
+        self._dist_coeff = np.array([k1, k2, k3, k4])
         self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
 
     @staticmethod
