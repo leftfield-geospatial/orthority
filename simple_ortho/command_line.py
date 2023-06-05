@@ -145,9 +145,11 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
         )
 
+        # prepare camera config
         camera = None
         camera_config = config['camera']
-        dist_coeff = camera_config['dist_coeff'] if 'dist_coeff' in camera_config else None
+        camera_type = CameraType(camera_config.get('type', 'pinhole'))
+        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
 
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
@@ -170,18 +172,12 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 with rio.open(src_im_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
-                # create Camera
-                # TODO: create camera once per config, then update extrinsic / intrinsic per image file (so that any
-                #  distortion maps are not unnecessarily recreated)
-                # camera = Camera(
-                #     position, rotation, camera_config['focal_len'], im_size, camera_config['sensor_size'],
-                # )
-                cam_type = CameraType(camera_config.get('type', 'pinhole'))
-                kwargs = dict() if cam_type == CameraType.pinhole else dict(dist_coeff=dist_coeff)
-                camera = create_camera(
-                    cam_type, position, rotation, camera_config['focal_len'], im_size, camera_config['sensor_size'],
-                    **kwargs
-                )
+                if not camera or np.any(im_size != camera._im_size):
+                    # create a new camera
+                    camera = create_camera(camera_type, position, rotation, im_size=im_size, **camera_config)
+                else:
+                    # update existing camera
+                    camera.update_extrinsic(position, rotation)
 
                 # create OrthoIm  and orthorectify
                 logger.info(f'Orthorectifying {src_im_filename.name}')
