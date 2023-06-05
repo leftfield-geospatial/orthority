@@ -207,9 +207,9 @@ class Camera:
         if not (x.shape[0] == 3 and x.shape[1] > 0):
             raise ValueError('x must have 3 rows and more than one column')
 
-        # reshape to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
+        # transform from world to camera co-ordinates, and normalise
         x_ = self._R.T.dot(x - self._T)
-        # normalise xyz/z and apply intrinsic matrix, then discard the 3rd dimension
+        # normalise, and transform to pixel co-ordinates
         ij = self._K.dot(x_ / x_[2, :])[:2, :]
         return ij
 
@@ -382,6 +382,35 @@ class BrownCamera(OpenCVCamera):
         # Koff[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
         Koff[:2, 2] += im_size.max() * np.array([cx, cy])
         return Koff
+
+    def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
+        # ODM brown model implementation using numpy.  Adapted from
+        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25
+        # under the BSD 2-Clause license.  Works out faster than cv2.projectPoints().
+        if not (x.shape[0] == 3 and x.shape[1] > 0):
+            raise ValueError('x must have 3 rows and more than one column')
+
+        # transform from world to camera co-ordinates, and normalise
+        x_ = self._R.T.dot(x - self._T)
+        x_ = x_ / x_[2, :]
+
+        if distort:
+            # brown distortion
+            k1, k2, p1, p2, k3 = self._dist_coeff
+            x_x2, x_y2 = np.square(x_[:2, :])
+            x_xy = x_[0, :] * x_[1, :]
+            r2 = x_x2 + x_y2
+
+            radial_dist = 1. + r2 * (k1 + r2 * (k2 + r2 * k3))
+            x_tangential_dist = 2. * p1 * x_xy + p2 * (r2 + 2.0 * x_x2)
+            y_tangential_dist = p1 * (r2 + 2.0 * x_y2) + 2.0 * p2 * x_xy
+
+            x_[0, :] = x_[0, :] * radial_dist + x_tangential_dist
+            x_[1, :] = x_[1, :] * radial_dist + y_tangential_dist
+
+        # transform from distorted camera to pixel co-ordinates, using Koff
+        ij = self._Koff.dot(x_)[:2, :]
+        return ij
 
 
 class FisheyeCamera(Camera):
