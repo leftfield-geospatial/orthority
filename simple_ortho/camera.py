@@ -45,8 +45,7 @@ class Camera:
         Parameters
         ----------
         position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  The CRS of these values must be
-            the same as any ortho image CRS being created with :class:`~simple_ortho.ortho.OrthoIm`.
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
         rotation: tuple of float, ndarray
             Camera rotation (omega, phi, kappa) angles in radians (PATB convention i.e. x->right, y->up and z->
             backwards, looking through the camera at the scene).
@@ -181,8 +180,7 @@ class Camera:
         Parameters
         ----------
         position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  The CRS of these values must be
-            the same as any ortho image CRS being created with :class:`~simple_ortho.ortho.OrthoIm`.
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
         rotation: tuple of float, ndarray
             Camera rotation (omega, phi, kappa) angles in radians (PATB convention i.e. x->right, y->up and z->
             backwards, looking through the camera at the scene).
@@ -292,7 +290,54 @@ class PinholeCamera(Camera):
     """ Pinhole camera model for transforming between 2D pixel and 3D world co-ordinates. """
 
 
-class BrownCamera(Camera):
+class OpenCVCamera(Camera):
+    """
+    OpenCV generic camera model for transforming between 2D pixel and 3D world co-ordinates.
+    """
+    def __init__(
+        self, *args, k1: float = 0., k2: float = 0., k3: float = 0., p1: float = 0., p2: float = 0., k4: float = 0.,
+        k5: float = 0., k6: float = 0., s1: float = 0., s2: float = 0., s3: float = 0., s4: float = 0., t1: float = 0.,
+        t2: float = 0., **kwargs
+    ):
+        Camera.__init__(self, *args, **kwargs)
+
+        # k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]]
+        self._dist_coeff = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
+        # truncate distCoeff zeros according to OpenCV docs
+        # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
+        for dist_len in (4, 5, 8, 12, 14):
+            if np.all(self._dist_coeff[dist_len:] == 0.):
+                self._dist_coeff = self._dist_coeff[:dist_len]
+                break
+
+        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
+
+    @staticmethod
+    def _create_undistort_maps(
+        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
+    ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
+        undistort_maps = cv2.initUndistortRectifyMap(
+            K, dist_coeff, None, None, np.array(im_size).astype(int), cv2.CV_16SC2
+        )
+        return undistort_maps
+
+    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
+        x_ = cv2.undistortPoints(ij.astype('float64'), self._Koff, self._dist_coeff)
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+        return x_
+
+    def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
+        if not distort:
+            # using original K (Koff is incorporated in self._undistort_maps)
+            # TODO: can we make K/Koff less cryptic? if undistort and _undistort_maps were omitted, we could have K=Koff
+            return PinholeCamera.world_to_pixel(self, x)
+        # using Koff
+        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Koff, self._dist_coeff)
+        ij = np.squeeze(ij).T
+        return ij
+
+
+class BrownCamera(OpenCVCamera):
     """
     Brown camera model for transforming between 2D pixel and 3D world co-ordinates.  Compatible with ODM Brown model
     parameters.
@@ -332,34 +377,11 @@ class BrownCamera(Camera):
 
         So the effective (additional) pixel offsets become: max(w, h) * (cx, cy).
         """
+        # TODO: maybe clearer to implement as an additional affine transformation
         Koff = K.copy()
         # Koff[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
         Koff[:2, 2] += im_size.max() * np.array([cx, cy])
         return Koff
-
-    @staticmethod
-    def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
-    ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
-        undistort_maps = cv2.initUndistortRectifyMap(
-            K, dist_coeff, None, None, np.array(im_size).astype(int), cv2.CV_16SC2
-        )
-        return undistort_maps
-
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        x_ = cv2.undistortPoints(ij.astype('float64'), self._Koff, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
-        return x_
-
-    def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
-        if not distort:
-            # using original K (Koff is incorporated in self._undistort_maps)
-            # TODO: can we make K/Koff less cryptic? if undistort and _undistort_maps were omitted, we could have K=Koff
-            return PinholeCamera.world_to_pixel(self, x)
-        # using Koff
-        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Koff, self._dist_coeff)
-        ij = np.squeeze(ij).T
-        return ij
 
 
 class FisheyeCamera(Camera):
@@ -400,7 +422,7 @@ class FisheyeCamera(Camera):
 
 def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
     """
-    Create a camera object given a type and parameters.
+    Create a camera object given a camera type and its parameters.
 
     Parameters
     ----------
@@ -409,7 +431,7 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
     args:
         Positional arguments to pass to camera constructor.
     kwargs:
-        Keyword argument to pass to camera constructor.
+        Keyword arguments to pass to camera constructor.
 
     Returns
     -------
@@ -421,8 +443,8 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
         cam_class = BrownCamera
     elif cam_type == CameraType.fisheye:
         cam_class = FisheyeCamera
-    # elif type == CameraType.opencv:
-    #     cam_class = OpencvCamera
+    elif type == CameraType.opencv:
+        cam_class = OpenCVCamera
     else:
         cam_class = PinholeCamera
 

@@ -25,7 +25,7 @@ import rasterio as rio
 import yaml
 
 from simple_ortho import get_logger, root_path
-from simple_ortho.camera import Camera, BrownCamera, FisheyeCamera, CameraType, create_camera
+from simple_ortho.camera import CameraType, create_camera
 from simple_ortho.ortho import OrthoIm
 
 # print formatting
