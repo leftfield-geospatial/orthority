@@ -313,7 +313,7 @@ class OrthoIm:
                     # Camera.world_to_pixel() that builds the ortho maps below.  Overall, this is faster than using the
                     # source image as is, and including distortion in the ortho maps.
                     s = time.time()
-                    src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
+                    # src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
                     e = time.time()
                     print(f'undistort time: {e-s}')
 
@@ -340,7 +340,7 @@ class OrthoIm:
                         s = time.time()
                         src_ji = self._camera.world_to_pixel(
                             np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
-                            distort=False
+                            distort=True
                         )
                         time_ttl['unproject'] += time.time() - s
                         # now that co-rds are in pixel units, they are converted to float32 for compatibility with

@@ -164,6 +164,14 @@ class Camera:
         """
         return None
 
+    @staticmethod
+    def _test_world_coordinates(x: np.ndarray):
+        """
+        Utility function to test world coordinate dimensions.
+        """
+        if not (x.shape[0] == 3 and x.shape[1] > 0):
+            raise ValueError('x must have 3 rows and more than one column')
+
     def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
         """
         Transform 2D pixel to normalised 3D camera co-ordinates.
@@ -204,9 +212,7 @@ class Camera:
         ndarray
             2-by-N array of pixel (i=row, j=column) co-ordinates, with (i, j) along the first dimension.
         """
-        if not (x.shape[0] == 3 and x.shape[1] > 0):
-            raise ValueError('x must have 3 rows and more than one column')
-
+        self._test_world_coordinates(x)
         # transform from world to camera co-ordinates, and normalise
         x_ = self._R.T.dot(x - self._T)
         # normalise, and transform to pixel co-ordinates
@@ -303,7 +309,7 @@ class OpenCVCamera(Camera):
 
         # k1,k2,p1,p2[,k3[,k4,k5,k6[,s1,s2,s3,s4[,τx,τy]]]]
         self._dist_coeff = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
-        # truncate distCoeff zeros according to OpenCV docs
+        # truncate _dist_coeff zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
         for dist_len in (4, 5, 8, 12, 14):
             if np.all(self._dist_coeff[dist_len:] == 0.):
@@ -327,12 +333,10 @@ class OpenCVCamera(Camera):
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = False) -> np.ndarray:
+        self._test_world_coordinates(x)
         if not distort:
-            # using original K (Koff is incorporated in self._undistort_maps)
-            # TODO: can we make K/Koff less cryptic? if undistort and _undistort_maps were omitted, we could have K=Koff
             return PinholeCamera.world_to_pixel(self, x)
-        # using Koff
-        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._Koff, self._dist_coeff)
+        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
         ij = np.squeeze(ij).T
         return ij
 
@@ -387,8 +391,8 @@ class BrownCamera(OpenCVCamera):
         # ODM brown model implementation using numpy.  Adapted from
         # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25
         # under the BSD 2-Clause license.  Works out faster than cv2.projectPoints().
-        if not (x.shape[0] == 3 and x.shape[1] > 0):
-            raise ValueError('x must have 3 rows and more than one column')
+        # OpenCVCamera.world_to_pixel() implements an equivalent opencv version.
+        self._test_world_coordinates(x)
 
         # transform from world to camera co-ordinates, and normalise
         x_ = self._R.T.dot(x - self._T)
@@ -441,11 +445,39 @@ class FisheyeCamera(Camera):
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool=False) -> np.ndarray:
-        if not distort:
-            return PinholeCamera.world_to_pixel(self, x)
-        x_cv = np.expand_dims((x - self._T).T, axis=0)
-        ij, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
-        ij = np.squeeze(ij).T
+        # Fisheye implementation using numpy.  Adapted from
+        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#L365
+        # under the BSD 2-Clause license.  Works out faster than cv2.projectPoints().
+
+        # equivalent opencv version
+        # if not distort:
+        #     return PinholeCamera.world_to_pixel(self, x)
+        # x_cv = np.expand_dims((x - self._T).T, axis=0)
+        # ij, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.array([0., 0., 0.]), self._K, self._dist_coeff)
+        # ij = np.squeeze(ij).T
+
+        self._test_world_coordinates(x)
+
+        # transform from world to camera co-ordinates, and normalise
+        x_ = self._R.T.dot(x - self._T)
+        x_ = x_ / x_[2, :]
+
+        if distort:
+            # fisheye model - see https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html
+            k1, k2, k3, k4 = self._dist_coeff
+            r = np.sqrt(np.square(x_[:2, :]).sum(axis=0))
+            theta = np.arctan(r)
+            theta2 = theta * theta
+            if k3 == k4 == 0.:
+                # odm 2 parameter version
+                theta_d = theta * (1.0 + theta2 * (k1 + theta2 * k2))
+            else:
+                # opencv 4 parameter version
+                theta_d = theta * (1.0 + theta2 * (k1 + theta2 * (k2 + theta2 * (k3 + theta2 * k4))))
+            x_[:2, :] *= theta_d / r
+
+        # transform from distorted camera to pixel co-ordinates
+        ij = self._K.dot(x_)[:2, :]
         return ij
 
 
