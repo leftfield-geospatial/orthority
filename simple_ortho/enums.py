@@ -27,8 +27,7 @@ class CameraType(Enum):
     brown = 'brown'
     """ 
     Brown-Conrady camera model.  Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/`_ / 
-    `OpenSFM 
-    <https://github.com/mapillary/OpenSfM>`_ 'brown' parameter estimates; and the 4 & 5-coefficient version of the 
+    `OpenSFM <https://github.com/mapillary/OpenSfM>`_ 'brown' parameter estimates; and the 4 & 5-coefficient version of the 
     `general OpenCV distortion model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_.  
     """
 
@@ -51,7 +50,7 @@ class CvInterp(Enum):
     <https://docs.opencv.org/4.7.0/da/d54/group__imgproc__transform.html#ga5bb5a1fea74ea38e1a5445ca803ff121.>`_.
     """
     average = cv2.INTER_AREA
-    """ Average of the input pixels over the output pixel area - recommended for downsampling. """
+    """ Average input pixels over the corresponding output pixel area (suited to downsampling). """
     bilinear = cv2.INTER_LINEAR
     """ Bilnear interpolation. """
     cubic = cv2.INTER_CUBIC
