@@ -33,6 +33,7 @@ from typing import Tuple, Union, Optional
 
 from simple_ortho import get_logger
 from simple_ortho.camera import Camera
+from simple_ortho.enums import CvInterp
 
 # from scipy.ndimage import map_coordinates
 
@@ -177,15 +178,10 @@ class OrthoIm:
         except:
             raise ValueError(f'Unsupported "dem_interp" configuration type: {self.dem_interp}.')
 
-        cv_interp_dict = dict(
-            average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC,
-            lanczos=cv2.INTER_LANCZOS4, nearest=cv2.INTER_NEAREST
-        )
-
-        if self.interp not in cv_interp_dict:
-            raise Exception(f'Unsupported "interp" configuration type: {self.interp}.')
-        else:
-            self.interp = cv_interp_dict[self.interp]
+        try:
+            self.interp = CvInterp[self.interp]
+        except:
+            raise ValueError(f'Unsupported "interp" configuration type: {self.interp}.')
 
         if self._ortho_im_filename.exists():
             if self.overwrite:
@@ -361,7 +357,7 @@ class OrthoIm:
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
                             # ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata
                             ortho_im_win_array[oi, :, :] = cv2.remap(
-                                src_im_array[oi, :, :], src_jj, src_ii, self.interp, borderMode=cv2.BORDER_CONSTANT,
+                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value, borderMode=cv2.BORDER_CONSTANT,
                                 borderValue=self.nodata
                             )
                             # below is the scipy equivalent to cv2.remap.  it is ~3x slower but doesn't blur with nodata
@@ -371,7 +367,7 @@ class OrthoIm:
                         time_ttl['remap'] += time.time() - s
                         # remove blurring with nodata at the boundary where necessary
                         nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
-                        if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
+                        if (self.interp != CvInterp.nearest) and (np.sum(nodata_mask) > np.min(self.tile_size)):
                             nodata_mask_d = cv2.dilate(
                                 nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8)
                             )
