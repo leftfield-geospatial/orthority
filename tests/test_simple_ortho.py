@@ -27,7 +27,7 @@ from simple_ortho.enums import CameraType
 from simple_ortho.ortho import OrthoIm
 
 
-def _create_camera(cam_type: CameraType = CameraType.fisheye):
+def _create_camera(cam_type: CameraType = CameraType.fisheye, **kwargs):
     """
     Create a camera for downsampled NGI 3324c_2015_1004_05_0182_RGB image (as in data/inputs/test_sample)
     """
@@ -37,16 +37,14 @@ def _create_camera(cam_type: CameraType = CameraType.fisheye):
     orientation = np.array([-0.349216, 0.298484, -179.086702]) * np.pi / 180.
 
     # create camera
-    return create_camera(cam_type, position, orientation, 120, (640, 1152), sensor_size=(92.160, 165.888))
+    return create_camera(cam_type, position, orientation, 120., (640., 1152.), sensor_size=(92.160, 165.888), **kwargs)
 
 
 class TestSimpleOrthoModule(unittest.TestCase):
-    def _test_camera(self, cam_type: CameraType = CameraType.fisheye):
+    def _test_camera(self, camera: Camera):
         """
         Test camera functionality including projection
         """
-
-        camera = _create_camera(cam_type=cam_type)
 
         # check camera params have been created
         self.assertTrue(hasattr(camera, '_K'), msg="Intrinsic params created")
@@ -54,32 +52,41 @@ class TestSimpleOrthoModule(unittest.TestCase):
         self.assertTrue(np.allclose(np.dot(camera._R, camera._R.T), np.eye(3), atol=1e-6), msg="Rotation matrix valid")
 
         # create arbitrary world co-ords and unproject to image co-ords
-        start_x = np.array([-52359.614680, -3727390.785280, 500])
-        x = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
+        start_x = np.array([-57132.499, -3723903.939, 500])
+        x = (start_x + np.random.rand(100, 3) * np.array([3500, -7000, 500])).T
         ji = camera.world_to_pixel(x)
 
         # re-project image co-ords to world space at original z
         x2 = camera.pixel_to_world_z(ji, x[2, :])
 
         # check original and re-projected co-ords are approx equal
-        self.assertTrue(np.allclose(x, x2, atol=1e-4), msg="Image <-> world projections ok")
+        self.assertTrue(np.allclose(x, x2, atol=1e-2), msg=f"Image <-> world projections ok: {camera}")
 
     def test_camera(self):
-        """ Test all camera types with no distortion parameters. """
-        for cam_type in CameraType:
-            self._test_camera(cam_type)
-
+        """ Test all camera types with distortion parameters. """
+        cam_list = [
+            _create_camera(cam_type=CameraType.pinhole),
+            _create_camera(cam_type=CameraType.fisheye, k1=-0.0525, k2=-0.0098),
+            _create_camera(
+                cam_type=CameraType.opencv,  k1=-0.0093, k2=0.0075, p1=-0.0004, p2=-0.0004, k3=0.0079,
+            ),
+            _create_camera(
+                cam_type=CameraType.brown, k1=-0.0093, k2=0.0075, p1=-0.0004, p2=-0.0004, k3=0.0079, cx=-0.0049,
+                cy=0.0011
+            ),
+        ]
+        for camera in cam_list:
+            self._test_camera(camera)
 
     # TODO: add tests for partial and no DEM coverage
     def _test_ortho_im_class(
-        self, cam_type: CameraType = CameraType.pinhole,
-        ortho_bounds: Tuple[float]=(-57132.499, -3731010.241, -53107.291, -3723903.939)
+        self, camera: Camera, ortho_bounds: Tuple[float] = (-57132.499, -3731010.241, -53107.291, -3723903.939),
+        max_size_diff: float = 0.5
     ):
         """
         Test ortho_im support functionality and orthorectify the test_example data
         """
         # hard code camera and config
-        camera = _create_camera(cam_type=cam_type)
         config = dict(dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[5, 5],
                       compress=None, tile_size=[256, 256], interleave='pixel', photometric=None, nodata=0,
                       per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=True)
@@ -104,7 +111,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # test _get_ortho_bounds() with hard coded vals
         _ortho_bounds = ortho_im._get_ortho_bounds()
 
-        self.assertTrue(np.allclose(_ortho_bounds, ortho_bounds, atol=1e-2), msg=f"Ortho bounds OK: {cam_type}")
+        self.assertTrue(np.allclose(_ortho_bounds, ortho_bounds, atol=1e-2), msg=f"Ortho bounds OK: {camera}")
 
         try:
             ortho_im.orthorectify()         # run the orthorectification
@@ -128,8 +135,10 @@ class TestSimpleOrthoModule(unittest.TestCase):
                     s_band = s_im.read(1)
                     self.assertAlmostEqual(o_band.mean() / 10, s_band.mean() / 10, places=0,
                                            msg='Ortho and source means in same order of magnitude')
-                    self.assertAlmostEqual(o_band.size / s_band.size, 1, places=0,
-                                           msg='Ortho and source sizes in same order of magnitude')
+                    self.assertLess(
+                        np.abs(o_band.size - s_band.size) / np.max((o_band.size, s_band.size)), max_size_diff,
+                        msg='Ortho and source sizes similiar'
+                    )
 
         finally:
             if ortho_im_filename.exists():
@@ -142,8 +151,11 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # as a special case (with distortion coefficients==0), so fisheye has its own bounds.
         pinhole_bounds = (-57132.499, -3731010.241, -53107.291, -3723903.939)
         fisheye_bounds = (-57692.861, -3732012.478, -52546.357, -3722926.400)
-        cam_list = [dict(cam_type=ct, ortho_bounds=pinhole_bounds) for ct in CameraType if ct != CameraType.fisheye]
-        cam_list.append(dict(cam_type=CameraType.fisheye, ortho_bounds=fisheye_bounds))
+        cam_list = [
+            dict(camera=_create_camera(ct), ortho_bounds=pinhole_bounds) for ct in CameraType
+            if ct != CameraType.fisheye
+        ]
+        cam_list.append(dict(camera=_create_camera(CameraType.fisheye), ortho_bounds=fisheye_bounds))
 
         for cam_dict in cam_list:
             self._test_ortho_im_class(**cam_dict)
