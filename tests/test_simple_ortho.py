@@ -56,10 +56,10 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # create arbitrary world co-ords and unproject to image co-ords
         start_x = np.array([-52359.614680, -3727390.785280, 500])
         x = (start_x + np.random.rand(100, 3) * np.array([5000, 5000, 500])).T
-        ij = camera.world_to_pixel(x)
+        ji = camera.world_to_pixel(x)
 
         # re-project image co-ords to world space at original z
-        x2 = camera.pixel_to_world_z(ij, x[2, :])
+        x2 = camera.pixel_to_world_z(ji, x[2, :])
 
         # check original and re-projected co-ords are approx equal
         self.assertTrue(np.allclose(x, x2, atol=1e-4), msg="Image <-> world projections ok")

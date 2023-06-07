@@ -168,12 +168,12 @@ class Camera:
         if not (x.shape[0] == 3 and x.shape[1] > 0):
             raise ValueError('x should have 3 rows and more than one column')
 
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
+    def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """
         Transform 2D pixel to normalised 3D camera co-ordinates.
         """
-        ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-        x_ = np.linalg.inv(self._K).dot(ij_)
+        ji_ = np.row_stack([ji, np.ones((1, ji.shape[1]))])
+        x_ = np.linalg.inv(self._K).dot(ji_)
         return x_
 
     def update_extrinsic(self, position: Union[Tuple[float], np.ndarray], rotation: Union[Tuple[float], np.ndarray]):
@@ -204,23 +204,23 @@ class Camera:
         Returns
         -------
         ndarray
-            Pixel (i=row, j=column) co-ordinates, as a 2-by-N array with (i, j) along the first dimension.
+            Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         """
         self._test_world_coordinates(x)
         # transform from world to camera co-ordinates
         x_ = self._R.T.dot(x - self._T)
         # normalise, and transform to pixel co-ordinates
-        ij = self._K.dot(x_ / x_[2, :])[:2, :]
-        return ij
+        ji = self._K.dot(x_ / x_[2, :])[:2, :]
+        return ji
 
-    def pixel_to_world_z(self, ij: np.ndarray, z: Union[float, np.ndarray]) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray]) -> np.ndarray:
         """
         Transform from 2D pixel to 3D world co-ordinates at a specified Z (altitude).
 
         Parameters
         ----------
-        ij: ndarray
-            Pixel (i=row, j=column) co-ordinates, as a 2-by-N array with (i, j) along the first dimension.
+        ji: ndarray
+            Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         z: float, ndarray
             Z altitude(s) to project to, as a single value or 1-by-N array.
 
@@ -230,11 +230,11 @@ class Camera:
             3D world (x=easting, y=northing, z=altitude) co-ordinates, as a 3-by-N array with (x, y, z) along the first
             dimension.
         """
-        if not (ij.shape[0] == 2 and ij.shape[1] > 0):
-            raise ValueError('`ij` should have 2 rows and one or more columns.')
+        if not (ji.shape[0] == 2 and ji.shape[1] > 0):
+            raise ValueError('`ji` should have 2 rows and one or more columns.')
 
         # transform pixel co-ordinates to camera co-ordinates
-        x_ = self._pixel_to_camera(ij)
+        x_ = self._pixel_to_camera(ji)
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         x_r = self._R.dot(x_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
@@ -303,8 +303,9 @@ class OpenCVCamera(Camera):
 
         This is a wrapper around the `OpenCV general model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_
         that includes radial, tangential & optional thin prism distortion components.  Partial or special cases of the
-        model can be computed by omitting some or all of the distortion coefficients e.g. if all the distortion
-        coefficients are omitted, this model corresponds to :class:`PinholeCamera`.
+        model can be computed by omitting some or all of the distortion coefficients. If no distortion coefficients are
+        specified, this model corresponds to :class:`PinholeCamera`.  If the first 4 or 5 distortion coefficients are
+        specified and the rest omitted, this model corresponds to :class:`BrownCamera` with (cx, cy) = (0, 0).
 
         Parameters
         ----------
@@ -350,18 +351,18 @@ class OpenCVCamera(Camera):
         )
         return undistort_maps
 
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        x_ = cv2.undistortPoints(ij.astype('float64'), self._Koff, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+    def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
+        x_ = cv2.undistortPoints(ji.astype('float64'), self._K, self._dist_coeff)
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = True) -> np.ndarray:
         self._test_world_coordinates(x)
         if not distort:
             return PinholeCamera.world_to_pixel(self, x)
-        ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
-        ij = np.squeeze(ij).T
-        return ij
+        ji, _ = cv2.projectPoints(x - self._T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
+        ji = np.squeeze(ji).T
+        return ji
 
 
 class BrownCamera(OpenCVCamera):
@@ -465,12 +466,12 @@ class BrownCamera(OpenCVCamera):
             x_[1, :] = x_[1, :] * radial_dist + y_tangential_dist
 
             # transform from distorted camera to pixel co-ordinates, using Koff
-            ij = self._Koff.dot(x_)[:2, :]
+            ji = self._Koff.dot(x_)[:2, :]
         else:
             # transform from distorted camera to pixel co-ordinates, using K
-            ij = self._K.dot(x_)[:2, :]
+            ji = self._K.dot(x_)[:2, :]
 
-        return ij
+        return ji
 
 
 class FisheyeCamera(Camera):
@@ -527,10 +528,10 @@ class FisheyeCamera(Camera):
         )
         return undistort_maps
 
-    def _pixel_to_camera(self, ij: np.ndarray) -> np.ndarray:
-        ij_cv = np.expand_dims(ij.T, axis=0).astype('float64')
-        x_ = cv2.fisheye.undistortPoints(ij_cv, self._K, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ij.shape[1]))])
+    def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
+        ji_cv = np.expand_dims(ji.T, axis=0).astype('float64')
+        x_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_coeff, None, None)
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool=True) -> np.ndarray:
@@ -546,8 +547,8 @@ class FisheyeCamera(Camera):
             # and OpenCV docs: https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html.
             # Works out faster than the opencv equivalent:
             #   x_cv = np.expand_dims((x - self._T).T, axis=0)
-            #   ij, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
-            #   ij = np.squeeze(ij).T
+            #   ji, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
+            #   ji = np.squeeze(ji).T
 
             k1, k2, k3, k4 = self._dist_coeff
             r = np.sqrt(np.square(x_[:2, :]).sum(axis=0))
@@ -562,8 +563,8 @@ class FisheyeCamera(Camera):
             x_[:2, :] *= theta_d / r
 
         # transform from distorted camera to pixel co-ordinates
-        ij = self._K.dot(x_)[:2, :]
-        return ij
+        ji = self._K.dot(x_)[:2, :]
+        return ji
 
 
 def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
