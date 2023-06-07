@@ -352,7 +352,7 @@ class OpenCVCamera(Camera):
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        x_ = cv2.undistortPoints(ji.astype('float64'), self._K, self._dist_coeff)
+        x_ = cv2.undistortPoints(ji.T.astype('float64'), self._K, self._dist_coeff)
         x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
         return x_
 
@@ -360,7 +360,7 @@ class OpenCVCamera(Camera):
         self._test_world_coordinates(x)
         if not distort:
             return PinholeCamera.world_to_pixel(self, x)
-        ji, _ = cv2.projectPoints(x - self._T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
+        ji, _ = cv2.projectPoints((x - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
         ji = np.squeeze(ji).T
         return ji
 
@@ -441,6 +441,11 @@ class BrownCamera(OpenCVCamera):
         # Koff[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
         Koff[:2, 2] += im_size.max() * np.array([cx, cy])
         return Koff
+
+    def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
+        x_ = cv2.undistortPoints(ji.T.astype('float64'), self._Koff, self._dist_coeff)
+        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
+        return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = True) -> np.ndarray:
         self._test_world_coordinates(x)
