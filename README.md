@@ -135,7 +135,7 @@ simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/
 
 ## Known limitations
 
-The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these tiffs.  
+The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these images.  
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
