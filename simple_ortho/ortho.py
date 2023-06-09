@@ -199,10 +199,10 @@ class OrthoIm:
         ortho_bounds: numpy.array_like
                   [left, bottom, right, top]
         """
-
+        # TODO: allow an initial dem_min other than 0 to be specified.  there are ODM cases where the whole dem < 0.
         def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
             """
-            Expand rasterio window extents to the nearest whole numbers
+            Expand rasterio window extents to the nearest whole numbers.
             """
             col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
             row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
@@ -308,9 +308,9 @@ class OrthoIm:
                     # Undistort the source image so we can exclude the distortion model from the call to
                     # Camera.world_to_pixel() that builds the ortho maps below.  Overall, this is faster than using the
                     # source image as is, and including distortion in the ortho maps.
-                    s = time.time()
+                    s = time.process_time()
                     # src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
-                    e = time.time()
+                    e = time.process_time()
                     print(f'undistort time: {e-s}')
 
                     for ji, ortho_win in ortho_im.block_windows(1):
@@ -333,14 +333,14 @@ class OrthoIm:
                         ]
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
-                        s = time.time()
+                        s = time.process_time()
                         src_ji = self._camera.world_to_pixel(
                             np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
                             distort=True
                         )
-                        time_ttl['unproject'] += time.time() - s
-                        # now that co-rds are in pixel units, they are converted to float32 for compatibility with
-                        # cv2.remap (without meaningful loss of precision).
+                        time_ttl['unproject'] += time.process_time() - s
+                        # now that co-rds are in pixel units, their value range is much smaller than world co-ordinates
+                        # and they can be converted to float32 for compatibility with cv2.remap
                         src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
                         src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
                         # src_jj, src_ii = cv2.convertMaps(src_jj, src_ii, cv2.CV_16SC2)
@@ -353,9 +353,10 @@ class OrthoIm:
                         # TODO: check how this works with source nodata.  generally the source image will be rectangular
                         #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
                         #  would work
-                        s = time.time()
+                        s = time.process_time()
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
-                            # ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata
+                            # Ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata.
+                            # Note that cv2.remap() execution time is sensitive to array ordering.
                             ortho_im_win_array[oi, :, :] = cv2.remap(
                                 src_im_array[oi, :, :], src_jj, src_ii, self.interp.value, borderMode=cv2.BORDER_CONSTANT,
                                 borderValue=self.nodata
@@ -364,7 +365,8 @@ class OrthoIm:
                             # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
                             #                                                order=2, mode='constant', cval=self.nodata,
                             #                                                prefilter=False)
-                        time_ttl['remap'] += time.time() - s
+
+                        time_ttl['remap'] += time.process_time() - s
                         # remove blurring with nodata at the boundary where necessary
                         nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
                         if (self.interp != CvInterp.nearest) and (np.sum(nodata_mask) > np.min(self.tile_size)):
