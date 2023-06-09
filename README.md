@@ -101,7 +101,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 | Section  | Parameter       | Description
 |----------|-----------------|------------
 | `camera` | `name`          | Descriptive name
-|          | `type`          | [Camera type](camera-types) (`pinhole`, `brown`, `fisheye`, `opencv`).
+|          | `type`          | [Camera type](#camera-type) (`pinhole`, `brown`, `fisheye`, `opencv`).
 |          | `focal_len`     | Focal length in same units/scale as `sensor_size`.  Can be a single value or `[x, y]` pair.
 |          | `sensor_size`   | Optional sensor `[width, height]` in same units/scale as `focal_len`.  If omitted, pixels are assumed square, and`focal_len` should be normalised and unitless:  i.e. `focal_len` = (focal length) / (sensor width).
 |          | `im_size`       | Image `[width, height]` dimensions in pixels.
