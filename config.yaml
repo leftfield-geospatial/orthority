@@ -16,7 +16,7 @@ camera:
 
 
 ortho:
-  # CRS of the ortho image and camera positions as an EPSG or WKT string.  Can be omitted if the source image has a CRS.
+  # CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has a CRS.
   crs:
   # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
   dem_interp: cubic_spline
