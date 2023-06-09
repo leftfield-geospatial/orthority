@@ -45,8 +45,8 @@ class Camera:
             co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
-            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a scalar or length 2 (x, y)
-            tuple/ndarray.
+            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
+            tuple/ndarray pair.
         im_size: tuple of int, ndarray
             Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
@@ -91,7 +91,9 @@ class Camera:
 
         # find the xy focal lengths in pixels
         if not sensor_size:
-            logger.warning('`sensor_size` not specified, assuming square pixels and `focal_len` normalised.')
+            logger.warning(
+                '`sensor_size` not specified, assuming square pixels and `focal_len` normalised by sensor width.'
+            )
             sigma_xy = (focal_len * im_size[0]) * np.ones((1, 2))
         else:
             sensor_size = np.array(sensor_size)
@@ -302,10 +304,10 @@ class OpenCVCamera(Camera):
         undistorting images.
 
         This is a wrapper around the `OpenCV general model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_
-        that includes radial, tangential & optional thin prism distortion components.  Partial or special cases of the
-        model can be computed by omitting some or all of the distortion coefficients. If no distortion coefficients are
-        specified, this model corresponds to :class:`PinholeCamera`.  If the first 4 or 5 distortion coefficients are
-        specified and the rest omitted, this model corresponds to :class:`BrownCamera` with (cx, cy) = (0, 0).
+        that includes radial, tangential & thin prism distortion components.  Partial or special cases of the model can
+        be computed by omitting some or all of the distortion coefficients; e.g. if no distortion coefficients are
+        specified, this model corresponds to :class:`PinholeCamera`, or if the first 5 distortion coefficients are
+        specified, this model corresponds to :class:`BrownCamera` with (cx, cy) = (0, 0).
 
         Parameters
         ----------
@@ -318,8 +320,8 @@ class OpenCVCamera(Camera):
             co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
-            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a scalar or length 2 (x, y)
-            tuple/ndarray.
+            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
+            tuple/ndarray pair.
         im_size: tuple of int, ndarray
             Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
@@ -380,7 +382,7 @@ class BrownCamera(OpenCVCamera):
         <https://docs.opendronemap.org/arguments/camera-lens/`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
         'brown' parameter estimates; and the 4- & 5-coefficient version of the `general OpenCV distortion model
         <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_.  ODM places their estimates in
-        '<dataset path>/cameras.json', and OpenSFM in '<dataset path>/camera_models.json'.
+        *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
 
         Parameters
         ----------
@@ -393,8 +395,8 @@ class BrownCamera(OpenCVCamera):
             co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
-            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a scalar or length 2 (x, y)
-            tuple/ndarray.
+            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
+            tuple/ndarray pair.
         im_size: tuple of int, ndarray
             Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
@@ -494,7 +496,7 @@ class FisheyeCamera(Camera):
         <https://docs.opendronemap.org/arguments/camera-lens/`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
         'fisheye' parameter estimates; and the `OpenCV fisheye distortion model
         <https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html>`_.  ODM places their estimates in
-        '<dataset path>/cameras.json', and OpenSFM in '<dataset path>/camera_models.json'.
+        *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
 
         Parameters
         ----------
@@ -507,8 +509,8 @@ class FisheyeCamera(Camera):
             co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
-            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a scalar or length 2 (x, y)
-            tuple/ndarray.
+            Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
+            tuple/ndarray pair.
         im_size: tuple of int, ndarray
             Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
