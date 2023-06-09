@@ -26,21 +26,21 @@ class CameraType(Enum):
 
     brown = 'brown'
     """ 
-    Brown-Conrady camera model.  Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/`_ / 
+    Brown-Conrady camera model.  Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/>`_ / 
     `OpenSFM <https://github.com/mapillary/OpenSfM>`_ *brown* parameter estimates; and the 4 & 5-coefficient version of the 
-    `general OpenCV distortion model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_.  
+    `general OpenCV distortion model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.  
     """
 
     fisheye = 'fisheye'
     """ 
-    Fisheye camera model.  Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/`_ / `OpenSFM 
+    Fisheye camera model.  Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/>`_ / `OpenSFM 
     <https://github.com/mapillary/OpenSfM>`_, and 
     `OpenCV <https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html>`_ *fisheye* parameter estimates.  
     """
 
     opencv = 'opencv'
     """ 
-    OpenCV `general camera model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_ supporting the full set 
+    OpenCV `general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_ supporting the full set 
     of distortion coefficient estimates.
     """
 

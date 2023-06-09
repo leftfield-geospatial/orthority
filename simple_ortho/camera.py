@@ -303,7 +303,7 @@ class OpenCVCamera(Camera):
         Camera class with OpenCV distortion model, for transforming between 3D world and 2D pixel co-ordinates, and
         undistorting images.
 
-        This is a wrapper around the `OpenCV general model <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_
+        This is a wrapper around the `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_
         that includes radial, tangential & thin prism distortion components.  Partial or special cases of the model can
         be computed by omitting some or all of the distortion coefficients; e.g. if no distortion coefficients are
         specified, this model corresponds to :class:`PinholeCamera`, or if the first 5 distortion coefficients are
@@ -329,7 +329,7 @@ class OpenCVCamera(Camera):
             assumed square, and ``focal_len`` should be a normalised & unitless value:
             ``focal_len`` = (focal length) / (sensor width).
         k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tx, ty: float, optional
-            OpenCV distortion coefficients - see their `docs <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_
+            OpenCV distortion coefficients - see their `docs <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_
             for details.
         """
         Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
@@ -379,9 +379,9 @@ class BrownCamera(OpenCVCamera):
         undistorting images.
 
         The distortion model is compatible with `OpenDroneMap (ODM)
-        <https://docs.opendronemap.org/arguments/camera-lens/`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
-        'brown' parameter estimates; and the 4- & 5-coefficient version of the `general OpenCV distortion model
-        <https://docs.opencv.org/4.7.0/d9/d0c/group__calib3d.html>`_.  ODM places their estimates in
+        <https://docs.opendronemap.org/arguments/camera-lens/>`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
+        *brown* parameter estimates; and the 4- & 5-coefficient version of the `general OpenCV distortion model
+        <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.  ODM places their estimates in
         *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
 
         Parameters
@@ -493,9 +493,9 @@ class FisheyeCamera(Camera):
         undistorting images.
 
         The distortion model is compatible with `OpenDroneMap (ODM)
-        <https://docs.opendronemap.org/arguments/camera-lens/`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
-        'fisheye' parameter estimates; and the `OpenCV fisheye distortion model
-        <https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html>`_.  ODM places their estimates in
+        <https://docs.opendronemap.org/arguments/camera-lens/>`_ / `OpenSFM <https://github.com/mapillary/OpenSfM>`_
+        *fisheye* parameter estimates; and the `OpenCV fisheye distortion model
+        <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`_.  ODM places their estimates in
         *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
 
         Parameters
