@@ -109,7 +109,7 @@ class TestCommandLine(unittest.TestCase):
                             ortho_im_filestem2 = Path(ortho_im_filename2).stem
 
                             print(f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}: {c[0, 1]:.4f}')
-                            self.assertTrue(c[0, 1] > 0.5,
+                            self.assertTrue(c[0, 1] > 0.6,
                                             msg=f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}')
 
         finally:
@@ -119,7 +119,10 @@ class TestCommandLine(unittest.TestCase):
         self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
         # self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
         # self._test_ortho_im(
-        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard = '*.JPG'
+        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard='*.JPG'
+        # )
+        # self._test_ortho_im(
+        #     input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
         # )
 
 if __name__ == '__main__':
