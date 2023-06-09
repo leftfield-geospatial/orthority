@@ -18,20 +18,21 @@ import argparse
 import datetime
 import os
 import pathlib
+import logging
 
 import numpy as np
 import pandas as pd
 import rasterio as rio
 import yaml
 
-from simple_ortho import get_logger, root_path
+from simple_ortho import root_path
 from simple_ortho.camera import CameraType, create_camera
 from simple_ortho.ortho import OrthoIm
 
 # print formatting
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 # TODO: remove pandas dependency
@@ -112,9 +113,8 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
     try:
         # set logging level
         if verbosity is not None:
-            logger.setLevel(10 * verbosity)
-            # TODO: test & fix logging
-            # simple_ortho.logger.setLevel(10 * verbosity)
+            pkg_logger = logging.getLogger(__package__)
+            pkg_logger.setLevel(10 * verbosity)
 
         # read configuration
         if read_conf is None:

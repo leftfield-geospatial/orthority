@@ -15,15 +15,15 @@
 """
 
 from typing import Union, Tuple, Optional
+import logging
 
 import cv2
 import numpy as np
-from simple_ortho import get_logger
 from simple_ortho.enums import CameraType, CvInterp
 
 # from scipy.ndimage import map_coordinates
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class Camera:
     def __init__(
