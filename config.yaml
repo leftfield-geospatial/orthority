@@ -10,7 +10,7 @@ camera:
   # and unitless: `focal_len` = (focal length) / (sensor width).
   sensor_size: [92.160, 165.888]
   # Optional distortion coefficients according to camera `type`. See the readme for details.
-  #   brown: k1, k2, p1, p2, k3
+  #   brown: k1, k2, p1, p2, k3, cx, cy
   #   fisheye: k1, k2, k3, k4
   #   opencv: k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4
 
