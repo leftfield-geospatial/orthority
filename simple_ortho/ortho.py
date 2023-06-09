@@ -22,174 +22,22 @@ import pathlib
 import pstats
 import sys
 import tracemalloc
+import time
+import logging
 
 import cv2
 import numpy as np
 import rasterio as rio
 from rasterio.warp import reproject, Resampling, transform
 from rasterio.windows import Window
+from typing import Tuple, Union, Optional
 
-from simple_ortho import get_logger
+from simple_ortho.camera import Camera
+from simple_ortho.enums import CvInterp
 
 # from scipy.ndimage import map_coordinates
 
-logger = get_logger(__name__)
-
-
-class Camera:
-    def __init__(self, focal_len, sensor_size, im_size, geo_transform, position, orientation, dtype='float32'):
-        """
-        Camera class to project from 2D camera (i,j) pixel co-ordinates to 3D world (x,y,z) co-ordinates,
-        and vice-versa
-
-        Parameters
-        ----------
-        focal_len :     float
-                        focal length in mm
-        sensor_size :   numpy.array_like
-                        sensor (ccd) [width, height] in mm
-        im_size :       numpy.array_like
-                        image [width, height]] in pixels
-        geo_transform :     numpy.array_like
-                            gdal or rasterio 6 element image transform (only the pixel scale is used)
-        position :      numpy.array_like
-                        column vector of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
-        orientation :   numpy.array_like
-                        camera orientation [omega, phi, kappa] angles in radians
-        dtype :         numpy.dtype, Type
-                        Data type to use for camera parameters (to avoid e.g. unproject forcing float32 to 64)
-        """
-
-        self._dtype = dtype
-        self.update_extrinsic(position, orientation)
-
-        if np.size(sensor_size) != 2 or np.size(im_size) != 2:
-            raise Exception('len(sensor_size) != 2 or len(image_size) != 2')
-
-        self._sensor_size = np.array(sensor_size)
-        self._im_size = np.array(im_size)
-        self._focal_len = focal_len
-
-        self.update_intrinsic()
-        logger.debug(f'Camera configuration: {dict(focal_len=focal_len, sensor_size=sensor_size, im_size=im_size)}')
-        logger.debug(f'Position: {position}')
-        logger.debug(f'Orientation: {orientation}')
-
-    def update_extrinsic(self, position, orientation):
-        """
-        Update camera extrinsic parameters
-
-        Parameters
-        ----------
-        position :      numpy.array_like
-                        list of [x=easting, y=northing, z=altitude] camera location co-ordinates, in image CRS
-        orientation :   numpy.array_like
-                        camera orientation [omega, phi, kappa] angles in degrees
-        """
-        if np.size(position) != 3 or np.size(orientation) != 3:
-            raise Exception('len(position) != 3 or len(orientation) != 3')
-        self._T = np.array(position, dtype=self._dtype).reshape(3, 1)
-
-        self._omega, self._phi, self._kappa = orientation
-
-        # PATB convention
-        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
-        omega_r = np.array([[1, 0, 0],
-                            [0, np.cos(self._omega), -np.sin(self._omega)],
-                            [0, np.sin(self._omega), np.cos(self._omega)]])
-
-        phi_r = np.array([[np.cos(self._phi), 0, np.sin(self._phi)],
-                          [0, 1, 0],
-                          [-np.sin(self._phi), 0, np.cos(self._phi)]])
-
-        kappa_r = np.array([[np.cos(self._kappa), -np.sin(self._kappa), 0],
-                            [np.sin(self._kappa), np.cos(self._kappa), 0],
-                            [0, 0, 1]])
-
-        self._R = np.dot(np.dot(omega_r, phi_r), kappa_r).astype(self._dtype)
-        # self._R = np.dot(np.dot(kappa_r, phi_r), omega_r).astype(self._dtype)
-        # self._R = cv2.Rodrigues(np.array(orientation))[0].astype(self._dtype).T
-        self._Rtv = cv2.Rodrigues(self._R.T)[0]
-        return
-
-    def update_intrinsic(self):
-        """
-        Update camera intrinsic parameters
-        """
-
-        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
-        # and https://en.wikipedia.org/wiki/Camera_resectioning
-        sigma_xy = self._focal_len * self._im_size / self._sensor_size  # xy focal lengths in pixels
-
-        # Intrinsic matrix to convert from camera co-ords in PATB convention (x->right, y->up, z->backwards,
-        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
-        self._K = np.array([[-sigma_xy[0], 0, self._im_size[0] / 2],
-                            [0, sigma_xy[1], self._im_size[1] / 2],
-                            [0, 0, 1]], dtype=self._dtype)
-        return
-
-    def unproject(self, x, use_cv=False):
-        """
-        Unproject from 3D world co-ordinates to 2D image co-ordinates
-
-        Parameters
-        ----------
-        x : numpy.array_like
-            3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates to unproject.
-            (x,y,z) along the first dimension.
-        use_cv : bool (optional)
-                 False = use the numpy implementation (faster - recommended)
-                 True = use the opencv implementation (faster - recommended)
-
-        Returns
-        -------
-        ij : numpy.array_like
-             2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
-        """
-        # x,y,z down 1st dimension
-        if not (x.shape[0] == 3 and x.shape[1] > 0):
-            raise Exception('x must have 3 rows and more than one column')
-
-        if use_cv:  # use opencv
-            ij, _ = cv2.projectPoints(x - self._T, self._Rtv, np.array([0., 0., 0.], dtype=self._dtype), self._K,
-                                      distCoeffs=None)
-            ij = np.squeeze(ij).T
-        else:
-            # reshape/transpose to xyz along 1st dimension, and broadcast rotation and translation for each xyz vector
-            x_ = np.dot(self._R.T, (x - self._T))
-            # homogenise xyz/z and apply intrinsic matrix, then discard the 3rd dimension
-            ij = (np.dot(self._K, x_ / x_[2, :]))[:2, :]
-
-        return ij
-
-    def project_to_z(self, ij, z):
-        """
-        Project from 2D image co-ordinates to 3D world co-ordinates at a specified Z
-
-        Parameters
-        ----------
-        ij : numpy.array_like
-             2-by-N array of image (i=row, j=column) co-ordinates. (i, j) along the first dimension.
-        z :  numpy.array_like
-             1-by-N array of Z (altitude) values to project to
-
-        Returns
-        -------
-        x : numpy.array_like
-            3-by-N array of 3D world (x=easting, y=northing, z=altitude) co-ordinates.
-            (x,y,z) along the first dimension.
-        """
-        if not (ij.shape[0] == 2 and ij.shape[1] > 0):
-            raise Exception('not(ij.shape[0] == 2 and ij.shape[1] > 0)')
-
-        ij_ = np.row_stack([ij, np.ones((1, ij.shape[1]))])
-        # TODO: store inverse rather than recalculate each time
-        x_ = np.dot(np.linalg.inv(self._K), ij_)
-        # rotate first (camera to world) to get world aligned axes with origin on the camera
-        x_r = np.dot(self._R, x_)
-        # scale to desired z (offset for camera z) with origin on camera, then offset to world
-        x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
-        return x
+logger = logging.getLogger(__name__)
 
 
 class OrthoIm:
@@ -213,7 +61,7 @@ class OrthoIm:
                             Filename of source image to orthorectified
         dem_filename :      str, pathlib.Path
                             Filename of DEM covering source image
-        camera :            simple_ortho.Camera
+        camera :            Camera
                             camera object relevant to source image
         ortho_im_filename : str, pathlib.Path
                             (optional) specify the filename of the orthorectified image to create.  If not specified,
@@ -221,6 +69,10 @@ class OrthoIm:
         config :            dict
                             (optional) dictionary of configuration parameters.  If None, sensible defaults are used.
                             Key, value pairs as follows:
+                                crs: Ortho image CRS as an EPSG or WKT string.  If omitted, the ortho will be created in
+                                    the source image CRS (if present).  Whether specified by this string or the source
+                                    image, the ortho image CRS must be the same as the ``camera`` position CRS
+                                    (see :class:`~simple_ortho.camera.Camera`).
                                 dem_interp: Interpolation type for resampling DEM (average, bilinear, cubic,
                                     cubic_spline, gauss, lanczos)
                                 dem_band: 1-based index of band in DEM raster to use
@@ -256,8 +108,9 @@ class OrthoIm:
         self._camera = camera
 
         if ortho_im_filename is None:
-            self._ortho_im_filename = self._src_im_filename.parent.joinpath(self._src_im_filename.stem + '_ORTHO' +
-                                                                            self._src_im_filename.suffix)
+            self._ortho_im_filename = self._src_im_filename.parent.joinpath(
+                self._src_im_filename.stem + '_ORTHO' + self._src_im_filename.suffix
+            )
         else:
             self._ortho_im_filename = pathlib.Path(ortho_im_filename)
 
@@ -274,7 +127,7 @@ class OrthoIm:
 
     def _check_rasters(self):
         """
-        Check that the source image is not 12 bit and that DEM and source image overlap
+        Check that the source image is not 12 bit
         """
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im:
@@ -283,10 +136,12 @@ class OrthoIm:
                     tmp_array = src_im.read(1, window=Window(0, 0, 1, 1))
                 except Exception as ex:
                     if src_im.profile['compress'] == 'jpeg':  # assume it is a 12bit JPEG
-                        raise Exception(f'Could not read {self._src_im_filename.stem}\n'
-                                        f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), \n'
-                                        f'    you probably need to recompress this file.\n'
-                                        f'    See the README for details.')
+                        raise Exception(
+                            f'Could not read {self._src_im_filename.stem}\n'
+                            f'    JPEG compression with NBITS==12 is not supported by conda GDAL (and others), \n'
+                            f'    you probably need to recompress this file.\n'
+                            f'    See the README for details.'
+                        )
                     else:
                         raise ex
 
@@ -323,13 +178,10 @@ class OrthoIm:
         except:
             raise ValueError(f'Unsupported "dem_interp" configuration type: {self.dem_interp}.')
 
-        cv_interp_dict = dict(average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC,
-                              lanczos=cv2.INTER_LANCZOS4, nearest=cv2.INTER_NEAREST)
-
-        if self.interp not in cv_interp_dict:
-            raise Exception(f'Unsupported "interp" configuration type: {self.interp}.')
-        else:
-            self.interp = cv_interp_dict[self.interp]
+        try:
+            self.interp = CvInterp[self.interp]
+        except:
+            raise ValueError(f'Unsupported "interp" configuration type: {self.interp}.')
 
         if self._ortho_im_filename.exists():
             if self.overwrite:
@@ -347,6 +199,18 @@ class OrthoIm:
         ortho_bounds: numpy.array_like
                   [left, bottom, right, top]
         """
+        # TODO: allow an initial dem_min other than 0 to be specified.  there are ODM cases where the whole dem < 0.
+        def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
+            """
+            Expand rasterio window extents to the nearest whole numbers.
+            """
+            col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
+            row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
+            width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
+            height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
+            exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
+            return exp_win
+
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
                 # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
@@ -355,19 +219,21 @@ class OrthoIm:
                 dem_win = Window(0, 0, dem_im.width, dem_im.height)
                 for i in range(1, self.ortho_bound_max_iters):
                     # find the ortho bounds in DEM crs by projecting 2D image pixel corners onto 3D z plane = dem_min
-                    ortho_cnrs = self._camera.project_to_z(
+                    ortho_cnrs = self._camera.pixel_to_world_z(
                         np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T,
-                        dem_min)[:2, :]
+                        dem_min
+                    )[:2, :]
                     # TODO: rather warp/transform the bounds themselves in case of CRS distortions?
                     ortho_dem_cnrs = np.array(transform(self.crs, dem_im.crs, ortho_cnrs[0, :], ortho_cnrs[1, :]))
                     ortho_dem_bounds = [*ortho_dem_cnrs.min(axis=1), *ortho_dem_cnrs.max(axis=1)]
                     ortho_dem_win = dem_im.window(*ortho_dem_bounds)
-                    bounded_sub_win = ortho_dem_win.intersection(dem_win)
+                    bounded_sub_win = rio.windows._compute_intersection(ortho_dem_win, dem_win)
 
-                    if bounded_sub_win.width * bounded_sub_win.height <= 0:
+                    if bounded_sub_win[2] * bounded_sub_win[3] <= 0:
                         raise ValueError(
                             f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
                         )
+                    bounded_sub_win = expand_window_to_grid(Window(*bounded_sub_win))
 
                     if dem_array is None:
                         # read the maximum extent (dem_min=0) from file once, using masking to exclude nodata from the
@@ -412,12 +278,15 @@ class OrthoIm:
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
 
-        # initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform)
-        j_range = np.arange(0, self.tile_size[0], dtype='float32')
-        i_range = np.arange(0, self.tile_size[1], dtype='float32')
+        # Initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform).
+        # Note that numpy is left to its default float64 precision for building the xy ortho grids in geo-referenced
+        # co-ordinates.  This precision is needed for e.g. high resolution drone imagery.
+        j_range = np.arange(0, self.tile_size[0])
+        i_range = np.arange(0, self.tile_size[1])
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
         xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
+        time_ttl = dict(undistort=0, world_to_pixel=0, remap=0)
         block_count = 0
         with rio.open(self._src_im_filename, 'r') as src_im:
             with rio.open(self._ortho_im_filename, 'w', **ortho_profile) as ortho_im:
@@ -426,33 +295,53 @@ class OrthoIm:
                 else:
                     bands = np.array([range(1, src_im.count + 1)])  # RW one row of bands i.e. all bands at once
 
-                ttl_blocks = np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) * np.ceil(
-                    ortho_profile['height'] / ortho_profile['blockysize']) * bands.shape[0]
+                ttl_blocks = (
+                    np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) *
+                    np.ceil(ortho_profile['height'] / ortho_profile['blockysize'] * bands.shape[0])
+                )
 
                 # TODO: if we want to allow for src nodata, then read masks here, and set src_im_array[mask] = nan below
 
                 for bi in bands.tolist():
                     # read source image band(s)
                     src_im_array = src_im.read(bi)
+                    # Undistort the source image so we can exclude the distortion model from the call to
+                    # Camera.world_to_pixel() that builds the ortho maps below.
+                    # s = time.time()
+                    # src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
+                    # time_ttl['undistort'] += time.time() - s
 
                     for ji, ortho_win in ortho_im.block_windows(1):
 
                         # offset tile grids to ortho_win
                         ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
-                        ortho_xgrid = xgrid[:ortho_win.height, :ortho_win.width] + (
-                                ortho_win_transform.xoff - ortho_im.transform.xoff)
-                        ortho_ygrid = ygrid[:ortho_win.height, :ortho_win.width] + (
-                                ortho_win_transform.yoff - ortho_im.transform.yoff)
+                        ortho_xgrid = (
+                            xgrid[:ortho_win.height, :ortho_win.width] + (ortho_win_transform.xoff -
+                            ortho_im.transform.xoff)
+                        )
+                        ortho_ygrid = (
+                            ygrid[:ortho_win.height, :ortho_win.width] + (ortho_win_transform.yoff -
+                            ortho_im.transform.yoff)
+                        )
 
                         # extract ortho_win from dem_array, will be nan outside dem bounds or in dem nodata
-                        ortho_zgrid = dem_array[ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
-                                                ortho_win.col_off:(ortho_win.col_off + ortho_win.width)]
+                        ortho_zgrid = dem_array[
+                            ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
+                            ortho_win.col_off:(ortho_win.col_off + ortho_win.width)
+                        ]
 
                         # find the 2D source image pixel co-ords corresponding to ortho image 3D co-ords
-                        src_ji = self._camera.unproject(np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ),
-                                                                  ortho_zgrid.reshape(-1, )]))
-                        src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width)
-                        src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width)
+                        s = time.time()
+                        src_ji = self._camera.world_to_pixel(
+                            np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
+                            distort=True
+                        )
+                        time_ttl['world_to_pixel'] += time.time() - s
+                        # now that co-rds are in pixel units, their value range is much smaller than world co-ordinates
+                        # and they can be converted to float32 for compatibility with cv2.remap
+                        src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
+                        src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
+                        # src_jj, src_ii = cv2.convertMaps(src_jj, src_ii, cv2.CV_16SC2)
 
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids.
                         ortho_im_win_array = np.full(
@@ -462,20 +351,26 @@ class OrthoIm:
                         # TODO: check how this works with source nodata.  generally the source image will be rectangular
                         #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
                         #  would work
+                        s = time.time()
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
-                            # ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata
-                            ortho_im_win_array[oi, :, :] = cv2.remap(src_im_array[oi, :, :], src_jj, src_ii,
-                                                                     self.interp, borderMode=cv2.BORDER_CONSTANT,
-                                                                     borderValue=self.nodata)
+                            # Ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata.
+                            # Note that cv2.remap() execution time is sensitive to array ordering.
+                            ortho_im_win_array[oi, :, :] = cv2.remap(
+                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value, borderMode=cv2.BORDER_CONSTANT,
+                                borderValue=self.nodata
+                            )
                             # below is the scipy equivalent to cv2.remap.  it is ~3x slower but doesn't blur with nodata
                             # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
                             #                                                order=2, mode='constant', cval=self.nodata,
                             #                                                prefilter=False)
+
+                        time_ttl['remap'] += time.time() - s
                         # remove blurring with nodata at the boundary where necessary
                         nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
-                        if (self.interp != 'nearest') and (np.sum(nodata_mask) > np.min(self.tile_size)):
-                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False),
-                                                       np.ones((3, 3), np.uint8))
+                        if (self.interp != CvInterp.nearest) and (np.sum(nodata_mask) > np.min(self.tile_size)):
+                            nodata_mask_d = cv2.dilate(
+                                nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8)
+                            )
                             ortho_im_win_array[:, nodata_mask_d.astype(bool, copy=False)] = self.nodata
                         else:
                             nodata_mask_d = nodata_mask
@@ -486,8 +381,9 @@ class OrthoIm:
                         if self.write_mask and np.all(bi == bands[0]):  # write mask once for all bands
                             with np.testing.suppress_warnings() as sup:
                                 sup.filter(DeprecationWarning, "")  # suppress the np.bool warning as it is buggy
-                                ortho_im.write_mask(np.bitwise_not(255 * nodata_mask_d).astype(np.uint8, copy=False),
-                                                    window=ortho_win)
+                                ortho_im.write_mask(
+                                    np.bitwise_not(255 * nodata_mask_d).astype(np.uint8, copy=False), window=ortho_win
+                                )
 
                         # print progress
                         block_count += 1
@@ -497,6 +393,9 @@ class OrthoIm:
                         sys.stdout.flush()
 
             sys.stdout.write('\n')
+            logger.debug('Processing times:')
+            for k, v in time_ttl.items():
+                logger.debug(f'\t{k}: {v:.5f} s')
 
     def build_ortho_overviews(self):
         """
@@ -525,7 +424,7 @@ class OrthoIm:
                 ortho_profile = src_im.profile
 
             ortho_bounds = self._get_ortho_bounds()  # find extreme case (z=min(DEM)) image bounds
-            ortho_dims = np.array(ortho_bounds[2:]) - np.array(ortho_bounds[:2]) # width, height in meters
+            ortho_dims = np.array(ortho_bounds[2:]) - np.array(ortho_bounds[:2])  # width, height in meters
             ortho_wh = np.int32(np.ceil(ortho_dims / self.resolution))  # width, height in pixels
 
             ortho_transform = rio.transform.from_origin(
@@ -556,14 +455,15 @@ class OrthoIm:
                 #  for the batch, so perhaps a separate dem class
                 # TODO: read only the relevant sub-window from the dem, dems may be high res / large memory - does
                 #  passing rio.band(dem_im) do this automatically?
-                # TODO: generalise the dtype, to allow float64 internal computation - see https://github.com/leftfield-geospatial/simple-ortho/issues/3
                 # Reproject dem to ortho crs and grid. Use nan for dem nodata internally, so that portions of the
                 # ortho in dem nodata, or outside the dem, will be set to self.nodata in self._remap_src_to_ortho.
-                dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.float32('nan'), dtype='float32')
-                reproject(rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
-                          dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
-                          src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.float32('nan'),
-                          init_dest_nodata=True)
+                dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.nan)
+                reproject(
+                    rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
+                    dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
+                    src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.nan,
+                    init_dest_nodata=True
+                )
 
             self._remap_src_to_ortho(ortho_profile, dem_array)
 

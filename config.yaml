@@ -1,23 +1,50 @@
 # simple-ortho configuration
 camera:
-  name: Integraph DMC             # Not used
-  focal_len: 120.                 # Focal length in mm
-  sensor_size: [92.160, 165.888]  # Sensor/CCD [width, height] dimensions in mm
+  # Not used
+  name: Integraph DMC
+  # Camera model type (pinhole, brown, fisheye, opencv)
+  type: pinhole
+  # Focal length in same units/scale as `sensor_size` - can be single value or [x, y] pair.
+  focal_len: 120.
+  # Optional sensor [width, height] in same units/scale as `focal_len`.  If omitted, `focal_len` should be normalised
+  # and unitless: `focal_len` = (focal length) / (sensor width).
+  sensor_size: [92.160, 165.888]
+  # Optional distortion coefficients according to camera `type`. See the readme for details.
+  #   brown: k1, k2, p1, p2, k3, cx, cy
+  #   fisheye: k1, k2, k3, k4
+  #   opencv: k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4
+
 
 ortho:
-  crs:                      # CRS of the ortho image and camera positions as an EPSG or WKT string.  Can be omitted if the source image has a CRS.
-  dem_interp: cubic_spline  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
-  dem_band: 1               # 1-based index of band in DEM raster to use
-  interp: nearest           # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
-  per_band: False           # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
-  build_ovw: True           # Build internal overviews
-  overwrite: True           # Overwrite ortho raster if it exists
-  write_mask: False         # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
-  driver: GTiff             # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
-  dtype:                    # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
-  resolution: [0.5, 0.5]    # Output pixel size [x, y] in m
-  tile_size: [512, 512]     # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  compress: deflate         # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
-  interleave: band          # Interleave by 'pixel' or 'band' (pixel, band)
-  photometric:              # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
-  nodata: 0                 # NODATA value
+  # CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has a CRS.
+  crs:
+  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
+  dem_interp: cubic_spline
+  # 1-based index of band in DEM raster to use
+  dem_band: 1
+  # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
+  interp: nearest
+  # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
+  per_band: False
+  # Build internal overviews
+  build_ovw: True
+  # Overwrite ortho raster if it exists
+  overwrite: True
+  # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
+  write_mask: False
+  # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
+  driver: GTiff
+  # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
+  dtype:
+  # Output pixel size [x, y] in m
+  resolution: [0.5, 0.5]
+  # Tile/block [x, y] size in pixels  ([512, 512] recommended)
+  tile_size: [512, 512]
+  # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
+  compress: deflate
+  # Interleave by 'pixel' or 'band' (pixel, band)
+  interleave: band
+  # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
+  photometric:
+  # NODATA value
+  nodata: 0
