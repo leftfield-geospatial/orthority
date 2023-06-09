@@ -229,7 +229,7 @@ class OrthoIm:
                     ortho_dem_win = dem_im.window(*ortho_dem_bounds)
                     bounded_sub_win = rio.windows._compute_intersection(ortho_dem_win, dem_win)
 
-                    if bounded_sub_win[2] * bounded_sub_win[3] <= 0:
+                    if bounded_sub_win[2] <= 0 or bounded_sub_win[3] <= 0:
                         raise ValueError(
                             f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
                         )
