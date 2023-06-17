@@ -280,6 +280,10 @@ class OrthoIm:
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
 
+        def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
+            """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
+            return (a == b) | (np.isnan(a) & np.isnan(b))
+
         # Initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform).
         # Note that numpy is left to its default float64 precision for building the xy ortho grids in geo-referenced
         # co-ordinates.  This precision is needed for e.g. high resolution drone imagery.
@@ -303,10 +307,13 @@ class OrthoIm:
                 )
 
                 # TODO: if we want to allow for src nodata, then read masks here, and set src_im_array[mask] = nan below
+                # TODO: add tests for different ortho dtype and nodata values
 
                 for bi in bands.tolist():
-                    # read source image band(s)
-                    src_im_array = src_im.read(bi)
+                    # Read source image band(s).
+                    # For cv2.remap() to set invalid ortho areas to self.nodata, the src_im_array dtype must be
+                    # able to represent self.nodata.
+                    src_im_array = src_im.read(bi, out_dtype=self.dtype)
                     # Undistort the source image so we can exclude the distortion model from the call to
                     # Camera.world_to_pixel() that builds the ortho maps below.
                     # s = time.time()
@@ -348,18 +355,19 @@ class OrthoIm:
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids.
                         ortho_im_win_array = np.full(
                             (src_im_array.shape[0], ortho_win.height, ortho_win.width), fill_value=self.nodata,
-                            dtype=ortho_im.dtypes[0]
+                            dtype=self.dtype
                         )
                         # TODO: check how this works with source nodata.  generally the source image will be rectangular
                         #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
                         #  would work
                         s = time.time()
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
-                            # Ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata.
+                            # Ortho pixels outside dem / src bounds or in dem nodata, will be set to
+                            # borderValue=self.nodata.
                             # Note that cv2.remap() execution time is sensitive to array ordering.
                             ortho_im_win_array[oi, :, :] = cv2.remap(
-                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value, borderMode=cv2.BORDER_CONSTANT,
-                                borderValue=self.nodata
+                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value,
+                                borderMode=cv2.BORDER_CONSTANT, borderValue=self.nodata,
                             )
                             # below is the scipy equivalent to cv2.remap.  it is ~3x slower but doesn't blur with nodata
                             # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
@@ -367,13 +375,22 @@ class OrthoIm:
                             #                                                prefilter=False)
 
                         time_ttl['remap'] += time.time() - s
-                        # remove blurring with nodata at the boundary where necessary
-                        nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
-                        if (self.interp != CvInterp.nearest) and (np.sum(nodata_mask) > np.min(self.tile_size)):
-                            nodata_mask_d = cv2.dilate(
-                                nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8)
-                            )
-                            ortho_im_win_array[:, nodata_mask_d.astype(bool, copy=False)] = self.nodata
+
+                        # Remove blurring from cv2.remap interpolation with nodata at the boundary.  This only occurs
+                        # if not using nearest interpolation or if nodata is not nan.
+                        nodata_mask = np.all(nan_equals(ortho_im_win_array, self.nodata), axis=0)
+                        if (
+                            self.interp != CvInterp.nearest and not np.isnan(self.nodata) and
+                            np.sum(nodata_mask) > np.min(self.tile_size)
+                        ):
+                            # create dilation kernel that matches interpolation kernel size
+                            if self.interp == CvInterp.bilinear:
+                                kernel = np.ones((3, 3), np.uint8)
+                            else:
+                                kernel = np.ones((5, 5), np.uint8)
+                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), kernel)
+                            nodata_mask_d = nodata_mask_d.astype(bool, copy=False)
+                            ortho_im_win_array[:, nodata_mask_d] = self.nodata
                         else:
                             nodata_mask_d = nodata_mask
 
@@ -383,9 +400,7 @@ class OrthoIm:
                         if self.write_mask and np.all(bi == bands[0]):  # write mask once for all bands
                             with np.testing.suppress_warnings() as sup:
                                 sup.filter(DeprecationWarning, "")  # suppress the np.bool warning as it is buggy
-                                ortho_im.write_mask(
-                                    np.bitwise_not(255 * nodata_mask_d).astype(np.uint8, copy=False), window=ortho_win
-                                )
+                                ortho_im.write_mask(~nodata_mask_d, window=ortho_win)
 
                         # print progress
                         block_count += 1
