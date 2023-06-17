@@ -211,10 +211,12 @@ class OrthoIm:
             exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
             return exp_win
 
+        # minimum value of the EGM96 geoid grid i.e. minimum possible altitude with WGS84 ellipsoid as vertical datum
+        egm96_min = -106.71
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
                 # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
-                dem_min = 0
+                dem_min = egm96_min
                 dem_array = dem_array_win = None
                 dem_win = Window(0, 0, dem_im.width, dem_im.height)
                 for i in range(1, self.ortho_bound_max_iters):
@@ -248,13 +250,13 @@ class OrthoIm:
                         bounded_sub_win.width, bounded_sub_win.height
                     ).toslices()
                     dem_min_prev = dem_min
-                    dem_min = np.max([dem_array[dem_array_slices].min(), 0])
+                    dem_min = np.max([dem_array[dem_array_slices].min(), egm96_min])
 
                     # exit on convergence
                     if np.abs(dem_min_prev - dem_min) <= self.ortho_bound_stop_crit:
                         break
 
-                if (bounded_sub_win.width * bounded_sub_win.height < ortho_dem_win.width * ortho_dem_win.height):
+                if bounded_sub_win.width * bounded_sub_win.height < ortho_dem_win.width * ortho_dem_win.height:
                     logger.warning(
                         f'Ortho {self._ortho_im_filename.name} not fully covered by DEM {self._dem_filename.name}'
                     )
