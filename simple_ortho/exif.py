@@ -26,10 +26,13 @@ import rasterio as rio
 
 logger = logging.getLogger(__name__)
 
-# Create a schema of known RPY XMP keys. Use xml namspace qualified keys which are unique, rather than xmltodict
-# type prefix qualified keys, which can have different prefixes referring to the same namepace.
-rpy_schemas = dict(
+xmp_schemas = dict(
     dji=dict(
+        lla_keys=[
+            '{http://www.dji.com/drone-dji/1.0/}GpsLatitude',
+            '{http://www.dji.com/drone-dji/1.0/}GpsLongtitude',
+            '{http://www.dji.com/drone-dji/1.0/}AbsoluteAltitude'
+        ],
         rpy_keys=[
             '{http://www.dji.com/drone-dji/1.0/}GimbalRollDegree',
             '{http://www.dji.com/drone-dji/1.0/}GimbalPitchDegree',
@@ -37,8 +40,9 @@ rpy_schemas = dict(
         ],
         rpy_offsets=(0., 90., 0.)
     ),
-    # these Sony DSC keys may refer to RPY of the drone, not camera, but am including for now
+    # these Sensefly / Sony DSC keys may refer to RPY of the drone, not camera, but am including for now
     sensefly=dict(
+        lla_keys=[],
         rpy_keys=[
             '{http://ns.sensefly.com/Camera/1.0/}Roll',
             '{http://ns.sensefly.com/Camera/1.0/}Pitch',
@@ -47,6 +51,10 @@ rpy_schemas = dict(
         rpy_offsets=(0., 0., 0.)
     ),
 )
+"""
+A schema of known RPY & LLA XMP keys. Uses xml namspace qualified keys which are unique, rather than xmltodict
+type prefix qualified keys, which can have different prefixes referring to the same namepace.
+"""
 
 
 def xml_to_flat_dict(xmp_str: str) -> Dict[str, str]:
@@ -82,6 +90,7 @@ class Exif:
         file_path = Path(filename)
         if not file_path.exists():
             raise FileNotFoundError(f'File does not exist: {file_path}')
+
         with rio.open(filename, 'r') as ds:
             self._exif_dict = ds.tags()
             self._image_size = ds.shape[::-1]
@@ -96,8 +105,8 @@ class Exif:
 
         self._sensor_size = self._get_sensor_size(self._exif_dict, self._image_size)
         self._focal, self._focal_35 = self._get_focal(self._exif_dict)
-        self._lla = self._get_lla(self._exif_dict)
-        self._rpy = self._get_rpy(self._xmp_dict)
+        self._lla = self._get_xmp_lla(self._xmp_dict) or self._get_lla(self._exif_dict)
+        self._rpy = self._get_xmp_rpy(self._xmp_dict)
 
     @property
     def image_size(self) -> Union[None, Tuple[int, int]]:
@@ -186,10 +195,9 @@ class Exif:
     @staticmethod
     def _get_lla(exif_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
         """
-        Return the (latitutde, longitude, altitude) image location with latitude, longitude in decimal degrees, and
+        Return the (latitutde, longitude, altitude) EXIF image location with latitude, longitude in decimal degrees, and
         altitude in meters.
         """
-        # TODO: add method to get DJI XMP values - they may be more accurate
         lat_ref_key = 'EXIF_GPSLatitudeRef'
         lon_ref_key = 'EXIF_GPSLongitudeRef'
         lat_key = 'EXIF_GPSLatitude'
@@ -215,14 +223,20 @@ class Exif:
         return lat, lon, alt
 
     @staticmethod
-    def _get_rpy(xmp_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
-        """ Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist. """
-        # extract RPY from XMP if the values exist
-        rpy = None
-        for schema_name, rpy_schema in rpy_schemas.items():
-            if all([rpy_key in xmp_dict for rpy_key in rpy_schema['rpy_keys']]):
-                rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in rpy_schema['rpy_keys']])
-                rpy += np.array(rpy_schema['rpy_offsets'])
-                break
+    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
+        """ Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
+        for schema_name, xmp_schema in xmp_schemas.items():
+            if all([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]):
+                lla = np.array([float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']])
+                return tuple(lla)
+        return None
 
-        return tuple(rpy)
+    @staticmethod
+    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
+        """ Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist. """
+        for schema_name, xmp_schema in xmp_schemas.items():
+            if all([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]):
+                rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
+                rpy += np.array(xmp_schema['rpy_offsets'])
+                return tuple(rpy)
+        return None
