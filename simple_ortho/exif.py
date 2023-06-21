@@ -27,7 +27,7 @@ import rasterio as rio
 logger = logging.getLogger(__name__)
 
 # Create a schema of known RPY XMP keys. Use xml namspace qualified keys which are unique, rather than xmltodict
-# type prefix qualified keys which can have different prefixes referring to the same namepace.
+# type prefix qualified keys, which can have different prefixes referring to the same namepace.
 rpy_schemas = dict(
     dji=dict(
         rpy_keys=[
@@ -189,6 +189,7 @@ class Exif:
         Return the (latitutde, longitude, altitude) image location with latitude, longitude in decimal degrees, and
         altitude in meters.
         """
+        # TODO: add method to get DJI XMP values - they may be more accurate
         lat_ref_key = 'EXIF_GPSLatitudeRef'
         lon_ref_key = 'EXIF_GPSLongitudeRef'
         lat_key = 'EXIF_GPSLatitude'
