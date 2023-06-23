@@ -23,10 +23,8 @@ import numpy as np
 from rasterio import CRS
 from rasterio.warp import transform
 from simple_ortho.exif import Exif
-# TODO: confirm that OPK is in patb convention, and that it makes sense to keep it that way.  If camera coordinates are
-#  in PATB convention, what convention are body coordinates in?  It doesn't make sense defining camera co-ordinates w/o
-#  defining body co-ordinates too - i.e. should be included in docs.
-# TODO: standardise OPK/rotation naming here and in camera.py.  also standardise docs here and in odm_to_simple_ortho.py
+# TODO: standardise OPK/rotation naming & units here and in camera.py.  also standardise docs here and in
+#  odm_to_simple_ortho.py
 
 def rpy_to_opk(rpy: Tuple[float], lla: Tuple[float], crs: CRS, cbb: Union[None, List[List]] = None) -> Tuple[float]:
     """
@@ -36,7 +34,7 @@ def rpy_to_opk(rpy: Tuple[float], lla: Tuple[float], crs: CRS, cbb: Union[None, 
     aligned with the gimbal/camera with (x->front, y->right, z->down).  The navigation system shares its center with
     the body system, but its xy-plane is perpendicular to the local plumbline (x->N, y->E, z->down).
 
-    (omega, phi, kappa) are angles to rotate from world to camera coordinate systems, where world coordinates are a
+    (omega, phi, kappa) are angles to rotate from world to camera coordinate systems. World coordinates are a
     projected system like UTM (origin fixed near earth surface, and usually some distance from camera), and camera
     coordinates are centered on and aligned with the camera (in PATB convention: x->right, y->up, z->backwards looking
     through the camera at the scene).
@@ -213,6 +211,7 @@ def main():
 
             opk = rpy_to_opk(np.radians(exif.rpy), exif.lla, world_crs)
             writer.writerow([filename.stem, *pos, *np.degrees(opk)])
+            print(exif, end='\n\n')
 
 
 if __name__ == "__main__":

@@ -38,7 +38,8 @@ xmp_schemas = dict(
             '{http://www.dji.com/drone-dji/1.0/}GimbalPitchDegree',
             '{http://www.dji.com/drone-dji/1.0/}GimbalYawDegree'
         ],
-        rpy_offsets=(0., 90., 0.)
+        rpy_offsets=(0., 90., 0.),
+        rpy_gains=(1., 1., 1.)
     ),
     # these Sensefly / Sony DSC keys may refer to RPY of the drone, not camera, but am including for now
     sensefly=dict(
@@ -48,7 +49,8 @@ xmp_schemas = dict(
             '{http://ns.sensefly.com/Camera/1.0/}Pitch',
             '{http://ns.sensefly.com/Camera/1.0/}Yaw'
         ],
-        rpy_offsets=(0., 0., 0.)
+        rpy_offsets=(0., 0., 0.),
+        rpy_gains=(1., 1., 1.)
     ),
 )
 """
@@ -103,10 +105,26 @@ class Exif:
                 logger.warning(f'{file_path.name} contains no XMP metadata')
                 self._xmp_dict = None
 
+        self._filename = file_path.name
+        self._camera_name = self._get_camera_name(self._exif_dict)
         self._sensor_size = self._get_sensor_size(self._exif_dict, self._image_size)
         self._focal, self._focal_35 = self._get_focal(self._exif_dict)
         self._lla = self._get_xmp_lla(self._xmp_dict) or self._get_lla(self._exif_dict)
         self._rpy = self._get_xmp_rpy(self._xmp_dict)
+
+    def __str__(self):
+        lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._lla) if self._lla else 'None'
+        rpy_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._rpy) if self._rpy else 'None'
+        return (
+            f'Image: {self._filename}\nCamera: {self._camera_name}\nImage size: {self.image_size}\n'
+            f'Focal length: {self._focal}\nFocal length (35mm): {self._focal_35}\nSensor size: {self._sensor_size}'
+            f'\nLatitude, longitude, altitude: {lla_str}\nRoll, pitch, yaw: {rpy_str}'
+        )
+
+    @property
+    def camera_name(self) -> Union[None, str]:
+        """ Camera make and model. """
+        return self._camera_name
 
     @property
     def image_size(self) -> Union[None, Tuple[int, int]]:
@@ -129,7 +147,7 @@ class Exif:
         return self._focal_35
 
     @property
-    def lla(self) -> Union[None, float]:
+    def lla(self) -> Union[None, Tuple[float]]:
         """
         (Latitude, longitude, altitude) co-ordinates with latitude and longitude in decimal degrees, and altitude in
         meters.
@@ -137,7 +155,7 @@ class Exif:
         return self._lla
 
     @property
-    def rpy(self) -> Union[None, float]:
+    def rpy(self) -> Union[None, Tuple[float]]:
         """ (Roll, pitch, yaw) camera/gimbal angles in degrees. """
         return self._rpy
 
@@ -151,6 +169,15 @@ class Exif:
             if len(val_str) > 0
         ]
         return val_list[0] if len(val_list) == 1 else tuple(val_list)
+
+    @staticmethod
+    def _get_camera_name(exif_dict: Dict[str, str]) -> Union[None, str]:
+        """ Return camera make and model string. """
+        make_key = 'EXIF_Make'
+        model_key = 'EXIF_Model'
+        make = exif_dict.get(make_key, None)
+        model = exif_dict.get(model_key, None)
+        return f'{make} {model}' if make and model else None
 
     @staticmethod
     def _get_sensor_size(
@@ -237,6 +264,7 @@ class Exif:
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]):
                 rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
+                rpy *= np.array(xmp_schema['rpy_gains'])
                 rpy += np.array(xmp_schema['rpy_offsets'])
                 return tuple(rpy)
         return None
