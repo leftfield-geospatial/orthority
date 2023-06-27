@@ -105,7 +105,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `focal_len`     | Focal length in same units/scale as `sensor_size`.  Can be a single value or `[x, y]` pair.
 |          | `sensor_size`   | Optional sensor `[width, height]` in same units/scale as `focal_len`.  If omitted, pixels are assumed square, and`focal_len` should be normalised and unitless:  i.e. `focal_len` = (focal length) / (sensor width).
 |          | `im_size`       | Image `[width, height]` dimensions in pixels.
-| | `k1`, `k2`, ... | Optional distortion coefficients for the `brown`, `fisheye` and `opencv`  [camera types](#camera-type).  Values default to zero if not specified.
+|          | `k1`, `k2`, ... | Optional distortion coefficients for the `brown`, `fisheye` and `opencv`  [camera types](#camera-type).  Values default to zero if not specified.
 | `ortho`  | `crs`           | CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has a CRS.   
 |          | `dem_interp`    | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
 |          | `dem_band`      | Index of band in DEM raster to use (1-based).
@@ -114,6 +114,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `build_ovw`     | Build internal overviews (`True`, `False`).
 |          | `overwrite`     | Overwrite ortho image(s) if they exist (`True`, `False`).
 |          | `write_mask`    | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
+|          | `full_remap`    | Remap source to ortho with full camera model (`True`), or remap undistorted source to ortho with pinhole model (`False`). 
 |          | `driver`        | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
 |          | `dtype`         | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
 |          | `resolution`    | Output pixel size `[x, y]` in m.

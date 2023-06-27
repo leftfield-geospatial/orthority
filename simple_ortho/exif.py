@@ -97,7 +97,6 @@ class Exif:
             self._exif_dict = ds.tags()
             self._image_size = ds.shape[::-1]
 
-            namespaces = ds.tag_namespaces()
             if 'xml:XMP' in ds.tag_namespaces():
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP']
                 self._xmp_dict = xml_to_flat_dict(xmp_str)
