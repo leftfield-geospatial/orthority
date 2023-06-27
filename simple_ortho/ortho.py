@@ -48,7 +48,7 @@ class OrthoIm:
     default_config = dict(
         crs=None, dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5], compress='deflate',
         tile_size=[512, 512], interleave='band', photometric=None, nodata=0, per_band=False, driver='GTiff', dtype=None,
-        build_ovw=True, overwrite=True, write_mask=False
+        build_ovw=True, overwrite=True, write_mask=False, full_remap=True,
     )
 
     def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
@@ -95,6 +95,9 @@ class OrthoIm:
                                 overwrite: Overwrite ortho raster if it exists
                                 write_mask: True = write an internal mask band, can help remove jpeg noise in nodata
                                     area (False - recommended)
+                                full_remap: bool
+                                    Remap source to ortho with full camera model (True), or undistorted source to ortho
+                                    with pinhole model (False).
         """
         if not os.path.exists(src_im_filename):
             raise Exception(f"Source image file {src_im_filename} does not exist")
@@ -162,9 +165,14 @@ class OrthoIm:
         # TODO: can we drop the use of the source CRS entirely?
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(self._src_im_filename, 'r') as src_im:
             src_crs = src_im.crs
+            self.count = src_im.profile['count']
+            # copy source image values to config attributes that are not set
+            attrs_to_copy = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
+            for attr in attrs_to_copy:
+                setattr(self, attr, getattr(self, attr, None) or src_im.profile[attr])
 
         if not src_crs and not self.crs:
-            raise ValueError(f'"crs" configuration value must be specified when the source image has no projection.')
+            raise ValueError(f'"crs" configuration value must be specified when the source image has no CRS.')
         try:
             # derive crs from configuration string if specified, otherwise use source image crs
             self.crs = rio.CRS.from_string(self.crs) if self.crs else src_crs
@@ -211,10 +219,12 @@ class OrthoIm:
             exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
             return exp_win
 
+        # minimum value of the EGM96 geoid grid i.e. minimum possible altitude with WGS84 ellipsoid as vertical datum
+        egm96_min = -106.71
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
             with rio.open(self._src_im_filename, 'r') as src_im, rio.open(self._dem_filename, 'r') as dem_im:
                 # iteratively reduce ortho bounds until the encompassed DEM minimum stabilises
-                dem_min = 0
+                dem_min = egm96_min
                 dem_array = dem_array_win = None
                 dem_win = Window(0, 0, dem_im.width, dem_im.height)
                 for i in range(1, self.ortho_bound_max_iters):
@@ -248,13 +258,13 @@ class OrthoIm:
                         bounded_sub_win.width, bounded_sub_win.height
                     ).toslices()
                     dem_min_prev = dem_min
-                    dem_min = np.max([dem_array[dem_array_slices].min(), 0])
+                    dem_min = np.max([dem_array[dem_array_slices].min(), egm96_min])
 
                     # exit on convergence
                     if np.abs(dem_min_prev - dem_min) <= self.ortho_bound_stop_crit:
                         break
 
-                if (bounded_sub_win.width * bounded_sub_win.height < ortho_dem_win.width * ortho_dem_win.height):
+                if bounded_sub_win.width * bounded_sub_win.height < ortho_dem_win.width * ortho_dem_win.height:
                     logger.warning(
                         f'Ortho {self._ortho_im_filename.name} not fully covered by DEM {self._dem_filename.name}'
                     )
@@ -278,9 +288,15 @@ class OrthoIm:
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
 
+        def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
+            """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
+            return (a == b) | (np.isnan(a) & np.isnan(b))
+
         # Initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform).
         # Note that numpy is left to its default float64 precision for building the xy ortho grids in geo-referenced
         # co-ordinates.  This precision is needed for e.g. high resolution drone imagery.
+        # j_range = np.arange(0, ortho_profile['width'])
+        # i_range = np.arange(0, ortho_profile['height'])
         j_range = np.arange(0, self.tile_size[0])
         i_range = np.arange(0, self.tile_size[1])
         jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
@@ -301,16 +317,22 @@ class OrthoIm:
                 )
 
                 # TODO: if we want to allow for src nodata, then read masks here, and set src_im_array[mask] = nan below
+                # TODO: add tests for different ortho dtype and nodata values
 
                 for bi in bands.tolist():
-                    # read source image band(s)
-                    src_im_array = src_im.read(bi)
-                    # Undistort the source image so we can exclude the distortion model from the call to
-                    # Camera.world_to_pixel() that builds the ortho maps below.
-                    # s = time.time()
-                    # src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
-                    # time_ttl['undistort'] += time.time() - s
+                    # Read source image band(s).
+                    # For cv2.remap() to set invalid ortho areas to self.nodata, the src_im_array dtype must be
+                    # able to represent self.nodata.
+                    src_im_array = src_im.read(bi, out_dtype=self.dtype)
+                    if not self.full_remap:
+                        # Undistort the source image so we can exclude the distortion model from the call to
+                        # Camera.world_to_pixel() that builds the ortho maps below.
+                        s = time.time()
+                        src_im_array = self._camera.undistort(src_im_array, nodata=self.nodata, interp=self.interp)
+                        time_ttl['undistort'] += time.time() - s
 
+                    # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
+                    # for ortho_win in [ortho_win_full]:
                     for ji, ortho_win in ortho_im.block_windows(1):
 
                         # offset tile grids to ortho_win
@@ -334,7 +356,7 @@ class OrthoIm:
                         s = time.time()
                         src_ji = self._camera.world_to_pixel(
                             np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
-                            distort=True
+                            distort=self.full_remap
                         )
                         time_ttl['world_to_pixel'] += time.time() - s
                         # now that co-rds are in pixel units, their value range is much smaller than world co-ordinates
@@ -346,32 +368,45 @@ class OrthoIm:
                         # Interpolate the ortho tile from the source image based on warped/unprojected grids.
                         ortho_im_win_array = np.full(
                             (src_im_array.shape[0], ortho_win.height, ortho_win.width), fill_value=self.nodata,
-                            dtype=ortho_im.dtypes[0]
+                            dtype=self.dtype
                         )
                         # TODO: check how this works with source nodata.  generally the source image will be rectangular
                         #  with full coverage, but this may not always be the case.  maybe filling src nodata with nan
                         #  would work
                         s = time.time()
                         for oi in range(0, src_im_array.shape[0]):  # for per_band=True, this will loop once only
-                            # Ortho pixels outside dem bounds or in dem nodata, will be set to borderValue=self.nodata.
+                            # Ortho pixels outside dem / src bounds or in dem nodata, will be set to
+                            # borderValue=self.nodata.
                             # Note that cv2.remap() execution time is sensitive to array ordering.
                             ortho_im_win_array[oi, :, :] = cv2.remap(
-                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value, borderMode=cv2.BORDER_CONSTANT,
-                                borderValue=self.nodata
+                                src_im_array[oi, :, :], src_jj, src_ii, self.interp.value,
+                                borderMode=cv2.BORDER_CONSTANT, borderValue=self.nodata,
                             )
                             # below is the scipy equivalent to cv2.remap.  it is ~3x slower but doesn't blur with nodata
-                            # ortho_im_win_array[oi, :, :] = map_coordinates(src_im_array[oi, :, :], (src_ii, src_jj),
-                            #                                                order=2, mode='constant', cval=self.nodata,
-                            #                                                prefilter=False)
+                            # ortho_im_win_array[oi, :, :] = map_coordinates(
+                            #     src_im_array[oi, :, :], (src_ii, src_jj), order=2, mode='constant', cval=self.nodata,
+                            #     prefilter=False
+                            # )
 
                         time_ttl['remap'] += time.time() - s
-                        # remove blurring with nodata at the boundary where necessary
-                        nodata_mask = (ortho_im_win_array[0, :, :] == self.nodata)
-                        if (self.interp != CvInterp.nearest) and (np.sum(nodata_mask) > np.min(self.tile_size)):
-                            nodata_mask_d = cv2.dilate(
-                                nodata_mask.astype(np.uint8, copy=False), np.ones((3, 3), np.uint8)
-                            )
-                            ortho_im_win_array[:, nodata_mask_d.astype(bool, copy=False)] = self.nodata
+
+                        # Remove blurring from cv2.remap interpolation with nodata at the boundary.  This only occurs
+                        # if not using nearest interpolation or if nodata is not nan.
+                        nodata_mask = np.all(nan_equals(ortho_im_win_array, self.nodata), axis=0)
+                        if (
+                            self.interp != CvInterp.nearest and not np.isnan(self.nodata) and
+                            np.sum(nodata_mask) > np.min(self.tile_size)
+                        ):
+                            # TODO: to avoid these nodata boundary issues entirely, I could use dtype=float and
+                            #  nodata=nan internally, then convert to config dtype and nodata on writing.
+                            # create dilation kernel slightly larger than interpolation kernel size
+                            if self.interp == CvInterp.bilinear:
+                                kernel = np.ones((5, 5), np.uint8)
+                            else:
+                                kernel = np.ones((9, 9), np.uint8)
+                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), kernel)
+                            nodata_mask_d = nodata_mask_d.astype(bool, copy=False)
+                            ortho_im_win_array[:, nodata_mask_d] = self.nodata
                         else:
                             nodata_mask_d = nodata_mask
 
@@ -381,9 +416,7 @@ class OrthoIm:
                         if self.write_mask and np.all(bi == bands[0]):  # write mask once for all bands
                             with np.testing.suppress_warnings() as sup:
                                 sup.filter(DeprecationWarning, "")  # suppress the np.bool warning as it is buggy
-                                ortho_im.write_mask(
-                                    np.bitwise_not(255 * nodata_mask_d).astype(np.uint8, copy=False), window=ortho_win
-                                )
+                                ortho_im.write_mask(~nodata_mask_d, window=ortho_win)
 
                         # print progress
                         block_count += 1
@@ -419,10 +452,7 @@ class OrthoIm:
             proc_profile.enable()
 
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GDAL_TIFF_INTERNAL_MASK=True):
-            # set up ortho profile based on source profile and predicted bounds
-            with rio.open(self._src_im_filename, 'r') as src_im:
-                ortho_profile = src_im.profile
-
+            # get ortho bounds, transform and dimensions
             ortho_bounds = self._get_ortho_bounds()  # find extreme case (z=min(DEM)) image bounds
             ortho_dims = np.array(ortho_bounds[2:]) - np.array(ortho_bounds[:2])  # width, height in meters
             ortho_wh = np.int32(np.ceil(ortho_dims / self.resolution))  # width, height in pixels
@@ -430,18 +460,13 @@ class OrthoIm:
             ortho_transform = rio.transform.from_origin(
                 ortho_bounds[0], ortho_bounds[3], self.resolution[0], self.resolution[1]
             )
+            # create ortho profile
+            attrs_to_copy = ['crs', 'nodata', 'driver', 'dtype', 'compress', 'interleave', 'photometric', 'count']
+            ortho_profile = {attr: getattr(self, attr) for attr in attrs_to_copy}
             ortho_profile.update(
-                crs=self.crs, nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
-                blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0], height=ortho_wh[1],
-                num_threads='all_cpus'
+                tiled=True, blockxsize=self.tile_size[0], blockysize=self.tile_size[1], transform=ortho_transform,
+                width=ortho_wh[0], height=ortho_wh[1], num_threads='all_cpus'
             )
-
-            # overwrite source attributes in ortho_profile where config is not None
-            attrs_to_check = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
-            for attr in attrs_to_check:
-                val = getattr(self, attr)
-                if val is not None:
-                    ortho_profile[attr] = val
 
             # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
             if self.write_mask and ortho_profile['compress'] != 'jpeg':
@@ -455,6 +480,8 @@ class OrthoIm:
                 #  for the batch, so perhaps a separate dem class
                 # TODO: read only the relevant sub-window from the dem, dems may be high res / large memory - does
                 #  passing rio.band(dem_im) do this automatically?
+                # TODO: is it possible to include vertical datum reference here and for camera positions so it is
+                #  handled automatically
                 # Reproject dem to ortho crs and grid. Use nan for dem nodata internally, so that portions of the
                 # ortho in dem nodata, or outside the dem, will be set to self.nodata in self._remap_src_to_ortho.
                 dem_array = np.full((ortho_wh[1], ortho_wh[0]), fill_value=np.nan)
@@ -462,7 +489,7 @@ class OrthoIm:
                     rio.band(dem_im, self.dem_band), dem_array, dst_transform=ortho_transform,
                     dst_crs=ortho_profile['crs'], resampling=self.dem_interp, src_transform=dem_im.transform,
                     src_crs=dem_im.crs, num_threads=multiprocessing.cpu_count(), dst_nodata=np.nan,
-                    init_dest_nodata=True
+                    init_dest_nodata=True, apply_vertical_shift=True,
                 )
 
             self._remap_src_to_ortho(ortho_profile, dem_array)

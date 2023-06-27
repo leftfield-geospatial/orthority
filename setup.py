@@ -19,6 +19,6 @@ setup(
         'pyyaml>=5.4',
         'shapely>=1.7'
     ],
-    entry_points = {'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},
+    entry_points={'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},
     scripts=['scripts/batch_recompress.bat']
 )
