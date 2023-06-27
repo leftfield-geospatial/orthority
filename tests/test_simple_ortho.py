@@ -105,8 +105,8 @@ class TestSimpleOrthoModule(unittest.TestCase):
         # test config set correctly
         for k, v in config.items():
             self.assertTrue(hasattr(ortho_im, k), msg=f'OrthoIm has {k} config attribute')
-            if 'interp' not in k:
-                self.assertEqual(getattr(ortho_im, k), config[k], msg=f'OrthoIm {k} config attribute set ok')
+            if 'interp' not in k and v is not None:
+                self.assertEqual(getattr(ortho_im, k), v, msg=f'OrthoIm {k} config attribute set ok')
 
         # test _get_ortho_bounds() with hard coded vals
         _ortho_bounds = ortho_im._get_ortho_bounds()
@@ -137,7 +137,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
                                            msg='Ortho and source means in same order of magnitude')
                     self.assertLess(
                         np.abs(o_band.size - s_band.size) / np.max((o_band.size, s_band.size)), max_size_diff,
-                        msg='Ortho and source sizes similiar'
+                        msg='Ortho and source sizes similar'
                     )
 
         finally:

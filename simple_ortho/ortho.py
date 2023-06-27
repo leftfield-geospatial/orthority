@@ -165,9 +165,14 @@ class OrthoIm:
         # TODO: can we drop the use of the source CRS entirely?
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(self._src_im_filename, 'r') as src_im:
             src_crs = src_im.crs
+            self.count = src_im.profile['count']
+            # copy source image values to config attributes that are not set
+            attrs_to_copy = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
+            for attr in attrs_to_copy:
+                setattr(self, attr, getattr(self, attr, None) or src_im.profile[attr])
 
         if not src_crs and not self.crs:
-            raise ValueError(f'"crs" configuration value must be specified when the source image has no projection.')
+            raise ValueError(f'"crs" configuration value must be specified when the source image has no CRS.')
         try:
             # derive crs from configuration string if specified, otherwise use source image crs
             self.crs = rio.CRS.from_string(self.crs) if self.crs else src_crs
@@ -447,10 +452,7 @@ class OrthoIm:
             proc_profile.enable()
 
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs', GDAL_TIFF_INTERNAL_MASK=True):
-            # set up ortho profile based on source profile and predicted bounds
-            with rio.open(self._src_im_filename, 'r') as src_im:
-                ortho_profile = src_im.profile
-
+            # get ortho bounds, transform and dimensions
             ortho_bounds = self._get_ortho_bounds()  # find extreme case (z=min(DEM)) image bounds
             ortho_dims = np.array(ortho_bounds[2:]) - np.array(ortho_bounds[:2])  # width, height in meters
             ortho_wh = np.int32(np.ceil(ortho_dims / self.resolution))  # width, height in pixels
@@ -458,19 +460,13 @@ class OrthoIm:
             ortho_transform = rio.transform.from_origin(
                 ortho_bounds[0], ortho_bounds[3], self.resolution[0], self.resolution[1]
             )
+            # create ortho profile
+            attrs_to_copy = ['crs', 'nodata', 'driver', 'dtype', 'compress', 'interleave', 'photometric', 'count']
+            ortho_profile = {attr: getattr(self, attr) for attr in attrs_to_copy}
             ortho_profile.update(
-                crs=self.crs, nodata=self.nodata, tiled=True, blockxsize=self.tile_size[0],
-                blockysize=self.tile_size[1], transform=ortho_transform, width=ortho_wh[0], height=ortho_wh[1],
-                num_threads='all_cpus'
+                tiled=True, blockxsize=self.tile_size[0], blockysize=self.tile_size[1], transform=ortho_transform,
+                width=ortho_wh[0], height=ortho_wh[1], num_threads='all_cpus'
             )
-
-            # overwrite source attributes in ortho_profile where config is not None
-            # TODO: the dtype attr is used elsewhere, and should be set from source if it is None
-            attrs_to_check = ['driver', 'dtype', 'compress', 'interleave', 'photometric']
-            for attr in attrs_to_check:
-                val = getattr(self, attr)
-                if val is not None:
-                    ortho_profile[attr] = val
 
             # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
             if self.write_mask and ortho_profile['compress'] != 'jpeg':
