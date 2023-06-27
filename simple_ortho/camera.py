@@ -274,24 +274,42 @@ class Camera:
         def xr_to_z(xr: np.ndarray, z: np.ndarray):
             return (xr * (z - self._T[2]) / xr[2, :]) + self._T
 
-        # find dem instersection for each point in xr
+        # find dem instersections for each point in xr
         dem_min = np.nanmin(dem_array)
         dem_max = np.nanmax(dem_array)
         x = np.zeros_like(xr)
-        for pi in range(xr.shape[1]):
-            xri = xr[:, pi].reshape(-1, 1)
-            # create a sequence of points along the xri ray such that xy co-ords will not undersample the dem
+        for i in range(xr.shape[1]):
+            xri = xr[:, i].reshape(-1, 1)
+            # TODO: standardise terms & naming e.g. coord / co-ord, x_r/xr, caps/lowercase (having x and z lowercase
+            #  below is confusing as x is (x,y,z))
+
+            # create world points along the xri ray with stepsize <= dem resolution
             start_xr = xr_to_z(xri, dem_max)
             end_xr = xr_to_z(xri, dem_min)
-            steps = np.abs(end_xr - start_xr)[:2].squeeze() / (dem_transform[0], dem_transform[4])
+            steps = np.abs((end_xr - start_xr)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
             ray_z = np.linspace(dem_min, dem_max, np.ceil(steps.max()).astype('int') + 1)
             ray_x = xr_to_z(xri, ray_z)
-            # find the dem z values for the x,y coords of ray_x
-            dem_ji = np.round(~dem_transform * ray_x[:2, :]).astype('int')
-            dem_z = dem_array[dem_ji[1], dem_ji[0]]
-            # store the first intersection (lowest z) point
-            x[:, pi] = ray_x[:, np.where(ray_z >= dem_z)[0][0] - 1]
 
+            # find the dem pixel co-ords corresponding to ray_x
+            dem_ji = np.round(~dem_transform * ray_x[:2, :]).astype('int')
+            mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T   # valid co-ord mask
+            mask = mask.all(axis=0)
+            dem_ji = dem_ji[:, mask]
+            ray_z = ray_z[mask]
+
+            # if ray_x lies entirely outside the dem, store the dem_min point and continue
+            if not np.any(mask):
+                x[:, i] = ray_x[:, 0]
+                continue
+
+            # store the intersection of ray_x with the dem if it exists, else store the dem_min point
+            dem_z = dem_array[dem_ji[1], dem_ji[0]]
+            lowest_i = np.nonzero(ray_z >= dem_z)[0][0] - 1
+            x[:, i] = ray_x[:, mask][:, lowest_i] if lowest_i >=0 else ray_x[:, 0]
+
+        # clip (x, y) co-ords of x to lie inside dem bounds
+        dem_lims = np.array([[dem_transform.xoff, dem_transform.yoff], dem_transform*dem_array.shape[::-1]])
+        x[:2] = np.clip(x[:2].T, dem_lims.min(axis=0), dem_lims.max(axis=0)).T
         return x
 
     def undistort(
