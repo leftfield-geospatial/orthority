@@ -20,6 +20,7 @@ import logging
 import cv2
 import numpy as np
 from simple_ortho.enums import CameraType, CvInterp
+from rasterio import Affine
 
 # from scipy.ndimage import map_coordinates
 
@@ -241,6 +242,56 @@ class Camera:
         x_r = self._R.dot(x_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
         x = (x_r * (z - self._T[2]) / x_r[2, :]) + self._T
+        return x
+
+    def pixel_to_world_dem(self, ji: np.ndarray, dem_array: np.ndarray, dem_transform: Affine) -> np.ndarray:
+        """
+        Project 2D pixel co-ordinate(s) to intersect with a world co-ordinate DEM.
+
+        Parameters
+        ----------
+        ji: ndarray
+            Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
+        dem_array: ndarray
+            DEM altitudes as a 2D array.
+        dem_transform: rasterio.Affine
+            Geotransform to convert from `dem_array` pixel (j, i) to world (x, y) co-ordinates.
+
+        Returns
+        -------
+        ndarray
+            3D world (x=easting, y=northing, z=altitude) co-ordinates of DEM intersection points, as a 3-by-N array
+            with (x, y, z) along the first dimension.
+        """
+        if not (ji.shape[0] == 2 and ji.shape[1] > 0):
+            raise ValueError('`ji` should have 2 rows and one or more columns.')
+
+        # transform pixel co-ordinates to camera co-ordinates
+        x_ = self._pixel_to_camera(ji)
+        # rotate first (camera to world) to get world aligned axes with origin on the camera
+        xr = self._R.dot(x_)
+
+        def xr_to_z(xr: np.ndarray, z: np.ndarray):
+            return (xr * (z - self._T[2]) / xr[2, :]) + self._T
+
+        # find dem instersection for each point in xr
+        dem_min = np.nanmin(dem_array)
+        dem_max = np.nanmax(dem_array)
+        x = np.zeros_like(xr)
+        for pi in range(xr.shape[1]):
+            xri = xr[:, pi].reshape(-1, 1)
+            # create a sequence of points along the xri ray such that xy co-ords will not undersample the dem
+            start_xr = xr_to_z(xri, dem_max)
+            end_xr = xr_to_z(xri, dem_min)
+            steps = np.abs(end_xr - start_xr)[:2].squeeze() / (dem_transform[0], dem_transform[4])
+            ray_z = np.linspace(dem_min, dem_max, np.ceil(steps.max()).astype('int') + 1)
+            ray_x = xr_to_z(xri, ray_z)
+            # find the dem z values for the x,y coords of ray_x
+            dem_ji = np.round(~dem_transform * ray_x[:2, :]).astype('int')
+            dem_z = dem_array[dem_ji[1], dem_ji[0]]
+            # store the first intersection (lowest z) point
+            x[:, pi] = ray_x[:, np.where(ray_z >= dem_z)[0][0] - 1]
+
         return x
 
     def undistort(
