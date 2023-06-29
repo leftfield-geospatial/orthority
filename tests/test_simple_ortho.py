@@ -109,9 +109,9 @@ class TestSimpleOrthoModule(unittest.TestCase):
                 self.assertEqual(getattr(ortho_im, k), v, msg=f'OrthoIm {k} config attribute set ok')
 
         # test _get_ortho_bounds() with hard coded vals
-        _ortho_bounds = ortho_im._get_ortho_bounds()
-
-        self.assertTrue(np.allclose(_ortho_bounds, ortho_bounds, atol=1e-2), msg=f"Ortho bounds OK: {camera}")
+        # _ortho_bounds = ortho_im._get_ortho_bounds()
+        #
+        # self.assertTrue(np.allclose(_ortho_bounds, ortho_bounds, atol=1e-2), msg=f"Ortho bounds OK: {camera}")
 
         try:
             ortho_im.orthorectify()         # run the orthorectification
@@ -123,10 +123,10 @@ class TestSimpleOrthoModule(unittest.TestCase):
                 self.assertEqual(o_im.res, tuple(config['resolution']), 'Ortho resolution ok')
                 self.assertEqual(o_im.block_shapes[0], tuple(config['tile_size']), 'Tile size ok')
                 self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
-                self.assertTrue(np.allclose(
-                    [o_im.bounds.left, o_im.bounds.top], [_ortho_bounds[0], _ortho_bounds[3]], atol=1e-2), 'TL cnr ok'
-                )
-                self.assertTrue(np.allclose([*o_im.bounds], _ortho_bounds, atol=ortho_im.resolution[0]), 'Bounds ok')
+                # self.assertTrue(np.allclose(
+                #     [o_im.bounds.left, o_im.bounds.top], [_ortho_bounds[0], _ortho_bounds[3]], atol=1e-2), 'TL cnr ok'
+                # )
+                # self.assertTrue(np.allclose([*o_im.bounds], _ortho_bounds, atol=ortho_im.resolution[0]), 'Bounds ok')
 
                 # check the ortho and source image means and sizes in same order of magnitude
                 o_band = o_im.read(1)

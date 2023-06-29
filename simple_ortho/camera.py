@@ -281,7 +281,7 @@ class Camera:
         for i in range(xr.shape[1]):
             xri = xr[:, i].reshape(-1, 1)
             # TODO: standardise terms & naming e.g. coord / co-ord, x_r/xr, caps/lowercase (having x and z lowercase
-            #  below is confusing as x is (x,y,z))
+            #  below is confusing as x is (x,y,z)).  Also think about co-ord shape 3xN or Nx3.  And "world"/"ortho" CRS.
 
             # create world points along the xri ray with stepsize <= dem resolution
             start_xr = xr_to_z(xri, dem_max)
