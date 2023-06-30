@@ -424,7 +424,7 @@ class OpenCVCamera(Camera):
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         x_ = cv2.undistortPoints(ji.T.astype('float64'), self._K, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
+        x_ = np.row_stack([x_.squeeze(axis=1).T, np.ones((1, ji.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = True) -> np.ndarray:
@@ -515,7 +515,7 @@ class BrownCamera(OpenCVCamera):
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         x_ = cv2.undistortPoints(ji.T.astype('float64'), self._Koff, self._dist_coeff)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
+        x_ = np.row_stack([x_.squeeze(axis=1).T, np.ones((1, ji.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool = True) -> np.ndarray:
@@ -605,9 +605,9 @@ class FisheyeCamera(Camera):
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        ji_cv = np.expand_dims(ji.T, axis=0).astype('float64')
+        ji_cv = ji.T.reshape(1, *ji.shape[::-1])     #np.expand_dims(ji.T, axis=0).astype('float64')
         x_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_coeff, None, None)
-        x_ = np.row_stack([x_.squeeze().T, np.ones((1, ji.shape[1]))])
+        x_ = np.row_stack([x_.squeeze(axis=0).T, np.ones((1, ji.shape[1]))])
         return x_
 
     def world_to_pixel(self, x: np.ndarray, distort: bool=True) -> np.ndarray:
