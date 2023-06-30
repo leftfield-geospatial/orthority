@@ -52,6 +52,11 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
     return exp_win
 
 
+def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
+    """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
+    return (a == b) | (np.isnan(a) & np.isnan(b))
+
+
 class OrthoIm:
     # maximum number of ortho bounds iterations
     ortho_bound_max_iters = 10
@@ -62,8 +67,8 @@ class OrthoIm:
         tile_size=[512, 512], interleave='band', photometric=None, nodata=0, per_band=False, driver='GTiff', dtype=None,
         build_ovw=True, overwrite=True, write_mask=False, full_remap=True,
     )
-    # EGM96 geoid altitude range i.e. minimum and maximum possible vertical differences with the WGS84 ellipsoid
-    egm96_range = (-106.71, 80.96450)
+    # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
+    egm96_min = -106.71
 
     def __init__(self, src_im_filename, dem_filename, camera, config=None, ortho_im_filename=None):
         """
@@ -235,31 +240,32 @@ class OrthoIm:
 
             def get_win_at_z_min(z_min: float) -> Window:
                 """
-                Project image corners to world coords at z=dem_min, and find corresponding dem bounds & window.
-                Camera position is included in bounds in case of oblique views whose FOV excludes nadir.
+                Project image corners to world coords at z=z_min, and find corresponding dem bounds & window.
                 """
-                ortho_xyz = self._camera.pixel_to_world_z(src_ji, z_min)
-                ortho_xyz_T = np.column_stack((ortho_xyz, self._camera._T))
-                ortho_bounds = [*np.min(ortho_xyz_T[:2], axis=1), *np.max(ortho_xyz_T[:2], axis=1)]
-                dem_bounds = transform_bounds(self.crs, dem_im.crs, *ortho_bounds) if not crs_equal else ortho_bounds
-                _dem_win = dem_im.window(*dem_bounds)
+                world_xyz = self._camera.pixel_to_world_z(src_ji, z_min)
+                # include camera position in bounds for oblique views whose FOV excludes nadir (world bounds could be
+                # projected outside of dem bounds without this)
+                world_xyz_T = np.column_stack((world_xyz, self._camera._T))
+                world_bounds = [*np.min(world_xyz_T[:2], axis=1), *np.max(world_xyz_T[:2], axis=1)]
+                dem_bounds = transform_bounds(self.crs, dem_im.crs, *world_bounds) if not crs_equal else world_bounds
+                dem_win = dem_im.window(*dem_bounds)
                 try:
-                    _dem_win = dem_full_win.intersection(_dem_win)
+                    dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
                     # TODO warn on partial coverage when finding ortho polygon
                     raise ValueError(
                         f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}'
                     )
-                return expand_window_to_grid(_dem_win)
+                return expand_window_to_grid(dem_win)
 
-            # read the dem in a window corresponding to ortho bounds at min possible altitude
-            dem_win = get_win_at_z_min(np.min(self.egm96_range))
-            dem_array = dem_im.read(self.dem_band, window=dem_win, masked=True)
+            # read a dem window corresponding to ortho world bounds at min possible altitude
+            dem_win = get_win_at_z_min(self.egm96_min)
+            dem_array = dem_im.read(self.dem_band, window=dem_win)
             dem_array_win = dem_win
-            # reduce the dem window to correspond to the ortho bounds at min(dem_array) altitude
-            dem_win = get_win_at_z_min(
-                dem_array.min() if crs_equal else max(dem_array.min(), 0) + np.min(self.egm96_range)
-            )
+            # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
+            # case dem-ortho vertical datum negative offset
+            dem_min = dem_array[dem_array!=dem_im.nodata].min()
+            dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self.egm96_min)
 
             # crop dem_array to dem_win and find the corresponding transform
             dem_ij_start = (dem_win.row_off - dem_array_win.row_off, dem_win.col_off - dem_array_win.col_off)
@@ -267,14 +273,19 @@ class OrthoIm:
             dem_array = dem_array[dem_ij_start[0]:dem_ij_stop[0], dem_ij_start[1]:dem_ij_stop[1]]
             dem_transform = dem_im.window_transform(dem_win)
 
+            # cast dem_array to float (for consistency with (x,y) coords in _remap_src_to_ortho) and set nodata to
+            # nan (to persist masking through cv2.remap)
+            dem_array = dem_array.astype('float', copy=False)
+            if not np.isnan(dem_im.nodata):
+                dem_array[dem_array == dem_im.nodata] = np.nan
+
             # return if dem is in ortho crs and resolution
             if crs_equal and np.all(self.resolution == np.round(dem_im.res, 3)):
                 return dem_array, dem_transform
 
-            # reproject dem_array to ortho crs and resolution (with dtype=float for consistency with (x, y) coords in
-            # _remap_src_to_ortho)
+            # reproject dem_array to ortho crs and resolution
             dem_array, dem_transform = reproject(
-                dem_array.astype('float', copy=False), None, src_crs=dem_im.crs, src_transform=dem_transform,
+                dem_array, None, src_crs=dem_im.crs, src_transform=dem_transform, src_nodata=float('nan'),
                 dst_crs=self.crs, dst_resolution=self.resolution, resampling=self.dem_interp,
                 dst_nodata=float('nan'), init_dest_nodata=True, apply_vertical_shift=True,
                 num_threads=multiprocessing.cpu_count()
@@ -294,10 +305,6 @@ class OrthoIm:
         dem_array     : numpy.array
                         array of altitude values on corresponding to ortho image i.e. on the same grid
         """
-
-        def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
-            """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
-            return (a == b) | (np.isnan(a) & np.isnan(b))
 
         # Initialise tile grid here once off (save cpu) - to offset later (requires N-up geotransform).
         # Note that numpy is left to its default float64 precision for building the xy ortho grids in geo-referenced
