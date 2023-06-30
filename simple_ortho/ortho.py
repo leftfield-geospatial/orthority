@@ -218,15 +218,84 @@ class OrthoIm:
             else:
                 raise FileExistsError(f'Ortho file {self._ortho_im_filename.stem} exists, skipping.')
 
+    def _get_ortho_poly(self, dem_array: np.ndarray, dem_transform: rio.Affine, num_pts=200) -> np.ndarray:
+
+        # border pixel coordinates of source image
+        n = int(num_pts/4)
+        im_br = self._camera._im_size - 1
+        side_seq = np.linspace(0, 1, n)
+        src_ji = np.vstack((
+            np.hstack((side_seq, np.ones(n), side_seq[::-1], np.zeros(n))) * im_br[0],
+            np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],
+        ))
+
+        # find dem instersections for each point in src_ji
+        dem_min = np.nanmin(dem_array)
+        dem_max = np.nanmax(dem_array)
+        xyz = np.zeros((3, src_ji.shape[1]))
+        for pi in range(src_ji.shape[1]):
+            src_pt = src_ji[:, pi].reshape(-1, 1)
+            # create world points along the src_pt ray with stepsize <= dem resolution
+            start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min)
+            stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max)
+            ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
+            ray_steps = np.ceil(ray_steps.max()).astype('int') + 1
+            ray_z = np.linspace(dem_min, dem_max, ray_steps)
+            ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z)
+
+            # find the dem pixel co-ords, and altitude (z) values for the (x, y) points in ray_xyz
+            dem_ji = np.round(~dem_transform * ray_xyz[:2, :]).astype('int')
+            mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T   # valid co-ord mask
+            mask = mask.all(axis=0)
+            dem_ji = dem_ji[:, mask]
+            ray_z = ray_z[mask]
+
+            if not np.any(mask):
+                # if ray_xyz lies entirely outside the dem, store the dem_min point
+                xyz[:, pi] = ray_xyz[:, 0]
+            else:
+                # if ray_xyz lies partially, or fully inside the dem, store its intersection with the dem if it exists,
+                # else store the dem_min point
+                dem_z = dem_array[dem_ji[1], dem_ji[0]]
+                intersection_i = np.nonzero(ray_z >= dem_z)[0]
+                xyz[:, pi] = ray_xyz[:, mask][:, intersection_i[0]] if len(intersection_i) > 0 else ray_xyz[:, 0]
+
+        return xyz
+
+    def _poly_mask_dem(self, dem_array: np.ndarray, dem_transform: rio.Affine, poly_xy: np.ndarray, crop=True):
+
+        # check poly_xy lies partially or fully in dem bounds
+        dem_bounds =  rio.transform.array_bounds(*dem_array.shape, dem_transform)
+        if np.all(poly_xy.min(axis=1) > dem_bounds[-2:]) or np.all(poly_xy.max(axis=1) < dem_bounds[:2]):
+            raise ValueError(f'Ortho {self._ortho_im_filename.name} lies outside DEM {self._dem_filename.name}')
+        # clip to dem bounds
+        poly_xy = np.clip(poly_xy.T, dem_bounds[:2], dem_bounds[-2:]).T
+
+        if crop:
+            # crop dem_array to poly_xy and find corresponding transform
+            dem_cnr_ji = np.array([~dem_transform * poly_xy.min(axis=1), ~dem_transform * poly_xy.max(axis=1)]).T
+            dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
+            dem_br_ji = np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
+            dem_array = dem_array[dem_ul_ji[1]: dem_br_ji[1], dem_ul_ji[0]: dem_br_ji[0]]
+            dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
+
+        # mask the dem
+        poly_ji = np.round(~dem_transform * poly_xy).astype('int')
+        mask = np.ones_like(dem_array, dtype='uint8')
+        mask = cv2.fillConvexPoly(mask, poly_ji.T, color=(0))
+        dem_array[mask.astype('bool', copy=False)] = np.nan
+
+        return dem_array, dem_transform
+
+
     def _get_init_dem(self) -> Tuple[np.ndarray, rio.Affine]:
         """
-        Get an initial DEM array and corresponding transform, in the ortho CRS and resolution. The DEM array will
-        cover the ortho bounds, within the limitations of the DEM bounds.
+        Get an initial DEM array and corresponding transform, in the ortho CRS and resolution.
 
         Returns
         -------
         array: np.ndarray
-            DEM array in the ortho CRS and resolution.
+            DEM array in the ortho CRS and resolution.  This will cover the ortho bounds within the DEM extents.
         transform: rio.Affine
             A rasterio transform object for the DEM.
         """
@@ -471,7 +540,12 @@ class OrthoIm:
             proc_profile = cProfile.Profile()
             proc_profile.enable()
 
+        # get dem array covering ortho extents in ortho CRS and resolution
         dem_array, dem_transform = self._get_init_dem()
+        poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
+        dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
+
+        # creat ortho profile
         attrs_to_copy = ['crs', 'nodata', 'driver', 'dtype', 'compress', 'interleave', 'photometric', 'count']
         ortho_profile = {attr: getattr(self, attr) for attr in attrs_to_copy}
         ortho_profile.update(
@@ -483,6 +557,7 @@ class OrthoIm:
             self.write_mask = False
             logger.warning('Setting write_mask=False, write_mask=True should only be used with compress=jpeg')
 
+        # orthorectify
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GDAL_TIFF_INTERNAL_MASK=True):
             self._remap_src_to_ortho(ortho_profile, dem_array)
 
