@@ -169,7 +169,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 else:
                     ortho_im_filename = None
 
-                # Get src geotransform
+                # Get src size
                 with rio.open(src_im_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
