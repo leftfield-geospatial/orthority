@@ -115,7 +115,6 @@ class TestSimpleOrthoModule(unittest.TestCase):
 
         try:
             ortho_im.orthorectify()         # run the orthorectification
-            ortho_im.build_ortho_overviews()
 
             # do some sparse checks on ortho_im
             self.assertTrue(ortho_im_filename.exists(), msg="Ortho file exists")
