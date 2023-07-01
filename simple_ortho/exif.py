@@ -24,6 +24,8 @@ from xml.etree import cElementTree as ET
 import numpy as np
 import rasterio as rio
 
+from simple_ortho.utils import suppress_no_georef
+
 logger = logging.getLogger(__name__)
 
 xmp_schemas = dict(
@@ -93,7 +95,7 @@ class Exif:
         if not file_path.exists():
             raise FileNotFoundError(f'File does not exist: {file_path}')
 
-        with rio.open(filename, 'r') as ds:
+        with suppress_no_georef(), rio.open(filename, 'r') as ds:
             self._exif_dict = ds.tags()
             self._image_size = ds.shape[::-1]
 

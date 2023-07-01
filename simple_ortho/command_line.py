@@ -28,6 +28,7 @@ import yaml
 from simple_ortho import root_path
 from simple_ortho.camera import CameraType, create_camera
 from simple_ortho.ortho import OrthoIm
+from simple_ortho.utils import suppress_no_georef
 
 # print formatting
 np.set_printoptions(precision=4)
@@ -170,7 +171,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     ortho_im_filename = None
 
                 # Get src size
-                with rio.open(src_im_filename) as src_im:
+                with suppress_no_georef(), rio.open(src_im_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
                 if not camera or np.any(im_size != camera._im_size):
@@ -189,7 +190,6 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 ortho_im.orthorectify()
                 ttl_time = (datetime.datetime.now() - start_ttl)
                 logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
-
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))

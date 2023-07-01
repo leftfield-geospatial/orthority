@@ -33,25 +33,11 @@ from rasterio.windows import Window
 
 from simple_ortho.camera import Camera
 from simple_ortho.enums import CvInterp
+from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals
 
 # from scipy.ndimage import map_coordinates
 
 logger = logging.getLogger(__name__)
-
-
-def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
-    """ Expand rasterio window extents to the nearest whole numbers. """
-    col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
-    row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
-    width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
-    height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
-    exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
-    return exp_win
-
-
-def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
-    """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
-    return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
 class OrthoIm:
@@ -148,8 +134,7 @@ class OrthoIm:
         """
         Check that the source image is not 12 bit
         """
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
-            with rio.open(self._src_im_filename, 'r') as src_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), suppress_no_georef(), rio.open(self._src_im_filename, 'r') as src_im:
                 try:
                     # check that we can read the source image
                     tmp_array = src_im.read(1, window=Window(0, 0, 1, 1))
@@ -179,7 +164,7 @@ class OrthoIm:
             setattr(self, key, value)
 
         # TODO: can we drop the use of the source CRS entirely?
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(self._src_im_filename, 'r') as src_im:
+        with suppress_no_georef(), rio.open(self._src_im_filename, 'r') as src_im:
             src_crs = src_im.crs
             self.count = src_im.profile['count']
             # copy source image values to config attributes that are not set
@@ -386,7 +371,8 @@ class OrthoIm:
 
         time_ttl = dict(undistort=0, world_to_pixel=0, remap=0)
         block_count = 0
-        with rio.open(self._src_im_filename, 'r') as src_im:
+        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
+        with env, suppress_no_georef(), rio.open(self._src_im_filename, 'r') as src_im:
             # src_ji = np.array([[0, 0], [src_im.width, 0], [src_im.width, src_im.height], [0, src_im.height]]).T
             # self._camera.pixel_to_world_dem(src_ji, dem_array, ortho_profile['transform'])
 
