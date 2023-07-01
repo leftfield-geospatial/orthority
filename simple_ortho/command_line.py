@@ -190,12 +190,6 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 ttl_time = (datetime.datetime.now() - start_ttl)
                 logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
-                if config['ortho']['build_ovw']:
-                    start_ttl = datetime.datetime.now()
-                    logger.info(f'Building overviews for {src_im_filename.name}')
-                    ortho_im.build_ortho_overviews()
-                    ttl_time = (datetime.datetime.now() - start_ttl)
-                    logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
