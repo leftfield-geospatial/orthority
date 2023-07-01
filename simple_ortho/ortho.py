@@ -535,7 +535,7 @@ class OrthoIm:
         Orthorectify the source image based on specified camera model and DEM.
         """
         # init profiling
-        if logger.level == logging.DEBUG:
+        if logger.getEffectiveLevel() <= logging.DEBUG:
             tracemalloc.start()
             proc_profile = cProfile.Profile()
             proc_profile.enable()
@@ -545,7 +545,7 @@ class OrthoIm:
         poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
         dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
 
-        # creat ortho profile
+        # create ortho profile
         attrs_to_copy = ['crs', 'nodata', 'driver', 'dtype', 'compress', 'interleave', 'photometric', 'count']
         ortho_profile = {attr: getattr(self, attr) for attr in attrs_to_copy}
         ortho_profile.update(
@@ -561,7 +561,7 @@ class OrthoIm:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GDAL_TIFF_INTERNAL_MASK=True):
             self._remap_src_to_ortho(ortho_profile, dem_array)
 
-        if logger.level == logging.DEBUG:  # print profiling info
+        if logger.getEffectiveLevel() <= logging.DEBUG:  # print profiling info
             proc_profile.disable()
             # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
             # plus all functions that this function called

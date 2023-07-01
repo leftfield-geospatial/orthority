@@ -115,6 +115,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         if verbosity is not None:
             pkg_logger = logging.getLogger(__package__)
             pkg_logger.setLevel(10 * verbosity)
+            logging.captureWarnings(True)
 
         # read configuration
         if read_conf is None:
