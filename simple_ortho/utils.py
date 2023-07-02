@@ -22,7 +22,7 @@ from rasterio.windows import Window
 
 
 @contextmanager
-def suppress_no_georef() -> None:
+def suppress_no_georef():
     """ Context manager to suppress rasterio's NotGeoreferencedWarning. """
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=NotGeoreferencedWarning)

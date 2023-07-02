@@ -92,15 +92,15 @@ class TestSimpleOrthoModule(unittest.TestCase):
                       per_band=False, driver='GTiff', dtype=None, build_ovw=True, overwrite=True, write_mask=True)
 
         # point to the test_example data
-        src_im_filename = root_path.joinpath('data/inputs/test_example/3324c_2015_1004_05_0182_RGB.tif')
+        src_filename = root_path.joinpath('data/inputs/test_example/3324c_2015_1004_05_0182_RGB.tif')
         dem_filename = root_path.joinpath('data/inputs/test_example/dem.tif')
-        ortho_im_filename = root_path.joinpath('data/outputs/test_example/3324c_2015_1004_05_0182_RGB_ORTHO_TEST.tif')
+        ortho_filename = root_path.joinpath('data/outputs/test_example/3324c_2015_1004_05_0182_RGB_ORTHO_TEST.tif')
 
-        if ortho_im_filename.exists():
-            os.remove(ortho_im_filename)
+        if ortho_filename.exists():
+            os.remove(ortho_filename)
 
-        ortho_im = OrthoIm(src_im_filename, dem_filename, camera, config=config,
-                                        ortho_im_filename=ortho_im_filename)            # create OrthoIm object
+        ortho_im = OrthoIm(src_filename, dem_filename, camera, config=config,
+                                        ortho_filename=ortho_filename)            # create OrthoIm object
 
         # test config set correctly
         for k, v in config.items():
@@ -117,8 +117,8 @@ class TestSimpleOrthoModule(unittest.TestCase):
             ortho_im.orthorectify()         # run the orthorectification
 
             # do some sparse checks on ortho_im
-            self.assertTrue(ortho_im_filename.exists(), msg="Ortho file exists")
-            with rio.open(ortho_im_filename, 'r', num_threads='all_cpus') as o_im:
+            self.assertTrue(ortho_filename.exists(), msg="Ortho file exists")
+            with rio.open(ortho_filename, 'r', num_threads='all_cpus') as o_im:
                 self.assertEqual(o_im.res, tuple(config['resolution']), 'Ortho resolution ok')
                 self.assertEqual(o_im.block_shapes[0], tuple(config['tile_size']), 'Tile size ok')
                 self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
@@ -130,7 +130,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
                 # check the ortho and source image means and sizes in same order of magnitude
                 o_band = o_im.read(1)
                 o_band = o_band[o_band != config['nodata']]
-                with rio.open(src_im_filename, 'r', num_threads='all_cpus') as s_im:
+                with rio.open(src_filename, 'r', num_threads='all_cpus') as s_im:
                     s_band = s_im.read(1)
                     self.assertAlmostEqual(o_band.mean() / 10, s_band.mean() / 10, places=0,
                                            msg='Ortho and source means in same order of magnitude')
@@ -140,8 +140,8 @@ class TestSimpleOrthoModule(unittest.TestCase):
                     )
 
         finally:
-            if ortho_im_filename.exists():
-                os.remove(ortho_im_filename)  # tidy up
+            if ortho_filename.exists():
+                os.remove(ortho_filename)  # tidy up
 
     def test_ortho_im_class(self):
         """ Test OrthoIm with all camera types. """

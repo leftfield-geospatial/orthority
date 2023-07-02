@@ -17,6 +17,7 @@
 from enum import Enum
 import cv2
 
+
 class CameraType(Enum):
     """
     Enumeration for the camera model type.
@@ -44,6 +45,8 @@ class CameraType(Enum):
     of distortion coefficient estimates.
     """
 
+
+# TODO: make one enum for rasterio and opencv
 class CvInterp(Enum):
     """
     Enumeration for `OpenCV interpolation

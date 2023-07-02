@@ -26,6 +26,7 @@ from rasterio import Affine
 
 logger = logging.getLogger(__name__)
 
+
 class Camera:
     def __init__(
         self, position: Union[Tuple[float], np.ndarray], rotation: Union[Tuple[float], np.ndarray],
