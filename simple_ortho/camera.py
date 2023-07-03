@@ -40,7 +40,7 @@ class Camera:
         ----------
         position: tuple of float, ndarray
             Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.OrthoIm`, ``position`` should be in the
+            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
             ortho image CRS.
         rotation: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
@@ -77,8 +77,7 @@ class Camera:
         """
         Create camera intrinsic parameters.
         """
-        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
-        # -Parameters-defined
+        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
 
         if len(im_size) != 2:
@@ -383,7 +382,7 @@ class OpenCVCamera(Camera):
         ----------
         position: tuple of float, ndarray
             Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.OrthoIm`, ``position`` should be in the
+            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
             ortho image CRS.
         rotation: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
@@ -458,7 +457,7 @@ class BrownCamera(OpenCVCamera):
         ----------
         position: tuple of float, ndarray
             Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.OrthoIm`, ``position`` should be in the
+            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
             ortho image CRS.
         rotation: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
@@ -572,7 +571,7 @@ class FisheyeCamera(Camera):
         ----------
         position: tuple of float, ndarray
             Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.OrthoIm`, ``position`` should be in the
+            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
             ortho image CRS.
         rotation: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera

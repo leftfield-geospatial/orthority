@@ -27,7 +27,7 @@ import yaml
 
 from simple_ortho import root_path
 from simple_ortho.camera import CameraType, create_camera
-from simple_ortho.ortho import OrthoIm
+from simple_ortho.ortho import Ortho
 from simple_ortho.utils import suppress_no_georef
 
 # print formatting
@@ -130,6 +130,12 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         with open(config_filename, 'r') as f:
             config = yaml.safe_load(f)
 
+        # prepare ortho config
+        ortho_config = config.get('ortho', {})
+        ortho_crs = ortho_config.pop('crs', None)
+        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        ortho_config['blockxsize'], ortho_config['blockysize'] = ortho_config.pop('tile_size', (None, None))
+
         # write configuration if requested and exit
         if write_conf is not None:
             out_config_filename = pathlib.Path(write_conf)
@@ -165,10 +171,8 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
 
                 # set ortho filename
-                if ortho_dir is not None:
-                    ortho_filename = pathlib.Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
-                else:
-                    ortho_filename = None
+                ortho_dir = src_filename.parent if not ortho_dir else ortho_dir
+                ortho_filename = pathlib.Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
 
                 # Get src size
                 with suppress_no_georef(), rio.open(src_filename) as src_im:
@@ -181,13 +185,11 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     # update existing camera
                     camera.update_extrinsic(position, rotation)
 
-                # create OrthoIm  and orthorectify
+                # create Ortho  and orthorectify
                 logger.info(f'Orthorectifying {src_filename.name}')
                 start_ttl = datetime.datetime.now()
-                ortho_im = OrthoIm(
-                    src_filename, dem_file, camera, config=config['ortho'], ortho_filename=ortho_filename
-                )
-                ortho_im.orthorectify()
+                ortho_im = Ortho(src_filename, dem_file, camera, crs=ortho_crs, dem_band=dem_band)
+                ortho_im.process(ortho_filename, **ortho_config)
                 ttl_time = (datetime.datetime.now() - start_ttl)
                 logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
