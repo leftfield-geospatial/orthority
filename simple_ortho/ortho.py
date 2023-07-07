@@ -47,8 +47,7 @@ class Ortho:
     # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
     # default ortho profile values for Ortho._create_ortho_profile()
     _default_profile = dict(
-        driver='GTiff', dtype=None, nodata=0, blockxsize=512, blockysize=512, compress=None, interleave=None,
-        photometric=None,
+        dtype=None, nodata=0, blockxsize=512, blockysize=512, compress=None, interleave=None, photometric=None,
     )
     # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
     egm96_min = -106.71
@@ -272,16 +271,15 @@ class Ortho:
         return dem_array, dem_transform
 
     def _create_ortho_profile(
-        self, shape: Tuple[int, int], transform: rio.Affine, driver: str = _default_profile['driver'],
-        dtype: str = _default_profile['dtype'], nodata: str = _default_profile['nodata'],
-        blockxsize: int = _default_profile['blockxsize'], blockysize: int = _default_profile['blockysize'],
-        compress: str = _default_profile['compress'], interleave: str = _default_profile['interleave'],
-        photometric: str = _default_profile['photometric'],
+        self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = _default_profile['dtype'],
+        nodata: str = _default_profile['nodata'], blockxsize: int = _default_profile['blockxsize'],
+        blockysize: int = _default_profile['blockysize'], compress: str = _default_profile['compress'],
+        interleave: str = _default_profile['interleave'], photometric: str = _default_profile['photometric'],
     ) -> Dict:
         """ Return a rasterio profile for the ortho image. """
         # create an initial profile from the given arguments
         ortho_profile = dict(
-            driver=driver, dtype=dtype, nodata=nodata, blockxsize=blockxsize, blockysize=blockysize, compress=compress,
+            dtype=dtype, nodata=nodata, blockxsize=blockxsize, blockysize=blockysize, compress=compress,
             interleave=interleave, photometric=photometric,
         )
 
@@ -291,6 +289,7 @@ class Ortho:
             # TODO: test nodata is not None, or see if an internal mask can be used instead
 
             # add remaining items
+            ortho_profile['driver'] = 'GTiff'
             ortho_profile['crs'] = self._ortho_crs
             ortho_profile['transform'] = transform
             ortho_profile['width'] = shape[1]
@@ -450,7 +449,6 @@ class Ortho:
 
     # TODO: simplify/merge interpolation enums
     # TODO: change param names write_mask to internal_mask, full_remap to something more sensible
-    #
     def process(
         self, ortho_filename: Union[str, Path], resolution: Tuple[float, float],
         dem_interp: Union[str, Resampling] = _default_config['dem_interp'],
@@ -485,9 +483,6 @@ class Ortho:
             Remap the source to ortho image with full camera model (True), or remap the undistorted source to ortho
             image with a pinhole camera model (False).  False is faster but creates a an with reduced extent and
             quality.
-        driver: str, optional
-            Ortho image file format - see www.gdal.org/formats_list.html for options.  `GTiff` is recommended.  If
-            set to None, the source image driver is used.
         dtype: str, optional
             Ortho image data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
            `float64`).  If set to None, the source image dtype is used.

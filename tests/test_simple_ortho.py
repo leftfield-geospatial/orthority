@@ -91,7 +91,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         resolution = (5, 5)
         config = dict(
             dem_interp='cubic_spline', interp='bilinear', compress=None, blockxsize=256, blockysize=256,
-            interleave='pixel', photometric=None, nodata=0, per_band=False, driver='GTiff', dtype=None, build_ovw=True,
+            interleave='pixel', photometric=None, nodata=0, per_band=False, dtype=None, build_ovw=True,
             overwrite=True, write_mask=True
         )
 

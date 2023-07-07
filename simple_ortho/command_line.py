@@ -130,12 +130,6 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         with open(config_filename, 'r') as f:
             config = yaml.safe_load(f)
 
-        # prepare ortho config
-        ortho_config = config.get('ortho', {})
-        ortho_crs = ortho_config.pop('crs', None)
-        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
-        ortho_config['blockxsize'], ortho_config['blockysize'] = ortho_config.pop('tile_size', (None, None))
-
         # write configuration if requested and exit
         if write_conf is not None:
             out_config_filename = pathlib.Path(write_conf)
@@ -143,6 +137,20 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 yaml.dump(config, stream=f)
             logger.info(f'Wrote config to {out_config_filename}')
             exit(0)
+
+        # prepare ortho config
+        ortho_config = config.get('ortho', {})
+        ortho_crs = ortho_config.pop('crs', None)
+        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        ortho_config['blockxsize'], ortho_config['blockysize'] = ortho_config.pop('tile_size', (None, None))
+        if ortho_config.pop('driver', None) is not None:
+            logger.warning('The `driver` option is deprecated, ortho images are created in GeoTIFF format.')
+
+        # prepare camera config
+        camera = None
+        camera_config = config['camera']
+        camera_type = CameraType(camera_config.get('type', 'pinhole'))
+        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
 
         # checks paths etc
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
@@ -152,12 +160,6 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             pos_ori_file, header=None, sep=' ', index_col=0,
             names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
         )
-
-        # prepare camera config
-        camera = None
-        camera_config = config['camera']
-        camera_type = CameraType(camera_config.get('type', 'pinhole'))
-        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
 
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
