@@ -142,13 +142,13 @@ class Ortho:
 
             # get a dem window corresponding to ortho world bounds at min possible altitude
             dem_win = get_win_at_z_min(self.egm96_min)
-            dem_array = dem_im.read(dem_band, window=dem_win)
+            dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
 
             # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
             # case dem-ortho vertical datum offset
             # TODO: what if there is an internal mask and not nodata
-            dem_min = dem_array[dem_array != dem_im.nodata].min()
+            dem_min = dem_array.min()
             dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self.egm96_min)
 
             # crop dem_array to the dem window and find the corresponding transform
@@ -158,9 +158,7 @@ class Ortho:
             dem_transform = dem_im.window_transform(dem_win)
 
             # Cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
-            dem_array = dem_array.astype('float32', copy=False)
-            if not np.isnan(dem_im.nodata):
-                dem_array[dem_array == dem_im.nodata] = np.nan
+            dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
