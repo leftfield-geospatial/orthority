@@ -115,7 +115,6 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `overwrite`     | Overwrite ortho image(s) if they exist (`True`, `False`).
 |          | `write_mask`    | Write an internal mask band - can help remove jpeg noise in nodata area  (`True`, `False`).  (`False` recommended.)
 |          | `full_remap`    | Remap source to ortho with full camera model (`True`), or remap undistorted source to ortho with pinhole model (`False`). 
-|          | `driver`        | File format of ortho image - see www.gdal.org/formats_list.html for options.  If no format is specified, the format of the source image will be used. `GTiff` recommended.
 |          | `dtype`         | Data type of ortho image (`uint8`, `uint16`, `float32` etc).  If no `dtype` is specified the same type as the source image will be used (recommended).
 |          | `resolution`    | Output pixel size `[x, y]` in m.
 |          | `tile_size`     | Tile/block `[width, height]` size in pixels (`[512, 512]` recommended).
