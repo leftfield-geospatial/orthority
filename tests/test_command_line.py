@@ -56,11 +56,6 @@ class TestCommandLine(unittest.TestCase):
             self.assertEqual(len(glob.glob(args['src_im_file'][0])), len(glob.glob(ortho_im_wildcard)),
                              msg='Number of ortho files == number of source files')
 
-            # load the config so we know nodata
-            with open(root_path.joinpath('data/inputs/test_example/config.yaml')) as config_f:
-                config = yaml.safe_load(config_f)
-                nodata = config['ortho']['nodata']
-
             # compare source and ortho files to check their means are similar and they overlap
             for src_filename, ortho_filename in zip(glob.glob(args['src_im_file'][0]),
                                                           glob.glob(ortho_im_wildcard)):
@@ -68,7 +63,7 @@ class TestCommandLine(unittest.TestCase):
                     src_array = src_im.read(1)
                     with rio.open(ortho_filename, 'r', num_threads='all_cpus') as ortho_im:
                         ortho_array = ortho_im.read(1)
-                        ortho_array_masked = ortho_array[ortho_array != nodata]
+                        ortho_array_masked = ortho_array[ortho_array != ortho_im.nodata]
 
                         # compare source and ortho means
                         source_mean = src_array.mean()

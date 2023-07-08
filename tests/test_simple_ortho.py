@@ -91,7 +91,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
         resolution = (5, 5)
         config = dict(
             dem_interp='cubic_spline', interp='bilinear', compress=None, interleave='pixel', photometric=None,
-            nodata=0, per_band=False, dtype=None, build_ovw=True, overwrite=True, write_mask=True
+            per_band=False, dtype=None, build_ovw=True, overwrite=True, write_mask=True
         )
 
         # point to the test_example data
@@ -123,7 +123,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
             self.assertTrue(ortho_filename.exists(), msg="Ortho file exists")
             with rio.open(ortho_filename, 'r', num_threads='all_cpus') as o_im:
                 self.assertEqual(o_im.res, resolution, 'Ortho resolution ok')
-                self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
+                self.assertIsNotNone(o_im.nodata, 'Nodata ok')
                 # self.assertTrue(np.allclose(
                 #     [o_im.bounds.left, o_im.bounds.top], [_ortho_bounds[0], _ortho_bounds[3]], atol=1e-2), 'TL cnr ok'
                 # )
@@ -131,7 +131,7 @@ class TestSimpleOrthoModule(unittest.TestCase):
 
                 # check the ortho and source image means and sizes in same order of magnitude
                 o_band = o_im.read(1)
-                o_band = o_band[o_band != config['nodata']]
+                o_band = o_band[o_band != o_im.nodata]
                 with rio.open(src_filename, 'r', num_threads='all_cpus') as s_im:
                     s_band = s_im.read(1)
                     self.assertAlmostEqual(o_band.mean() / 10, s_band.mean() / 10, places=0,

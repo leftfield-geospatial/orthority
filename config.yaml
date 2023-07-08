@@ -44,5 +44,3 @@ ortho:
   interleave: band
   # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
   photometric:
-  # NODATA value
-  nodata: 0

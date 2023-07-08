@@ -20,4 +20,3 @@ ortho:
   compress: jpeg              # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   interleave: pixel           # Interleave by 'pixel' or 'band' (pixel, band)
   photometric: ycbcr          # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
-  nodata: 0                   # NODATA value

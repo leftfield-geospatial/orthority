@@ -142,7 +142,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         ortho_config = config.get('ortho', {})
         ortho_crs = ortho_config.pop('crs', None)
         dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
-        for key in ['driver', 'tile_size']:
+        for key in ['driver', 'tile_size', 'nodata']:
             if key in ortho_config:
                 ortho_config.pop(key)
                 logger.warning(f'The {key} option is deprecated.')

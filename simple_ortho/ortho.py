@@ -199,6 +199,7 @@ class Ortho:
             src_pt = src_ji[:, pi].reshape(-1, 1)
 
             # create world points along the src_pt ray with (x, y) stepsize <= dem resolution
+            # TODO: include full_remap here, and in pixel_to_world_z to allow excluding distortion model
             start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min)
             stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
@@ -267,16 +268,13 @@ class Ortho:
 
     def _create_ortho_profile(
         self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = _default_profile['dtype'],
-        nodata: str = _default_profile['nodata'], compress: str = _default_profile['compress'],
-        interleave: str = _default_profile['interleave'], photometric: str = _default_profile['photometric'],
+        compress: str = _default_profile['compress'], interleave: str = _default_profile['interleave'],
+        photometric: str = _default_profile['photometric'],
     ) -> Dict:
         """ Return a rasterio profile for the ortho image by merging args with the source image profile. """
-        if nodata is None:
-            raise ValueError(f'`nodata` cannot be None.')
-
         # create initial profile
         ortho_profile = dict(
-            dtype=dtype, nodata=nodata, compress=compress, interleave=interleave, photometric=photometric,
+            dtype=dtype, compress=compress, interleave=interleave, photometric=photometric,
         )
 
         with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
@@ -290,10 +288,19 @@ class Ortho:
                 )
                 ortho_profile['photometric'] = 'minisblack'
 
-            # add remaining items
+            # check dtype support and choose a value for nodata (opencv remap doesn't support int8 or uint32, and only
+            # supports int32, uint64, int64 with nearest interp so these dtypes are excluded)
+            nodata_vals = dict(
+                uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
+            )
+            if ortho_profile['dtype'] not in nodata_vals:
+                raise ValueError(f'Data type `{dtype}` is not supported.')
+            nodata = nodata_vals[ortho_profile['dtype']]
+
+            # add remaining items,
             ortho_profile.update(
                 driver='GTiff', crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
-                count=src_im.count, tiled=True, blockxsize=512, blockysize=512,
+                count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata,
             )
 
         return ortho_profile
@@ -487,10 +494,8 @@ class Ortho:
             image with a pinhole camera model (False).  False is faster but creates a an with reduced extent and
             quality.
         dtype: str, optional
-            Ortho image data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
-           `float64`).  If set to None, the source image dtype is used.
-        nodata: int, float, optional
-            Ortho image nodata value.
+            Ortho image data type (`uint8`, `uint16`, `float32` or `float64`).  If set to None, the source image
+            dtype is used.
         compress: str, optional
             Ortho image compression type (`deflate`, `jpeg`, `lzw`, `zstd`, or `none`).  If set to None, the source
             image compression type is used.
