@@ -38,8 +38,6 @@ ortho:
   dtype:
   # Output pixel size [x, y] in m
   resolution: [0.5, 0.5]
-  # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  tile_size: [512, 512]
   # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
   compress: deflate
   # Interleave by 'pixel' or 'band' (pixel, band)

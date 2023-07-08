@@ -90,9 +90,8 @@ class TestSimpleOrthoModule(unittest.TestCase):
         dem_band = 1
         resolution = (5, 5)
         config = dict(
-            dem_interp='cubic_spline', interp='bilinear', compress=None, blockxsize=256, blockysize=256,
-            interleave='pixel', photometric=None, nodata=0, per_band=False, dtype=None, build_ovw=True,
-            overwrite=True, write_mask=True
+            dem_interp='cubic_spline', interp='bilinear', compress=None, interleave='pixel', photometric=None,
+            nodata=0, per_band=False, dtype=None, build_ovw=True, overwrite=True, write_mask=True
         )
 
         # point to the test_example data
@@ -124,9 +123,6 @@ class TestSimpleOrthoModule(unittest.TestCase):
             self.assertTrue(ortho_filename.exists(), msg="Ortho file exists")
             with rio.open(ortho_filename, 'r', num_threads='all_cpus') as o_im:
                 self.assertEqual(o_im.res, resolution, 'Ortho resolution ok')
-                self.assertEqual(
-                    o_im.block_shapes[0], (config['blockysize'], config['blockxsize']), 'Tile size ok'
-                )
                 self.assertEqual(o_im.nodata, config['nodata'], 'Nodata ok')
                 # self.assertTrue(np.allclose(
                 #     [o_im.bounds.left, o_im.bounds.top], [_ortho_bounds[0], _ortho_bounds[3]], atol=1e-2), 'TL cnr ok'

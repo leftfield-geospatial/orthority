@@ -46,9 +46,7 @@ class Ortho:
     )
     # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
     # default ortho profile values for Ortho._create_ortho_profile()
-    _default_profile = dict(
-        dtype=None, nodata=0, blockxsize=512, blockysize=512, compress=None, interleave=None, photometric=None,
-    )
+    _default_profile = dict(dtype=None, nodata=0, compress=None, interleave=None, photometric=None,)
     # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
     egm96_min = -106.71
 
@@ -147,7 +145,6 @@ class Ortho:
 
             # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
             # case dem-ortho vertical datum offset
-            # TODO: what if there is an internal mask and not nodata
             dem_min = dem_array.min()
             dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self.egm96_min)
 
@@ -270,30 +267,34 @@ class Ortho:
 
     def _create_ortho_profile(
         self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = _default_profile['dtype'],
-        nodata: str = _default_profile['nodata'], blockxsize: int = _default_profile['blockxsize'],
-        blockysize: int = _default_profile['blockysize'], compress: str = _default_profile['compress'],
+        nodata: str = _default_profile['nodata'], compress: str = _default_profile['compress'],
         interleave: str = _default_profile['interleave'], photometric: str = _default_profile['photometric'],
     ) -> Dict:
-        """ Return a rasterio profile for the ortho image. """
-        # create an initial profile from the given arguments
+        """ Return a rasterio profile for the ortho image by merging args with the source image profile. """
+        if nodata is None:
+            raise ValueError(f'`nodata` cannot be None.')
+
+        # create initial profile
         ortho_profile = dict(
-            dtype=dtype, nodata=nodata, blockxsize=blockxsize, blockysize=blockysize, compress=compress,
-            interleave=interleave, photometric=photometric,
+            dtype=dtype, nodata=nodata, compress=compress, interleave=interleave, photometric=photometric,
         )
 
         with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-            # overwrite None values with source image values
-            ortho_profile = {k: src_im.profile.get(k, None) if v is None else v for k, v in ortho_profile.items()}
-            # TODO: test nodata is not None, or see if an internal mask can be used instead
+            # merge with the source profile
+            for key in ['dtype', 'compress', 'interleave', 'photometric']:
+                ortho_profile[key] = ortho_profile[key] or src_im.profile.get(key, None)
+
+            if ortho_profile['photometric'] is None:
+                logger.debug(
+                    f'Source image {self._src_filename.name} has no `photometric` value, reverting to \'minisblack\'.'
+                )
+                ortho_profile['photometric'] = 'minisblack'
 
             # add remaining items
-            ortho_profile['driver'] = 'GTiff'
-            ortho_profile['crs'] = self._ortho_crs
-            ortho_profile['transform'] = transform
-            ortho_profile['width'] = shape[1]
-            ortho_profile['height'] = shape[0]
-            ortho_profile['count'] = src_im.count
-            ortho_profile['tiled'] = True
+            ortho_profile.update(
+                driver='GTiff', crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
+                count=src_im.count, tiled=True, blockxsize=512, blockysize=512,
+            )
 
         return ortho_profile
 
@@ -306,26 +307,27 @@ class Ortho:
         Interpolate the ortho image from the source image, given an ortho filename & profile, and DEM array in the ortho
         CRS and pixel grid.
         """
-        # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles later (requires N-up
-        # transform). float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high
-        # resolution drone imagery.  The smaller range z grid is stored in float32 to save memory.
-        # j_range = np.arange(0, ortho_profile['width'])
-        # i_range = np.arange(0, ortho_profile['height'])
-        j_range = np.arange(0, ortho_profile['blockxsize'])
-        i_range = np.arange(0, ortho_profile['blockysize'])
-        jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
-        xgrid, ygrid = ortho_profile['transform'] * [jgrid, igrid]
 
         block_count = 0
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
         with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
             with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
+                # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles later (
+                # requires N-up transform). float64 precision is needed for the (x, y) ortho grids in world co-ordinates
+                # for e.g. high resolution drone imagery.  The smaller range z grid is stored in float32 to save memory.
+                # j_range = np.arange(0, ortho_im.profile['width'])
+                # i_range = np.arange(0, ortho_im.profile['height'])
+                j_range = np.arange(0, ortho_im.profile['blockxsize'])
+                i_range = np.arange(0, ortho_im.profile['blockysize'])
+                jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
+                xgrid, ygrid = ortho_im.profile['transform'] * [jgrid, igrid]
+
                 # create bands as (count x 1) matrix if per_bands==True else as (1 x count) matrix
                 bands = np.array([range(1, src_im.count + 1)]).T if per_band else np.array([range(1, src_im.count + 1)])
 
                 ttl_blocks = (
-                    np.ceil(ortho_profile['width'] / ortho_profile['blockxsize']) *
-                    np.ceil(ortho_profile['height'] / ortho_profile['blockysize'] * bands.shape[0])
+                    np.ceil(ortho_im.profile['width'] / ortho_im.profile['blockxsize']) *
+                    np.ceil(ortho_im.profile['height'] / ortho_im.profile['blockysize'] * bands.shape[0])
                 )
 
                 # TODO: add tests for different ortho dtype and nodata values
@@ -333,18 +335,18 @@ class Ortho:
                 for bi in bands.tolist():
                     # read source image band(s) as ortho dtype (required for cv2.remap() to set invalid ortho areas to
                     # ortho nodata value)
-                    src_im_array = src_im.read(bi, out_dtype=ortho_profile['dtype'])
+                    src_im_array = src_im.read(bi, out_dtype=ortho_im.profile['dtype'])
 
                     if not full_remap:
                         # undistort the source image so the distortion model can be excluded from
                         # self._camera.world_to_pixel() below
                         src_im_array = self._camera.undistort(
-                            src_im_array, nodata=ortho_profile['nodata'], interp=interp
+                            src_im_array, nodata=ortho_im.profile['nodata'], interp=interp
                         )
 
                     # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
                     # for ortho_win in [ortho_win_full]:
-                    for ji, ortho_win in ortho_im.block_windows(1):
+                    for _, ortho_win in ortho_im.block_windows(1):
 
                         # offset tile grids to ortho_win
                         ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
@@ -378,14 +380,14 @@ class Ortho:
                         # interpolate the ortho tile from the source image
                         ortho_im_win_array = np.full(
                             (src_im_array.shape[0], ortho_win.height, ortho_win.width),
-                            fill_value=ortho_profile['nodata'], dtype=ortho_profile['dtype']
+                            fill_value=ortho_im.profile['nodata'], dtype=ortho_im.profile['dtype']
                         )
                         # loop over band(s) (cv2.remap execution time depends on array ordering)
                         for oi in range(0, src_im_array.shape[0]):
                             # remap setting pixels outside dem or source bounds to nodata
                             ortho_im_win_array[oi, :, :] = cv2.remap(
                                 src_im_array[oi, :, :], src_jj, src_ii, interp.value, borderMode=cv2.BORDER_CONSTANT,
-                                borderValue=ortho_profile['nodata'],
+                                borderValue=ortho_im.profile['nodata'],
                             )
                             # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with
                             # nodata
@@ -396,10 +398,10 @@ class Ortho:
 
                         # remove cv2.remap blurring with nodata at the boundary (occurs when interp is not nearest or
                         # nodata is not nan)
-                        nodata_mask = np.all(nan_equals(ortho_im_win_array, ortho_profile['nodata']), axis=0)
+                        nodata_mask = np.all(nan_equals(ortho_im_win_array, ortho_im.profile['nodata']), axis=0)
                         if (
-                            interp != CvInterp.nearest and not np.isnan(ortho_profile['nodata'])
-                            and np.sum(nodata_mask) > min(ortho_profile['blockxsize'], ortho_profile['blockysize'])
+                            interp != CvInterp.nearest and not np.isnan(ortho_im.profile['nodata']) and
+                            np.sum(nodata_mask) > min(ortho_im.profile['blockxsize'], ortho_im.profile['blockysize'])
                         ):  # yapf: disable
                             # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
                             #  nodata=nan internally, then convert to config dtype and nodata on writing.
@@ -410,7 +412,7 @@ class Ortho:
                                 kernel = np.ones((9, 9), np.uint8)
                             nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), kernel)
                             nodata_mask_d = nodata_mask_d.astype(bool, copy=False)
-                            ortho_im_win_array[:, nodata_mask_d] = ortho_profile['nodata']
+                            ortho_im_win_array[:, nodata_mask_d] = ortho_im.profile['nodata']
                         else:
                             nodata_mask_d = nodata_mask
 
@@ -485,19 +487,15 @@ class Ortho:
             Ortho image data type (`uint8`, `int8`, `uint16`, `int16`, `uint32`, `int32`, `float32` or
            `float64`).  If set to None, the source image dtype is used.
         nodata: int, float, optional
-            Ortho image nodata value.  If set to None, the source image nodata value is used.
-        blockxsize: int, optional
-            Ortho image block width in pixels.  If set to None, the source image block width is used.
-        blockysize: int, optional
-            Ortho image block height in pixels.  If set to None, the source image block height is used.
+            Ortho image nodata value.
         compress: str, optional
-            Ortho image compression type (`deflate`, `jpeg`, `lzw`, `zstd`, or `none`).  If set to None,
-            the source image compression type is used.
+            Ortho image compression type (`deflate`, `jpeg`, `lzw`, `zstd`, or `none`).  If set to None, the source
+            image compression type is used.
         interleave: str, optional
-            Ortho image interleaving (`band` or `pixel`).   If set to None, the source image interleaving is used.
+            Ortho image interleaving (`band` or `pixel`).   If set to None, the source image interleave is used.
         photometric: str, optional
             Ortho image photometric interpretation (`minisblack`, `rgb` or `ycbcr`).  If set to None, the source image
-            value is used.
+            photometric value is used.
         """
 
         # init profiling
@@ -507,10 +505,12 @@ class Ortho:
             proc_profile.enable()
 
         ortho_filename = Path(ortho_filename)
-        if not overwrite and ortho_filename.exists():
-            raise FileExistsError(
-                f'Ortho file: {ortho_filename.name} exists and won\'t be overwritten without the `overwrite` option.'
-            )
+        if ortho_filename.exists():
+            if not overwrite:
+                raise FileExistsError(
+                    f'Ortho file: {ortho_filename.name} exists and won\'t be overwritten without the `overwrite` option.'
+                )
+            ortho_filename.unlink()
 
         # get dem array covering ortho extents in ortho CRS and resolution
         dem_array, dem_transform = self._reproject_dem(Resampling[dem_interp], resolution)

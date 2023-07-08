@@ -142,11 +142,10 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         ortho_config = config.get('ortho', {})
         ortho_crs = ortho_config.pop('crs', None)
         dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
-        ortho_config['blockxsize'], ortho_config['blockysize'] = ortho_config.pop('tile_size', (None, None))
-        if str(ortho_config.pop('driver', None)).lower() != 'gtiff':
-            logger.warning(
-                'The `driver` option is deprecated - all ortho images are created in GeoTIFF format.'
-            )
+        for key in ['driver', 'tile_size']:
+            if key in ortho_config:
+                ortho_config.pop(key)
+                logger.warning(f'The {key} option is deprecated.')
 
         # prepare camera config
         camera = None
