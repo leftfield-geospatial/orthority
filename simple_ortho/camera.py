@@ -19,8 +19,7 @@ import logging
 
 import cv2
 import numpy as np
-from simple_ortho.enums import CameraType, CvInterp
-from rasterio import Affine
+from simple_ortho.enums import CameraType, Interp
 
 # from scipy.ndimage import map_coordinates
 
@@ -245,7 +244,7 @@ class Camera:
         return x
 
     def undistort(
-        self, image: np.ndarray, nodata: Union[float, int] = 0, interp: CvInterp=CvInterp.bilinear
+        self, image: np.ndarray, nodata: Union[float, int] = 0, interp: Union[str, Interp] = Interp.bilinear
     ) -> np.ndarray:
         """
         Undistort an image in-place.
@@ -257,7 +256,7 @@ class Camera:
             along the first dimension.
         nodata: float, int, optional
             Fill invalid areas in the undistorted image with this value.
-        interp: CvInterp, optional
+        interp: str, Interp, optional
             Interpolation type to use when undistorting.
 
         Returns
@@ -274,7 +273,7 @@ class Camera:
             # equivalent without stored _undistort_maps:
             # return cv2.undistort(band_array, self._K, self._dist_coeff)
             return cv2.remap(
-                band, *self._undistort_maps, interp.value, borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
+                band, *self._undistort_maps, Interp[interp].to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
             )
 
         if image.ndim > 2:
@@ -529,7 +528,7 @@ class FisheyeCamera(Camera):
     @staticmethod
     def _create_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int], np.ndarray], dist_coeff: np.ndarray
-    )->Union[None, Tuple[np.ndarray, np.ndarray]]:
+    ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         # cv2.fisheye.initUndistortRectifyMap() requires default R & P (new camera matrix) params to be specified
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
             K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2

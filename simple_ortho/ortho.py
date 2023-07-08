@@ -26,11 +26,11 @@ from typing import Tuple, Union, Dict
 import cv2
 import numpy as np
 import rasterio as rio
-from rasterio.warp import reproject, Resampling, transform_bounds
+from rasterio.warp import reproject, transform_bounds, Resampling
 from rasterio.windows import Window
 
 from simple_ortho.camera import Camera
-from simple_ortho.enums import CvInterp
+from simple_ortho.enums import Interp
 from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals
 
 # from scipy.ndimage import map_coordinates
@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
-        dem_interp='cubic_spline', dem_band=1, interp='bilinear', resolution=[0.5, 0.5], per_band=False, build_ovw=True,
-        overwrite=True, write_mask=False, full_remap=True,
+        dem_interp=Interp.cubic, dem_band=1, interp=Interp.bilinear, resolution=[0.5, 0.5], per_band=False,
+        build_ovw=True, overwrite=True, write_mask=False, full_remap=True,
     )
     # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
     # default ortho profile values for Ortho._create_ortho_profile()
@@ -159,7 +159,7 @@ class Ortho:
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
-    def _reproject_dem(self, dem_interp: Resampling, resolution: Tuple[float, float]) -> Tuple[np.ndarray, rio.Affine]:
+    def _reproject_dem(self, dem_interp: Interp, resolution: Tuple[float, float]) -> Tuple[np.ndarray, rio.Affine]:
         """
         Reproject self._dem_array to the ortho CRS and resolution, given reprojection interpolation and resolution
         parameters. Returns the reprojected DEM array and corresponding transform.
@@ -172,7 +172,7 @@ class Ortho:
         # reproject dem_array to ortho crs and resolution
         dem_array, dem_transform = reproject(
             self._dem_array, None, src_crs=self._dem_crs, src_transform=self._dem_transform, src_nodata=float('nan'),
-            dst_crs=self._ortho_crs, dst_resolution=resolution, resampling=dem_interp, dst_nodata=float('nan'),
+            dst_crs=self._ortho_crs, dst_resolution=resolution, resampling=dem_interp.to_rio(), dst_nodata=float('nan'),
             init_dest_nodata=True, apply_vertical_shift=True, num_threads=multiprocessing.cpu_count()
         )
         return dem_array.squeeze(), dem_transform
@@ -301,7 +301,7 @@ class Ortho:
     def _remap_src_to_ortho(
         self, ortho_filename: Path, ortho_profile: Dict, dem_array: np.ndarray,
         per_band: bool = _default_config['per_band'], full_remap: bool = _default_config['full_remap'],
-        interp: CvInterp = _default_config['interp'], write_mask: bool = _default_config['write_mask'],
+        interp: Interp = _default_config['interp'], write_mask: bool = _default_config['write_mask'],
     ):
         """
         Interpolate the ortho image from the source image, given an ortho filename & profile, and DEM array in the ortho
@@ -386,7 +386,7 @@ class Ortho:
                         for oi in range(0, src_im_array.shape[0]):
                             # remap setting pixels outside dem or source bounds to nodata
                             ortho_im_win_array[oi, :, :] = cv2.remap(
-                                src_im_array[oi, :, :], src_jj, src_ii, interp.value, borderMode=cv2.BORDER_CONSTANT,
+                                src_im_array[oi, :, :], src_jj, src_ii, interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
                                 borderValue=ortho_im.profile['nodata'],
                             )
                             # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with
@@ -400,13 +400,13 @@ class Ortho:
                         # nodata is not nan)
                         nodata_mask = np.all(nan_equals(ortho_im_win_array, ortho_im.profile['nodata']), axis=0)
                         if (
-                            interp != CvInterp.nearest and not np.isnan(ortho_im.profile['nodata']) and
+                            interp != Interp.nearest and not np.isnan(ortho_im.profile['nodata']) and
                             np.sum(nodata_mask) > min(ortho_im.profile['blockxsize'], ortho_im.profile['blockysize'])
                         ):  # yapf: disable
                             # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
                             #  nodata=nan internally, then convert to config dtype and nodata on writing.
                             # create dilation kernel slightly larger than interpolation kernel size
-                            if interp == CvInterp.bilinear:
+                            if interp == Interp.bilinear:
                                 kernel = np.ones((5, 5), np.uint8)
                             else:
                                 kernel = np.ones((9, 9), np.uint8)
@@ -451,8 +451,8 @@ class Ortho:
     # TODO: change param names write_mask to internal_mask, full_remap to something more sensible
     def process(
         self, ortho_filename: Union[str, Path], resolution: Tuple[float, float],
-        dem_interp: Union[str, Resampling] = _default_config['dem_interp'],
-        interp: Union[str, CvInterp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
+        dem_interp: Union[str, Interp] = _default_config['dem_interp'],
+        interp: Union[str, Interp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
         build_ovw: bool = _default_config['build_ovw'], overwrite: bool = _default_config['overwrite'],
         write_mask: bool = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'], **kwargs
     ):  # yaml: disable
@@ -463,12 +463,15 @@ class Ortho:
             Name of the orthorectified file to create.
         resolution: list of float
             Output pixel (x, y) size in m.
-        dem_interp: str, rasterio.enums.Resampling, optional
-            Interpolation method for reprojecting the DEM.  See :class:`~rasterio.enums.Resampling` for options.
-        interp: str, simple_ortho.enums.CvInterp, optional
+        dem_interp: str, simple_ortho.enums.Interp, optional
+            Interpolation method for reprojecting the DEM.  See :class:`~simple_ortho.enums.Interp` for options.
+            :attr:`~simple_ortho.enums.Interp.cubic` is recommended when the DEM has a coarser resolution than the
+            ortho.
+        interp: str, simple_ortho.enums.Interp, optional
             Interpolation method to use for warping source to orthorectified image.  See
-            :class:`~simple_ortho.enums.CvInterp` for options.  :class:`~simple_ortho.enums.CvInterp.nearest` is
-            recommended when the ortho and source image resolutions are similar.
+            :class:`~simple_ortho.enums.Interp` for options.  :attr:`~simple_ortho.enums.Interp.nearest` is
+            recommended when the ortho and source image resolutions are similar. Note that
+            :attr:`~simple_ortho.enums.Interp.cubic_spline` is not supported for this value.
         per_band: bool, optional
             Remap the source to the ortho image band-by-band (True), or all bands at once (False).
             False is typically faster but requires more memory.
@@ -513,7 +516,7 @@ class Ortho:
             ortho_filename.unlink()
 
         # get dem array covering ortho extents in ortho CRS and resolution
-        dem_array, dem_transform = self._reproject_dem(Resampling[dem_interp], resolution)
+        dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
         poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
         dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
 
@@ -527,7 +530,7 @@ class Ortho:
 
         # orthorectify
         self._remap_src_to_ortho(
-            ortho_filename, ortho_profile, dem_array, per_band=per_band, full_remap=full_remap, interp=CvInterp[interp],
+            ortho_filename, ortho_profile, dem_array, per_band=per_band, full_remap=full_remap, interp=Interp[interp],
             write_mask=write_mask,
         )
 
