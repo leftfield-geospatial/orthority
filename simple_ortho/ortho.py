@@ -30,7 +30,7 @@ from rasterio.warp import reproject, transform_bounds, Resampling
 from rasterio.windows import Window
 
 from simple_ortho.camera import Camera
-from simple_ortho.enums import Interp
+from simple_ortho.enums import Interp, Compress
 from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals
 
 # from scipy.ndimage import map_coordinates
@@ -46,7 +46,7 @@ class Ortho:
     )
     # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
     # default ortho profile values for Ortho._create_ortho_profile()
-    _default_profile = dict(dtype=None, nodata=0, compress=None, interleave=None, photometric=None,)
+    _default_profile = dict(dtype=None, compress=Compress.auto, interleave=None, photometric=None,)
     # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
     egm96_min = -106.71
 
@@ -267,40 +267,39 @@ class Ortho:
         return dem_array, dem_transform
 
     def _create_ortho_profile(
-        self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = _default_profile['dtype'],
-        compress: str = _default_profile['compress'], interleave: str = _default_profile['interleave'],
-        photometric: str = _default_profile['photometric'],
+        self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = None, compress: Compress = Compress.auto,
     ) -> Dict:
-        """ Return a rasterio profile for the ortho image by merging args with the source image profile. """
-        # create initial profile
-        ortho_profile = dict(
-            dtype=dtype, compress=compress, interleave=interleave, photometric=photometric,
-        )
-
+        """ Return a rasterio profile for the ortho image. """
         with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-            # merge with the source profile
-            for key in ['dtype', 'compress', 'interleave', 'photometric']:
-                ortho_profile[key] = ortho_profile[key] or src_im.profile.get(key, None)
-
-            if ortho_profile['photometric'] is None:
-                logger.debug(
-                    f'Source image {self._src_filename.name} has no `photometric` value, reverting to \'minisblack\'.'
-                )
-                ortho_profile['photometric'] = 'minisblack'
-
-            # check dtype support and choose a value for nodata (opencv remap doesn't support int8 or uint32, and only
-            # supports int32, uint64, int64 with nearest interp so these dtypes are excluded)
+            # Determine dtype, check dtype support and choose a nodata value.
+            # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with nearest
+            # interp so these dtypes are excluded).
+            dtype = dtype or src_im.profile.get('dtype', None)
             nodata_vals = dict(
                 uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
             )
-            if ortho_profile['dtype'] not in nodata_vals:
+            if dtype not in nodata_vals:
                 raise ValueError(f'Data type `{dtype}` is not supported.')
-            nodata = nodata_vals[ortho_profile['dtype']]
+            nodata = nodata_vals[dtype]
 
-            # add remaining items,
-            ortho_profile.update(
-                driver='GTiff', crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
-                count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata,
+            # setup compression, data interleaving and photometric interpretation
+            compress = Compress[compress]
+            if compress == Compress.jpeg and dtype != 'uint8':
+                raise ValueError(f'JPEG compression is supported for the `uint8` data type only.')
+
+            if compress == Compress.auto:
+                compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+
+            if compress == Compress.jpeg:
+                interleave, photometric = ('pixel', 'ycbcr') if src_im.count == 3 else ('band', 'minisblack')
+            else:
+                interleave, photometric = ('band', 'minisblack')
+
+            # create ortho profile
+            ortho_profile = dict(
+                driver='GTiff', dtype=dtype, crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
+                count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata, compress=compress.value,
+                interleave=interleave, photometric=photometric,
             )
 
         return ortho_profile
@@ -461,7 +460,8 @@ class Ortho:
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
         interp: Union[str, Interp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
         build_ovw: bool = _default_config['build_ovw'], overwrite: bool = _default_config['overwrite'],
-        write_mask: bool = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'], **kwargs
+        write_mask: bool = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'],
+        dtype: str = None, compress: Union[str, Compress] = Compress.auto
     ):  # yaml: disable
         """
         Orthorectify the source image based on the specified camera model and DEM.
@@ -496,14 +496,9 @@ class Ortho:
         dtype: str, optional
             Ortho image data type (`uint8`, `uint16`, `float32` or `float64`).  If set to None, the source image
             dtype is used.
-        compress: str, optional
-            Ortho image compression type (`deflate`, `jpeg`, `lzw`, `zstd`, or `none`).  If set to None, the source
-            image compression type is used.
-        interleave: str, optional
-            Ortho image interleaving (`band` or `pixel`).   If set to None, the source image interleave is used.
-        photometric: str, optional
-            Ortho image photometric interpretation (`minisblack`, `rgb` or `ycbcr`).  If set to None, the source image
-            photometric value is used.
+        compress: str, Compress, optional
+            Ortho image compression type (`deflate`, `jpeg` or `auto`).  See :class:`~simple_ortho.enums.Compress`_
+            for option details.
         """
 
         # init profiling
@@ -521,12 +516,15 @@ class Ortho:
             ortho_filename.unlink()
 
         # get dem array covering ortho extents in ortho CRS and resolution
+        # TODO open source once and pass dataset to _reproject_dem, _create_ortho_profile and _remap_src_to_ortho?
         dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
         poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
         dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
 
         # create ortho profile
-        ortho_profile = self._create_ortho_profile(dem_array.shape, dem_transform, **kwargs)
+        ortho_profile = self._create_ortho_profile(
+            dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
+        )
 
         # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
         if write_mask and ortho_profile['compress'] != 'jpeg':

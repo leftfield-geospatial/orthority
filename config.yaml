@@ -38,9 +38,5 @@ ortho:
   dtype:
   # Output pixel size [x, y] in m
   resolution: [0.5, 0.5]
-  # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
-  compress: deflate
-  # Interleave by 'pixel' or 'band' (pixel, band)
-  interleave: band
-  # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
-  photometric:
+  # Compress type (deflate, jpeg, auto)
+  compress: auto

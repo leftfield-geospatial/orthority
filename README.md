@@ -117,9 +117,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `full_remap`    | Remap source to ortho with full camera model (`True`), or remap undistorted source to ortho with pinhole model (`False`). 
 |          | `dtype`         | Data type of ortho image (`uint8`, `uint16`, `float32` or `float64`).  If no `dtype` is specified the same type as the source image will be used (recommended).
 |          | `resolution`    | Output pixel size `[x, y]` in m.
-|          | `compress`      | Ortho image compression type (`deflate`, `jpeg`, `jpeg2000`, `lzw`, `zstd`, `none`).  `deflate` recommended in most instances. (None = same as source image).
-|          | `interleave`    | Interleave ortho-image data by `pixel` or `band` (`pixel`, `band`).  `interleave=band` is recommended for `compress=deflate`. (None = same as source image).
-|          | `photometric`   | Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same as source image).
+|          | `compress`      | Ortho image compression type (`deflate`, `jpeg`, or `auto`). 
 
 ## Example Application
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple-ortho.  No radiometric (colour) adjustments have been applied, this can be addressed with [`homonim`](https://github.com/leftfield-geospatial/homonim). 

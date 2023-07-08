@@ -90,8 +90,8 @@ class TestSimpleOrthoModule(unittest.TestCase):
         dem_band = 1
         resolution = (5, 5)
         config = dict(
-            dem_interp='cubic_spline', interp='bilinear', compress=None, interleave='pixel', photometric=None,
-            per_band=False, dtype=None, build_ovw=True, overwrite=True, write_mask=True
+            dem_interp='cubic_spline', interp='bilinear', compress='jpeg', per_band=False, dtype=None, build_ovw=True,
+            overwrite=True, write_mask=True
         )
 
         # point to the test_example data
