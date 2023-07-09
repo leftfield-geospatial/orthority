@@ -16,12 +16,14 @@
 
 import cProfile
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 import pstats
 import sys
 import tracemalloc
 from pathlib import Path
-from typing import Tuple, Union, Dict
+from typing import Tuple, Union, Dict, List
 
 import cv2
 import numpy as np
@@ -78,13 +80,27 @@ class Ortho:
         if not isinstance(camera, Camera):
             raise TypeError('`camera` is not a Camera instance.')
 
+        # TODO: refactor so that the camera is guaranteed to be the correct one for src_filename (e.g. the camera has a
+        #  src_filename property itself, and src_filename is not passed here?  also the separation of crs from camera
+        #  is not ideal, the camera and ortho crs should also be tied together)
+        # TODO: make Ortho a context manager that opens the src file once?
         self._src_filename = Path(src_filename)
         self._camera = camera
+        self._write_lock = threading.Lock()
 
         self._ortho_crs = self._parse_crs(crs)
         self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
             Path(dem_filename), dem_band
         )
+
+    @staticmethod
+    def _build_overviews(im: rio.io.DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256):
+        """ Build internal overviews for a given rasterio dataset. """
+        max_ovw_levels = int(np.min(np.log2(im.shape)))
+        min_level_shape_pow2 = int(np.log2(min_level_pixels))
+        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+        ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
+        im.build_overviews(ovw_levels, Resampling.average)
 
     def _parse_crs(self, crs: Union[str, rio.CRS]) -> rio.CRS:
         """ Derive an ortho CRS from the ``crs`` parameter and source image. """
@@ -267,194 +283,186 @@ class Ortho:
         return dem_array, dem_transform
 
     def _create_ortho_profile(
-        self, shape: Tuple[int, int], transform: rio.Affine, dtype: str = None, compress: Compress = Compress.auto,
+        self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine, dtype: str = None,
+        compress: Compress = Compress.auto,
     ) -> Dict:
         """ Return a rasterio profile for the ortho image. """
-        with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-            # Determine dtype, check dtype support and choose a nodata value.
-            # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with nearest
-            # interp so these dtypes are excluded).
-            dtype = dtype or src_im.profile.get('dtype', None)
-            nodata_vals = dict(
-                uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
-            )
-            if dtype not in nodata_vals:
-                raise ValueError(f'Data type `{dtype}` is not supported.')
-            nodata = nodata_vals[dtype]
+        # Determine dtype, check dtype support and choose a nodata value.
+        # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with nearest
+        # interp so these dtypes are excluded).
+        dtype = dtype or src_im.profile.get('dtype', None)
+        nodata_vals = dict(
+            uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
+        )
+        if dtype not in nodata_vals:
+            raise ValueError(f'Data type `{dtype}` is not supported.')
+        nodata = nodata_vals[dtype]
 
-            # setup compression, data interleaving and photometric interpretation
-            compress = Compress[compress]
-            if compress == Compress.jpeg and dtype != 'uint8':
-                raise ValueError(f'JPEG compression is supported for the `uint8` data type only.')
+        # setup compression, data interleaving and photometric interpretation
+        if compress == Compress.jpeg and dtype != 'uint8':
+            raise ValueError(f'JPEG compression is supported for the `uint8` data type only.')
 
-            if compress == Compress.auto:
-                compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+        if compress == Compress.auto:
+            compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
-            if compress == Compress.jpeg:
-                interleave, photometric = ('pixel', 'ycbcr') if src_im.count == 3 else ('band', 'minisblack')
-            else:
-                interleave, photometric = ('band', 'minisblack')
+        if compress == Compress.jpeg:
+            interleave, photometric = ('pixel', 'ycbcr') if src_im.count == 3 else ('band', 'minisblack')
+        else:
+            interleave, photometric = ('band', 'minisblack')
 
-            # create ortho profile
-            ortho_profile = dict(
-                driver='GTiff', dtype=dtype, crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
-                count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata, compress=compress.value,
-                interleave=interleave, photometric=photometric,
-            )
+        # create ortho profile
+        ortho_profile = dict(
+            driver='GTiff', dtype=dtype, crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
+            count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata, compress=compress.value,
+            interleave=interleave, photometric=photometric,
+        )
 
         return ortho_profile
 
-    def _remap_src_to_ortho(
-        self, ortho_filename: Path, ortho_profile: Dict, dem_array: np.ndarray,
+    def _remap_tile(
+        self, ortho_im: rio.io.DatasetWriter, src_array, dem_array: np.ndarray, tile_win: Window,
+        indexes: List[int], init_xgrid: np.ndarray, init_ygrid: np.ndarray, full_remap: bool, interp: Interp,
+        write_mask: bool,
+    ):
+        """
+        Thread safe method to map the source image to an ortho tile, given an open ortho dataset, source image
+        array, DEM array in the ortho CRS and grid, tile window into the ortho dataset, band indexes of the source
+        array, xy grids for the first ortho tile, and configuration parameters.
+        """
+        # offset init grids to tile_win
+        tile_transform = rio.windows.transform(tile_win, ortho_im.profile['transform'])
+        tile_xgrid = (
+            init_xgrid[:tile_win.height, :tile_win.width] + (tile_transform.xoff - ortho_im.profile['transform'].xoff)
+        )
+        tile_ygrid = (
+            init_ygrid[:tile_win.height, :tile_win.width] + (tile_transform.yoff - ortho_im.profile['transform'].yoff)
+        )
+
+        # extract tile_win from dem_array (will be nan outside dem valid area or outside original dem bounds)
+        tile_zgrid = dem_array[
+            tile_win.row_off:(tile_win.row_off + tile_win.height),
+            tile_win.col_off:(tile_win.col_off + tile_win.width)
+        ]  # yapf: disable
+
+        # find the source (j, i) pixel coords corresponding to ortho image (x, y, z) world coords
+        tile_ji = self._camera.world_to_pixel(
+            np.array([tile_xgrid.reshape(-1, ), tile_ygrid.reshape(-1, ), tile_zgrid.reshape(-1, )]),
+            distort=full_remap
+        )  # yapf: disable
+
+        # separate tile_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
+        tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
+        tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')
+        # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
+
+        # initialise ortho tile array
+        tile_array = np.full(
+            (src_array.shape[0], tile_win.height, tile_win.width), fill_value=ortho_im.profile['nodata'],
+            dtype=ortho_im.profile['dtype']
+        )
+
+        # remap source image to ortho tile, looping over band(s) (cv2.remap execution time depends on array ordering)
+        for oi in range(0, src_array.shape[0]):
+            tile_array[oi, :, :] = cv2.remap(
+                src_array[oi, :, :], tile_jgrid, tile_igrid, interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
+                borderValue=ortho_im.profile['nodata'],
+            )
+            # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with nodata
+            # tile_array[oi, :, :] = map_coordinates(
+            #     src_array[oi, :, :], (tile_igrid, tile_jgrid), order=2, mode='constant', cval=self.nodata, prefilter=False
+            # )
+
+        # mask of invalid ortho pixels
+        tile_mask = np.all(nan_equals(tile_array, ortho_im.profile['nodata']), axis=0)
+
+        # remove cv2.remap blurring with nodata at the nodata boundary when necessary
+        if (
+            interp != Interp.nearest and not np.isnan(ortho_im.profile['nodata']) and
+            np.sum(tile_mask) > min(ortho_im.profile['blockxsize'], ortho_im.profile['blockysize'])
+        ):  # yapf: disable
+            # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
+            #  nodata=nan internally, then convert to config dtype and nodata on writing.
+            kernel = np.ones((5, 5), np.uint8) if interp == Interp.bilinear else np.ones((9, 9), np.uint8)
+            tile_mask = cv2.dilate(tile_mask.astype(np.uint8, copy=False), kernel)
+            tile_mask = tile_mask.astype(bool, copy=False)
+            tile_array[:, tile_mask] = ortho_im.profile['nodata']
+
+        # write tile_array to the ortho image
+        with self._write_lock:
+            ortho_im.write(tile_array, indexes, window=tile_win)
+
+            if write_mask and (indexes == [1] or len(indexes) == ortho_im.count):
+                ortho_im.write_mask(~tile_mask, window=tile_win)
+
+    def _remap(
+        self, src_im: rio.DatasetReader, ortho_im: rio.io.DatasetWriter, dem_array: np.ndarray,
         per_band: bool = _default_config['per_band'], full_remap: bool = _default_config['full_remap'],
         interp: Interp = _default_config['interp'], write_mask: bool = _default_config['write_mask'],
     ):
         """
-        Interpolate the ortho image from the source image, given an ortho filename & profile, and DEM array in the ortho
-        CRS and pixel grid.
+        Map the source to ortho image by interpolation, given open source and ortho datasets, DEM array in the ortho
+        CRS and pixel grid, and configuration parameters.
         """
-
         block_count = 0
-        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
-        with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-            with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
-                # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles later (
-                # requires N-up transform). float64 precision is needed for the (x, y) ortho grids in world co-ordinates
-                # for e.g. high resolution drone imagery.  The smaller range z grid is stored in float32 to save memory.
-                # j_range = np.arange(0, ortho_im.profile['width'])
-                # i_range = np.arange(0, ortho_im.profile['height'])
-                j_range = np.arange(0, ortho_im.profile['blockxsize'])
-                i_range = np.arange(0, ortho_im.profile['blockysize'])
-                jgrid, igrid = np.meshgrid(j_range, i_range, indexing='xy')
-                xgrid, ygrid = ortho_im.profile['transform'] * [jgrid, igrid]
+        # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
+        # (requires N-up transform).
+        # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
+        # imagery.  The smaller range z grid is stored in float32 to save memory.
+        # j_range = np.arange(0, ortho_im.profile['width'])
+        # i_range = np.arange(0, ortho_im.profile['height'])
+        j_range = np.arange(0, ortho_im.profile['blockxsize'])
+        i_range = np.arange(0, ortho_im.profile['blockysize'])
+        init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
+        init_xgrid, init_ygrid = ortho_im.profile['transform'] * [init_jgrid, init_igrid]
 
-                # create bands as (count x 1) matrix if per_bands==True else as (1 x count) matrix
-                bands = np.array([range(1, src_im.count + 1)]).T if per_band else np.array([range(1, src_im.count + 1)])
+        # create list oif band indexes to read, remap & write all bands at once (per_band==False), or per-band
+        # (per_band==True)
+        if per_band:
+            index_list = [[i] for i in range(1, src_im.count + 1)]
+        else:
+            index_list = [[*range(1, src_im.count + 1)]]
 
-                ttl_blocks = (
-                    np.ceil(ortho_im.profile['width'] / ortho_im.profile['blockxsize']) *
-                    np.ceil(ortho_im.profile['height'] / ortho_im.profile['blockysize'] * bands.shape[0])
-                )
+        ttl_blocks = (
+            np.ceil(ortho_im.profile['width'] / ortho_im.profile['blockxsize']) *
+            np.ceil(ortho_im.profile['height'] / ortho_im.profile['blockysize']) * len(index_list)
+        )
 
-                # TODO: add tests for different ortho dtype and nodata values
-                # read, process and write one row of `bands` at a time
-                for bi in bands.tolist():
-                    # read source image band(s) as ortho dtype (required for cv2.remap() to set invalid ortho areas to
-                    # ortho nodata value)
-                    src_im_array = src_im.read(bi, out_dtype=ortho_im.profile['dtype'])
+        # TODO: add tests for different ortho dtype and nodata values
+        # read, process and write bands, one row of indexes at a time
+        for indexes in index_list:
+            # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
+            # ortho nodata value)
+            src_array = src_im.read(indexes, out_dtype=ortho_im.profile['dtype'])
 
-                    if not full_remap:
-                        # undistort the source image so the distortion model can be excluded from
-                        # self._camera.world_to_pixel() below
-                        src_im_array = self._camera.undistort(
-                            src_im_array, nodata=ortho_im.profile['nodata'], interp=interp
-                        )
+            if not full_remap:
+                # undistort the source image so the distortion model can be excluded from
+                # self._camera.world_to_pixel() in self._remap_tile()
+                src_array = self._camera.undistort(src_array, nodata=ortho_im.profile['nodata'], interp=interp)
 
-                    # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
-                    # for ortho_win in [ortho_win_full]:
-                    for _, ortho_win in ortho_im.block_windows(1):
+            # map ortho tiles concurrently
+            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
+                ortho_wins = [ortho_win for _, ortho_win in ortho_im.block_windows(1)]
+                futures = [
+                    executor.submit(
+                        self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
+                        full_remap, interp, write_mask
+                    )
+                    for ortho_win in ortho_wins
+                ]  # yapf: disable
+                for future in as_completed(futures):
+                    future.result()
 
-                        # offset tile grids to ortho_win
-                        ortho_win_transform = rio.windows.transform(ortho_win, ortho_im.transform)
-                        ortho_xgrid = (
-                            xgrid[:ortho_win.height, :ortho_win.width] +
-                            (ortho_win_transform.xoff - ortho_im.transform.xoff)
-                        )
-                        ortho_ygrid = (
-                            ygrid[:ortho_win.height, :ortho_win.width] +
-                            (ortho_win_transform.yoff - ortho_im.transform.yoff)
-                        )
+                    # print progress
+                    block_count += 1
+                    progress = (block_count / ttl_blocks)
+                    sys.stdout.write('\r')
+                    sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100 * progress))
+                    sys.stdout.flush()
 
-                        # extract ortho_win from dem_array (will be nan outside dem valid area or outside original dem
-                        # bounds)
-                        ortho_zgrid = dem_array[
-                              ortho_win.row_off:(ortho_win.row_off + ortho_win.height),
-                              ortho_win.col_off:(ortho_win.col_off + ortho_win.width)
-                        ]  # yapf: disable
+        sys.stdout.write('\n')
 
-                        # find the source (j, i) pixel coords corresponding to ortho image (x,y,z) world coords
-                        src_ji = self._camera.world_to_pixel(
-                            np.array([ortho_xgrid.reshape(-1, ), ortho_ygrid.reshape(-1, ), ortho_zgrid.reshape(-1, )]),
-                            distort=full_remap
-                        )  # yapf: disable
-
-                        # separate src_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
-                        src_jj = src_ji[0, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
-                        src_ii = src_ji[1, :].reshape(ortho_win.height, ortho_win.width).astype('float32')
-                        # src_jj, src_ii = cv2.convertMaps(src_jj, src_ii, cv2.CV_16SC2)
-
-                        # interpolate the ortho tile from the source image
-                        ortho_im_win_array = np.full(
-                            (src_im_array.shape[0], ortho_win.height, ortho_win.width),
-                            fill_value=ortho_im.profile['nodata'], dtype=ortho_im.profile['dtype']
-                        )
-                        # loop over band(s) (cv2.remap execution time depends on array ordering)
-                        for oi in range(0, src_im_array.shape[0]):
-                            # remap setting pixels outside dem or source bounds to nodata
-                            ortho_im_win_array[oi, :, :] = cv2.remap(
-                                src_im_array[oi, :, :], src_jj, src_ii, interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
-                                borderValue=ortho_im.profile['nodata'],
-                            )
-                            # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with
-                            # nodata
-                            # ortho_im_win_array[oi, :, :] = map_coordinates(  #
-                            # src_im_array[oi, :, :], (
-                            #   src_ii, src_jj), order=2, mode='constant', cval=self.nodata,  #     prefilter=False  #
-                            # )
-
-                        # remove cv2.remap blurring with nodata at the boundary (occurs when interp is not nearest or
-                        # nodata is not nan)
-                        nodata_mask = np.all(nan_equals(ortho_im_win_array, ortho_im.profile['nodata']), axis=0)
-                        if (
-                            interp != Interp.nearest and not np.isnan(ortho_im.profile['nodata']) and
-                            np.sum(nodata_mask) > min(ortho_im.profile['blockxsize'], ortho_im.profile['blockysize'])
-                        ):  # yapf: disable
-                            # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
-                            #  nodata=nan internally, then convert to config dtype and nodata on writing.
-                            # create dilation kernel slightly larger than interpolation kernel size
-                            if interp == Interp.bilinear:
-                                kernel = np.ones((5, 5), np.uint8)
-                            else:
-                                kernel = np.ones((9, 9), np.uint8)
-                            nodata_mask_d = cv2.dilate(nodata_mask.astype(np.uint8, copy=False), kernel)
-                            nodata_mask_d = nodata_mask_d.astype(bool, copy=False)
-                            ortho_im_win_array[:, nodata_mask_d] = ortho_im.profile['nodata']
-                        else:
-                            nodata_mask_d = nodata_mask
-
-                        # write the ortho tile to disk
-                        ortho_im.write(ortho_im_win_array, bi, window=ortho_win)
-
-                        if write_mask and np.all(bi == bands[0]):
-                            # write mask once for all bands, suppressing np.bool warning
-                            with np.testing.suppress_warnings() as sup:
-                                sup.filter(DeprecationWarning, '')
-                                ortho_im.write_mask(~nodata_mask_d, window=ortho_win)
-
-                        # print progress
-                        block_count += 1
-                        progress = (block_count / ttl_blocks)
-                        sys.stdout.write('\r')
-                        sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100 * progress))
-                        sys.stdout.flush()
-
-            sys.stdout.write('\n')
-
-    @staticmethod
-    def _build_overviews(filename, max_num_levels: int = 8, min_level_pixels: int = 256):
-        """ Build internal overviews for given image. """
-        if not filename.exists():
-            return
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'):
-            with rio.open(filename, 'r+') as im:
-                max_ovw_levels = int(np.min(np.log2(im.shape)))
-                min_level_shape_pow2 = int(np.log2(min_level_pixels))
-                num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-                ovw_levels = [2 ** m for m in range(1, num_ovw_levels + 1)]
-                im.build_overviews(ovw_levels, Resampling.average)
-
-    # TODO: simplify/merge interpolation enums
-    # TODO: change param names write_mask to internal_mask, full_remap to something more sensible
+    # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
         self, ortho_filename: Union[str, Path], resolution: Tuple[float, float],
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
@@ -464,7 +472,7 @@ class Ortho:
         dtype: str = None, compress: Union[str, Compress] = Compress.auto
     ):  # yaml: disable
         """
-        Orthorectify the source image based on the specified camera model and DEM.
+        Orthorectify the source image based on the camera model and DEM.
 
         ortho_filename: str, pathlib.Path
             Name of the orthorectified file to create.
@@ -516,30 +524,28 @@ class Ortho:
             ortho_filename.unlink()
 
         # get dem array covering ortho extents in ortho CRS and resolution
-        # TODO open source once and pass dataset to _reproject_dem, _create_ortho_profile and _remap_src_to_ortho?
+        # TODO open source once and pass dataset to _reproject_dem, _create_ortho_profile and _remap?
         dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
         poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
         dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
 
-        # create ortho profile
-        ortho_profile = self._create_ortho_profile(
-            dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
-        )
+        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
+        with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
+            # create ortho profile
+            ortho_profile = self._create_ortho_profile(
+                src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
+            )
 
-        # work around an apparent gdal issue with writing masks, building overviews and non-jpeg compression
-        if write_mask and ortho_profile['compress'] != 'jpeg':
-            write_mask = False
-            logger.warning('Setting `write_mask=False`, `write_mask=True` should only be used with `compress=\'jpeg\'`')
+            with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
+                # orthorectify
+                self._remap(
+                    src_im, ortho_im, dem_array, per_band=per_band, full_remap=full_remap, interp=Interp[interp],
+                    write_mask=write_mask,
+                )
 
-        # orthorectify
-        self._remap_src_to_ortho(
-            ortho_filename, ortho_profile, dem_array, per_band=per_band, full_remap=full_remap, interp=Interp[interp],
-            write_mask=write_mask,
-        )
-
-        if build_ovw:
-            # build overviews
-            self._build_overviews(ortho_filename)
+                if build_ovw:
+                    # build overviews
+                    self._build_overviews(ortho_im)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:  # print profiling info
             proc_profile.disable()
