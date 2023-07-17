@@ -16,7 +16,6 @@ setup(
         'rasterio>=1.2',
         # 'opencv>=4.5',     # pip does not see the conda installed opencv, so commented out for now
         'pyyaml>=5.4',
-        'shapely>=1.7',
         'click>=8'
     ],
     entry_points={'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},

@@ -21,9 +21,6 @@ from pathlib import Path
 
 import numpy as np
 import rasterio as rio
-import yaml
-from rasterio import windows
-from shapely.geometry import box
 
 from simple_ortho import root_path, command_line
 
@@ -82,15 +79,19 @@ class TestCommandLine(unittest.TestCase):
                     with rio.open(ortho_filename1, 'r', num_threads='all_cpus') as ortho_im1, \
                             rio.open(ortho_filename2, 'r', num_threads='all_cpus') as ortho_im2:
 
-                        box1 = box(*ortho_im1.bounds)
-                        box2 = box(*ortho_im2.bounds)
-                        common_geom = box1.intersection(box2)
+                        # find windows for the overlap area in each image
+                        common_bl = np.array([ortho_im1.bounds[:2], ortho_im2.bounds[:2]]).max(axis=0)
+                        common_tr = np.array([ortho_im1.bounds[2:], ortho_im2.bounds[2:]]).min(axis=0)
+                        if np.any(common_bl >= common_tr):
+                            continue  # no overlap
+                        common_bounds = [*common_bl, *common_tr]
 
-                        if common_geom.area/box1.area > 0.2:  # the images overlap by > 20%
+                        win1 = ortho_im1.window(*common_bounds)
+                        win2 = ortho_im2.window(*common_bounds)
 
-                            # find windows for the overlap area in each image and read
-                            win1 = windows.from_bounds(*common_geom.bounds, transform=ortho_im1.transform)
-                            win2 = windows.from_bounds(*common_geom.bounds, transform=ortho_im2.transform)
+                        # test overlap similarity when overlap area > 20%
+                        if (win1.width * win1.height) / (ortho_im1.width * ortho_im1.height) > 0.2:
+                            # read overlap area in each image
                             ortho_data1 = ortho_im1.read(1, window=win1)
                             ortho_data2 = ortho_im2.read(1, window=win2)
 

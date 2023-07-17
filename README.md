@@ -10,7 +10,7 @@ Using `conda` is the simplest way to resolve `simple-ortho` binary dependencies.
 ```shell
 conda create -n <environment name> python=3.10 -c conda-forge 
 conda activate <environment name> 
-conda install -c conda-forge rasterio opencv pandas pyyaml shapely
+conda install -c conda-forge rasterio opencv pyyaml
 ````
 2) Clone the git repository and link into the conda environment:
 ``` shell
@@ -24,9 +24,7 @@ These dependencies are installed in the process above.
   - python >= 3.8
   - rasterio >= 1.2
   - opencv >= 4.5
-  - pandas >= 1.2
   - pyyaml >= 5.4
-  - shapely >= 1.7
 
 ## Usage
 `simple-ortho` functionality can be accessed from the `conda` command line.
