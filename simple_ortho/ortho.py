@@ -68,8 +68,8 @@ class Ortho:
         camera: Camera
             Source image camera model (see :meth:`~simple_ortho.camera.create_camera`).
         crs: str, rasterio.CRS, optional
-            CRS of the ortho image and ``camera`` world coordinates as an EPSG, proj4 or WKT string.  Can be omitted if
-            the source image is projected in the ortho CRS.
+            CRS of the ortho image and ``camera`` position as an EPSG, proj4 or WKT string.  It should be a projected,
+            and not geographic CRS.  Can be omitted if the source image is projected in the ortho CRS.
         dem_band: int, optional
             DEM image band index to use (1-based).
         """
@@ -218,6 +218,8 @@ class Ortho:
 
             # create world points along the src_pt ray with (x, y) stepsize <= dem resolution
             # TODO: include full_remap here, and in pixel_to_world_z to allow excluding distortion model
+            # TODO: test if in the case of incorrect camera pos/ori/crs, it is necessary to include sanity checking on
+            #  ray_steps.  also think about resolution and size of dem.
             start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min)
             stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))

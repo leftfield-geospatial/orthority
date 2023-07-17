@@ -72,7 +72,7 @@ Where `<Image file stem>` is the source file name excluding extension.
 
 For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
-**Note** that if the source image is geo-referenced and has a co-ordinate reference system (CRS), the camera (Easting, Northing) position must be specified in the source CRS.  Where the source image has no CRS, the CRS of the camera (Easting, Northing) position must be specified in [``config.yaml``](#configuration-file).
+**Note** that the coordinate reference system (CRS) of camera positions should be a projected, and not geographic CRS.  If the source image(s) aren't projected in this CRS, it should be specified in [``config.yaml``](#configuration-file).  
 
 Example file:
 ```
@@ -106,7 +106,7 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `sensor_size`   | Optional sensor `[width, height]` in same units/scale as `focal_len`.  If omitted, pixels are assumed square, and`focal_len` should be normalised and unitless:  i.e. `focal_len` = (focal length) / (sensor width).
 |          | `im_size`       | Image `[width, height]` dimensions in pixels.
 |          | `k1`, `k2`, ... | Optional distortion coefficients for the `brown`, `fisheye` and `opencv`  [camera types](#camera-type).  Values default to zero if not specified.
-| `ortho`  | `crs`           | CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has this CRS.   
+| `ortho`  | `crs`           | CRS of the camera positions and ortho image as an EPSG, proj4 or WKT string.  It should be a projected, and not geographic CRS.  Can be omitted if the source image has this CRS.
 |          | `dem_interp`    | Interpolation method for resampling the DEM (`average`, `bilinear`, `cubic`, `cubic_spline`, `gauss`, `lanczos`).  `cubic_spline` is recommended where the DEM resolution is coarser than the ortho-image resolution.
 |          | `dem_band`      | Index of band in DEM raster to use (1-based).
 |          | `interp`        | Interpolation method to use for warping source to orthorectified image (`nearest`, `average`, `bilinear`, `cubic`, `lanczos`).  `nearest` is recommended where the ortho-image resolution is close to the source image resolution.
