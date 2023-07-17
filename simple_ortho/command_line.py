@@ -27,7 +27,8 @@ import yaml
 
 from simple_ortho import root_path
 from simple_ortho.camera import CameraType, create_camera
-from simple_ortho.ortho import OrthoIm
+from simple_ortho.ortho import Ortho
+from simple_ortho.utils import suppress_no_georef
 
 # print formatting
 np.set_printoptions(precision=4)
@@ -115,6 +116,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         if verbosity is not None:
             pkg_logger = logging.getLogger(__package__)
             pkg_logger.setLevel(10 * verbosity)
+            logging.captureWarnings(True)
 
         # read configuration
         if read_conf is None:
@@ -136,6 +138,21 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             logger.info(f'Wrote config to {out_config_filename}')
             exit(0)
 
+        # prepare ortho config
+        ortho_config = config.get('ortho', {})
+        ortho_crs = ortho_config.pop('crs', None)
+        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        for key in ['driver', 'tile_size', 'nodata', 'interleave', 'photometric']:
+            if key in ortho_config:
+                ortho_config.pop(key)
+                logger.warning(f'The `{key}` option is deprecated.')
+
+        # prepare camera config
+        camera = None
+        camera_config = config['camera']
+        camera_type = CameraType(camera_config.get('type', 'pinhole'))
+        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
+
         # checks paths etc
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
@@ -145,31 +162,23 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
         )
 
-        # prepare camera config
-        camera = None
-        camera_config = config['camera']
-        camera_type = CameraType(camera_config.get('type', 'pinhole'))
-        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
-
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
             src_im_file_path = pathlib.Path(src_im_file_spec)
-            for src_im_filename in src_im_file_path.parent.glob(src_im_file_path.name):
-                if src_im_filename.stem not in cam_pos_orid.index:
-                    raise Exception(f'Could not find {src_im_filename.stem} in {pos_ori_file}')
+            for src_filename in src_im_file_path.parent.glob(src_im_file_path.name):
+                if src_filename.stem not in cam_pos_orid.index:
+                    raise Exception(f'Could not find {src_filename.stem} in {pos_ori_file}')
 
-                im_pos_ori = cam_pos_orid.loc[src_im_filename.stem]
+                im_pos_ori = cam_pos_orid.loc[src_filename.stem]
                 rotation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
                 position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
 
                 # set ortho filename
-                if ortho_dir is not None:
-                    ortho_im_filename = pathlib.Path(ortho_dir).joinpath(src_im_filename.stem + '_ORTHO.tif')
-                else:
-                    ortho_im_filename = None
+                ortho_dir = src_filename.parent if not ortho_dir else ortho_dir
+                ortho_filename = pathlib.Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
 
-                # Get src geotransform
-                with rio.open(src_im_filename) as src_im:
+                # Get src size
+                with suppress_no_georef(), rio.open(src_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
                 if not camera or np.any(im_size != camera._im_size):
@@ -179,22 +188,13 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     # update existing camera
                     camera.update_extrinsic(position, rotation)
 
-                # create OrthoIm  and orthorectify
-                logger.info(f'Orthorectifying {src_im_filename.name}')
+                # create Ortho  and orthorectify
+                logger.info(f'Orthorectifying {src_filename.name}')
                 start_ttl = datetime.datetime.now()
-                ortho_im = OrthoIm(
-                    src_im_filename, dem_file, camera, config=config['ortho'], ortho_im_filename=ortho_im_filename
-                )
-                ortho_im.orthorectify()
+                ortho_im = Ortho(src_filename, dem_file, camera, crs=ortho_crs, dem_band=dem_band)
+                ortho_im.process(ortho_filename, **ortho_config)
                 ttl_time = (datetime.datetime.now() - start_ttl)
                 logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
-
-                if config['ortho']['build_ovw']:
-                    start_ttl = datetime.datetime.now()
-                    logger.info(f'Building overviews for {src_im_filename.name}')
-                    ortho_im.build_ortho_overviews()
-                    ttl_time = (datetime.datetime.now() - start_ttl)
-                    logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))

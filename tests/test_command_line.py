@@ -46,8 +46,8 @@ class TestCommandLine(unittest.TestCase):
 
         # delete the ortho files if they exist
         ortho_im_wildcard = str(output_path.joinpath('*_ORTHO.tif'))
-        for ortho_im_filename in glob.glob(ortho_im_wildcard):
-            os.remove(ortho_im_filename)
+        for ortho_filename in glob.glob(ortho_im_wildcard):
+            os.remove(ortho_filename)
 
         # run the script
         command_line.main(**args)
@@ -56,19 +56,14 @@ class TestCommandLine(unittest.TestCase):
             self.assertEqual(len(glob.glob(args['src_im_file'][0])), len(glob.glob(ortho_im_wildcard)),
                              msg='Number of ortho files == number of source files')
 
-            # load the config so we know nodata
-            with open(root_path.joinpath('data/inputs/test_example/config.yaml')) as config_f:
-                config = yaml.safe_load(config_f)
-                nodata = config['ortho']['nodata']
-
             # compare source and ortho files to check their means are similar and they overlap
-            for src_im_filename, ortho_im_filename in zip(glob.glob(args['src_im_file'][0]),
+            for src_filename, ortho_filename in zip(glob.glob(args['src_im_file'][0]),
                                                           glob.glob(ortho_im_wildcard)):
-                with rio.open(src_im_filename, 'r', num_threads='all_cpus') as src_im:
+                with rio.open(src_filename, 'r', num_threads='all_cpus') as src_im:
                     src_array = src_im.read(1)
-                    with rio.open(ortho_im_filename, 'r', num_threads='all_cpus') as ortho_im:
+                    with rio.open(ortho_filename, 'r', num_threads='all_cpus') as ortho_im:
                         ortho_array = ortho_im.read(1)
-                        ortho_array_masked = ortho_array[ortho_array != nodata]
+                        ortho_array_masked = ortho_array[ortho_array != ortho_im.nodata]
 
                         # compare source and ortho means
                         source_mean = src_array.mean()
@@ -82,10 +77,10 @@ class TestCommandLine(unittest.TestCase):
 
             # check overlapping regions between pairwise combinations of ortho-images are roughly similar
             ortho_im_list = glob.glob(ortho_im_wildcard)
-            for ortho_i1, ortho_im_filename1 in enumerate(ortho_im_list):
-                for ortho_im_filename2 in ortho_im_list[ortho_i1 + 1:]:
-                    with rio.open(ortho_im_filename1, 'r', num_threads='all_cpus') as ortho_im1, \
-                            rio.open(ortho_im_filename2, 'r', num_threads='all_cpus') as ortho_im2:
+            for ortho_i1, ortho_filename1 in enumerate(ortho_im_list):
+                for ortho_filename2 in ortho_im_list[ortho_i1 + 1:]:
+                    with rio.open(ortho_filename1, 'r', num_threads='all_cpus') as ortho_im1, \
+                            rio.open(ortho_filename2, 'r', num_threads='all_cpus') as ortho_im2:
 
                         box1 = box(*ortho_im1.bounds)
                         box2 = box(*ortho_im2.bounds)
@@ -105,8 +100,8 @@ class TestCommandLine(unittest.TestCase):
 
                             # find R2 corr coefficient between the valid data in the overlapping image regions
                             c = np.corrcoef(ortho_data1[common_mask], ortho_data2[common_mask])
-                            ortho_im_filestem1 = Path(ortho_im_filename1).stem
-                            ortho_im_filestem2 = Path(ortho_im_filename2).stem
+                            ortho_im_filestem1 = Path(ortho_filename1).stem
+                            ortho_im_filestem2 = Path(ortho_filename2).stem
 
                             print(f'Overlap similarity of {ortho_im_filestem1} and {ortho_im_filestem2}: {c[0, 1]:.4f}')
                             self.assertTrue(c[0, 1] > 0.6,
@@ -124,6 +119,7 @@ class TestCommandLine(unittest.TestCase):
         # self._test_ortho_im(
         #     input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
         # )
+
 
 if __name__ == '__main__':
     unittest.main()

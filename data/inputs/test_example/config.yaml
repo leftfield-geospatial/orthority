@@ -15,11 +15,6 @@ ortho:
   overwrite: True             # Overwrite ortho raster if it exists
   write_mask: True            # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
   full_remap: True            # Remap source to ortho with full camera model (True), or undistorted source to ortho with pinhole model (False).
-  driver: GTiff               # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
   dtype: uint8                # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
   resolution: [5., 5.]        # Output pixel size [x, y] in m
-  tile_size: [256, 256]       # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  compress: jpeg              # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
-  interleave: pixel           # Interleave by 'pixel' or 'band' (pixel, band)
-  photometric: ycbcr          # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
-  nodata: 0                   # NODATA value
+  compress: auto              # Compress type (deflate, jpeg, auto)

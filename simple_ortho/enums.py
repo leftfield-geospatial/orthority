@@ -15,9 +15,11 @@
 """
 
 from enum import Enum
+from rasterio.enums import Resampling
 import cv2
 
-class CameraType(Enum):
+
+class CameraType(str, Enum):
     """
     Enumeration for the camera model type.
     """
@@ -44,19 +46,46 @@ class CameraType(Enum):
     of distortion coefficient estimates.
     """
 
-class CvInterp(Enum):
+
+class Interp(str, Enum):
     """
-    Enumeration for `OpenCV interpolation
-    <https://docs.opencv.org/4.7.0/da/d54/group__imgproc__transform.html#ga5bb5a1fea74ea38e1a5445ca803ff121.>`_.
+    Enumeration for common `OpenCV <https://docs.opencv.org/4.8.0/da/d54/group__imgproc__transform.html
+    #ga5bb5a1fea74ea38e1a5445ca803ff121>`_ and `rasterio
+    https://rasterio.readthedocs.io/en/stable/api/rasterio.enums.html#rasterio.enums.Resampling`_ interpolation types.
     """
-    average = cv2.INTER_AREA
+    average = 'average'
     """ Average input pixels over the corresponding output pixel area (suited to downsampling). """
-    bilinear = cv2.INTER_LINEAR
-    """ Bilnear interpolation. """
-    cubic = cv2.INTER_CUBIC
+    bilinear = 'bilinear'
+    """ Bilinear interpolation. """
+    cubic = 'cubic'
     """ Bicubic interpolation. """
-    lanczos = cv2.INTER_LANCZOS4
-    """ Lanczos interpolation with an 8x8 neighborhood. """
-    nearest = cv2.INTER_NEAREST
+    cubic_spline = 'cubic_spline'
+    """ Cubic spline interpolation (not supported by OpenCV). """
+    lanczos = 'lanczos'
+    """ Lanczos windowed sinc interpolation. """
+    nearest = 'nearest'
     """ Nearest neighbor interpolation. """
 
+    def to_cv(self) -> int:
+        """ Convert to OpenCV interpolation type. """
+        name_to_cv = dict(
+            average=cv2.INTER_AREA, bilinear=cv2.INTER_LINEAR, cubic=cv2.INTER_CUBIC, lanczos=cv2.INTER_LANCZOS4,
+            nearest=cv2.INTER_NEAREST,
+        )
+        if self._name_ not in name_to_cv:
+            raise ValueError(f'OpenCV does not support `{self._name_}` interpolation')
+        return name_to_cv[self._name_]
+
+    def to_rio(self) -> Resampling:
+        """ Convert to rasterio resampling type. """
+        return Resampling[self._name_]
+
+
+class Compress(str, Enum):
+    """ Enumeration for ortho compression. """
+    jpeg = 'jpeg'
+    """ Jpeg (lossy) compression.  """
+    deflate = 'deflate'
+    """ Deflate (lossless) compression. """
+    auto = 'auto'
+    """ Use jpeg compression if possible, otherwise deflate. """

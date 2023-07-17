@@ -35,18 +35,8 @@ ortho:
   # Remap source to ortho with full camera model (True), or undistorted source to ortho with pinhole model (False).
   full_remap: True
   # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
-  driver: GTiff
-  # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
   dtype:
   # Output pixel size [x, y] in m
   resolution: [0.5, 0.5]
-  # Tile/block [x, y] size in pixels  ([512, 512] recommended)
-  tile_size: [512, 512]
-  # GeoTIFF compress type (deflate, jpeg, jpeg2000, lzw, zstd, none)
-  compress: deflate
-  # Interleave by 'pixel' or 'band' (pixel, band)
-  interleave: band
-  # Photometric interpretation, see https://gdal.org/drivers/raster/gtiff.html for options (None = same format as source image, recommended)
-  photometric:
-  # NODATA value
-  nodata: 0
+  # Compress type (deflate, jpeg, auto)
+  compress: auto

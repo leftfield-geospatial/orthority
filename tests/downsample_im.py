@@ -61,14 +61,14 @@ def main(args):
 
     src_im_list = glob.glob(args.src_im_wildcard)
     print(f'Batch downsampling {len(src_im_list)} file(s) matching {args.src_im_wildcard} by factor of {ds_factor}')
-    for src_i, src_im_filename in enumerate(src_im_list):
-        src_im_filename = pathlib.Path(src_im_filename)
-        ds_im_filename = src_im_filename.parent.joinpath(src_im_filename.stem + '_DS' + src_im_filename.suffix)
+    for src_i, src_filename in enumerate(src_im_list):
+        src_filename = pathlib.Path(src_filename)
+        ds_im_filename = src_filename.parent.joinpath(src_filename.stem + '_DS' + src_filename.suffix)
 
-        print(f'Processing {src_im_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
+        print(f'Processing {src_filename.stem} - file {src_i + 1} of {len(src_im_list)}:')
         try:
             with rio.Env():
-                with rio.open(src_im_filename, 'r', num_threads='all_cpus') as src_im:
+                with rio.open(src_filename, 'r', num_threads='all_cpus') as src_im:
                     # construct output profile from src profile
                     ds_profile = src_im.profile.copy()
                     ds_transform = src_im.transform

@@ -24,6 +24,8 @@ from xml.etree import cElementTree as ET
 import numpy as np
 import rasterio as rio
 
+from simple_ortho.utils import suppress_no_georef
+
 logger = logging.getLogger(__name__)
 
 xmp_schemas = dict(
@@ -52,7 +54,18 @@ xmp_schemas = dict(
         rpy_offsets=(0., 0., 0.),
         rpy_gains=(1., 1., 1.)
     ),
-)
+    # these Pix4D / Parrot Sequoia keys may not refer to RPY of the drone, not camera, but am including for now
+    pix4d=dict(
+        lla_keys=[],
+        rpy_keys=[
+            '{http://pix4d.com/camera/1.0/}Roll',
+            '{http://pix4d.com/camera/1.0/}Pitch',
+            '{http://pix4d.com/camera/1.0/}Yaw'
+        ],
+        rpy_offsets=(0., 0., 0.),
+        rpy_gains=(1., 1., 1.)
+    ),
+)  # yapf:disable
 """
 A schema of known RPY & LLA XMP keys. Uses xml namspace qualified keys which are unique, rather than xmltodict
 type prefix qualified keys, which can have different prefixes referring to the same namepace.
@@ -93,8 +106,8 @@ class Exif:
         if not file_path.exists():
             raise FileNotFoundError(f'File does not exist: {file_path}')
 
-        with rio.open(filename, 'r') as ds:
-            self._exif_dict = ds.tags()
+        with suppress_no_georef(), rio.open(filename, 'r') as ds:
+            self._exif_dict = ds.tags(ns='EXIF') if 'EXIF' in ds.tag_namespaces() else ds.tags()
             self._image_size = ds.shape[::-1]
 
             if 'xml:XMP' in ds.tag_namespaces():
