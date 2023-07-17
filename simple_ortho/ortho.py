@@ -115,6 +115,8 @@ class Ortho:
                     ortho_crs = src_im.crs
                 else:
                     raise ValueError(f'`crs` should be specified when the source image has no projection.')
+        if ortho_crs.is_geographic:
+            raise ValueError(f'`crs` should be a projected, and not geographic coordinate system.')
         return ortho_crs
 
     def _get_init_dem(self, dem_filename: Path, dem_band: int) -> Tuple[np.ndarray, rio.Affine, rio.CRS, bool]:

@@ -176,6 +176,9 @@ def main():
 
     nav_crs = CRS.from_epsg(4326)
     world_crs = CRS.from_string(args.ortho_crs)
+    # TODO: allow a UTM world_crs to be automatically determined
+    # TODO: perhaps also, reproject camera positions to auto-determined UTM crs if the config.yaml crs is specified as
+    #  EPSG:4326
 
     file_pos_dict = None
     if args.shots:
