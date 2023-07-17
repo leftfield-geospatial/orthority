@@ -19,9 +19,9 @@ import datetime
 import os
 import pathlib
 import logging
+import csv
 
 import numpy as np
-import pandas as pd
 import rasterio as rio
 import yaml
 
@@ -157,21 +157,25 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
         # read camera position and rotation and find row for src_im_file
-        cam_pos_orid = pd.read_csv(
-            pos_ori_file, header=None, sep=' ', index_col=0,
-            names=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
-        )
+        with open(pos_ori_file, 'r', newline='') as f:
+            reader = csv.DictReader(
+                f, delimiter=' ', fieldnames=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
+            )
+            cam_pos_orid = {
+                row['file']: {k: float(row[k]) for k in reader.fieldnames[1:]}
+                for row in reader
+            }  # yapf: disable
 
         # loop through image file(s) or wildcard(s), or combinations thereof
         for src_im_file_spec in src_im_file:
             src_im_file_path = pathlib.Path(src_im_file_spec)
             for src_filename in src_im_file_path.parent.glob(src_im_file_path.name):
-                if src_filename.stem not in cam_pos_orid.index:
+                if src_filename.stem not in cam_pos_orid:
                     raise Exception(f'Could not find {src_filename.stem} in {pos_ori_file}')
 
-                im_pos_ori = cam_pos_orid.loc[src_filename.stem]
-                rotation = np.array(np.pi * im_pos_ori[['omega', 'phi', 'kappa']] / 180.)
-                position = np.array([im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']])
+                im_pos_ori = cam_pos_orid[src_filename.stem]
+                rotation = np.radians((im_pos_ori['omega'], im_pos_ori['phi'], im_pos_ori['kappa']))
+                position = np.array((im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']))
 
                 # set ortho filename
                 ortho_dir = src_filename.parent if not ortho_dir else ortho_dir
