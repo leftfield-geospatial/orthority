@@ -117,7 +117,7 @@ class Camera:
         """
         if len(position) != 3 or len(rotation) != 3:
             raise ValueError('`position` and `rotation` should contain 3 values')
-        T = np.array(position).reshape(3, 1)
+        T = np.array(position).reshape(-1, 1)
 
         omega, phi, kappa = rotation
 
@@ -155,15 +155,12 @@ class Camera:
         return None
 
     @staticmethod
-    def _prepare_coordinates(x: np.ndarray, n: int = 3) -> np.ndarray:
+    def _check_world_coordinates(xyz: np.ndarray):
         """
-        Utility function to check and prepare coordinates for projection.
+        Utility function to check world coordinate dimensions.
         """
-        if x.ndim == 1:
-            x = x.reshape(-1, 1)
-        if not (x.shape[0] == n and x.shape[1] > 0):
-            raise ValueError(f'xyz should have {n} rows and one or more columns')
-        return x
+        if not (xyz.ndim == 2 and xyz.shape[0] == 3):
+            raise ValueError(f'`xyz` should be a 3xN 2D array.')
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """
@@ -206,7 +203,7 @@ class Camera:
         ndarray
             Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         """
-        xyz = self._prepare_coordinates(xyz)
+        self._check_world_coordinates(xyz)
         # transform from world to camera co-ordinates
         xyz_ = self._R.T.dot(xyz - self._T)
         # normalise, and transform to pixel co-ordinates
@@ -232,15 +229,18 @@ class Camera:
             3D world (x=easting, y=northing, z=altitude) co-ordinates, as a 3-by-N array with (x, y, z) along the first
             dimension.
         """
-        if not (ji.shape[0] == 2 and ji.shape[1] > 0):
-            raise ValueError('`ji` should have 2 rows and one or more columns.')
+        if not (ji.ndim == 2 and ji.shape[0] == 2):
+            raise ValueError(f'`ji` should be a 2xN 2D array.')
+
+        if not (z.ndim == 1 and (z.shape[0] == 1 or z.shape[0] == ji.shape[1])):
+            raise ValueError(f'`z` should be a 1D array with one or N elements where N is the number of `ji` columns.')
 
         # transform pixel co-ordinates to camera co-ordinates
         xyz_ = self._pixel_to_camera(ji) if distort else PinholeCamera._pixel_to_camera(self, ji)
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         xyz_r = self._R.dot(xyz_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world
-        xyz = (xyz_r * (z - self._T[2]) / xyz_r[2, :]) + self._T
+        xyz = (xyz_r * (z - self._T[2]) / xyz_r[2]) + self._T
         return xyz
 
     def undistort(
@@ -361,11 +361,11 @@ class OpenCVCamera(Camera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
-        self._prepare_coordinates(xyz)
+        self._check_world_coordinates(xyz)
         if not distort:
             return PinholeCamera.world_to_pixel(self, xyz)
         ji, _ = cv2.projectPoints((xyz - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
-        ji = np.squeeze(ji).T
+        ji = np.squeeze(ji, axis=1).T
         return ji
 
 
@@ -455,7 +455,7 @@ class BrownCamera(OpenCVCamera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
-        self._prepare_coordinates(xyz)
+        self._check_world_coordinates(xyz)
 
         # transform from world to camera co-ordinates, and normalise
         xyz_ = self._R.T.dot(xyz - self._T)
@@ -481,7 +481,7 @@ class BrownCamera(OpenCVCamera):
             # transform from distorted camera to pixel co-ordinates, using Koff
             ji = self._Koff.dot(xyz_)[:2, :]
         else:
-            # transform from distorted camera to pixel co-ordinates, using K
+            # transform from camera to pixel co-ordinates, using K
             ji = self._K.dot(xyz_)[:2, :]
 
         return ji
@@ -550,7 +550,7 @@ class FisheyeCamera(Camera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
-        self._prepare_coordinates(xyz)
+        self._check_world_coordinates(xyz)
 
         # transform from world to camera co-ordinates, and normalise
         xyz_ = self._R.T.dot(xyz - self._T)
@@ -578,7 +578,7 @@ class FisheyeCamera(Camera):
                 theta_d = theta * (1.0 + theta2 * (k1 + theta2 * (k2 + theta2 * (k3 + theta2 * k4))))
             xyz_[:2, :] *= theta_d / r
 
-        # transform from distorted camera to pixel co-ordinates
+        # transform from camera to pixel co-ordinates
         ji = self._K.dot(xyz_)[:2, :]
         return ji
 
