@@ -213,7 +213,7 @@ class Camera:
         ji = self._K.dot(xyz_ / xyz_[2, :])[:2, :]
         return ji
 
-    def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray]) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray], distort: bool = False) -> np.ndarray:
         """
         Transform from 2D pixel to 3D world co-ordinates at a specified Z (altitude).
 
@@ -223,6 +223,8 @@ class Camera:
             Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         z: float, ndarray
             Z altitude(s) to project to, as a single value or 1-by-N array.
+        distort : bool (optional)
+            Whether to include the distortion model.
 
         Returns
         -------
@@ -234,7 +236,7 @@ class Camera:
             raise ValueError('`ji` should have 2 rows and one or more columns.')
 
         # transform pixel co-ordinates to camera co-ordinates
-        xyz_ = self._pixel_to_camera(ji)
+        xyz_ = self._pixel_to_camera(ji) if distort else PinholeCamera._pixel_to_camera(self, ji)
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         xyz_r = self._R.dot(xyz_)
         # scale to desired z (offset for camera z) with origin on camera, then offset to world

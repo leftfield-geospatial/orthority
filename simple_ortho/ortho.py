@@ -195,7 +195,9 @@ class Ortho:
         )
         return dem_array.squeeze(), dem_transform
 
-    def _get_ortho_poly(self, dem_array: np.ndarray, dem_transform: rio.Affine, num_pts=400) -> np.ndarray:
+    def _get_ortho_poly(
+        self, dem_array: np.ndarray, dem_transform: rio.Affine, full_remap: bool, num_pts=400
+    ) -> np.ndarray:
         """
         Return a polygon approximating the ortho boundaries in world (x, y, z) coordinates given a DEM array and
         corresponding transform in the ortho CRS and resolution.
@@ -217,15 +219,14 @@ class Ortho:
             src_pt = src_ji[:, pi].reshape(-1, 1)
 
             # create world points along the src_pt ray with (x, y) stepsize <= dem resolution
-            # TODO: include full_remap here, and in pixel_to_world_z to allow excluding distortion model
             # TODO: test if in the case of incorrect camera pos/ori/crs, it is necessary to include sanity checking on
             #  ray_steps.  also think about resolution and size of dem.
-            start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min)
-            stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max)
+            start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min, distort=full_remap)
+            stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max, distort=full_remap)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
             ray_steps = np.ceil(ray_steps.max()).astype('int') + 1
             ray_z = np.linspace(dem_min, dem_max, ray_steps)
-            ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z)
+            ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
             # find the dem pixel coords, and validity mask for the (x, y) points in ray_xyz
             dem_ji = np.round(~dem_transform * ray_xyz[:2, :]).astype('int')
@@ -530,7 +531,7 @@ class Ortho:
         # get dem array covering ortho extents in ortho CRS and resolution
         # TODO open source once and pass dataset to _reproject_dem, _create_ortho_profile and _remap?
         dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
-        poly_xyz = self._get_ortho_poly(dem_array, dem_transform)
+        poly_xyz = self._get_ortho_poly(dem_array, dem_transform, full_remap)
         dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xyz[:2])
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
