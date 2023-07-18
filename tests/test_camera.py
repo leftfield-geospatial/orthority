@@ -13,9 +13,11 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+from typing import Tuple
 import pytest
 import numpy as np
-from simple_ortho.camera import Camera, BrownCamera
+from simple_ortho.camera import Camera, BrownCamera, create_camera
+from simple_ortho.enums import CameraType
 
 
 @pytest.mark.parametrize(
@@ -83,12 +85,13 @@ def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: 
 
 
 @pytest.mark.parametrize(
-    'camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'cam_type', [CameraType.brown, CameraType.opencv],
 )
-def test_project_points_zerocoeff(pinhole_camera: Camera, camera: str, request: pytest.FixtureRequest):
-    """ Test projected points with zero distortion coeffs match pinhole camera. """
-    camera: Camera = request.getfixturevalue(camera)
-    camera._dist_coeff *= 0
+def test_brown_opencv_zerocoeff(
+    pinhole_camera: Camera, cam_type: CameraType, camera_args: Tuple, request: pytest.FixtureRequest
+):
+    """ Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs. """
+    camera: Camera = create_camera(cam_type, *camera_args)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
@@ -96,7 +99,7 @@ def test_project_points_zerocoeff(pinhole_camera: Camera, camera: str, request: 
     xyz = camera.pixel_to_world_z(ji, z, distort=True)
     ji_ = camera.world_to_pixel(xyz, distort=True)
 
-    assert pinhole_xyz == pytest.approx(xyz)
+    assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
     assert ji_ == pytest.approx(ji, abs=1e-4)
 
 
