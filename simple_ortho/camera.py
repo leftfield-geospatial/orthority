@@ -82,7 +82,7 @@ class Camera:
 
         if len(im_size) != 2:
             raise ValueError('`im_size` should contain 2 values: (width, height).')
-        if sensor_size and len(sensor_size) != 2:
+        if sensor_size is not None and len(sensor_size) != 2:
             raise ValueError('`sensor_size` should contain 2 values: (width, height).')
         focal_len = np.array(focal_len)
         if focal_len.size > 2:
@@ -91,11 +91,11 @@ class Camera:
         im_size = np.array(im_size)
 
         # find the xy focal lengths in pixels
-        if not sensor_size:
+        if sensor_size is None:
             logger.warning(
                 '`sensor_size` not specified, assuming square pixels and `focal_len` normalised by sensor width.'
             )
-            sigma_xy = (focal_len * im_size[0]) * np.ones((1, 2))
+            sigma_xy = (focal_len * im_size[0]) * np.ones(2)
         else:
             sensor_size = np.array(sensor_size)
             sigma_xy = focal_len * im_size / sensor_size
@@ -116,7 +116,7 @@ class Camera:
         Create camera extrinsic parameters.
         """
         if len(position) != 3 or len(rotation) != 3:
-            raise ValueError('`position` and `rotation` should contain 3 values')
+            raise ValueError('`position` and `rotation` should contain 3 values.')
         T = np.array(position).reshape(-1, 1)
 
         omega, phi, kappa = rotation
@@ -219,7 +219,7 @@ class Camera:
         ji: ndarray
             Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         z: float, ndarray
-            Z altitude(s) to project to, as a single value, 1-by-N array, or 1-by-M array where ``ji`` is 2-by-1.
+            Z altitude(s) to project to, as a single value, or 1-by-N array where ``ji`` is 2-by-N or 2-by-1.
         distort : bool (optional)
             Whether to include the distortion model.
 
@@ -236,7 +236,7 @@ class Camera:
             isinstance(z, np.ndarray) and
             (z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1]))
         ):  # yapf: disable
-            raise ValueError(f'`z` should be single value, 1-by-N array, or 1-by-M array where `ji` is 2-by-1.')
+            raise ValueError(f'`z` should be single value or 1-by-N array where `ji` is 2-by-N or 2-by-1.')
 
         # transform pixel co-ordinates to camera co-ordinates
         xyz_ = self._pixel_to_camera(ji) if distort else PinholeCamera._pixel_to_camera(self, ji)
