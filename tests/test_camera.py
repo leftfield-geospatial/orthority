@@ -29,16 +29,16 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
-    xyz = camera.pixel_to_world_z(ji, z, distort=True)
-    ji_ = camera.world_to_pixel(xyz, distort=True)
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert xyz[2] == pytest.approx(z.squeeze())
     assert ji_ == pytest.approx(ji, abs=1e-4)
 
     # test for broadcast type ambiguities where number of pts == number of dimensions
     for sl in (slice(0, 2), slice(0, 3)):
-        assert xyz[:, sl] == pytest.approx(camera.pixel_to_world_z(ji[:, sl], z[sl], distort=True))
-        assert ji_[:, sl] == pytest.approx(camera.world_to_pixel(xyz[:, sl], distort=True))
+        assert xyz[:, sl] == pytest.approx(camera.pixel_to_world_z(ji[:, sl], z[sl]))
+        assert ji_[:, sl] == pytest.approx(camera.world_to_pixel(xyz[:, sl]))
 
 
 @pytest.mark.parametrize(
@@ -143,5 +143,8 @@ def test_pixel_to_world_z_error(pinhole_camera):
     assert '`ji`' in str(ex)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros(2))
+        pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
+
+    with pytest.raises(ValueError) as ex:
+        pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
     assert '`z`' in str(ex)

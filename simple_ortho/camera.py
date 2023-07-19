@@ -210,7 +210,7 @@ class Camera:
         ji = self._K.dot(xyz_ / xyz_[2, :])[:2, :]
         return ji
 
-    def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray], distort: bool = False) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray], distort: bool = True) -> np.ndarray:
         """
         Transform from 2D pixel to 3D world co-ordinates at a specified Z (altitude).
 
@@ -219,7 +219,7 @@ class Camera:
         ji: ndarray
             Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         z: float, ndarray
-            Z altitude(s) to project to, as a single value or 1-by-N array.
+            Z altitude(s) to project to, as a single value, 1-by-N array, or 1-by-M array where ``ji`` is 2-by-1.
         distort : bool (optional)
             Whether to include the distortion model.
 
@@ -232,8 +232,11 @@ class Camera:
         if not (ji.ndim == 2 and ji.shape[0] == 2):
             raise ValueError(f'`ji` should be a 2xN 2D array.')
 
-        if not (z.ndim == 1 and (z.shape[0] == 1 or z.shape[0] == ji.shape[1])):
-            raise ValueError(f'`z` should be a 1D array with one or N elements where N is the number of `ji` columns.')
+        if (
+            isinstance(z, np.ndarray) and
+            (z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1]))
+        ):  # yapf: disable
+            raise ValueError(f'`z` should be single value, 1-by-N array, or 1-by-M array where `ji` is 2-by-1.')
 
         # transform pixel co-ordinates to camera co-ordinates
         xyz_ = self._pixel_to_camera(ji) if distort else PinholeCamera._pixel_to_camera(self, ji)
