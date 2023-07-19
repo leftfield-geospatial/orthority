@@ -16,7 +16,7 @@
 from typing import Tuple
 import pytest
 import numpy as np
-from simple_ortho.camera import Camera, BrownCamera, create_camera
+from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, create_camera
 from simple_ortho.enums import CameraType
 
 
@@ -52,10 +52,11 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
         ('fisheye_camera', False),
     ]
 )  # yapf:disable
-def test_project_point(camera: str, distort: bool, request: pytest.FixtureRequest):
-    """ Test projection of single point between pixel & world coordinates. """
+def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest):
+    """ Test projection with different pixel & world coordinate dimensionality. """
     camera: Camera = request.getfixturevalue(camera)
 
+    # single point to single z
     ji = np.reshape(camera._im_size, (-1, 1)) / 2
     z = camera._T[2] * .5
     xyz = camera.pixel_to_world_z(ji, z, distort=distort)
@@ -64,6 +65,27 @@ def test_project_point(camera: str, distort: bool, request: pytest.FixtureReques
     assert xyz.shape == (3, 1)
     assert ji_.shape == (2, 1)
     assert xyz[2] == pytest.approx(z)
+    assert ji_ == pytest.approx(ji, abs=1e-4)
+
+    # single point to multiple z
+    z = camera._T[2] * np.linspace(0.1, 0.8, 10)
+    xyz = camera.pixel_to_world_z(ji, z, distort=distort)
+    ji_ = camera.world_to_pixel(xyz, distort=distort)
+
+    assert xyz.shape == (3, z.shape[0])
+    assert ji_.shape == (2, z.shape[0])
+    assert xyz[2] == pytest.approx(z)
+    assert np.allclose(ji, ji_)
+
+    # multiple points to single z
+    ji = np.random.rand(2, 10) * np.reshape(camera._im_size, (-1, 1))
+    z = camera._T[2] * 0.5
+    xyz = camera.pixel_to_world_z(ji, z, distort=distort)
+    ji_ = camera.world_to_pixel(xyz, distort=distort)
+
+    assert xyz.shape == (3, ji.shape[1])
+    assert ji_.shape == ji.shape
+    assert np.allclose(xyz[2], z)
     assert ji_ == pytest.approx(ji, abs=1e-4)
 
 
@@ -148,3 +170,35 @@ def test_pixel_to_world_z_error(pinhole_camera):
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
     assert '`z`' in str(ex)
+
+
+def test_instrinsic_equivalence(
+    position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+):
+    """ Test intrinsic matrix validity for equivalent focal_len and sensor_size options. """
+    ref_camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+
+    # normalised focal length and no sensor size
+    test_camera = PinholeCamera(position, rotation, focal_len / sensor_size[0], im_size)
+    assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
+
+    # normalised focal length and sensor size
+    test_camera = PinholeCamera(
+        position, rotation, focal_len / sensor_size[0], im_size, np.array(sensor_size) / sensor_size[0]
+    )
+    assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
+
+    # normalised focal length (x, y) tuple and sensor size
+    test_camera = PinholeCamera(position, rotation, np.ones(2) * focal_len, im_size, sensor_size)
+    assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
+
+
+def test_instrinsic_nonsquare_pixels(
+    position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+):
+    """ Test intrinsic matrix validity for non-square pixels. """
+    sensor_size = np.array(sensor_size)
+    sensor_size[0] *= 2
+    camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+    assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
+

@@ -22,27 +22,32 @@ from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera
 
 @pytest.fixture
 def position() -> Tuple[float, float, float]:
-    return (363730.5706, 6243364.7372, 1108.8894)
+    """ Example camera (Easting, Northing, altitude) position (m). """
+    return (363646.4512, 6243245.1684, 1098.3802)
 
 
 @pytest.fixture
 def rotation() -> Tuple[float, float, float]:
-    return (-4.1245, 4.2025, -106.5994)
+    """ Example camera (omega, phi, kappa) rotation (degrees). """
+    return (-6.6512, -1.0879, -79.6693)
 
 
 @pytest.fixture
 def focal_len() -> float:
-    return 0.8790
+    """ Example camera focal length (mm). """
+    return 4.88
 
 
 @pytest.fixture
 def im_size() -> Tuple[int, int]:
-    return (640, 1152)
+    """ Example camera image size (pixels). """
+    return (4608, 3456)
 
 
 @pytest.fixture
 def sensor_size() -> Tuple[float, float]:
-    return (1, 0.75)
+    """ Example camera sensor size (mm). """
+    return (6.17471716, 4.63103787)
 
 
 @pytest.fixture
