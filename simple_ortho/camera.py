@@ -63,6 +63,7 @@ class Camera:
             focal_len, im_size, sensor_size
         )
         self._undistort_maps = None
+        self._dist_coeff = None
 
         config_dict = dict(focal_len=focal_len, im_size=im_size, sensor_size=sensor_size)
         logger.debug(f'Camera configuration: {config_dict}')

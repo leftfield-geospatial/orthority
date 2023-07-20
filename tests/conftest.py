@@ -72,7 +72,7 @@ def opencv_dist_coeff() -> Dict:
 @pytest.fixture
 def fisheye_dist_coeff() -> Dict:
     """ Example FisheyeCamera distortion coefficients. """
-    return dict(k1=-0.25, k2=0.1)
+    return dict(k1=-0.25, k2=0.1, k3=0.01, k4=-0.01)
 
 
 @pytest.fixture

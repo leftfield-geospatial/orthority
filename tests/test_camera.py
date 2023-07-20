@@ -18,9 +18,33 @@ from typing import Tuple, Dict
 import cv2
 import pytest
 import numpy as np
-from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, create_camera
+from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, FisheyeCamera, create_camera
 from simple_ortho.enums import CameraType, Interp
 from simple_ortho.utils import distort_image
+
+
+@pytest.mark.parametrize(
+    'cam_type, dist_coeff, exp_type', [
+        (CameraType.pinhole, None, PinholeCamera),
+        (CameraType.brown, 'brown_dist_coeff', BrownCamera),
+        (CameraType.opencv, 'opencv_dist_coeff', OpenCVCamera),
+        (CameraType.fisheye, 'fisheye_dist_coeff', FisheyeCamera),
+    ],
+)
+def test_create_camera(
+    cam_type: CameraType, dist_coeff: str, exp_type: type, position: Tuple, rotation: Tuple,
+    focal_len: float, im_size: Tuple, sensor_size: Tuple, request: pytest.FixtureRequest
+):
+    """ Test camera creation. """
+    dist_coeff: Dict = request.getfixturevalue(dist_coeff) if dist_coeff else {}
+
+    camera = create_camera(cam_type, position, rotation, focal_len, im_size, sensor_size=sensor_size, **dist_coeff)
+
+    assert isinstance(camera, exp_type)
+    assert np.all(camera._T.flatten() == position)
+    assert camera._K.diagonal()[:2] == pytest.approx(np.array(focal_len) * im_size / sensor_size, abs=1e-3)
+    if dist_coeff:
+        assert np.all(camera._dist_coeff == [*dist_coeff.values()])
 
 
 @pytest.mark.parametrize(
@@ -209,13 +233,13 @@ def test_instrinsic_nonsquare_pixels(
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
 )
 def test_undistort(camera: str, request: pytest.FixtureRequest):
-    """ Test camera undistortion method by comparing source & distorted-undistorted checkerboard images. """
+    """ Test undistort method by comparing source & distorted-undistorted checkerboard images. """
     nodata = 0
     interp = Interp.bilinear
     camera: Camera = request.getfixturevalue(camera)
 
     def checkerboard(shape, square=50):
-        """ Return a checkerboard image given an image shape and check size. """
+        """ Return a checkerboard image given an image shape and square size. """
         # from https://stackoverflow.com/questions/2169478/how-to-make-a-checkerboard-in-numpy
         coords = np.ogrid[0:shape[0], 0:shape[1]]
         idx = (coords[0] // square + coords[1] // square) % 2
@@ -232,7 +256,7 @@ def test_undistort(camera: str, request: pytest.FixtureRequest):
     # test similarity of source and distorted-undistorted images
     cc_dist = np.corrcoef(image.reshape(1, -1), dist_image.reshape(1, -1))
     cc = np.corrcoef(image.reshape(1, -1), undist_image.reshape(1, -1))
-
-    assert cc[0, 1] > cc_dist[0, 1]
+    assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
     assert cc[0, 1] > 0.95
+
 
