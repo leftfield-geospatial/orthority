@@ -161,12 +161,14 @@ class Camera:
         """
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
             raise ValueError(f'`xyz` should be a 3xN 2D array.')
+        if xyz.dtype != np.float64:
+            raise ValueError(f'`xyz` should have float64 data type.')
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """
         Transform 2D pixel to normalised 3D camera co-ordinates.
         """
-        ji_ = np.row_stack([ji, np.ones((1, ji.shape[1]))])
+        ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
         xyz_ = np.linalg.inv(self._K).dot(ji_)
         return xyz_
 
