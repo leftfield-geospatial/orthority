@@ -19,7 +19,10 @@ from typing import Tuple, Union
 import numpy as np
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
+import cv2
 
+from simple_ortho.camera import Camera
+from simple_ortho.enums import Interp
 
 @contextmanager
 def suppress_no_georef():
@@ -42,3 +45,27 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
 def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
     """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
     return (a == b) | (np.isnan(a) & np.isnan(b))
+
+
+def distort_image(camera: Camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
+    """ Return a distorted image given a camera model and source image. """
+
+    if not np.all(np.array(image.shape[::-1]) == camera._im_size):
+        raise ValueError('`image` shape should be the same as the `camera` image size.')
+
+    # create (j, i) pixel coords for distorted image
+    j_range = np.arange(0, camera._im_size[0])
+    i_range = np.arange(0, camera._im_size[1])
+    j_grid, i_grid = np.meshgrid(j_range, i_range, indexing='xy')
+    ji = np.row_stack((j_grid.reshape(1, -1), i_grid.reshape(1, -1)))
+
+    # find the corresponding undistorted/ source (j, i) pixel coords corresponding
+    camera_xyz = camera._pixel_to_camera(ji)
+    undist_ji = camera._K.dot(camera_xyz)[:2].astype('float32')
+
+    # remap the distorted image from the source image
+    dist_image = cv2.remap(
+        image, undist_ji[0].reshape(image.shape), undist_ji[1].reshape(image.shape), interp.to_cv(),
+        borderMode=cv2.BORDER_CONSTANT, borderValue=nodata,
+    )
+    return dist_image
