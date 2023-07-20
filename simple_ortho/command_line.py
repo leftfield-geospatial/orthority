@@ -70,9 +70,13 @@ def _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=None):
 
     # check files exist
     for src_im_file_spec in src_im_file:
-        src_im_file_path = pathlib.Path(src_im_file_spec)
-        if len(list(src_im_file_path.parent.glob(src_im_file_path.name))) == 0:
-            raise Exception(f'Could not find any source image(s) matching {src_im_file_spec}')
+            src_im_file_path = pathlib.Path(src_im_file_spec)
+            for src_im_filename in src_im_file_path.parent.glob(src_im_file_path.name):
+                srf = str(src_im_filename).split("/")[-1].upper()
+                srf = srf.split(".")[0]
+                pd_indexes = list(map(lambda a: a.upper(), list(cam_pos_orid.index)))
+                if srf not in pd_indexes:
+                    raise Exception(f'Could not find {src_im_filename.stem} in {pos_ori_file}')
 
     if not pathlib.Path(dem_file).exists():
         raise Exception(f'DEM file {dem_file} does not exist')
