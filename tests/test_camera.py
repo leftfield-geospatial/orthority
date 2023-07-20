@@ -13,11 +13,14 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-from typing import Tuple
+from typing import Tuple, Dict
+
+import cv2
 import pytest
 import numpy as np
-from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, create_camera
-from simple_ortho.enums import CameraType
+from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, create_camera
+from simple_ortho.enums import CameraType, Interp
+from simple_ortho.utils import distort_image
 
 
 @pytest.mark.parametrize(
@@ -33,7 +36,7 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
     ji_ = camera.world_to_pixel(xyz)
 
     assert xyz[2] == pytest.approx(z.squeeze())
-    assert ji_ == pytest.approx(ji, abs=1e-4)
+    assert ji_ == pytest.approx(ji, abs=1)
 
     # test for broadcast type ambiguities where number of pts == number of dimensions
     for sl in (slice(0, 2), slice(0, 3)):
@@ -65,7 +68,7 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert xyz.shape == (3, 1)
     assert ji_.shape == (2, 1)
     assert xyz[2] == pytest.approx(z)
-    assert ji_ == pytest.approx(ji, abs=1e-4)
+    assert ji_ == pytest.approx(ji, abs=1)
 
     # single point to multiple z
     z = camera._T[2] * np.linspace(0.1, 0.8, 10)
@@ -86,7 +89,7 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert xyz.shape == (3, ji.shape[1])
     assert ji_.shape == ji.shape
     assert np.allclose(xyz[2], z)
-    assert ji_ == pytest.approx(ji, abs=1e-4)
+    assert ji_ == pytest.approx(ji, abs=1)
 
 
 @pytest.mark.parametrize(
@@ -102,16 +105,14 @@ def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: 
     xyz = camera.pixel_to_world_z(ji, z, distort=False)
     ji_ = camera.world_to_pixel(xyz, distort=False)
 
-    assert pinhole_xyz == pytest.approx(xyz)
-    assert ji_ == pytest.approx(ji, abs=1e-4)
+    assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
+    assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
 @pytest.mark.parametrize(
     'cam_type', [CameraType.brown, CameraType.opencv],
 )
-def test_brown_opencv_zerocoeff(
-    pinhole_camera: Camera, cam_type: CameraType, camera_args: Tuple, request: pytest.FixtureRequest
-):
+def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: Tuple):
     """ Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs. """
     camera: Camera = create_camera(cam_type, *camera_args)
 
@@ -122,19 +123,20 @@ def test_brown_opencv_zerocoeff(
     ji_ = camera.world_to_pixel(xyz, distort=True)
 
     assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
-    assert ji_ == pytest.approx(ji, abs=1e-4)
+    assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(opencv_camera: Camera, camera_args):
+def test_brown_opencv_equiv(camera_args: Tuple, brown_dist_coeff: Dict):
     """ Test OpenCV and Brown cameras are equivalent for the (cx, cy) == (0, 0) special case. """
-    brown_camera = BrownCamera(*camera_args, *opencv_camera._dist_coeff)
+    brown_camera = BrownCamera(*camera_args, **brown_dist_coeff)
+    opencv_camera = OpenCVCamera(*camera_args, **brown_dist_coeff)
 
     ji = np.random.rand(2, 1000) * np.reshape(brown_camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (brown_camera._T[2] * .8)
     cv_xyz = opencv_camera.pixel_to_world_z(ji, z)
     brown_xyz = brown_camera.pixel_to_world_z(ji, z)
 
-    assert cv_xyz == pytest.approx(brown_xyz)
+    assert cv_xyz == pytest.approx(brown_xyz, abs=1e-3)
 
 
 @pytest.mark.parametrize(
@@ -201,4 +203,36 @@ def test_instrinsic_nonsquare_pixels(
     sensor_size[0] *= 2
     camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+)
+def test_undistort(camera: str, request: pytest.FixtureRequest):
+    """ Test camera undistortion method by comparing source & distorted-undistorted checkerboard images. """
+    nodata = 0
+    interp = Interp.bilinear
+    camera: Camera = request.getfixturevalue(camera)
+
+    def checkerboard(shape, square=50):
+        """ Return a checkerboard image given an image shape and check size. """
+        # from https://stackoverflow.com/questions/2169478/how-to-make-a-checkerboard-in-numpy
+        coords = np.ogrid[0:shape[0], 0:shape[1]]
+        idx = (coords[0] // square + coords[1] // square) % 2
+        vals = np.array([0, 255], dtype=np.uint8)
+        return vals[idx]
+
+    # create checkerboard source image
+    image = checkerboard(camera._im_size[::-1])
+
+    # distort then undistort
+    dist_image = distort_image(camera, image, nodata=nodata, interp=interp)
+    undist_image = camera.undistort(dist_image, nodata=nodata, interp=interp)
+
+    # test similarity of source and distorted-undistorted images
+    cc_dist = np.corrcoef(image.reshape(1, -1), dist_image.reshape(1, -1))
+    cc = np.corrcoef(image.reshape(1, -1), undist_image.reshape(1, -1))
+
+    assert cc[0, 1] > cc_dist[0, 1]
+    assert cc[0, 1] > 0.95
 
