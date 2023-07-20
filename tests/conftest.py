@@ -41,7 +41,7 @@ def focal_len() -> float:
 @pytest.fixture
 def im_size() -> Tuple[int, int]:
     """ Example camera image size (pixels). """
-    return (4608, 3456)
+    return (400, 300)   # (4608, 3456)
 
 
 @pytest.fixture
@@ -52,7 +52,27 @@ def sensor_size() -> Tuple[float, float]:
 
 @pytest.fixture
 def camera_args(position, rotation, focal_len, im_size, sensor_size) -> Tuple:
+    """ Example positional arguments for Camera.__init__(). """
     return (position, rotation, focal_len, im_size, sensor_size)
+
+
+@pytest.fixture
+def brown_dist_coeff() -> Dict:
+    """ Example BrownCamera distortion coefficients. """
+    # k1=-0.0093, k2=0.0075, p1=-0.0004, p2=-0.0004, k3=0.0079
+    return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=0.1)
+
+
+@pytest.fixture
+def opencv_dist_coeff() -> Dict:
+    """ Example OpenCVCamera distortion coefficients. """
+    return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=0.1, k4=-0.001, k5=0.001, k6=-0.001)
+
+
+@pytest.fixture
+def fisheye_dist_coeff() -> Dict:
+    """ Example FisheyeCamera distortion coefficients. """
+    return dict(k1=-0.25, k2=0.1)
 
 
 @pytest.fixture
@@ -62,19 +82,20 @@ def pinhole_camera(camera_args) -> Camera:
 
 
 @pytest.fixture
-def brown_camera(camera_args) -> Camera:
+def brown_camera(camera_args, brown_dist_coeff) -> Camera:
     """ Brown camera. """
-    return BrownCamera(*camera_args, k1=-0.0093, k2=0.0075, p1=-0.0004, p2=-0.0004, k3=0.0079, cx=-0.0049, cy=0.0011,)
+    # cx = -0.0049, cy = 0.0011,
+    return BrownCamera(*camera_args, **brown_dist_coeff, cx=-0.01, cy=0.02)
 
 
 @pytest.fixture
-def opencv_camera(camera_args) -> Camera:
+def opencv_camera(camera_args, opencv_dist_coeff) -> Camera:
     """ OpenCV camera. """
-    return OpenCVCamera(*camera_args, k1=-0.0093, k2=0.0075, p1=-0.0004, p2=-0.0004, k3=0.0079,)
+    return OpenCVCamera(*camera_args, **opencv_dist_coeff)
 
 
 @pytest.fixture
-def fisheye_camera(camera_args) -> Camera:
+def fisheye_camera(camera_args, fisheye_dist_coeff) -> Camera:
     """ Fisheye camera. """
-    return FisheyeCamera(*camera_args, k1=-0.0525, k2=-0.0098,)
+    return FisheyeCamera(*camera_args, **fisheye_dist_coeff)
 
