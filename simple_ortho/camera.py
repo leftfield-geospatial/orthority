@@ -359,8 +359,9 @@ class OpenCVCamera(Camera):
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        xyz_ = cv2.undistortPoints(ji.T.astype('float64'), self._K, self._dist_coeff)
-        xyz_ = np.row_stack([xyz_.squeeze(axis=1).T, np.ones((1, ji.shape[1]))])
+        ji_cv = ji.T.astype('float64', copy=False)
+        xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_coeff)
+        xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
@@ -368,7 +369,7 @@ class OpenCVCamera(Camera):
         if not distort:
             return PinholeCamera.world_to_pixel(self, xyz)
         ji, _ = cv2.projectPoints((xyz - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
-        ji = np.squeeze(ji, axis=1).T
+        ji = ji[:, 0, :].T
         return ji
 
 
@@ -453,8 +454,9 @@ class BrownCamera(OpenCVCamera):
         return Koff
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        xyz_ = cv2.undistortPoints(ji.T.astype('float64'), self._Koff, self._dist_coeff)
-        xyz_ = np.row_stack([xyz_.squeeze(axis=1).T, np.ones((1, ji.shape[1]))])
+        ji_cv = ji.T.astype('float64', copy=False)
+        xyz_ = cv2.undistortPoints(ji_cv, self._Koff, self._dist_coeff)
+        xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
@@ -540,16 +542,17 @@ class FisheyeCamera(Camera):
     def _create_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_coeff: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
-        # cv2.fisheye.initUndistortRectifyMap() requires default R & P (new camera matrix) params to be specified
+        # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires default R & P
+        # (new camera matrix) params to be specified
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
             K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
         )
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        ji_cv = ji.T.reshape(1, *ji.shape[::-1])  # np.expand_dims(ji.T, axis=0).astype('float64')
+        ji_cv = ji.T[None, :].astype('float64', copy=False)
         xyz_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_coeff, None, None)
-        xyz_ = np.row_stack([xyz_.squeeze(axis=0).T, np.ones((1, ji.shape[1]))])
+        xyz_ = np.row_stack([xyz_[0].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
