@@ -15,12 +15,12 @@
 """
 from typing import Tuple, Dict
 
-import cv2
 import pytest
 import numpy as np
 from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, FisheyeCamera, create_camera
 from simple_ortho.enums import CameraType, Interp
 from simple_ortho.utils import distort_image
+from tests.conftest import checkerboard
 
 
 @pytest.mark.parametrize(
@@ -31,14 +31,14 @@ from simple_ortho.utils import distort_image
         (CameraType.fisheye, 'fisheye_dist_coeff', FisheyeCamera),
     ],
 )
-def test_create_camera(
-    cam_type: CameraType, dist_coeff: str, exp_type: type, position: Tuple, rotation: Tuple,
+def test_init(
+    cam_type: CameraType, dist_coeff: str, exp_type: type, position: Tuple, nadir_rotation,
     focal_len: float, im_size: Tuple, sensor_size: Tuple, request: pytest.FixtureRequest
 ):
     """ Test camera creation. """
     dist_coeff: Dict = request.getfixturevalue(dist_coeff) if dist_coeff else {}
 
-    camera = create_camera(cam_type, position, rotation, focal_len, im_size, sensor_size=sensor_size, **dist_coeff)
+    camera = create_camera(cam_type, position, nadir_rotation, focal_len, im_size, sensor_size=sensor_size, **dist_coeff)
 
     assert isinstance(camera, exp_type)
     assert np.all(camera._T.flatten() == position)
@@ -48,7 +48,7 @@ def test_create_camera(
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera',]
+    'camera', ['nadir_pinhole_camera', 'nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera',]
 )
 def test_project_points(camera: str, request: pytest.FixtureRequest):
     """ Test projection of multiple points between pixel & world coordinates. """
@@ -70,13 +70,13 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
 
 @pytest.mark.parametrize(
     'camera, distort', [
-        ('pinhole_camera', True),
-        ('brown_camera', True),
-        ('brown_camera', False),
-        ('opencv_camera', True),
-        ('opencv_camera', False),
-        ('fisheye_camera', True),
-        ('fisheye_camera', False),
+        ('nadir_pinhole_camera', True),
+        ('nadir_brown_camera', True),
+        ('nadir_brown_camera', False),
+        ('nadir_opencv_camera', True),
+        ('nadir_opencv_camera', False),
+        ('nadir_fisheye_camera', True),
+        ('nadir_fisheye_camera', False),
     ]
 )  # yapf:disable
 def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest):
@@ -117,15 +117,15 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
 
 
 @pytest.mark.parametrize(
-    'camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera'],
 )
-def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: pytest.FixtureRequest):
+def test_project_points_nodistort(nadir_pinhole_camera, camera: str, request: pytest.FixtureRequest):
     """ Test projected points with distort==False match pinhole camera. """
     camera: Camera = request.getfixturevalue(camera)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
-    pinhole_xyz = pinhole_camera.pixel_to_world_z(ji, z)
+    pinhole_xyz = nadir_pinhole_camera.pixel_to_world_z(ji, z)
     xyz = camera.pixel_to_world_z(ji, z, distort=False)
     ji_ = camera.world_to_pixel(xyz, distort=False)
 
@@ -136,13 +136,13 @@ def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: 
 @pytest.mark.parametrize(
     'cam_type', [CameraType.brown, CameraType.opencv],
 )
-def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: Tuple):
+def test_brown_opencv_zerocoeff(nadir_pinhole_camera, cam_type: CameraType, nadir_camera_args):
     """ Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs. """
-    camera: Camera = create_camera(cam_type, *camera_args)
+    camera: Camera = create_camera(cam_type, *nadir_camera_args)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
-    pinhole_xyz = pinhole_camera.pixel_to_world_z(ji, z)
+    pinhole_xyz = nadir_pinhole_camera.pixel_to_world_z(ji, z)
     xyz = camera.pixel_to_world_z(ji, z, distort=True)
     ji_ = camera.world_to_pixel(xyz, distort=True)
 
@@ -150,10 +150,10 @@ def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, ca
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(camera_args: Tuple, brown_dist_coeff: Dict):
+def test_brown_opencv_equiv(nadir_camera_args, brown_dist_coeff: Dict):
     """ Test OpenCV and Brown cameras are equivalent for the (cx, cy) == (0, 0) special case. """
-    brown_camera = BrownCamera(*camera_args, **brown_dist_coeff)
-    opencv_camera = OpenCVCamera(*camera_args, **brown_dist_coeff)
+    brown_camera = BrownCamera(*nadir_camera_args, **brown_dist_coeff)
+    opencv_camera = OpenCVCamera(*nadir_camera_args, **brown_dist_coeff)
 
     ji = np.random.rand(2, 1000) * np.reshape(brown_camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (brown_camera._T[2] * .8)
@@ -164,7 +164,7 @@ def test_brown_opencv_equiv(camera_args: Tuple, brown_dist_coeff: Dict):
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera',]
+    'camera', ['nadir_pinhole_camera', 'nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera',]
 )
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """ Test world_to_pixel raises a ValueError with invalid coordinate shapes. """
@@ -179,72 +179,64 @@ def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     assert '`xyz`' in str(ex)
 
 
-def test_pixel_to_world_z_error(pinhole_camera):
+def test_pixel_to_world_z_error(nadir_pinhole_camera):
     """ Test pixel_to_world_z raises a ValueError with invalid coordinate shapes. """
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
+        nadir_pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
     assert '`ji`' in str(ex)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
+        nadir_pinhole_camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
     assert '`ji`' in str(ex)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
+        nadir_pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
+        nadir_pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
     assert '`z`' in str(ex)
 
 
 def test_instrinsic_equivalence(
-    position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+    position: Tuple, nadir_rotation, focal_len: float, im_size: Tuple, sensor_size: Tuple
 ):
     """ Test intrinsic matrix validity for equivalent focal_len and sensor_size options. """
-    ref_camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+    ref_camera = PinholeCamera(position, nadir_rotation, focal_len, im_size, sensor_size)
 
     # normalised focal length and no sensor size
-    test_camera = PinholeCamera(position, rotation, focal_len / sensor_size[0], im_size)
+    test_camera = PinholeCamera(position, nadir_rotation, focal_len / sensor_size[0], im_size)
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length and sensor size
     test_camera = PinholeCamera(
-        position, rotation, focal_len / sensor_size[0], im_size, np.array(sensor_size) / sensor_size[0]
+        position, nadir_rotation, focal_len / sensor_size[0], im_size, np.array(sensor_size) / sensor_size[0]
     )
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length (x, y) tuple and sensor size
-    test_camera = PinholeCamera(position, rotation, np.ones(2) * focal_len, im_size, sensor_size)
+    test_camera = PinholeCamera(position, nadir_rotation, np.ones(2) * focal_len, im_size, sensor_size)
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
 
 def test_instrinsic_nonsquare_pixels(
-    position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+    position: Tuple, nadir_rotation, focal_len: float, im_size: Tuple, sensor_size: Tuple
 ):
     """ Test intrinsic matrix validity for non-square pixels. """
     sensor_size = np.array(sensor_size)
     sensor_size[0] *= 2
-    camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+    camera = PinholeCamera(position, nadir_rotation, focal_len, im_size, sensor_size)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['nadir_pinhole_camera', 'nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera'],
 )
 def test_undistort(camera: str, request: pytest.FixtureRequest):
     """ Test undistort method by comparing source & distorted-undistorted checkerboard images. """
     nodata = 0
     interp = Interp.bilinear
     camera: Camera = request.getfixturevalue(camera)
-
-    def checkerboard(shape, square=50):
-        """ Return a checkerboard image given an image shape and square size. """
-        # from https://stackoverflow.com/questions/2169478/how-to-make-a-checkerboard-in-numpy
-        coords = np.ogrid[0:shape[0], 0:shape[1]]
-        idx = (coords[0] // square + coords[1] // square) % 2
-        vals = np.array([0, 255], dtype=np.uint8)
-        return vals[idx]
 
     # create checkerboard source image
     image = checkerboard(camera._im_size[::-1])
@@ -254,8 +246,10 @@ def test_undistort(camera: str, request: pytest.FixtureRequest):
     undist_image = camera.undistort(dist_image, nodata=nodata, interp=interp)
 
     # test similarity of source and distorted-undistorted images
-    cc_dist = np.corrcoef(image.reshape(1, -1), dist_image.reshape(1, -1))
-    cc = np.corrcoef(image.reshape(1, -1), undist_image.reshape(1, -1))
+    dist_mask = dist_image != nodata
+    cc_dist = np.corrcoef(image[dist_mask], dist_image[dist_mask])
+    undist_mask = undist_image != nodata
+    cc = np.corrcoef(image[undist_mask], undist_image[undist_mask])
     assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
     assert cc[0, 1] > 0.95
 
