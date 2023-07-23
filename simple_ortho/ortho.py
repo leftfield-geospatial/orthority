@@ -195,13 +195,19 @@ class Ortho:
         )
         return dem_array.squeeze(), dem_transform
 
-    def _get_ortho_poly(
-        self, dem_array: np.ndarray, dem_transform: rio.Affine, full_remap: bool, num_pts=400
-    ) -> np.ndarray:
+    def _mask_dem(
+        self, dem_array: np.ndarray, dem_transform: rio.Affine, full_remap: bool, num_pts: int = 400,
+        crop: bool = True, mask: bool = True
+    ) -> Tuple[np.ndarray, rio.Affine]:
         """
-        Return a polygon approximating the ortho boundaries in world (x, y) coordinates given a DEM array and
-        corresponding transform in the ortho CRS and resolution.
+        Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and corresponding
+        transform.
         """
+        # TODO: to exclude occluded areas, this should find the first/highest dem intersection, not the last/lowest
+        #  as it currently does.
+        # TODO: currently this requires the camera FOV to be below the horizon
+        if not crop and not mask:
+            return
         # pixel coordinates of source image borders
         n = int(num_pts / 4)
         im_br = self._camera._im_size - 1
@@ -214,37 +220,36 @@ class Ortho:
         # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in src_ji
         dem_min = np.nanmin(dem_array)
         dem_max = np.nanmax(dem_array)
+        max_ray_steps = np.sqrt(np.square(dem_array.shape).sum()).astype('int')
         poly_xyz = np.zeros((3, src_ji.shape[1]))
         for pi in range(src_ji.shape[1]):
             src_pt = src_ji[:, pi].reshape(-1, 1)
 
             # create world points along the src_pt ray with (x, y) stepsize <= dem resolution
-            # TODO: test if in the case of incorrect camera pos/ori/crs, it is necessary to include sanity checking on
-            #  ray_steps.  also think about resolution and size of dem.
             start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min, distort=full_remap)
             stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max, distort=full_remap)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
-            ray_steps = np.ceil(ray_steps.max()).astype('int') + 1
+            ray_steps = max(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
             ray_z = np.linspace(dem_min, dem_max, ray_steps)
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
             # find the dem pixel coords, and validity mask for the (x, y) points in ray_xyz
             dem_ji = np.round(~dem_transform * ray_xyz[:2, :]).astype('int')
-            mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T
-            mask = mask.all(axis=0)
+            valid_mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T
+            valid_mask = valid_mask.all(axis=0)
 
-            if not np.any(mask):
+            if not np.any(valid_mask):
                 # ray_xyz lies entirely outside the dem (x, y) bounds - store the dem_min point
                 poly_xyz[:, pi] = ray_xyz[:, 0]
             else:
                 # ray_xyz lies at least partially inside the dem (x, y) bounds, but may not have an intersection. Store
                 # its intersection with the dem if it exists, else store the dem_min point.
-                dem_ji = dem_ji[:, mask]
-                ray_z = ray_z[mask]
+                dem_ji = dem_ji[:, valid_mask]
+                ray_z = ray_z[valid_mask]
                 dem_z = dem_array[dem_ji[1], dem_ji[0]]
                 intersection_i = np.nonzero(ray_z >= dem_z)[0]
                 poly_xyz[:, pi] = (
-                    ray_xyz[:, mask][:, intersection_i[0] - 1]
+                    ray_xyz[:, valid_mask][:, intersection_i[0] - 1]
                     if len(intersection_i) > 0 and intersection_i[0] > 0 else
                     ray_xyz[:, 0]
                 )  # yapf: disable
@@ -259,27 +264,17 @@ class Ortho:
         elif np.any(poly_max > dem_bounds[-2:]) or np.any(poly_min < dem_bounds[:2]):
             logger.warning(f'Ortho bounds for {self._src_filename.name} are not fully covered by the DEM.')
 
-        # clip to dem bounds and return
-        poly_xy = np.clip(poly_xy.T, dem_bounds[:2], dem_bounds[-2:]).T
-        return poly_xy
-
-    def _poly_mask_dem(
-        self, dem_array: np.ndarray, dem_transform: rio.Affine, poly_xy: np.ndarray, crop=True, mask=True
-    ):
-        """
-        Return a cropped and masked DEM array and corresponding transform, given an array of polygon (x, y) world
-        coordinates to mask.
-        """
         if crop:
             # crop dem_array to poly_xy and find corresponding transform
             dem_cnr_ji = np.array([~dem_transform * poly_xy.min(axis=1), ~dem_transform * poly_xy.max(axis=1)]).T
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
             dem_br_ji = np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
             dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
-            dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
+            dem_transform = dem_transform * rio.Affine.translation(*np.max(np.vstack((dem_ul_ji, [0, 0])), axis=0))
 
         if mask:
             # mask the dem
+            # (poly_ji is intersected with dem_array bounds in cv2.fillPoly)
             poly_ji = np.round(~dem_transform * poly_xy).astype('int')
             mask = np.ones_like(dem_array, dtype='uint8')
             mask = cv2.fillPoly(mask, [poly_ji.T], color=0)
@@ -529,10 +524,8 @@ class Ortho:
             ortho_filename.unlink()
 
         # get dem array covering ortho extents in ortho CRS and resolution
-        # TODO open source once and pass dataset to _reproject_dem, _create_ortho_profile and _remap?
         dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
-        poly_xy = self._get_ortho_poly(dem_array, dem_transform, full_remap)
-        dem_array, dem_transform = self._poly_mask_dem(dem_array, dem_transform, poly_xy)
+        dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, full_remap=full_remap)
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
         with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
