@@ -44,11 +44,11 @@ class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_interp=Interp.cubic, dem_band=1, interp=Interp.bilinear, resolution=[0.5, 0.5], per_band=False,
-        build_ovw=True, overwrite=True, write_mask=False, full_remap=True,
+        build_ovw=True, overwrite=True, write_mask=False, full_remap=True, dtype=None, compress=Compress.auto
     )
     # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
-    # default ortho profile values for Ortho._create_ortho_profile()
-    _default_profile = dict(dtype=None, compress=Compress.auto, interleave=None, photometric=None,)
+    # default ortho (x, y) block size
+    _default_blocksize = (512, 512)
     # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
     egm96_min = -106.71
 
@@ -207,7 +207,7 @@ class Ortho:
         #  as it currently does.
         # TODO: currently this requires the camera FOV to be below the horizon
         if not crop and not mask:
-            return
+            return dem_array, dem_transform
         # pixel coordinates of source image borders
         n = int(num_pts / 4)
         im_br = self._camera._im_size - 1
@@ -268,9 +268,11 @@ class Ortho:
             # crop dem_array to poly_xy and find corresponding transform
             dem_cnr_ji = np.array([~dem_transform * poly_xy.min(axis=1), ~dem_transform * poly_xy.max(axis=1)]).T
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
+            dem_ul_ji = np.max(np.vstack((dem_ul_ji, [0, 0])), axis=0)
             dem_br_ji = np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
+            dem_br_ji = np.min(np.vstack((dem_br_ji, dem_array.shape[::-1])), axis=0)
             dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
-            dem_transform = dem_transform * rio.Affine.translation(*np.max(np.vstack((dem_ul_ji, [0, 0])), axis=0))
+            dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
 
         if mask:
             # mask the dem
@@ -283,8 +285,8 @@ class Ortho:
         return dem_array, dem_transform
 
     def _create_ortho_profile(
-        self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine, dtype: str = None,
-        compress: Compress = Compress.auto,
+        self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine,
+        dtype: str = _default_config['dtype'], compress: Compress = _default_config['compress'],
     ) -> Dict:
         """ Return a rasterio profile for the ortho image. """
         # Determine dtype, check dtype support and choose a nodata value.
@@ -313,8 +315,9 @@ class Ortho:
         # create ortho profile
         ortho_profile = dict(
             driver='GTiff', dtype=dtype, crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
-            count=src_im.count, tiled=True, blockxsize=512, blockysize=512, nodata=nodata, compress=compress.value,
-            interleave=interleave, photometric=photometric,
+            count=src_im.count, tiled=True, blockxsize=Ortho._default_blocksize[0],
+            blockysize=Ortho._default_blocksize[1], nodata=nodata, compress=compress.value, interleave=interleave,
+            photometric=photometric,
         )
 
         return ortho_profile
@@ -378,7 +381,7 @@ class Ortho:
         # remove cv2.remap blurring with nodata at the nodata boundary when necessary
         if (
             interp != Interp.nearest and not np.isnan(ortho_im.profile['nodata']) and
-            np.sum(tile_mask) > min(ortho_im.profile['blockxsize'], ortho_im.profile['blockysize'])
+            np.sum(tile_mask) > min(Ortho._default_blocksize[0], Ortho._default_blocksize[1])
         ):  # yapf: disable
             # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
             #  nodata=nan internally, then convert to config dtype and nodata on writing.
@@ -410,8 +413,8 @@ class Ortho:
         # imagery.  The smaller range z grid is stored in float32 to save memory.
         # j_range = np.arange(0, ortho_im.profile['width'])
         # i_range = np.arange(0, ortho_im.profile['height'])
-        j_range = np.arange(0, ortho_im.profile['blockxsize'])
-        i_range = np.arange(0, ortho_im.profile['blockysize'])
+        j_range = np.arange(0, Ortho._default_blocksize[0])
+        i_range = np.arange(0, Ortho._default_blocksize[1])
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         init_xgrid, init_ygrid = ortho_im.profile['transform'] * [init_jgrid, init_igrid]
 
@@ -423,8 +426,8 @@ class Ortho:
             index_list = [[*range(1, src_im.count + 1)]]
 
         ttl_blocks = (
-            np.ceil(ortho_im.profile['width'] / ortho_im.profile['blockxsize']) *
-            np.ceil(ortho_im.profile['height'] / ortho_im.profile['blockysize']) * len(index_list)
+            np.ceil(ortho_im.profile['width'] / Ortho._default_blocksize[0]) *
+            np.ceil(ortho_im.profile['height'] / Ortho._default_blocksize[1]) * len(index_list)
         )
 
         # TODO: add tests for different ortho dtype and nodata values
@@ -469,7 +472,7 @@ class Ortho:
         interp: Union[str, Interp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
         build_ovw: bool = _default_config['build_ovw'], overwrite: bool = _default_config['overwrite'],
         write_mask: bool = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'],
-        dtype: str = None, compress: Union[str, Compress] = Compress.auto
+        dtype: str = _default_config['dtype'], compress: Union[str, Compress] = _default_config['compress']
     ):  # yaml: disable
         """
         Orthorectify the source image based on the camera model and DEM.
