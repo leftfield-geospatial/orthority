@@ -136,9 +136,9 @@ def test_project_points_nodistort(nadir_pinhole_camera, camera: str, request: py
 @pytest.mark.parametrize(
     'cam_type', [CameraType.brown, CameraType.opencv],
 )
-def test_brown_opencv_zerocoeff(nadir_pinhole_camera, cam_type: CameraType, nadir_camera_args):
+def test_brown_opencv_zerocoeff(nadir_pinhole_camera, cam_type: CameraType, nadir_camera_args: Dict):
     """ Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs. """
-    camera: Camera = create_camera(cam_type, *nadir_camera_args)
+    camera: Camera = create_camera(cam_type, *nadir_camera_args.values())
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
@@ -150,10 +150,10 @@ def test_brown_opencv_zerocoeff(nadir_pinhole_camera, cam_type: CameraType, nadi
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(nadir_camera_args, brown_dist_coeff: Dict):
+def test_brown_opencv_equiv(nadir_camera_args: Dict, brown_dist_coeff: Dict):
     """ Test OpenCV and Brown cameras are equivalent for the (cx, cy) == (0, 0) special case. """
-    brown_camera = BrownCamera(*nadir_camera_args, **brown_dist_coeff)
-    opencv_camera = OpenCVCamera(*nadir_camera_args, **brown_dist_coeff)
+    brown_camera = BrownCamera(**nadir_camera_args, **brown_dist_coeff)
+    opencv_camera = OpenCVCamera(**nadir_camera_args, **brown_dist_coeff)
 
     ji = np.random.rand(2, 1000) * np.reshape(brown_camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (brown_camera._T[2] * .8)
@@ -179,9 +179,8 @@ def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     assert '`xyz`' in str(ex)
 
 
-def test_pixel_to_world_z_error(nadir_pinhole_camera):
+def test_pixel_to_world_z_error(nadir_pinhole_camera: Camera):
     """ Test pixel_to_world_z raises a ValueError with invalid coordinate shapes. """
-
     with pytest.raises(ValueError) as ex:
         nadir_pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
     assert '`ji`' in str(ex)
@@ -192,6 +191,7 @@ def test_pixel_to_world_z_error(nadir_pinhole_camera):
 
     with pytest.raises(ValueError) as ex:
         nadir_pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
+    assert '`z`' in str(ex)
 
     with pytest.raises(ValueError) as ex:
         nadir_pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
