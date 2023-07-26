@@ -79,6 +79,8 @@ class Ortho:
             raise FileNotFoundError(f'DEM image file {dem_filename} does not exist')
         if not isinstance(camera, Camera):
             raise TypeError('`camera` is not a Camera instance.')
+        if camera._horizon_fov():
+            raise ValueError('`camera` has a field of view that includes, or is above, the horizon.')
 
         # TODO: refactor so that the camera is guaranteed to be the correct one for src_filename (e.g. the camera has a
         #  src_filename property itself, and src_filename is not passed here?  also the separation of crs from camera
@@ -205,7 +207,6 @@ class Ortho:
         """
         # TODO: to exclude occluded areas, this should find the first/highest dem intersection, not the last/lowest
         #  as it currently does.
-        # TODO: currently this requires the camera FOV to be below the horizon
         if not crop and not mask:
             return dem_array, dem_transform
         # pixel coordinates of source image borders
@@ -217,19 +218,26 @@ class Ortho:
              np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],)
         )  # yapf: disable
 
-        # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in src_ji
+        # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
-        dem_max = np.nanmax(dem_array)
-        max_ray_steps = np.sqrt(np.square(dem_array.shape).sum()).astype('int')
+        if dem_min <= self._camera._T[2]:
+            raise ValueError('The DEM is higher than the camera.')
+        # limit dem_max to camera height so that rays go forwards only
+        dem_max = max(np.nanmax(dem_array), self._camera._T[2])
+        # heuristic limit on ray length to conserve memory
+        max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape).sum()).astype('int')
         poly_xyz = np.zeros((3, src_ji.shape[1]))
+
+        # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in src_ji
         for pi in range(src_ji.shape[1]):
             src_pt = src_ji[:, pi].reshape(-1, 1)
 
-            # create world points along the src_pt ray with (x, y) stepsize <= dem resolution
+            # create world points along the src_pt ray with (x, y) stepsize <= dem resolution, if num points <=
+            # max_ray_steps, else max_ray_steps points
             start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min, distort=full_remap)
             stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max, distort=full_remap)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
-            ray_steps = max(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
+            ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
             ray_z = np.linspace(dem_min, dem_max, ray_steps)
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
@@ -269,7 +277,7 @@ class Ortho:
             dem_cnr_ji = np.array([~dem_transform * poly_xy.min(axis=1), ~dem_transform * poly_xy.max(axis=1)]).T
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
             dem_ul_ji = np.max(np.vstack((dem_ul_ji, [0, 0])), axis=0)
-            dem_br_ji = np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
+            dem_br_ji = 1 + np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
             dem_br_ji = np.min(np.vstack((dem_br_ji, dem_array.shape[::-1])), axis=0)
             dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
             dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
@@ -286,7 +294,7 @@ class Ortho:
 
     def _create_ortho_profile(
         self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine,
-        dtype: str = _default_config['dtype'], compress: Compress = _default_config['compress'],
+        dtype: Union[str, None] = _default_config['dtype'], compress: Compress = _default_config['compress'],
     ) -> Dict:
         """ Return a rasterio profile for the ortho image. """
         # Determine dtype, check dtype support and choose a nodata value.
