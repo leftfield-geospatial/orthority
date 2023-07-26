@@ -165,6 +165,14 @@ class Camera:
         if xyz.dtype != np.float64:
             raise ValueError(f'`xyz` should have float64 data type.')
 
+    def _horizon_fov(self) -> bool:
+        """ Whether this camera's field of view includes, or is above, the horizon. """
+        # corner pixel coordinates of source image
+        src_ji = np.array([[0, 0], [self._im_size[0], 0], self._im_size, [0, self._im_size[1]]]).T
+        xyz_ = self._pixel_to_camera(src_ji)
+        xyz_r = self._R.dot(xyz_)
+        return np.any(xyz_r[2] >= 0)
+
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """
         Transform 2D pixel to normalised 3D camera co-ordinates.
