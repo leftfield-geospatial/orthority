@@ -220,10 +220,10 @@ class Ortho:
 
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
-        if dem_min <= self._camera._T[2]:
+        if dem_min > self._camera._T[2]:
             raise ValueError('The DEM is higher than the camera.')
         # limit dem_max to camera height so that rays go forwards only
-        dem_max = max(np.nanmax(dem_array), self._camera._T[2])
+        dem_max = min(np.nanmax(dem_array), self._camera._T[2, 0])
         # heuristic limit on ray length to conserve memory
         max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape).sum()).astype('int')
         poly_xyz = np.zeros((3, src_ji.shape[1]))
