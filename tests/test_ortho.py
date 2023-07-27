@@ -24,6 +24,7 @@ from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.features import shapes
 from rasterio.windows import from_bounds
+from rasterio.enums import MaskFlags
 
 from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, FisheyeCamera, create_camera
 from simple_ortho.enums import CameraType, Interp, Compress
@@ -64,6 +65,38 @@ def test_init_src_crs(src_file_rgb_byte_crs: Path, nadir_dem_30m_float_no_vdatum
     assert ortho._dem_transform is not None
 
 
+@pytest.mark.parametrize(
+    'dem_band', [1, 2],
+)
+def test_init_dem_band(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, dem_band: int
+):
+    """ Test Ortho initialisation with `dem_band` reads the correct DEM band. """
+    ortho = Ortho(
+        src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, crs=ortho_crs_no_vdatum,
+        dem_band=dem_band
+    )
+    with rio.open(nadir_dem_30m_float_no_vdatum, 'r') as dem_im:
+        dem_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
+        dem_win = dem_im.window(*dem_bounds)
+        dem_array = dem_im.read(indexes=dem_band, window=dem_win).astype('float32')
+    assert np.all(ortho._dem_array == dem_array)
+
+
+def test_init_dem_band_error(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str,
+):
+    """ Test Ortho initialisation with incorrect `dem_band` raises an error. """
+    with pytest.raises(ValueError) as ex:
+        Ortho(
+            src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, crs=ortho_crs_no_vdatum,
+            dem_band=3
+        )
+    assert 'dem_band' in str(ex)
+
+
 def test_init_nocrs_error(src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera):
     """ Test Ortho initialisation without a CRS raises an error. """
     with pytest.raises(ValueError) as ex:
@@ -81,8 +114,8 @@ def test_init_geogcrs_error(src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdat
 def test_init_dem_coverage_error(
     src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_camera_args: Dict, ortho_crs_no_vdatum: str
 ):
-    """ Test Ortho initialisation without DEM coverage raises an error. """
-    # create a camera positioned away from DEM bounds
+    """ Test Ortho initialisation without DEM any coverage raises an error. """
+    # create a camera positioned away from dem bounds
     camera = PinholeCamera(**nadir_camera_args)
     camera.update_extrinsic((0, 0, 0), (0, 0, 0))
 
@@ -95,7 +128,7 @@ def test_init_horizon_fov_error(
     src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_camera_args: Dict, ortho_crs_no_vdatum: str
 ):
     """ Test Ortho initialisation with a horizontal FOV camera raises an error. """
-    # create a camera pointing away from DEM bounds
+    # create a camera pointing away from dem bounds
     camera = PinholeCamera(**nadir_camera_args)
     camera.update_extrinsic((0, 0, 0), (np.pi/2, 0, 0))
 
@@ -332,7 +365,7 @@ def test_mask_dem_crop(
 def test_mask_dem_coverage_error(
     src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_camera_args: Dict, ortho_crs_no_vdatum: str
 ):
-    """ Test _mask_dem() without DEM coverage raises an error. """
+    """ Test DEM masking without any DEM coverage raises an error. """
     camera: Camera = PinholeCamera(**nadir_camera_args)
 
     # init & reproject with coverage
@@ -351,7 +384,7 @@ def test_mask_dem_coverage_error(
 def test_mask_dem_above_camera_error(
     src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_camera_args: Dict, ortho_crs_no_vdatum: str
 ):
-    """ Test _mask_dem() raises an error when the DEM is higher the camera. """
+    """ Test DEM masking raises an error when the DEM is higher the camera. """
     camera: Camera = PinholeCamera(**nadir_camera_args)
 
     # move the camera below the DEM
@@ -370,27 +403,302 @@ def test_mask_dem_above_camera_error(
 
 
 @pytest.mark.parametrize(
-    'camera, src_file, dem_file', [
-        ('nadir_pinhole_camera', 'src_file_rgb_byte', 'nadir_dem_30m_float_no_vdatum'),
-        ('oblique_pinhole_camera', 'src_file_rgb_byte', 'oblique_dem_30m_float_no_vdatum'),
-        ('nadir_opencv_camera', 'src_file_rgb_byte', 'nadir_dem_30m_float_no_vdatum'),
-        ('oblique_opencv_camera', 'src_file_rgb_byte', 'oblique_dem_30m_float_no_vdatum'),
-        ('nadir_brown_camera', 'src_file_rgb_byte', 'nadir_dem_30m_float_no_vdatum'),
-        ('oblique_brown_camera', 'src_file_rgb_byte', 'oblique_dem_30m_float_no_vdatum'),
-        ('nadir_fisheye_camera', 'src_file_rgb_byte', 'nadir_dem_30m_float_no_vdatum'),
-        # ('oblique_fisheye_camera', 'src_file_rgb_byte', 'oblique_dem_30m_float_no_vdatum'),
-    ],
-)
-def test_process(
-    camera: str, src_file: str, dem_file: str, ortho_crs_no_vdatum, tmp_path: Path, request: pytest.FixtureRequest
+    'src_file, compress', [
+        ('src_file_rgb_byte', Compress.auto),
+        ('src_file_rgb_byte', Compress.jpeg),
+        ('src_file_rgb_byte', Compress.deflate),
+        ('src_file_float', Compress.auto),
+        ('src_file_float', Compress.deflate),
+    ]
+)  # yapf: disable
+def test_process_compress(
+    src_file: str, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera, ortho_crs_no_vdatum: str,
+    compress: Compress, tmp_path: Path, request: pytest.FixtureRequest
 ):
-    camera: Camera = request.getfixturevalue(camera)
+    """ Test the ortho compression, interleaving and photometric interpretation are set correctly. """
     src_file: Path = request.getfixturevalue(src_file)
-    dem_file: Path = request.getfixturevalue(dem_file)
-
-    ortho = Ortho(src_file, dem_file, camera, ortho_crs_no_vdatum, dem_band=1)
+    ortho = Ortho(src_file, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_file, (2, 2), write_mask=True)
+    ortho.process(ortho_file, (30, 30), compress=compress)
 
     assert ortho_file.exists()
+    with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        if compress == Compress.auto:
+            compress = Compress.jpeg if src_im.dtypes[0] == 'uint8' else compress.deflate
+        interleave, photometric = (
+            ('pixel', 'ycbcr') if compress == Compress.jpeg and src_im.count == 3 else ('band', 'minisblack')
+        )
+        assert ortho_im.profile['compress'] == compress.name
+        assert ortho_im.profile['interleave'] == interleave
+        if 'photometric' in ortho_im.profile:
+            assert ortho_im.profile['photometric'] == photometric
 
+
+def test_process_compress_jpeg_error(
+    src_file_float: str, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera, ortho_crs_no_vdatum: str,
+    tmp_path: Path,
+):
+    """ Test that jpeg compresssion raises an error when the source image dtype is not uint8. """
+    ortho = Ortho(src_file_float, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum, dem_band=1)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+
+    with pytest.raises(ValueError) as ex:
+        ortho.process(ortho_file, (5, 5), compress=Compress.jpeg)
+    assert 'uint8' in str(ex)
+
+
+@pytest.mark.parametrize(
+    'src_file, dtype', [
+        ('src_file_rgb_byte', None),
+        ('src_file_float', None),
+        # all opencv supported dtypes
+        ('src_file_rgb_byte', 'uint8'),
+        ('src_file_rgb_byte', 'uint16'),
+        ('src_file_rgb_byte', 'int16'),
+        ('src_file_rgb_byte', 'float32'),
+        ('src_file_rgb_byte', 'float64'),
+    ]
+)  # yapf: disable
+def test_process_dtype(
+    src_file: str, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera, ortho_crs_no_vdatum: str,
+    dtype: str, tmp_path: Path, request: pytest.FixtureRequest,
+):
+    """ Test the ortho `dtype` is set correctly. """
+    src_file: Path = request.getfixturevalue(src_file)
+    ortho = Ortho(src_file, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum, dem_band=1)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, (30, 30), dtype=dtype)
+
+    assert ortho_file.exists()
+    with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        dtype = src_im.profile['dtype'] if dtype is None else dtype
+        assert ortho_im.profile['dtype'] == dtype
+
+
+@pytest.mark.parametrize(
+    'dtype', ['int8', 'uint32', 'int32', 'uint64', 'int64']
+)
+def test_process_dtype_error(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, dtype: str, tmp_path: Path,
+):
+    """ Test unsupported dtypes raise an error. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+
+    with pytest.raises(ValueError) as ex:
+        ortho.process(ortho_file, (30, 30), dtype=dtype)
+    assert dtype in str(ex)
+
+
+@pytest.mark.parametrize(
+    'resolution', [(30., 30.), (60., 60.), (60., 30.)]
+)
+def test_process_resolution(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, resolution: Tuple, tmp_path: Path,
+):
+    """ Test ortho `resolution` is set correctly. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, resolution)
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.res == resolution
+
+
+@pytest.mark.parametrize(
+    'src_file, write_mask, per_band', [
+        ('src_file_rgb_byte', True, True),
+        ('src_file_rgb_byte', False, True),
+        ('src_file_rgb_byte', True, False),
+        ('src_file_rgb_byte', False, False),
+        ('src_file_float', True, False),
+        ('src_file_float', False, False),
+    ]
+)  # yapf: disable
+def test_process_write_mask(
+    src_file: str, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera, ortho_crs_no_vdatum: str,
+    write_mask: bool, per_band: bool, tmp_path: Path, request: pytest.FixtureRequest,
+):
+    """ Test ``write_mask=True`` with ``per_band=True/False`` writes an internal mask to ortho file. """
+    src_file: Path = request.getfixturevalue(src_file)
+    ortho = Ortho(src_file, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, (30, 30), write_mask=write_mask, per_band=per_band)
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
+        assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
+
+
+@pytest.mark.parametrize(
+    # all opencv supported dtypes
+    'dtype', ['uint8', 'uint16', 'int16', 'float32', 'float64'],
+)
+def test_process_nodata(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, dtype: str, tmp_path: Path,
+):
+    """ Test the ortho `nodata` is set correctly. """
+    nodata_vals = dict(uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'))
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, (30, 30), dtype=dtype)
+
+    assert ortho_file.exists()
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.profile['dtype'] in nodata_vals
+        assert nan_equals(ortho_im.profile['nodata'], nodata_vals[ortho_im.profile['dtype']])
+
+
+@pytest.mark.parametrize(
+    'interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos],
+)
+def test_process_interp(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, interp: Interp, tmp_path: Path,
+):
+    """ Test the process `interp` setting by comparing with an ``interp='nearest'`` reference ortho. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    resolution = (30, 30)
+
+    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+    ortho.process(ortho_ref_file, resolution, interp=Interp.nearest, compress=Compress.deflate)
+
+    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_test_file, resolution, interp=interp, compress=Compress.deflate)
+
+    assert ortho_ref_file.exists() and ortho_test_file.exists()
+    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+        ref_array = ref_im.read(masked=True)
+        test_array = test_im.read(masked=True)
+        assert test_array.shape == ref_array.shape
+        assert (test_array.mean() > 1) and (test_array.mean() < 255)
+        assert test_array.mean() != ref_array.mean()
+        assert test_array.mean() == pytest.approx(ref_array.mean(), 10)
+
+
+@pytest.mark.parametrize(
+    'camera', ['nadir_pinhole_camera', 'nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera']
+)  # yapf: disable
+def test_process_remap(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, camera: str,
+    ortho_crs_no_vdatum: str, tmp_path: Path, request: pytest.FixtureRequest
+):
+    """ Test ortho equivalence for full_remap=True/False. """
+    camera: Camera = request.getfixturevalue(camera)
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, camera, ortho_crs_no_vdatum)
+    resolution = (5, 5)
+
+    # create a ref (full_remap=True) and test (full_remap=False) ortho for this camera
+    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+    ortho.process(ortho_ref_file, resolution, full_remap=True, compress=Compress.deflate)
+
+    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_test_file, resolution, full_remap=False, compress=Compress.deflate)
+
+    # compare valid portions of ref and test orthos
+    assert ortho_ref_file.exists() and ortho_test_file.exists()
+    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+        ref_win = ref_im.window(*test_im.bounds)
+        ref_array = ref_im.read(window=ref_win)
+        ref_mask = ref_im.dataset_mask(window=ref_win).astype('bool')
+        test_array = test_im.read()
+        test_mask = test_im.dataset_mask().astype('bool')
+        assert test_array.shape == ref_array.shape
+
+        mask = ref_mask & test_mask
+        cc = np.corrcoef(ref_array[:, mask].flatten(), test_array[:, mask].flatten())
+        assert cc[0, 1] > 0.99
+
+
+def test_process_per_band(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, tmp_path: Path,
+):
+    """ Test ortho equivalence for pre_band=True/False. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    resolution = (5, 5)
+
+    # create a ref (per_band=True) and test (per_band=False) ortho
+    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+    ortho.process(ortho_ref_file, resolution, per_band=True, compress=Compress.deflate)
+
+    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_test_file, resolution, per_band=False, compress=Compress.deflate)
+
+    # compare ref and test orthos
+    assert ortho_ref_file.exists() and ortho_test_file.exists()
+    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+        ref_array = ref_im.read()
+        test_array = test_im.read()
+
+        assert test_array.shape == ref_array.shape
+        assert np.all(test_array == ref_array)
+
+
+def test_process_overwrite(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, tmp_path: Path,
+):
+    """ Test overwriting an existing file with ``overwrite=True``. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho_file.touch()
+    ortho.process(ortho_file, (30, 30), overwrite=True)
+    assert ortho_file.exists()
+
+
+def test_process_overwrite_error(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, nadir_pinhole_camera: Camera,
+    ortho_crs_no_vdatum: str, tmp_path: Path,
+):
+    """ Test overwriting an existing file raises an error with ``overwrite=False``. """
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, nadir_pinhole_camera, ortho_crs_no_vdatum)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho_file.touch()
+    with pytest.raises(FileExistsError) as ex:
+        ortho.process(ortho_file, (30, 30), overwrite=False)
+    assert ortho_file.name in str(ex)
+
+
+@pytest.mark.parametrize(
+    'camera', ['nadir_pinhole_camera', 'nadir_brown_camera', 'nadir_opencv_camera', 'nadir_fisheye_camera']
+)  # yapf: disable
+def test_process(
+    src_file_rgb_byte: Path, nadir_dem_30m_float_no_vdatum: Path, camera: str,
+    ortho_crs_no_vdatum: str, tmp_path: Path, request: pytest.FixtureRequest
+):
+    """ Test ortho image format and content for different cameras. """
+    # create Ortho object and process, using the planar DEM band
+    camera: Camera = request.getfixturevalue(camera)
+    ortho = Ortho(src_file_rgb_byte, nadir_dem_30m_float_no_vdatum, camera, ortho_crs_no_vdatum, dem_band=2)
+    resolution = (5, 5)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, resolution, full_remap=True, compress=Compress.deflate, interp=Interp.nearest)
+    dem_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
+    assert ortho_file.exists()
+
+    with rio.open(src_file_rgb_byte, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        # test ortho format
+        assert ortho_im.count == src_im.count
+        assert ortho_im.dtypes == src_im.dtypes
+        assert ortho_im.res == resolution
+        assert np.all(ortho_im.bounds[:2] >= dem_bounds[:2]) and np.all(ortho_im.bounds[-2:] <= dem_bounds[-2:])
+        assert ortho_im.profile['compress'] == 'deflate'
+        assert ortho_im.profile['interleave'] == 'band'
+
+        # test ortho content
+        src_array = src_im.read()
+        ortho_array = ortho_im.read()
+        ortho_mask = ortho_im.dataset_mask().astype('bool')
+        assert np.all(np.unique(src_array) == np.unique(ortho_array[:, ortho_mask]))
+        assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=10)
+        assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=10)
+
+
+# TODO: add overview test perhaps with integration, or other large image (could combine with block processing test)
+# TODO:  add test(s) for dem_band
