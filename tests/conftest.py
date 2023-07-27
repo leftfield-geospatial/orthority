@@ -64,9 +64,14 @@ def dem_params(
     transform = from_origin(bounds[0], bounds[3], *resolution)
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / resolution).astype('int')
     profile = dict(
-        crs=crs, transform=transform, dtype=dtype, width=size[0], height=size[1], count=1
+        crs=crs, transform=transform, dtype=dtype, width=size[0], height=size[1], count=2
     )
-    array = sinusoidal(size[::-1]).astype(dtype) * 250 + camera._T[2] - 200
+    array = np.stack((
+            sinusoidal(size[::-1]) * 250 + camera._T[2] - 200,
+            np.ones(size[::-1]) * (250 / 2) + camera._T[2] - 200,
+        ), axis=0
+    ).astype(dtype)  # yapf: disable
+
     return profile, array
 
 
@@ -228,13 +233,29 @@ def src_file_rgb_byte(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> 
 
 
 @pytest.fixture(scope='session')
+def src_file_rgb_float(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
+    """ An RGB float32 source file with no CRS. """
+    profile = dict(
+        crs=None, transform=None, dtype='float32', width=im_size[0], height=im_size[1], count=3,
+    )
+    src_filename = Path(tmpdir_factory.mktemp('data').join('src-rgb-byte.tif'))
+    src_array = checkerboard(im_size[::-1])
+    src_array = np.stack((src_array,) * profile['count'], axis=0)
+
+    with rio.open(src_filename, 'w', **profile) as src_im:
+        src_im.write(src_array)
+    return src_filename
+
+
+@pytest.fixture(scope='session')
 def src_file_float(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
-    """ A single band float source file with no CRS. """
+    """ A single band float64 source file with no CRS. """
     profile = dict(
         crs=None, transform=None, dtype='float64', width=im_size[0], height=im_size[1], count=1,
     )
     src_filename = Path(tmpdir_factory.mktemp('data').join('src-1band-float.tif'))
     src_array = checkerboard(im_size[::-1], vals=np.array([0, 1], dtype=profile['dtype']))
+    src_array = np.stack((src_array,) * profile['count'], axis=0)
 
     with rio.open(src_filename, 'w', **profile) as src_im:
         src_im.write(src_array)
@@ -274,7 +295,7 @@ def nadir_dem_30m_float_no_vdatum(
     filename = Path(tmpdir_factory.mktemp('data').join('nadir-dem-float-no_vdatum.tif'))
 
     with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array, 1)
+        dem_im.write(array)
     return filename
 
 
@@ -287,7 +308,7 @@ def nadir_dem_30m_float_wgs84_vdatum(
     filename = Path(tmpdir_factory.mktemp('data').join('nadir-dem-float-wgs84_vdatum.tif'))
 
     with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array, 1)
+        dem_im.write(array)
     return filename
 
 
@@ -300,7 +321,7 @@ def nadir_dem_30m_float_egm96_vdatum(
     filename = Path(tmpdir_factory.mktemp('data').join('nadir-dem-float-egm96_vdatum.tif'))
 
     with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array, 1)
+        dem_im.write(array)
     return filename
 
 
@@ -315,7 +336,7 @@ def oblique_dem_30m_float_no_vdatum(
     filename = Path(tmpdir_factory.mktemp('data').join('oblique-dem-float-no_vdatum.tif'))
 
     with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array, 1)
+        dem_im.write(array)
     return filename
 
 
@@ -328,7 +349,7 @@ def nadir_dem_30m_uint16_no_vdatum(
     filename = Path(tmpdir_factory.mktemp('data').join('nadir-dem-float-no_vdatum.tif'))
 
     with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array, 1)
+        dem_im.write(array)
     return filename
 
 
@@ -340,6 +361,9 @@ def nadir_dem_30m_float_wgs84_wgs84_vdatum(
     dtype = 'float32'
     dem_crs = rio.CRS.from_string('EPSG:4326+4326')
     bounds = np.array(ortho_bounds(nadir_pinhole_camera))
+    # TODO: the EPSG:<horiz>+<vert> format is not supported in rio 1.3.3, gdal 3.5.3, proj 9.1.0, but is supported
+    #  in rio 1.3.6, gdal 3.6.2, proj 9.1.1.  The exact version where support begins (proj=9.1.1?) should be set in
+    #  setup.py
     wgs84_bounds = transform_bounds(rio.CRS.from_string(ortho_crs_wgs84_vdatum), dem_crs, *bounds)
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / (30, 30)).astype('int')
     transform = from_bounds(*wgs84_bounds, *size)

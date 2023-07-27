@@ -26,6 +26,7 @@ from simple_ortho.exif import Exif
 # TODO: standardise OPK/rotation naming & units here and in camera.py.  also standardise docs here and in
 #  odm_to_simple_ortho.py
 
+
 def rpy_to_opk(rpy: Tuple[float], lla: Tuple[float], crs: CRS, cbb: Union[None, List[List]] = None) -> Tuple[float]:
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles.
@@ -156,9 +157,9 @@ def parse_arguments():
 
 
 def main():
-    '''
+    """
     Convert EXIF GPS position and (roll, pitch, yaw) angles to simple-ortho compatible camera position and orientation.
-    '''
+    """
     args = parse_arguments()
 
     # check & prepare arguments
