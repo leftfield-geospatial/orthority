@@ -187,7 +187,7 @@ class Ortho:
         # return if dem in ortho crs and resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if self._crs_equal and np.all(resolution == np.round(dem_res, 3)):
-            return self._dem_array, self._dem_transform
+            return self._dem_array.copy(), self._dem_transform
 
         # reproject dem_array to ortho crs and resolution
         dem_array, dem_transform = reproject(
@@ -510,7 +510,7 @@ class Ortho:
             jpeg) compression.
         full_remap: bool, optional
             Remap the source to ortho image with full camera model (True), or remap the undistorted source to ortho
-            image with a pinhole camera model (False).  False is faster but creates a an with reduced extent and
+            image with a pinhole camera model (False).  False is faster but creates an ortho with reduced extent and
             quality.
         dtype: str, optional
             Ortho image data type (`uint8`, `uint16`, `float32` or `float64`).  If set to None, the source image

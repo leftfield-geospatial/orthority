@@ -171,7 +171,7 @@ class Camera:
         src_ji = np.array([[0, 0], [self._im_size[0], 0], self._im_size, [0, self._im_size[1]]]).T
         xyz_ = self._pixel_to_camera(src_ji)
 
-        # rotate camera to world coords & test if any z vals are above the camera / origin
+        # rotate camera to world alignment & test if any z vals are above the camera / origin
         xyz_r = self._R.dot(xyz_)
         return np.any(xyz_r[2] >= 0)
 
