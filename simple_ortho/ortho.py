@@ -26,9 +26,10 @@ from pathlib import Path
 from typing import Tuple, Union, Dict, List
 
 import cv2
+from tqdm.auto import tqdm
 import numpy as np
 import rasterio as rio
-from rasterio.warp import reproject, transform_bounds, Resampling
+from rasterio.warp import reproject, transform_bounds, Resampling, calculate_default_transform
 from rasterio.windows import Window
 
 from simple_ortho.camera import Camera
@@ -415,6 +416,7 @@ class Ortho:
         CRS and pixel grid, and configuration parameters.
         """
         block_count = 0
+        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
         # (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
@@ -438,7 +440,6 @@ class Ortho:
             np.ceil(ortho_im.profile['height'] / Ortho._default_blocksize[1]) * len(index_list)
         )
 
-        # TODO: add tests for different ortho dtype and nodata values
         # read, process and write bands, one row of indexes at a time
         for indexes in index_list:
             # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
@@ -461,17 +462,10 @@ class Ortho:
                     )
                     for ortho_win in ortho_wins
                 ]  # yapf: disable
-                for future in as_completed(futures):
+                for future in tqdm(
+                    as_completed(futures), bar_format=bar_format, total=len(futures), dynamic_ncols=True,
+                ):
                     future.result()
-
-                    # print progress
-                    block_count += 1
-                    progress = (block_count / ttl_blocks)
-                    sys.stdout.write('\r')
-                    sys.stdout.write("[%-50s] %d%%" % ('=' * int(50 * progress), 100 * progress))
-                    sys.stdout.flush()
-
-        sys.stdout.write('\n')
 
     # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
@@ -552,9 +546,11 @@ class Ortho:
                     write_mask=write_mask,
                 )
 
-                if build_ovw:
-                    # build overviews
-                    self._build_overviews(ortho_im)
+        if build_ovw:
+            # TODO: move this under the rio multithreaded environment for gdal>=3.8
+            # build overviews
+            with rio.open(ortho_filename, 'r+') as ortho_im:
+                self._build_overviews(ortho_im)
 
         if logger.getEffectiveLevel() <= logging.DEBUG:  # print profiling info
             proc_profile.disable()

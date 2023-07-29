@@ -668,6 +668,4 @@ def test_process(
 
 
 # TODO: dem reproject changes bounds with different v datum
-# TODO: tests to ensure ortho contains full ortho bounds e.g. dem mask *contains* ortho bounds
-
 ##

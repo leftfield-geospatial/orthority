@@ -127,11 +127,16 @@ class Exif:
     def __str__(self):
         lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._lla) if self._lla else 'None'
         rpy_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._rpy) if self._rpy else 'None'
-        return (
-            f'Image: {self._filename}\nCamera: {self._camera_name}\nImage size: {self.image_size}\n'
-            f'Focal length: {self._focal}\nFocal length (35mm): {self._focal_35}\nSensor size: {self._sensor_size}'
-            f'\nLatitude, longitude, altitude: {lla_str}\nRoll, pitch, yaw: {rpy_str}'
-        )
+        return (  # @formatter:off
+            f'Image: {self._filename}'
+            f'\nCamera: {self._camera_name}'
+            f'\nImage size: {self.image_size}'
+            f'\nFocal length: {self._focal}'
+            f'\nFocal length (35mm): {self._focal_35}'
+            f'\nSensor size: {self._sensor_size}'
+            f'\nLatitude, longitude, altitude: {lla_str}'
+            f'\nRoll, pitch, yaw: {rpy_str}'
+        )  # yapf: disable  # @formatter:on
 
     @property
     def camera_name(self) -> Union[None, str]:
