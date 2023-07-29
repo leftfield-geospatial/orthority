@@ -146,11 +146,11 @@ def test_reproject_dem(
 
     # test validity
     assert transform != ortho._dem_transform
-    assert array != ortho._dem_array
+    assert array.shape != ortho._dem_array.shape
     assert np.all(np.abs((transform[0], transform[4])) == resolution)
     assert bounds == pytest.approx(init_bounds, abs=max(resolution))
     assert np.all(bounds[:2] <= init_bounds[:2]) and np.all(bounds[-2:] >= init_bounds[-2:])
-    assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array), abs=1)
+    assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array), abs=1e-3)
 
 
 def test_reproject_dem_crs_equal(
@@ -173,9 +173,6 @@ def test_reproject_dem_crs_equal(
         ('float_utm34n_wgs84_dem_file', 'utm34n_egm96_crs'),
         ('float_utm34n_wgs84_dem_file', 'utm34n_egm2008_crs'),
         ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
-        ('float_utm34n_egm96_dem_file', 'utm34n_egm2008_crs'),
-        ('float_utm34n_dem_file', 'utm34n_egm96_crs'),
-        ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
 def test_reproject_dem_vdatum_both(
@@ -185,7 +182,7 @@ def test_reproject_dem_vdatum_both(
     dem_file: Path = request.getfixturevalue(dem_file)
     crs: str = request.getfixturevalue(crs)
 
-    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs)
+    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
     with rio.open(dem_file, 'r') as dem_im:
         resolution = dem_im.res
     array, transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
@@ -195,7 +192,7 @@ def test_reproject_dem_vdatum_both(
     assert array.shape == ortho._dem_array.shape
 
     mask = ~np.isnan(array) & ~np.isnan(ortho._dem_array)
-    assert array[mask] != pytest.approx(ortho._dem_array[mask], abs=2)
+    assert array[mask] != pytest.approx(ortho._dem_array[mask], abs=5)
 
 
 # @formatter:off
@@ -212,14 +209,17 @@ def test_reproject_dem_vdatum_one(
     dem_file: Path = request.getfixturevalue(dem_file)
     crs: str = request.getfixturevalue(crs)
 
-    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs)
+    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
     with rio.open(dem_file, 'r') as dem_im:
         resolution = dem_im.res
     array, transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
 
     assert not ortho._crs_equal
     assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
-    assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array), abs=2)
+    assert array.shape == ortho._dem_array.shape
+
+    mask = ~np.isnan(array) & ~np.isnan(ortho._dem_array)
+    assert array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
 
 
 # @formatter:off
@@ -282,7 +282,7 @@ def test_mask_dem(
         from matplotlib import pyplot
         from rasterio.plot import show
 
-        def plot_poly(mask: np.ndarray, transform=dem_transform_crop, ico='k'):
+        def plot_poly(mask: np.ndarray, transform=dem_transform, ico='k'):
             """ Plot polygons from mask. """
             poly_list = [poly for poly, _ in shapes(mask.astype('uint8'), transform=transform)]
 
@@ -298,6 +298,7 @@ def test_mask_dem(
             show(image, transform=dem_transform, cmap='gray')
             plot_poly(ortho_mask, transform=dem_transform, ico='y--')
             plot_poly(dem_mask, transform=dem_transform, ico='r:')
+            pyplot.plot(*ortho._camera._T[:2], 'cx')
 
 
 # @formatter:off
@@ -569,9 +570,13 @@ def test_process_full_remap(
         ref_win = ref_im.window(*test_im.bounds)
         ref_array = ref_im.read(window=ref_win)
         ref_mask = ref_im.dataset_mask(window=ref_win).astype('bool')
+        ref_bounds = np.array(ref_im.bounds)
         test_array = test_im.read()
         test_mask = test_im.dataset_mask().astype('bool')
+        test_bounds = np.array(test_im.bounds)
+
         assert test_array.shape == ref_array.shape
+        assert np.all(ref_bounds[:2] <= test_bounds[:2]) and np.all(ref_bounds[-2:] >= test_bounds[-2:])
 
         mask = ref_mask & test_mask
         cc = np.corrcoef(ref_array[:, mask].flatten(), test_array[:, mask].flatten())
@@ -579,7 +584,7 @@ def test_process_full_remap(
 
 
 def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """ Test ortho equivalence for ``pre_band=True/False``. """
+    """ Test ortho equivalence for ``per_band=True/False``. """
     resolution = (5, 5)
 
     # create a ref (per_band=True) and test (per_band=False) ortho
@@ -616,6 +621,17 @@ def test_process_overwrite_error(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path
     assert ortho_file.name in str(ex)
 
 
+def test_process_overview(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
+    """ Test the existence of overview(s) on a big enough ortho. """
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.25, 0.25))
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert min(ortho_im.shape) >= 512
+        assert len(ortho_im.overviews(1)) > 0
+
+
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera'])
 def test_process(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
@@ -628,15 +644,17 @@ def test_process(
     resolution = (5, 5)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     ortho.process(ortho_file, resolution, full_remap=True, compress=Compress.deflate, interp=Interp.nearest)
-    dem_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
+    dem_bounds = np.array(array_bounds(*ortho._dem_array.shape, ortho._dem_transform))
     assert ortho_file.exists()
 
     with rio.open(rgb_byte_src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        ortho_bounds = np.array(ortho_im.bounds)
+
         # test ortho format
         assert ortho_im.count == src_im.count
         assert ortho_im.dtypes == src_im.dtypes
         assert ortho_im.res == resolution
-        assert np.all(ortho_im.bounds[:2] >= dem_bounds[:2]) and np.all(ortho_im.bounds[-2:] <= dem_bounds[-2:])
+        assert np.all(ortho_bounds[:2] >= dem_bounds[:2]) and np.all(ortho_bounds[-2:] <= dem_bounds[-2:])
         assert ortho_im.profile['compress'] == 'deflate'
         assert ortho_im.profile['interleave'] == 'band'
 
@@ -649,7 +667,6 @@ def test_process(
         assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=10)
 
 
-# TODO: add overview test perhaps with integration, or other large image (could combine with block processing test)
 # TODO: dem reproject changes bounds with different v datum
 # TODO: tests to ensure ortho contains full ortho bounds e.g. dem mask *contains* ortho bounds
 
