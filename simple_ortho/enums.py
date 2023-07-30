@@ -47,6 +47,9 @@ class CameraType(str, Enum):
     of distortion coefficient estimates.
     """
 
+    def __str__(self):
+        return self._name_
+
 
 class Interp(str, Enum):
     """
@@ -66,6 +69,9 @@ class Interp(str, Enum):
     """ Lanczos windowed sinc interpolation. """
     nearest = 'nearest'
     """ Nearest neighbor interpolation. """
+
+    def __str__(self):
+        return self._name_
 
     @classmethod
     def cv_list(cls) -> List:
@@ -102,3 +108,6 @@ class Compress(str, Enum):
     """ Deflate (lossless) compression. """
     auto = 'auto'
     """ Use jpeg compression if possible, otherwise deflate. """
+
+    def __str__(self):
+        return self._name_
