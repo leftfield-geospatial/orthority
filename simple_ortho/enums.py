@@ -14,6 +14,7 @@
    limitations under the License.
 """
 
+from typing import List
 from enum import Enum
 from rasterio.enums import Resampling
 import cv2
@@ -66,6 +67,18 @@ class Interp(str, Enum):
     nearest = 'nearest'
     """ Nearest neighbor interpolation. """
 
+    @classmethod
+    def cv_list(cls) -> List:
+        """ A list of OpenCV compatible `Interp` values. """
+        _cv_list = []
+        for interp in list(cls):
+            try:
+                interp.to_cv()
+                _cv_list.append(interp)
+            except ValueError:
+                pass
+        return _cv_list
+
     def to_cv(self) -> int:
         """ Convert to OpenCV interpolation type. """
         name_to_cv = dict(
@@ -73,7 +86,7 @@ class Interp(str, Enum):
             nearest=cv2.INTER_NEAREST,
         )
         if self._name_ not in name_to_cv:
-            raise ValueError(f'OpenCV does not support `{self._name_}` interpolation')
+            raise ValueError(f'OpenCV does not support `{self._name_}` interpolation.')
         return name_to_cv[self._name_]
 
     def to_rio(self) -> Resampling:
