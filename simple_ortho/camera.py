@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class Camera:
-
+    # TODO: only pass intrinsic param on __init__, then extrinsic on update_extrinsic or similar (?)
     def __init__(
         self, position: Union[Tuple[float, float, float], np.ndarray],
         rotation: Union[Tuple[float, float, float], np.ndarray],

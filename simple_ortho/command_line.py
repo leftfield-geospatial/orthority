@@ -17,6 +17,7 @@
 import argparse
 import datetime
 import os
+import sys
 import pathlib
 import logging
 import csv
@@ -33,7 +34,9 @@ from simple_ortho.utils import suppress_no_georef
 # print formatting
 np.set_printoptions(precision=4)
 np.set_printoptions(suppress=True)
+logging.basicConfig(stream=sys.stdout, format='%(message)s')
 logger = logging.getLogger(__name__)
+
 
 
 # TODO: remove pandas dependency
@@ -156,7 +159,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
         # checks paths etc
         _check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
 
-        # read camera position and rotation and find row for src_im_file
+        # read camera position and rotation
         with open(pos_ori_file, 'r', newline='') as f:
             reader = csv.DictReader(
                 f, delimiter=' ', fieldnames=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
@@ -193,7 +196,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     camera.update_extrinsic(position, rotation)
 
                 # create Ortho  and orthorectify
-                logger.info(f'Orthorectifying {src_filename.name}')
+                logger.info(f'Orthorectifying {src_filename.name}:')
                 start_ttl = datetime.datetime.now()
                 ortho_im = Ortho(src_filename, dem_file, camera, crs=ortho_crs, dem_band=dem_band)
                 ortho_im.process(ortho_filename, **ortho_config)

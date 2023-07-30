@@ -19,8 +19,6 @@ import os
 import pathlib
 import sys
 
-logging.basicConfig(stream=sys.stdout, format='%(message)s')
-
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
