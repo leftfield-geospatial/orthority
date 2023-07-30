@@ -16,21 +16,20 @@
 
 import cProfile
 import logging
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import multiprocessing
 import pstats
-import sys
+import threading
 import tracemalloc
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Tuple, Union, Dict, List
 
 import cv2
-from tqdm.auto import tqdm
 import numpy as np
 import rasterio as rio
-from rasterio.warp import reproject, transform_bounds, Resampling, calculate_default_transform
+from rasterio.warp import reproject, transform_bounds, Resampling
 from rasterio.windows import Window
+from tqdm.auto import tqdm
 
 from simple_ortho.camera import Camera
 from simple_ortho.enums import Interp, Compress
@@ -44,14 +43,20 @@ logger = logging.getLogger(__name__)
 class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
-        dem_interp=Interp.cubic, dem_band=1, interp=Interp.bilinear, resolution=[0.5, 0.5], per_band=False,
-        build_ovw=True, overwrite=True, write_mask=False, full_remap=True, dtype=None, compress=Compress.auto
+        dem_interp=Interp.cubic_spline, dem_band=1, interp=Interp.bilinear, resolution=[0.5, 0.5], per_band=False,
+        build_ovw=True, overwrite=True, write_mask=None, full_remap=True, dtype=None, compress=Compress.auto
     )
-    # TODO: check that common source file properties for None profile defaults are compatible with other (set) defaults
+
     # default ortho (x, y) block size
     _default_blocksize = (512, 512)
+
     # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
-    egm96_min = -106.71
+    _egm96_min = -106.71
+
+    # nodata values for supported ortho data types
+    _nodata_vals = dict(
+        uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
+    )
 
     def __init__(
         self, src_filename: Union[str, Path], dem_filename: Union[str, Path], camera: Camera,
@@ -63,16 +68,16 @@ class Ortho:
         Parameters
         ----------
         src_filename: str, pathlib.Path
-            Path to a source image to be orthorectified.
+            Path/URL to a source image to be orthorectified.
         dem_filename: str, pathlib.Path
-            Path to a DEM image covering the source image.
+            Path/URL to a DEM image covering the source image.
         camera: Camera
             Source image camera model (see :meth:`~simple_ortho.camera.create_camera`).
         crs: str, rasterio.CRS, optional
             CRS of the ortho image and ``camera`` position as an EPSG, proj4 or WKT string.  It should be a projected,
             and not geographic CRS.  Can be omitted if the source image is projected in the ortho CRS.
         dem_band: int, optional
-            DEM image band index to use (1-based).
+            Index of the DEM band to use (1-based).
         """
         if not Path(src_filename).exists():
             raise FileNotFoundError(f'Source image file {src_filename} does not exist')
@@ -160,14 +165,14 @@ class Ortho:
                 return expand_window_to_grid(dem_win)
 
             # get a dem window corresponding to ortho world bounds at min possible altitude
-            dem_win = get_win_at_z_min(self.egm96_min)
+            dem_win = get_win_at_z_min(self._egm96_min)
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
 
             # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
             # case dem-ortho vertical datum offset
             dem_min = dem_array.min()
-            dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self.egm96_min)
+            dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self._egm96_min)
 
             # crop dem_array to the dem window and find the corresponding transform
             dem_ij_start = (dem_win.row_off - dem_array_win.row_off, dem_win.col_off - dem_array_win.col_off)
@@ -302,12 +307,9 @@ class Ortho:
         # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with nearest
         # interp so these dtypes are excluded).
         dtype = dtype or src_im.profile.get('dtype', None)
-        nodata_vals = dict(
-            uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'),
-        )
-        if dtype not in nodata_vals:
+        if dtype not in Ortho._nodata_vals:
             raise ValueError(f'Data type `{dtype}` is not supported.')
-        nodata = nodata_vals[dtype]
+        nodata = Ortho._nodata_vals[dtype]
 
         # setup compression, data interleaving and photometric interpretation
         if compress == Compress.jpeg and dtype != 'uint8':
@@ -388,10 +390,11 @@ class Ortho:
         tile_mask = np.all(nan_equals(tile_array, ortho_im.profile['nodata']), axis=0)
 
         # remove cv2.remap blurring with nodata at the nodata boundary when necessary
+        # @formatter:off
         if (
             interp != Interp.nearest and not np.isnan(ortho_im.profile['nodata']) and
             np.sum(tile_mask) > min(Ortho._default_blocksize[0], Ortho._default_blocksize[1])
-        ):  # yapf: disable
+        ):  # yapf: disable @formatter:on
             # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
             #  nodata=nan internally, then convert to config dtype and nodata on writing.
             kernel = np.ones((5, 5), np.uint8) if interp == Interp.bilinear else np.ones((9, 9), np.uint8)
@@ -415,8 +418,11 @@ class Ortho:
         Map the source to ortho image by interpolation, given open source and ortho datasets, DEM array in the ortho
         CRS and pixel grid, and configuration parameters.
         """
-        block_count = 0
         bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
+        if write_mask is None:
+            # write an internal mask if the ortho is jpeg compressed
+            write_mask = True if ortho_im.compression == 'jpeg' else False
+
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
         # (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
@@ -435,11 +441,6 @@ class Ortho:
         else:
             index_list = [[*range(1, src_im.count + 1)]]
 
-        ttl_blocks = (
-            np.ceil(ortho_im.profile['width'] / Ortho._default_blocksize[0]) *
-            np.ceil(ortho_im.profile['height'] / Ortho._default_blocksize[1]) * len(index_list)
-        )
-
         # read, process and write bands, one row of indexes at a time
         for indexes in index_list:
             # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
@@ -454,13 +455,12 @@ class Ortho:
             # map ortho tiles concurrently
             with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
                 # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
-                ortho_wins = [ortho_win for _, ortho_win in ortho_im.block_windows(1)]
                 futures = [
                     executor.submit(
                         self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
                         full_remap, interp, write_mask
                     )
-                    for ortho_win in ortho_wins
+                    for _, ortho_win in ortho_im.block_windows(1)
                 ]  # yapf: disable
                 for future in tqdm(
                     as_completed(futures), bar_format=bar_format, total=len(futures), dynamic_ncols=True,
@@ -473,7 +473,7 @@ class Ortho:
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
         interp: Union[str, Interp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
         build_ovw: bool = _default_config['build_ovw'], overwrite: bool = _default_config['overwrite'],
-        write_mask: bool = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'],
+        write_mask: Union[None, bool] = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'],
         dtype: str = _default_config['dtype'], compress: Union[str, Compress] = _default_config['compress']
     ):  # yaml: disable
         """
@@ -482,7 +482,7 @@ class Ortho:
         ortho_filename: str, pathlib.Path
             Name of the orthorectified file to create.
         resolution: list of float
-            Output pixel (x, y) size in m.
+            Ortho image pixel (x, y) size in units of the ortho CRS (usually meters).
         dem_interp: str, simple_ortho.enums.Interp, optional
             Interpolation method for reprojecting the DEM.  See :class:`~simple_ortho.enums.Interp` for options.
             :attr:`~simple_ortho.enums.Interp.cubic` is recommended when the DEM has a coarser resolution than the
@@ -500,8 +500,8 @@ class Ortho:
         overwrite: bool, optional
             Overwrite the ortho image if it exists.
         write_mask: bool, optional
-            Write an internal mask band for the ortho image. Can help remove noise in nodata area with lossy (e.g.
-            jpeg) compression.
+            Write an internal mask for the ortho image. This helps remove noise in the nodata area with lossy
+            compression. If None, the mask will be written when jpeg compression is used.
         full_remap: bool, optional
             Remap the source to ortho image with full camera model (True), or remap the undistorted source to ortho
             image with a pinhole camera model (False).  False is faster but creates an ortho with reduced extent and

@@ -494,11 +494,11 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
         ('float_src_file', False, False),
     ]
 )  # yapf: disable  # @formatter:on
-def test_process_write_mask(
+def test_process_write_mask_per_band(
     src_file: str, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, write_mask: bool,
     per_band: bool, tmp_path: Path, request: pytest.FixtureRequest,
 ):
-    """ Test ``write_mask=True`` with ``per_band=True/False`` writes an internal mask to ortho file. """
+    """ Test ``write_mask=True`` writes an internal ortho mask irrespective of the value of `per_band`. """
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
@@ -510,20 +510,36 @@ def test_process_write_mask(
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
 
 
+# @formatter:off
+@pytest.mark.parametrize(
+    'compress', [Compress.jpeg, Compress.deflate, Compress.auto]
+)  # yapf: disable  # @formatter:on
+def test_process_write_mask_compress(
+    rgb_pinhole_utm34n_ortho: Ortho, compress: Compress, tmp_path: Path
+):
+    """ Test ``write_mask=None`` writes an internal ortho mask when jpeg compression is used. """
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), write_mask=None, compress=compress)
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        mask_flag = MaskFlags.per_dataset if ortho_im.compression == 'jpeg' else MaskFlags.nodata
+        assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
+
+
 @pytest.mark.parametrize(
     # all opencv supported dtypes
     'dtype', ['uint8', 'uint16', 'int16', 'float32', 'float64'],
 )
 def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
     """ Test the ortho `nodata` is set correctly. """
-    nodata_vals = dict(uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan'))
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype)
 
     assert ortho_file.exists()
     with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['dtype'] in nodata_vals
-        assert nan_equals(ortho_im.profile['nodata'], nodata_vals[ortho_im.profile['dtype']])
+        assert ortho_im.profile['dtype'] in Ortho._nodata_vals
+        assert nan_equals(ortho_im.profile['nodata'], Ortho._nodata_vals[ortho_im.profile['dtype']])
 
 
 @pytest.mark.parametrize('interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos], )

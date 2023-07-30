@@ -51,7 +51,7 @@ def sinusoidal(shape: Tuple):
     return array
 
 
-def ortho_bounds(camera: Camera, dem_min: float = Ortho.egm96_min, include_camera: bool = False) -> Tuple:
+def ortho_bounds(camera: Camera, dem_min: float = Ortho._egm96_min, include_camera: bool = False) -> Tuple:
     """ Return ortho bounds for the given `camera` at z=`dem_min`. """
     size = camera._im_size
     ji = np.array([[0, 0], [0, size[1]], [*size], [size[0], 0]]).T
