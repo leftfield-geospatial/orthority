@@ -14,12 +14,9 @@
    limitations under the License.
 """
 
-import cProfile
 import logging
 import multiprocessing
-import pstats
 import threading
-import tracemalloc
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Tuple, Union, Dict, List
@@ -33,7 +30,7 @@ from tqdm.auto import tqdm
 
 from simple_ortho.camera import Camera
 from simple_ortho.enums import Interp, Compress
-from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals
+from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals, profiler
 
 # from scipy.ndimage import map_coordinates
 
@@ -43,8 +40,8 @@ logger = logging.getLogger(__name__)
 class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
-        dem_interp=Interp.cubic_spline, dem_band=1, interp=Interp.bilinear, resolution=[0.5, 0.5], per_band=False,
-        build_ovw=True, overwrite=True, write_mask=None, full_remap=True, dtype=None, compress=Compress.auto
+        dem_band=1, interp=Interp.nearest, dem_interp=Interp.cubic_spline, per_band=False, full_remap=True,
+        write_mask=None, dtype=None, compress=Compress.auto, build_ovw=True, overwrite=True,
     )
 
     # default ortho (x, y) block size
@@ -335,7 +332,7 @@ class Ortho:
 
     def _remap_tile(
         self, ortho_im: rio.io.DatasetWriter, src_array, dem_array: np.ndarray, tile_win: Window,
-        indexes: List[int], init_xgrid: np.ndarray, init_ygrid: np.ndarray, full_remap: bool, interp: Interp,
+        indexes: List[int], init_xgrid: np.ndarray, init_ygrid: np.ndarray, interp: Interp, full_remap: bool,
         write_mask: bool,
     ):
         """
@@ -411,8 +408,8 @@ class Ortho:
 
     def _remap(
         self, src_im: rio.DatasetReader, ortho_im: rio.io.DatasetWriter, dem_array: np.ndarray,
-        per_band: bool = _default_config['per_band'], full_remap: bool = _default_config['full_remap'],
-        interp: Interp = _default_config['interp'], write_mask: bool = _default_config['write_mask'],
+        interp: Interp = _default_config['interp'], per_band: bool = _default_config['per_band'],
+        full_remap: bool = _default_config['full_remap'], write_mask: bool = _default_config['write_mask'],
     ):
         """
         Map the source to ortho image by interpolation, given open source and ortho datasets, DEM array in the ortho
@@ -458,7 +455,7 @@ class Ortho:
                 futures = [
                     executor.submit(
                         self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
-                        full_remap, interp, write_mask
+                        interp, full_remap, write_mask
                     )
                     for _, ortho_win in ortho_im.block_windows(1)
                 ]  # yapf: disable
@@ -469,99 +466,85 @@ class Ortho:
 
     # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
-        self, ortho_filename: Union[str, Path], resolution: Tuple[float, float],
+        self, ortho_filename: Union[str, Path],
+        resolution: Tuple[float, float],
+        interp: Union[str, Interp] = _default_config['interp'],
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
-        interp: Union[str, Interp] = _default_config['interp'], per_band: bool = _default_config['per_band'],
-        build_ovw: bool = _default_config['build_ovw'], overwrite: bool = _default_config['overwrite'],
-        write_mask: Union[None, bool] = _default_config['write_mask'], full_remap: bool = _default_config['full_remap'],
-        dtype: str = _default_config['dtype'], compress: Union[str, Compress] = _default_config['compress']
+        per_band: bool = _default_config['per_band'],
+        full_remap: bool = _default_config['full_remap'],
+        write_mask: Union[None, bool] = _default_config['write_mask'],
+        dtype: str = _default_config['dtype'],
+        compress: Union[str, Compress] = _default_config['compress'],
+        build_ovw: bool = _default_config['build_ovw'],
+        overwrite: bool = _default_config['overwrite'],
     ):  # yaml: disable
         """
         Orthorectify the source image based on the camera model and DEM.
 
         ortho_filename: str, pathlib.Path
-            Name of the orthorectified file to create.
+            Path of the ortho image file to create.
         resolution: list of float
             Ortho image pixel (x, y) size in units of the ortho CRS (usually meters).
+        interp: str, simple_ortho.enums.Interp, optional
+            Interpolation method to use for remapping the source to ortho image.  See
+            :class:`~simple_ortho.enums.Interp` for options.  :attr:`~simple_ortho.enums.Interp.nearest` is
+            recommended when the ortho and source image resolutions are similar. Note that
+            :attr:`~simple_ortho.enums.Interp.cubic_spline` is not supported for this value.
         dem_interp: str, simple_ortho.enums.Interp, optional
             Interpolation method for reprojecting the DEM.  See :class:`~simple_ortho.enums.Interp` for options.
             :attr:`~simple_ortho.enums.Interp.cubic` is recommended when the DEM has a coarser resolution than the
             ortho.
-        interp: str, simple_ortho.enums.Interp, optional
-            Interpolation method to use for warping source to orthorectified image.  See
-            :class:`~simple_ortho.enums.Interp` for options.  :attr:`~simple_ortho.enums.Interp.nearest` is
-            recommended when the ortho and source image resolutions are similar. Note that
-            :attr:`~simple_ortho.enums.Interp.cubic_spline` is not supported for this value.
         per_band: bool, optional
             Remap the source to the ortho image band-by-band (True), or all bands at once (False).
-            False is typically faster but requires more memory.
-        build_ovw: bool, optional
-            Build overviews for the ortho image.
-        overwrite: bool, optional
-            Overwrite the ortho image if it exists.
-        write_mask: bool, optional
-            Write an internal mask for the ortho image. This helps remove noise in the nodata area with lossy
-            compression. If None, the mask will be written when jpeg compression is used.
+            False is faster but requires more memory.
         full_remap: bool, optional
-            Remap the source to ortho image with full camera model (True), or remap the undistorted source to ortho
-            image with a pinhole camera model (False).  False is faster but creates an ortho with reduced extent and
-            quality.
+            Orthorectify the source image with the full camera model (True), or the undistorted source image with a
+            pinhole camera model (False).  False is faster but can reduce the extents and quality of the ortho image.
+        write_mask: bool, optional
+            Write an internal mask for the ortho image. This helps remove nodata noise caused by lossy compression.
+            If None, the mask will be written when jpeg compression is used.
         dtype: str, optional
             Ortho image data type (`uint8`, `uint16`, `float32` or `float64`).  If set to None, the source image
             dtype is used.
         compress: str, Compress, optional
             Ortho image compression type (`deflate`, `jpeg` or `auto`).  See :class:`~simple_ortho.enums.Compress`_
             for option details.
+        build_ovw: bool, optional
+            Build overviews for the ortho image.
+        overwrite: bool, optional
+            Overwrite the ortho image if it exists.
         """
+        with profiler():  # init profiling in DEBUG log level
+            ortho_filename = Path(ortho_filename)
+            if ortho_filename.exists():
+                if not overwrite:
+                    raise FileExistsError(
+                        f'Ortho file: {ortho_filename.name} exists and won\'t be overwritten without the `overwrite` option.'
+                    )
+                ortho_filename.unlink()
 
-        # init profiling
-        if logger.getEffectiveLevel() <= logging.DEBUG:
-            tracemalloc.start()
-            proc_profile = cProfile.Profile()
-            proc_profile.enable()
+            # get dem array covering ortho extents in ortho CRS and resolution
+            dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
+            dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, full_remap=full_remap)
 
-        ortho_filename = Path(ortho_filename)
-        if ortho_filename.exists():
-            if not overwrite:
-                raise FileExistsError(
-                    f'Ortho file: {ortho_filename.name} exists and won\'t be overwritten without the `overwrite` option.'
-                )
-            ortho_filename.unlink()
-
-        # get dem array covering ortho extents in ortho CRS and resolution
-        dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
-        dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, full_remap=full_remap)
-
-        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
-        with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-            # create ortho profile
-            ortho_profile = self._create_ortho_profile(
-                src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
-            )
-
-            with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
-                # orthorectify
-                self._remap(
-                    src_im, ortho_im, dem_array, per_band=per_band, full_remap=full_remap, interp=Interp[interp],
-                    write_mask=write_mask,
+            env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
+            with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
+                # create ortho profile
+                ortho_profile = self._create_ortho_profile(
+                    src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
                 )
 
-        if build_ovw:
-            # TODO: move this under the rio multithreaded environment for gdal>=3.8
-            # build overviews
-            with rio.open(ortho_filename, 'r+') as ortho_im:
-                self._build_overviews(ortho_im)
+                with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
+                    # orthorectify
+                    self._remap(
+                        src_im, ortho_im, dem_array, interp=Interp[interp], per_band=per_band, full_remap=full_remap,
+                        write_mask=write_mask,
+                    )
 
-        if logger.getEffectiveLevel() <= logging.DEBUG:  # print profiling info
-            proc_profile.disable()
-            # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
-            # plus all functions that this function called
-            proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
-            logger.debug(f'Processing time:')
-            proc_stats.print_stats(20)
-
-            current, peak = tracemalloc.get_traced_memory()
-            logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
-
+            if build_ovw:
+                # TODO: move this under the rio multithreaded environment for gdal>=3.8
+                # build overviews
+                with rio.open(ortho_filename, 'r+') as ortho_im:
+                    self._build_overviews(ortho_im)
 
 ##

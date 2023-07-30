@@ -258,7 +258,7 @@ def test_mask_dem(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
-            ortho._remap(src_im, ortho_im, dem_array, full_remap=True, interp=Interp.nearest, write_mask=False)
+            ortho._remap(src_im, ortho_im, dem_array, interp=Interp.nearest, full_remap=True, write_mask=False)
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
@@ -575,10 +575,10 @@ def test_process_full_remap(
 
     # create a ref (full_remap=True) and test (full_remap=False) ortho for this camera
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    ortho.process(ortho_ref_file, resolution, full_remap=True, compress=Compress.deflate)
+    ortho.process(ortho_ref_file, resolution, interp=Interp.bilinear, full_remap=True, compress=Compress.deflate)
 
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_test_file, resolution, full_remap=False, compress=Compress.deflate)
+    ortho.process(ortho_test_file, resolution, interp=Interp.bilinear, full_remap=False, compress=Compress.deflate)
 
     # compare valid portions of ref and test orthos
     assert ortho_ref_file.exists() and ortho_test_file.exists()

@@ -13,7 +13,11 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import cProfile
+import pstats
+import tracemalloc
 import warnings
+import logging
 from contextlib import contextmanager
 from typing import Tuple, Union
 import numpy as np
@@ -23,6 +27,9 @@ import cv2
 
 from simple_ortho.camera import Camera
 from simple_ortho.enums import Interp
+
+logger = logging.getLogger(__name__)
+
 
 @contextmanager
 def suppress_no_georef():
@@ -69,3 +76,25 @@ def distort_image(camera: Camera, image: np.ndarray, nodata=0, interp=Interp.nea
         borderMode=cv2.BORDER_CONSTANT, borderValue=nodata,
     )
     return dist_image
+
+
+@contextmanager
+def profiler():
+    """ Context manager for profiling in DEBUG log level. """
+    if logger.getEffectiveLevel() <= logging.DEBUG:
+        proc_profile = cProfile.Profile()
+        tracemalloc.start()
+        proc_profile.enable()
+
+        yield
+
+        proc_profile.disable()
+        # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
+        # plus all functions that this function called
+        proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
+        logger.debug(f'Processing times:')
+        proc_stats.print_stats(20)
+        current, peak = tracemalloc.get_traced_memory()
+        logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
+    else:
+        yield
