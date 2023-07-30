@@ -416,10 +416,6 @@ class Ortho:
         CRS and pixel grid, and configuration parameters.
         """
         bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
-        if write_mask is None:
-            # write an internal mask if the ortho is jpeg compressed
-            write_mask = True if ortho_im.compression == 'jpeg' else False
-
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
         # (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
@@ -519,25 +515,29 @@ class Ortho:
             if ortho_filename.exists():
                 if not overwrite:
                     raise FileExistsError(
-                        f'Ortho file: {ortho_filename.name} exists and won\'t be overwritten without the `overwrite` option.'
+                        f'Ortho file: {ortho_filename.name} exists.'
                     )
                 ortho_filename.unlink()
 
             # get dem array covering ortho extents in ortho CRS and resolution
-            dem_array, dem_transform = self._reproject_dem(Interp[dem_interp], resolution)
+            dem_array, dem_transform = self._reproject_dem(Interp(dem_interp), resolution)
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, full_remap=full_remap)
 
             env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
             with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
                 # create ortho profile
                 ortho_profile = self._create_ortho_profile(
-                    src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress[compress]
+                    src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress(compress)
                 )
+
+                if write_mask is None:
+                    # write an internal mask if the ortho is jpeg compressed
+                    write_mask = True if ortho_profile['compress'] == 'jpeg' else False
 
                 with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
                     # orthorectify
                     self._remap(
-                        src_im, ortho_im, dem_array, interp=Interp[interp], per_band=per_band, full_remap=full_remap,
+                        src_im, ortho_im, dem_array, interp=Interp(interp), per_band=per_band, full_remap=full_remap,
                         write_mask=write_mask,
                     )
 

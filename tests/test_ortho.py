@@ -523,7 +523,7 @@ def test_process_write_mask_compress(
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
-        mask_flag = MaskFlags.per_dataset if ortho_im.compression == 'jpeg' else MaskFlags.nodata
+        mask_flag = MaskFlags.per_dataset if ortho_im.profile['compress'] == 'jpeg' else MaskFlags.nodata
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
 
 
