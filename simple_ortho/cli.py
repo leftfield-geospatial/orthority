@@ -95,7 +95,7 @@ def _configure_logging(verbosity: int):
     logging.captureWarnings(True)
 
 
-def _crs_cb(ctx, param, crs):
+def crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
     """ click callback to validate and parse the CRS. """
     if crs is not None:
         try:
@@ -106,8 +106,17 @@ def _crs_cb(ctx, param, crs):
 
             crs = rio.CRS.from_string(crs)
         except CRSError as ex:
-            raise click.BadParameter(f'Invalid CRS: {crs}.\n {str(ex)}', param=param)
+            raise click.BadParameter(f'{crs}.\n {str(ex)}', param=param)
     return crs
+
+
+def resolution_cb(ctx: click.Context, param: click.Parameter, resolution: Tuple):
+    """ click callback to validate and parse the resolution. """
+    if len(resolution) == 1:
+        resolution *= 2
+    elif len(resolution) > 2:
+        raise click.BadParameter(f'at most two resolution values should be specified.', param=param)
+    return resolution
 
 
 # Define click options that are common to more than one command
@@ -128,7 +137,7 @@ cam_conf_file_option = click.option(
     required=True, default=None, help='Path of a camera configuration file.'
 )
 crs_option = click.option(
-    '-c', '--crs', type=click.STRING, default=None, show_default='source image CRS.', callback=_crs_cb,
+    '-c', '--crs', type=click.STRING, default=None, show_default='source image CRS.', callback=crs_cb,
     help='CRS of the ortho image as an EPSG, proj4, or WKT string, or text file containing string.  Should be a '
          'projected, and not geographic CRS.  Can be omitted if source image(s) are projected in this CRS.'
 )
@@ -138,8 +147,9 @@ dem_band_option = click.option(
 )
 # TODO: allow single number for square pixel
 resolution_option = click.option(
-    '-r', '--res', 'resolution', type=click.FLOAT, nargs=2, required=True, default=None, metavar='X Y',
-    help='Ortho image (x, y) pixel size in units of the :option:`--crs` (usually meters).'
+    '-r', '--res', 'resolution', type=click.FLOAT, required=True, default=None, multiple=True, callback=resolution_cb,
+    help='Ortho image pixel size in units of the :option:`--crs` (usually meters).  Can be used twice for non-square '
+         'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``'
 )
 # TODO: change interp -> src_interp
 src_interp_option = click.option(
