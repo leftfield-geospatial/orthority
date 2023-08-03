@@ -427,38 +427,41 @@ class Ortho:
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         init_xgrid, init_ygrid = ortho_im.profile['transform'] * [init_jgrid, init_igrid]
 
-        # create list oif band indexes to read, remap & write all bands at once (per_band==False), or per-band
+        # create list of band indexes to read, remap & write all bands at once (per_band==False), or per-band
         # (per_band==True)
         if per_band:
             index_list = [[i] for i in range(1, src_im.count + 1)]
         else:
             index_list = [[*range(1, src_im.count + 1)]]
 
-        # read, process and write bands, one row of indexes at a time
-        for indexes in index_list:
-            # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
-            # ortho nodata value)
-            src_array = src_im.read(indexes, out_dtype=ortho_im.profile['dtype'])
+        # create a list of ortho tile windows (assumes all bands configured to same tile shape)
+        ortho_wins = [ortho_win for _, ortho_win in ortho_im.block_windows(1)]
 
-            if not full_remap:
-                # undistort the source image so the distortion model can be excluded from
-                # self._camera.world_to_pixel() in self._remap_tile()
-                src_array = self._camera.undistort(src_array, nodata=ortho_im.profile['nodata'], interp=interp)
+        with tqdm(bar_format=bar_format, total=len(ortho_wins) * len(index_list), dynamic_ncols=True) as bar:
+            # read, process and write bands, one row of indexes at a time
+            for indexes in index_list:
+                # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
+                # ortho nodata value)
+                src_array = src_im.read(indexes, out_dtype=ortho_im.profile['dtype'])
 
-            # map ortho tiles concurrently
-            with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
-                # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
-                futures = [
-                    executor.submit(
-                        self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
-                        interp, full_remap, write_mask
-                    )
-                    for _, ortho_win in ortho_im.block_windows(1)
-                ]  # yapf: disable
-                for future in tqdm(
-                    as_completed(futures), bar_format=bar_format, total=len(futures), dynamic_ncols=True,
-                ):
-                    future.result()
+                if not full_remap:
+                    # undistort the source image so the distortion model can be excluded from
+                    # self._camera.world_to_pixel() in self._remap_tile()
+                    src_array = self._camera.undistort(src_array, nodata=ortho_im.profile['nodata'], interp=interp)
+
+                # map ortho tiles concurrently
+                with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                    # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
+                    futures = [
+                        executor.submit(
+                            self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
+                            interp, full_remap, write_mask
+                        )
+                        for ortho_win in ortho_wins
+                    ]  # yapf: disable
+                    for future in as_completed(futures):
+                        future.result()
+                        bar.update()
 
     # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
