@@ -26,27 +26,27 @@ from tests.conftest import checkerboard
 
 # @formatter:off
 @pytest.mark.parametrize(
-    'cam_type, dist_coeff, exp_type', [
+    'cam_type, dist_param, exp_type', [
         (CameraType.pinhole, None, PinholeCamera),
-        (CameraType.brown, 'brown_dist_coeff', BrownCamera),
-        (CameraType.opencv, 'opencv_dist_coeff', OpenCVCamera),
-        (CameraType.fisheye, 'fisheye_dist_coeff', FisheyeCamera),
+        (CameraType.brown, 'brown_dist_param', BrownCamera),
+        (CameraType.opencv, 'opencv_dist_param', OpenCVCamera),
+        (CameraType.fisheye, 'fisheye_dist_param', FisheyeCamera),
     ],
 )  # yapf: disable  # @formatter:on
 def test_init(
-    cam_type: CameraType, dist_coeff: str, exp_type: type, position: Tuple, rotation: Tuple, focal_len: float,
+    cam_type: CameraType, dist_param: str, exp_type: type, position: Tuple, rotation: Tuple, focal_len: float,
     im_size: Tuple, sensor_size: Tuple, request: pytest.FixtureRequest
 ):
     """ Test camera creation. """
-    dist_coeff: Dict = request.getfixturevalue(dist_coeff) if dist_coeff else {}
+    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
 
-    camera = create_camera(cam_type, position, rotation, focal_len, im_size, sensor_size=sensor_size, **dist_coeff)
+    camera = create_camera(cam_type, position, rotation, focal_len, im_size, sensor_size=sensor_size, **dist_param)
 
     assert isinstance(camera, exp_type)
     assert np.all(camera._T.flatten() == position)
     assert camera._K.diagonal()[:2] == pytest.approx(np.array(focal_len) * im_size / sensor_size, abs=1e-3)
-    if dist_coeff:
-        assert np.all(camera._dist_coeff == [*dist_coeff.values()])
+    if dist_param:
+        assert np.all(camera._dist_param == [*dist_param.values()])
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera', ])
@@ -147,10 +147,10 @@ def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, ca
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(camera_args: Dict, brown_dist_coeff: Dict):
+def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
     """ Test OpenCV and Brown cameras are equivalent for the (cx, cy) == (0, 0) special case. """
-    brown_camera = BrownCamera(**camera_args, **brown_dist_coeff)
-    opencv_camera = OpenCVCamera(**camera_args, **brown_dist_coeff)
+    brown_camera = BrownCamera(**camera_args, **brown_dist_param)
+    opencv_camera = OpenCVCamera(**camera_args, **brown_dist_param)
 
     ji = np.random.rand(2, 1000) * np.reshape(brown_camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (brown_camera._T[2] * .8)

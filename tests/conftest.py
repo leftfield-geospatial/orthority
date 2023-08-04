@@ -152,19 +152,19 @@ def camera_args(position, rotation, focal_len, im_size, sensor_size) -> Dict:
 
 
 @pytest.fixture(scope='session')
-def brown_dist_coeff() -> Dict:
+def brown_dist_param() -> Dict:
     """ Example `BrownCamera` distortion coefficients. """
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1)
 
 
 @pytest.fixture(scope='session')
-def opencv_dist_coeff() -> Dict:
+def opencv_dist_param() -> Dict:
     """ Example `OpenCVCamera` distortion coefficients. """
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1, k4=0.001, k5=0.001, k6=-0.001)
 
 
 @pytest.fixture(scope='session')
-def fisheye_dist_coeff() -> Dict:
+def fisheye_dist_param() -> Dict:
     """ Example `FisheyeCamera` distortion coefficients. """
     return dict(k1=-0.25, k2=0.1, k3=0.01, k4=-0.01)
 
@@ -176,21 +176,21 @@ def pinhole_camera(camera_args) -> Camera:
 
 
 @pytest.fixture(scope='session')
-def brown_camera(camera_args, brown_dist_coeff: Dict) -> Camera:
+def brown_camera(camera_args, brown_dist_param: Dict) -> Camera:
     """ Example `BrownCamera` object with near-nadir orientation. """
-    return BrownCamera(**camera_args, **brown_dist_coeff, cx=-0.01, cy=0.02)
+    return BrownCamera(**camera_args, **brown_dist_param, cx=-0.01, cy=0.02)
 
 
 @pytest.fixture(scope='session')
-def opencv_camera(camera_args, opencv_dist_coeff: Dict) -> Camera:
+def opencv_camera(camera_args, opencv_dist_param: Dict) -> Camera:
     """ Example `OpenCVCamera` object with near-nadir orientation. """
-    return OpenCVCamera(**camera_args, **opencv_dist_coeff)
+    return OpenCVCamera(**camera_args, **opencv_dist_param)
 
 
 @pytest.fixture(scope='session')
-def nadir_fisheye_camera(camera_args, fisheye_dist_coeff: Dict) -> Camera:
+def nadir_fisheye_camera(camera_args, fisheye_dist_param: Dict) -> Camera:
     """  Example `FisheyeCamera` object with near-nadir orientation.  """
-    return FisheyeCamera(**camera_args, **fisheye_dist_coeff)
+    return FisheyeCamera(**camera_args, **fisheye_dist_param)
 
 
 @pytest.fixture(scope='session')

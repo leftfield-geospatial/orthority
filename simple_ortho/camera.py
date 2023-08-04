@@ -30,7 +30,8 @@ class Camera:
     def __init__(
         self, position: Union[Tuple[float, float, float], np.ndarray],
         rotation: Union[Tuple[float, float, float], np.ndarray],
-        focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        focal_len: Union[float, Tuple[float, float], np.ndarray],
+        im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None,
     ):  # yapf: disable
         """
@@ -63,7 +64,7 @@ class Camera:
             focal_len, im_size, sensor_size
         )
         self._undistort_maps = None
-        self._dist_coeff = None
+        self._dist_param = None
 
         config_dict = dict(focal_len=focal_len, im_size=im_size, sensor_size=sensor_size)
         logger.debug(f'Camera configuration: {config_dict}')
@@ -148,7 +149,7 @@ class Camera:
 
     @staticmethod
     def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_coeff: np.ndarray
+        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         """"
         Create cv2.remap() maps for undistorting an image.
@@ -287,7 +288,7 @@ class Camera:
             """ Undistort a 2D band array. """
 
             # equivalent without stored _undistort_maps:
-            # return cv2.undistort(band_array, self._K, self._dist_coeff)
+            # return cv2.undistort(band_array, self._K, self._dist_param)
             return cv2.remap(
                 band, *self._undistort_maps, Interp[interp].to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
             )
@@ -352,28 +353,28 @@ class OpenCVCamera(Camera):
         """
         Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
 
-        # order _dist_coeff & truncate zeros according to OpenCV docs
+        # order _dist_param & truncate zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
-        self._dist_coeff = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
+        self._dist_param = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
         for dist_len in (4, 5, 8, 12, 14):
-            if np.all(self._dist_coeff[dist_len:] == 0.):
-                self._dist_coeff = self._dist_coeff[:dist_len]
+            if np.all(self._dist_param[dist_len:] == 0.):
+                self._dist_param = self._dist_param[:dist_len]
                 break
 
-        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
+        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_param)
 
     @staticmethod
     def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_coeff: np.ndarray
+        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:  # yapf: disable
         undistort_maps = cv2.initUndistortRectifyMap(
-            K, dist_coeff, None, None, np.array(im_size).astype(int), cv2.CV_16SC2
+            K, dist_param, None, None, np.array(im_size).astype(int), cv2.CV_16SC2
         )
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         ji_cv = ji.T.astype('float64', copy=False)
-        xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_coeff)
+        xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_param)
         xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
@@ -381,7 +382,7 @@ class OpenCVCamera(Camera):
         self._check_world_coordinates(xyz)
         if not distort:
             return PinholeCamera.world_to_pixel(self, xyz)
-        ji, _ = cv2.projectPoints((xyz - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
+        ji, _ = cv2.projectPoints((xyz - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_param)
         ji = ji[:, 0, :].T
         return ji
 
@@ -431,13 +432,13 @@ class BrownCamera(OpenCVCamera):
         """
         Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
 
-        self._dist_coeff = np.array([k1, k2, p1, p2, k3])
+        self._dist_param = np.array([k1, k2, p1, p2, k3])
 
         # incorporate ODM/OpenSFM brown model offsets into self._Koff
         self._Koff = self._offset_intrinsic(self._K, self._im_size, cx=cx, cy=cy)
 
         # create undistort maps with self._Koff
-        self._undistort_maps = self._create_undistort_maps(self._Koff, self._im_size, self._dist_coeff)
+        self._undistort_maps = self._create_undistort_maps(self._Koff, self._im_size, self._dist_param)
 
     @staticmethod
     def _offset_intrinsic(K: np.ndarray, im_size: np.ndarray, cx: float = 0., cy: float = 0.) -> np.ndarray:
@@ -468,7 +469,7 @@ class BrownCamera(OpenCVCamera):
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         ji_cv = ji.T.astype('float64', copy=False)
-        xyz_ = cv2.undistortPoints(ji_cv, self._Koff, self._dist_coeff)
+        xyz_ = cv2.undistortPoints(ji_cv, self._Koff, self._dist_param)
         xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
@@ -484,7 +485,7 @@ class BrownCamera(OpenCVCamera):
             # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h
             # #LL299C25-L299C25.
             # Works out faster than the opencv equivalent in OpenCVCamera.world_to_pixel().
-            k1, k2, p1, p2, k3 = self._dist_coeff
+            k1, k2, p1, p2, k3 = self._dist_param
             x2, y2 = np.square(xyz_[:2, :])
             xy = xyz_[0, :] * xyz_[1, :]
             r2 = x2 + y2
@@ -548,23 +549,23 @@ class FisheyeCamera(Camera):
         """
         Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
 
-        self._dist_coeff = np.array([k1, k2, k3, k4])
-        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_coeff)
+        self._dist_param = np.array([k1, k2, k3, k4])
+        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_param)
 
     @staticmethod
     def _create_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_coeff: np.ndarray
+        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires default R & P
         # (new camera matrix) params to be specified
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
-            K, dist_coeff, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
+            K, dist_param, np.eye(3), K, np.array(im_size).astype(int), cv2.CV_16SC2
         )
         return undistort_maps
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         ji_cv = ji.T[None, :].astype('float64', copy=False)
-        xyz_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_coeff, None, None)
+        xyz_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_param, None, None)
         xyz_ = np.row_stack([xyz_[0].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
@@ -582,10 +583,10 @@ class FisheyeCamera(Camera):
             # and OpenCV docs: https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html.
             # Works out faster than the opencv equivalent:
             #   x_cv = np.expand_dims((x - self._T).T, axis=0)
-            #   ji, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.zeros(3), self._K, self._dist_coeff)
+            #   ji, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.zeros(3), self._K, self._dist_param)
             #   ji = np.squeeze(ji).T
 
-            k1, k2, k3, k4 = self._dist_coeff
+            k1, k2, k3, k4 = self._dist_param
             r = np.sqrt(np.square(xyz_[:2, :]).sum(axis=0))
             theta = np.arctan(r)
             theta2 = theta * theta
