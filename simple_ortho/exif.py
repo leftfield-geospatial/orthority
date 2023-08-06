@@ -54,7 +54,7 @@ xmp_schemas = dict(
         rpy_offsets=(0., 0., 0.),
         rpy_gains=(1., 1., 1.)
     ),
-    # these Pix4D / Parrot Sequoia keys may not refer to RPY of the drone, not camera, but am including for now
+    # these Pix4D / Parrot Sequoia keys may refer to RPY of the drone, not camera, but am including for now
     pix4d=dict(
         lla_keys=[],
         rpy_keys=[
@@ -102,8 +102,8 @@ class Exif:
         filename: str, Path
             Path to the image file.
         """
-        file_path = Path(filename)
-        if not file_path.exists():
+        filename = Path(filename)
+        if not filename.exists():
             raise FileNotFoundError(f'File does not exist: {file_path}')
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
@@ -114,13 +114,13 @@ class Exif:
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP']
                 self._xmp_dict = xml_to_flat_dict(xmp_str)
             else:
-                logger.warning(f'{file_path.name} contains no XMP metadata')
+                logger.warning(f'{filename.name} contains no XMP metadata')
                 self._xmp_dict = None
 
-        self._filename = file_path.name
+        self._filename = filename
         self._camera_name = self._get_camera_name(self._exif_dict)
         self._sensor_size = self._get_sensor_size(self._exif_dict, self._image_size)
-        self._focal, self._focal_35 = self._get_focal(self._exif_dict)
+        self._focal_len, self._focal_len_35 = self._get_focal_len(self._exif_dict)
         self._lla = self._get_xmp_lla(self._xmp_dict) or self._get_lla(self._exif_dict)
         self._rpy = self._get_xmp_rpy(self._xmp_dict)
 
@@ -131,12 +131,20 @@ class Exif:
             f'Image: {self._filename}'
             f'\nCamera: {self._camera_name}'
             f'\nImage size: {self.image_size}'
-            f'\nFocal length: {self._focal}'
-            f'\nFocal length (35mm): {self._focal_35}'
+            f'\nFocal length: {self._focal_len}'
+            f'\nFocal length (35mm): {self._focal_len_35}'
             f'\nSensor size: {self._sensor_size}'
             f'\nLatitude, longitude, altitude: {lla_str}'
             f'\nRoll, pitch, yaw: {rpy_str}'
         )  # yapf: disable  # @formatter:on
+
+    # TODO: standardise naming of properties with camera etc parameters (focal / focal_len, im_size / image_size,
+    #  cam_name / camera_name etc)
+    # TODO: expose orientation property
+    @property
+    def filename(self) -> Path:
+        """ Path to source file. """
+        return self._filename
 
     @property
     def camera_name(self) -> Union[None, str]:
@@ -154,14 +162,14 @@ class Exif:
         return self._sensor_size
 
     @property
-    def focal(self) -> Union[None, float]:
+    def focal_len(self) -> Union[None, float]:
         """ Focal length in mm. """
-        return self._focal
+        return self._focal_len
 
     @property
-    def focal_35(self) -> Union[None, float]:
+    def focal_len_35(self) -> Union[None, float]:
         """ 35mm equivalent focal length in mm. """
-        return self._focal_35
+        return self._focal_len_35
 
     @property
     def lla(self) -> Union[None, Tuple[float]]:
@@ -179,7 +187,7 @@ class Exif:
     @staticmethod
     def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Union[None, float, Tuple[float]]:
         """ Convert numeric EXIF tag to float(s). """
-        if not key in exif_dict:
+        if key not in exif_dict:
             return None
         val_list = [
             float(val_str.strip(' (')) for val_str in exif_dict[key].split(')')
@@ -230,7 +238,7 @@ class Exif:
         return tuple(mm_per_unit * np.array(im_size) / pixels_per_unit)
 
     @staticmethod
-    def _get_focal(exif_dict: Dict[str, str]) -> Tuple[float, float]:
+    def _get_focal_len(exif_dict: Dict[str, str]) -> Tuple[float, float]:
         """ Return the actual and 35mm equivalent focal lengths in mm. """
         focal_35 = Exif._get_exif_float(exif_dict, 'EXIF_FocalLengthIn35mmFilm')
         focal = Exif._get_exif_float(exif_dict, 'EXIF_FocalLength')
