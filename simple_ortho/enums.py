@@ -50,6 +50,14 @@ class CameraType(str, Enum):
     def __str__(self):
         return self._name_
 
+    @classmethod
+    def from_odm(cls, cam_type: str):
+        """ Convert from ODM / OpenSFM projection type. """
+        cam_type = 'brown' if cam_type == 'perspective' else cam_type
+        if cam_type not in cls.__members__:
+            raise ValueError(f'Unsupported ODM / OpenSFM camera type: {cam_type}')
+        return cls(cam_type)
+
 
 class Interp(str, Enum):
     """
