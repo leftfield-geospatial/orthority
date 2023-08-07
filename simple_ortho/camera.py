@@ -81,6 +81,7 @@ class Camera:
         """
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
         # -Parameters-defined and https://en.wikipedia.org/wiki/Camera_resectioning
+        # TODO: incorporate orientation from exif
 
         if len(im_size) != 2:
             raise ValueError('`im_size` should contain 2 values: (width, height).')

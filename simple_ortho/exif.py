@@ -202,7 +202,7 @@ class Exif:
         model_key = 'EXIF_Model'
         make = exif_dict.get(make_key, None)
         model = exif_dict.get(model_key, None)
-        return f'{make} {model}' if make and model else None
+        return f'{make} {model}'.lower() if make and model else None
 
     @staticmethod
     def _get_sensor_size(

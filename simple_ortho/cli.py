@@ -29,6 +29,7 @@ from simple_ortho.ortho import Ortho
 from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
 from simple_ortho.utils import suppress_no_georef
+from simple_ortho.io import read_int_param
 from simple_ortho.version import __version__
 
 
@@ -126,15 +127,17 @@ src_files_arg = click.argument(
 )
 dem_file_option = click.option(
     '-d', '--dem', 'dem_file', type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
-    required=True, default=None, help='Path/URL to a DEM image covering the source image(s).'
+    required=True, default=None, help='Path/URL of a DEM image covering the source image(s).'
 )
-pos_ori_file_option = click.option(
-    '-po', '--pos-ori', 'pos_ori_file', type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
-    required=True, default=None, help='Path of a camera position & orientation file.'
+int_param_file_option = click.option(
+    '-ip', '--int-param', 'int_param_file',
+    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path), required=True, default=None,
+    help='Path of a file specifying camera internal parameters.'
 )
-cam_conf_file_option = click.option(
-    '-cc', '--cam-conf', 'cam_conf_file', type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
-    required=True, default=None, help='Path of a camera configuration file.'
+ext_param_file_option = click.option(
+    '-ep', '--ext-param', 'ext_param_file',
+    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path), required=True, default=None,
+    help='Path of a file specifying camera external parameters.'
 )
 crs_option = click.option(
     '-c', '--crs', type=click.STRING, default=None, show_default='source image CRS.', callback=crs_cb,
@@ -216,8 +219,8 @@ def cli(verbose, quiet):
 @click.command(cls=RstCommand)
 @src_files_arg
 @dem_file_option
-@pos_ori_file_option
-@cam_conf_file_option
+@int_param_file_option
+@ext_param_file_option
 @crs_option
 @resolution_option
 @dem_band_option
@@ -232,7 +235,7 @@ def cli(verbose, quiet):
 @ortho_dir_option
 @overwrite_option
 def opk(
-    src_files: Tuple[Path, ...], dem_file: Path, pos_ori_file: Path, cam_conf_file: Path, crs: rio.CRS,
+    src_files: Tuple[Path, ...], dem_file: Path, int_param_file: Path, ext_param_file: Path, crs: rio.CRS,
     resolution: Tuple[float, float], dem_band: int, ortho_dir: Path, **kwargs
 ):
     """
@@ -242,45 +245,40 @@ def opk(
     a text file, and camera intrinsic parameters in a configuration file.
     """
     # read camera config
-    with open(cam_conf_file, 'r') as f:
-        cam_conf = yaml.safe_load(f)
-    cam_conf = cam_conf.get('camera', cam_conf)     # support old format camera section
-    req_keys = ('type', 'focal_len')
-    if not all([k in cam_conf for k in req_keys]):
-        raise click.BadParameter(
-            f'{cam_conf_file.name} does not contain all the keys: {req_keys}.', param_hint='--cam-conf'
-        )
-    cam_conf.pop('name', None)
-    cam_type = cam_conf.pop('type')
-    # TODO: check the other params are valid for the camera type
+    try:
+        int_param_dict = read_int_param(int_param_file)
+    except ValueError as ex:
+        raise click.BadParameter(str(ex), param_hint='--int-param')
 
     # read position & orientation file
-    with open(pos_ori_file, 'r', newline='') as f:
+    with open(ext_param_file, 'r', newline='') as f:
         reader = csv.DictReader(
             f, delimiter=' ', fieldnames=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
         )
-        pos_ori_dict = {
+        ext_param_dict = {
             row['file']: {k: float(row[k]) for k in reader.fieldnames[1:]} for row in reader
         }  # yapf: disable
     # TODO: check format of pos_ori_file
 
     for src_file in src_files:
         # extract position and orientation for src_file from pos_ori_file
-        if src_file.stem not in pos_ori_dict:
+        if src_file.stem not in ext_param_dict:
             raise click.BadParameter(
-                f'{pos_ori_file.name} does not contain an entry for {src_file.name}', param_hint='--pos-ori'
+                f'{ext_param_file.name} does not contain an entry for {src_file.name}', param_hint='--ext-param'
             )
 
-        im_pos_ori = pos_ori_dict[src_file.stem]
-        position = (im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude'])
-        rotation = np.radians((im_pos_ori['omega'], im_pos_ori['phi'], im_pos_ori['kappa']))
+        src_ext_param_dict = ext_param_dict[src_file.stem]
+        position = (src_ext_param_dict['easting'], src_ext_param_dict['northing'], src_ext_param_dict['altitude'])
+        rotation = np.radians((src_ext_param_dict['omega'], src_ext_param_dict['phi'], src_ext_param_dict['kappa']))
 
         # get src_file image size
         with suppress_no_georef(), rio.open(src_file, 'r') as src_im:
-            cam_conf['im_size'] = (src_im.width, src_im.height)
+            im_size = (src_im.width, src_im.height)
 
         # create the camera, ortho object, and ortho filename
-        camera = create_camera(cam_type, position, rotation, **cam_conf)
+        # TODO: call it orientation or rotation?
+        int_param_key = next(iter(int_param_dict))
+        camera = create_camera(position=position, rotation=rotation, im_size=im_size, **int_param_dict[int_param_key])
         ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         ortho_root = ortho_dir or src_file.parent
         ortho_file = ortho_root.joinpath(f'{src_file.stem}_ORTHO.tif')
