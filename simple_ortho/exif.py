@@ -104,13 +104,14 @@ class Exif:
         """
         filename = Path(filename)
         if not filename.exists():
-            raise FileNotFoundError(f'File does not exist: {file_path}')
+            raise FileNotFoundError(f'File not found: {filename}')
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
-            self._exif_dict = ds.tags(ns='EXIF') if 'EXIF' in ds.tag_namespaces() else ds.tags()
+            namespaces = ds.tag_namespaces()
+            self._exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
             self._image_size = ds.shape[::-1]
 
-            if 'xml:XMP' in ds.tag_namespaces():
+            if 'xml:XMP' in namespaces:
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP']
                 self._xmp_dict = xml_to_flat_dict(xmp_str)
             else:
