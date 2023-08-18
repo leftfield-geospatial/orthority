@@ -29,7 +29,7 @@ from simple_ortho.ortho import Ortho
 from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
 from simple_ortho.utils import suppress_no_georef
-from simple_ortho.io import read_int_param
+from simple_ortho.io import read_int_param, CsvExtReader
 from simple_ortho.version import __version__
 
 
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class PlainInfoFormatter(logging.Formatter):
     """ logging formatter to format INFO logs without the module name etc. prefix. """
-
+    # TODO: do we need this ?
     def format(self, record: logging.LogRecord):
         if record.levelno == logging.INFO:
             self._style._fmt = '%(message)s'
@@ -250,26 +250,27 @@ def opk(
     except ValueError as ex:
         raise click.BadParameter(str(ex), param_hint='--int-param')
 
-    # read position & orientation file
-    with open(ext_param_file, 'r', newline='') as f:
-        reader = csv.DictReader(
-            f, delimiter=' ', fieldnames=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
-        )
-        ext_param_dict = {
-            row['file']: {k: float(row[k]) for k in reader.fieldnames[1:]} for row in reader
-        }  # yapf: disable
-    # TODO: check format of pos_ori_file
+    # read camera position & orientation from exterior param file
+    try:
+        # TODO: attempt to extract crs from source image if crs=None and pass in here
+        ext_reader = CsvExtReader(ext_param_file, crs)
+    except ValueError as ex:
+        raise click.BadParameter(str(ex), param_hint='--ext-param')
+    crs = crs or ext_reader.crs
+    ext_param_dict = ext_reader.read()
 
     for src_file in src_files:
         # extract position and orientation for src_file from pos_ori_file
-        if src_file.stem not in ext_param_dict:
+        src_ext_param_dict = ext_param_dict.get(src_file.stem, ext_param_dict.get(src_file.name, None))
+        if not src_ext_param_dict:
             raise click.BadParameter(
                 f'{ext_param_file.name} does not contain an entry for {src_file.name}', param_hint='--ext-param'
             )
 
-        src_ext_param_dict = ext_param_dict[src_file.stem]
-        position = (src_ext_param_dict['easting'], src_ext_param_dict['northing'], src_ext_param_dict['altitude'])
-        rotation = np.radians((src_ext_param_dict['omega'], src_ext_param_dict['phi'], src_ext_param_dict['kappa']))
+        position = src_ext_param_dict['xyz']
+        rotation = src_ext_param_dict['opk']
+        # position = (src_ext_param_dict['easting'], src_ext_param_dict['northing'], src_ext_param_dict['altitude'])
+        # rotation = np.radians((src_ext_param_dict['omega'], src_ext_param_dict['phi'], src_ext_param_dict['kappa']))
 
         # get src_file image size
         with suppress_no_georef(), rio.open(src_file, 'r') as src_im:

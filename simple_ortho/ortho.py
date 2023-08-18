@@ -419,7 +419,7 @@ class Ortho:
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
         # (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
-        # imagery.  The smaller range z grid is stored in float32 to save memory.
+        # imagery.
         # j_range = np.arange(0, ortho_im.profile['width'])
         # i_range = np.arange(0, ortho_im.profile['height'])
         j_range = np.arange(0, Ortho._default_blocksize[0])
