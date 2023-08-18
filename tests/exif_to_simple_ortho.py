@@ -13,18 +13,27 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import sys
 import argparse
 import csv
 import json
+import logging
 from pathlib import Path
 from typing import Tuple, Union, List
 
 import numpy as np
-from rasterio import CRS
+import rasterio as rio
+from rasterio.crs import CRS
 from rasterio.warp import transform
 from simple_ortho.exif import Exif
+from simple_ortho.utils import profiler
 # TODO: standardise OPK/rotation naming & units here and in camera.py.  also standardise docs here and in
 #  odm_to_simple_ortho.py
+
+logger = logging.getLogger('simple_ortho')
+handler = logging.StreamHandler(sys.stdout)
+logger.addHandler(handler)
+logger.setLevel(level=logging.DEBUG)
 
 
 def rpy_to_opk(rpy: Tuple[float], lla: Tuple[float], crs: CRS, cbb: Union[None, List[List]] = None) -> Tuple[float]:
@@ -195,7 +204,8 @@ def main():
             file_pos_dict[filename] = pos
 
     # write camera position & OPK values for each source image to output file
-    with open(out_file_path, 'w', newline='', encoding='utf-8') as out_file:
+    env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS')
+    with open(out_file_path, 'w', newline='', encoding='utf-8') as out_file, profiler(), env:
         writer = csv.writer(out_file, delimiter=' ')
         for filename in src_im_dir.glob(src_im_wildcard):
             exif = Exif(filename)
@@ -215,7 +225,8 @@ def main():
 
             opk = rpy_to_opk(np.radians(exif.rpy), exif.lla, world_crs)
             writer.writerow([filename.stem, *pos, *np.degrees(opk)])
-            print(exif, end='\n\n')
+            # writer.writerow([filename.name, *exif.lla, *exif.rpy])
+            # print(exif, end='\n\n')
 
 
 if __name__ == "__main__":
