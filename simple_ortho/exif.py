@@ -108,22 +108,22 @@ class Exif:
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
             namespaces = ds.tag_namespaces()
-            self._exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
+            exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
             self._image_size = ds.shape[::-1]
 
             if 'xml:XMP' in namespaces:
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP']
-                self._xmp_dict = xml_to_flat_dict(xmp_str)
+                xmp_dict = xml_to_flat_dict(xmp_str)
             else:
                 logger.warning(f'{filename.name} contains no XMP metadata')
-                self._xmp_dict = None
+                xmp_dict = None
 
         self._filename = filename
-        self._camera_name = self._get_camera_name(self._exif_dict)
-        self._sensor_size = self._get_sensor_size(self._exif_dict, self._image_size)
-        self._focal_len, self._focal_len_35 = self._get_focal_len(self._exif_dict)
-        self._lla = self._get_xmp_lla(self._xmp_dict) or self._get_lla(self._exif_dict)
-        self._rpy = self._get_xmp_rpy(self._xmp_dict)
+        self._make, self._model = self._get_make_model(exif_dict)
+        self._sensor_size = self._get_sensor_size(exif_dict, self._image_size)
+        self._focal_len, self._focal_len_35 = self._get_focal_len(exif_dict)
+        self._lla = self._get_xmp_lla(xmp_dict) or self._get_lla(exif_dict)
+        self._rpy = self._get_xmp_rpy(xmp_dict)
 
     def __str__(self):
         lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._lla) if self._lla else 'None'
@@ -148,9 +148,14 @@ class Exif:
         return self._filename
 
     @property
-    def camera_name(self) -> Union[None, str]:
-        """ Camera make and model. """
-        return self._camera_name
+    def make(self) -> Union[None, str]:
+        """ Camera make. """
+        return self._make
+
+    @property
+    def model(self) -> Union[None, str]:
+        """ Camera model. """
+        return self._model
 
     @property
     def image_size(self) -> Union[None, Tuple[int, int]]:
@@ -173,7 +178,7 @@ class Exif:
         return self._focal_len_35
 
     @property
-    def lla(self) -> Union[None, Tuple[float]]:
+    def lla(self) -> Union[None, Tuple[float, float, float]]:
         """
         (Latitude, longitude, altitude) co-ordinates with latitude and longitude in decimal degrees, and altitude in
         meters.
@@ -181,7 +186,7 @@ class Exif:
         return self._lla
 
     @property
-    def rpy(self) -> Union[None, Tuple[float]]:
+    def rpy(self) -> Union[None, Tuple[float, float, float]]:
         """ (Roll, pitch, yaw) camera/gimbal angles in degrees. """
         return self._rpy
 
@@ -197,13 +202,13 @@ class Exif:
         return val_list[0] if len(val_list) == 1 else tuple(val_list)
 
     @staticmethod
-    def _get_camera_name(exif_dict: Dict[str, str]) -> Union[None, str]:
+    def _get_make_model(exif_dict: Dict[str, str]) -> Tuple:
         """ Return camera make and model string. """
         make_key = 'EXIF_Make'
         model_key = 'EXIF_Model'
-        make = exif_dict.get(make_key, None)
-        model = exif_dict.get(model_key, None)
-        return f'{make} {model}'.lower() if make and model else None
+        make = exif_dict[make_key].lower() if make_key in exif_dict else None
+        model = exif_dict[model_key].lower() if model_key in exif_dict else None
+        return make, model
 
     @staticmethod
     def _get_sensor_size(
