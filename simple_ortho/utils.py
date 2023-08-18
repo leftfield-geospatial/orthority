@@ -21,6 +21,7 @@ import logging
 from contextlib import contextmanager
 from typing import Tuple, Union
 import numpy as np
+import rasterio as rio
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
 import cv2
@@ -98,3 +99,12 @@ def profiler():
         logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
     else:
         yield
+
+
+def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
+    """ Return a rasterio UTM CRS for the given (lat, lon) coordinates in radians. """
+    # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
+    band = (np.floor((np.degrees(lon) + 180) / 6) % 60) + 1
+    epsg = 32600 + band if np.degrees(lat) >= 0 else 32700 + band
+    return rio.CRS.from_epsg(epsg)
+
