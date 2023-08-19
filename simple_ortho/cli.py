@@ -29,7 +29,7 @@ from simple_ortho.ortho import Ortho
 from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
 from simple_ortho.utils import suppress_no_georef
-from simple_ortho.io import read_int_param, CsvExtReader
+from simple_ortho import io
 from simple_ortho.version import __version__
 
 
@@ -131,12 +131,12 @@ dem_file_option = click.option(
 )
 int_param_file_option = click.option(
     '-ip', '--int-param', 'int_param_file',
-    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path), required=True, default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
     help='Path of a file specifying camera internal parameters.'
 )
 ext_param_file_option = click.option(
     '-ep', '--ext-param', 'ext_param_file',
-    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path), required=True, default=None,
+    type=click.Path(exists=True, dir_okay=False, path_type=Path), default=None,
     help='Path of a file specifying camera external parameters.'
 )
 crs_option = click.option(
@@ -244,42 +244,65 @@ def opk(
     Orthorectify images with camera (easting, northing, altitude) position & (omega, phi, kappa) rotation specified in
     a text file, and camera intrinsic parameters in a configuration file.
     """
-    # read camera config
-    try:
-        int_param_dict = read_int_param(int_param_file)
-    except ValueError as ex:
-        raise click.BadParameter(str(ex), param_hint='--int-param')
+    if not crs:
+        with suppress_no_georef(), rio.open(src_files[0], 'r') as src_im:
+            crs = crs or src_im.crs
 
-    # read camera position & orientation from exterior param file
-    try:
-        # TODO: attempt to extract crs from source image if crs=None and pass in here
-        ext_reader = CsvExtReader(ext_param_file, crs)
-    except ValueError as ex:
-        raise click.BadParameter(str(ex), param_hint='--ext-param')
-    crs = crs or ext_reader.crs
-    ext_param_dict = ext_reader.read()
+    int_param_dict = ext_param_dict = None
+
+    # read interior and exterior params
+    if int_param_file:
+        try:
+            int_param_dict = io.read_int_param(int_param_file)
+        except ValueError as ex:
+            raise click.BadParameter(str(ex), param_hint='--int-param')
+
+    if ext_param_file:
+        ext_param_file = Path(ext_param_file)
+        try:
+        # TODO: attempt to extract crs from source image if crs=None and pass in here, and or figure out what all the
+        #  crs combinations can be, decide on a ruleset and ensure consistency
+            if ext_param_file.suffix.lower() == '.json':
+                ext_reader = io.OsfmExtReader(ext_param_file, crs)
+            else:
+                ext_reader = io.CsvExtReader(ext_param_file, crs)
+        except ValueError as ex:
+            raise click.BadParameter(str(ex), param_hint='--ext-param')
+        crs = crs or ext_reader.crs
+        ext_param_dict = ext_reader.read()
+
+    if not int_param_file or not ext_param_file:
+        exif_reader = io.ExifReader(src_files)
+        int_param_dict = int_param_dict or exif_reader.read_int()
+        crs = crs or exif_reader.find_utm_crs()
+        ext_param_dict = ext_param_dict or exif_reader.read_ext(crs=crs)
 
     for src_file in src_files:
         # extract position and orientation for src_file from pos_ori_file
-        src_ext_param_dict = ext_param_dict.get(src_file.stem, ext_param_dict.get(src_file.name, None))
-        if not src_ext_param_dict:
+        ext_param = ext_param_dict.get(src_file.name, ext_param_dict.get(src_file.stem, None))
+        if not ext_param:
             raise click.BadParameter(
-                f'{ext_param_file.name} does not contain an entry for {src_file.name}', param_hint='--ext-param'
+                f'No exterior parameters for {src_file.name} in {ext_param_file.name}', param_hint='--ext-param'
             )
-
-        position = src_ext_param_dict['xyz']
-        rotation = src_ext_param_dict['opk']
-        # position = (src_ext_param_dict['easting'], src_ext_param_dict['northing'], src_ext_param_dict['altitude'])
-        # rotation = np.radians((src_ext_param_dict['omega'], src_ext_param_dict['phi'], src_ext_param_dict['kappa']))
 
         # get src_file image size
         with suppress_no_georef(), rio.open(src_file, 'r') as src_im:
             im_size = (src_im.width, src_im.height)
+            crs = crs or src_im.crs
 
         # create the camera, ortho object, and ortho filename
         # TODO: call it orientation or rotation?
-        int_param_key = next(iter(int_param_dict))
-        camera = create_camera(position=position, rotation=rotation, im_size=im_size, **int_param_dict[int_param_key])
+        if 'camera' in ext_param:
+            cam_id = ext_param['camera']
+            if cam_id not in int_param_dict:
+                raise click.BadParameter(
+                    f'No interior parameters for camera: `{cam_id}`', param_hint='--int-param'
+                )
+            int_param = int_param_dict[cam_id]
+        else:
+            int_param = next(iter(int_param_dict.values()))
+
+        camera = create_camera(position=ext_param['xyz'], rotation=ext_param['opk'], im_size=im_size, **int_param)
         ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         ortho_root = ortho_dir or src_file.parent
         ortho_file = ortho_root.joinpath(f'{src_file.stem}_ORTHO.tif')

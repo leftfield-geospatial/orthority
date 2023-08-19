@@ -18,9 +18,10 @@ import json
 import yaml
 import logging
 from pathlib import Path
-from typing import Union, Tuple, Optional, List, Dict, Callable
+from typing import Union, Tuple, Optional, List, Dict, Callable, Iterable
 from enum import Enum
 from csv import DictReader, Sniffer, Dialect
+from tqdm.auto import tqdm
 
 import numpy as np
 import rasterio as rio
@@ -139,11 +140,24 @@ def read_json_int_param(filename: Path) -> Dict[str, Dict]:
         cam_dict.update(**json_cam_dict)
         return cam_dict
 
+    # extract cameras section if json_dict is from an OpenSFM reconstruction.json file
+    if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
+        json_dict = json_dict[0]['cameras']
+
     cams_dict = {}
     for cam_id, json_cam_dict in json_dict.items():
         cams_dict[cam_id] = parse_json_cam_dict(json_cam_dict, cam_id)
 
     return cams_dict
+
+
+def _create_exif_cam_id(exif: Exif) -> str:
+    focal_str = ''
+    if exif.focal_len:
+        focal_str = f'{exif.focal_len:.4f}'
+    elif exif.focal_len_35:
+        focal_str = f'{exif.focal_len_35:.4f} (35)'
+    return f'{exif.make or "unknown"} {exif.model or "unknown"} pinhole {focal_str}'
 
 
 def read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
@@ -160,7 +174,7 @@ def read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
     dict
         A dictionary of a camera id - camera interior parameters, key - value pair.
     """
-    cam_dict = dict(cam_type=CameraType.pinhole, name=exif.camera_name, im_size=exif.image_size)
+    cam_dict = dict(cam_type=CameraType.pinhole)
 
     if exif.focal_len and exif.sensor_size:
         # prefer using focal length and sensor size directly
@@ -183,8 +197,7 @@ def read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             f'length.'
         )
 
-    cam_id = f'{exif.camera_name or "unknown"} pinhole {exif.focal_len:.4f}'
-    return {cam_id: cam_dict}
+    return {_create_exif_cam_id(exif): cam_dict}
 
 
 def read_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
@@ -345,6 +358,10 @@ class ExtReader(object):
         self._crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
         self._lla_crs = rio.CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
 
+    @property
+    def crs(self) -> rio.CRS:
+        return self._crs
+
     def read(self) -> Dict[str, Dict]:
         return {}
 
@@ -380,8 +397,10 @@ class CsvExtReader(ExtReader):
         # TODO: make this class a context manager so file can be opened once (?)
         # TODO: we haven't thought of if/how to allow other coordinate conventions for opk / rpy
         # TODO: test vertical adjustment when crs and lla_crs have vertical datums
-        # TODO: allow the CSV field naming spec to overlap with GDAL/QGIS spec for reading actual points
         # TODO: use super() and implement using a best practice abstract class pattern (?)
+        # TODO: allow angles in CSV to have trailing r to specify radians (?)
+        # TODO: consider moving CRS args to read, where they are actually used & possibly a separate method for
+        #  reading a prj CRS
 
         filename = Path(filename)
         ExtReader.__init__(self, filename, crs, lla_crs=lla_crs)
@@ -398,10 +417,6 @@ class CsvExtReader(ExtReader):
                 self._crs = self._find_lla_rpy_crs()
             else:   # lla_opk
                 raise ValueError(f'A `crs` should be specified.')
-
-    @property
-    def crs(self) -> rio.CRS:
-        return self._crs
 
     @staticmethod
     def _read_prj_file_crs(filename: Path) -> rio.CRS:
@@ -526,5 +541,179 @@ class CsvExtReader(ExtReader):
             for row in reader:
                 row = {k: self._type_schema[k](v) for k, v in row.items() if k in self._type_schema}
                 xyz, opk = self._convert(row, radians=self._radians)
-                ext_param_dict[row['filename']] = dict(xyz=xyz, opk=opk, int_id=row.get('camera', None))
+                ext_param_dict[row['filename']] = dict(xyz=xyz, opk=opk, camera=row.get('camera', None))
         return ext_param_dict
+
+
+class OsfmExtReader(ExtReader):
+    # TODO: allow to read interior params from camera section (like ExifReader?)
+    def __init__(
+        self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
+        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+    ):
+        ExtReader.__init__(self, filename, crs=crs, lla_crs=lla_crs)
+        self._json_dict = self._read_json_dict(Path(filename))
+        self._crs = self._crs or self._find_ref_lla_crs()
+
+    @staticmethod
+    def _read_json_dict(filename: Path) -> Dict[str, Dict]:
+        with open(filename, 'r') as f:
+            req_keys = ['shots', 'reference_lla']
+            json_data = json.load(f)
+
+        if (
+            not isinstance(json_data, list) or len(json_data) == 0 or not isinstance(json_data[0], dict) or
+            not set(json_data[0].keys()).issuperset(req_keys)
+        ):  # yapf: disable
+            raise ValueError(f'{filename.name} does not seem to be a valid OpenSFM reconstruction file.')
+
+        # keep req_keys and delete the rest
+        json_dict = {k: json_data[0][k] for k in req_keys}
+        del json_data
+        return json_dict
+
+    def _find_ref_lla_crs(self) -> rio.CRS:
+        ref_lla = self._json_dict['reference_lla']
+        ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
+        return utm_crs_from_latlon(*ref_lla[:2])
+
+    def read(self):
+        ref_lla = self._json_dict['reference_lla']
+        ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
+        ref_xyz = transform(self._lla_crs, self._crs, [ref_lla[1]], [ref_lla[0]], [ref_lla[2]],)
+        ref_xyz = tuple([coord[0] for coord in ref_xyz])
+
+        ext_param_dict = {}
+        for filename, shot_dict in self._json_dict['shots'].items():
+            # adapted from https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
+            rotation = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
+            delta_xyz = -rotation.T.dot(shot_dict['translation'])
+            xyz = tuple(ref_xyz + delta_xyz)
+            opk = aa_to_opk(shot_dict['rotation'])
+            ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=shot_dict['camera'])
+
+        return ext_param_dict
+
+
+def read_exif_ext_param(
+    exif: Exif, crs: Union[str, rio.CRS], lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+) -> Dict:
+    if not exif.lla:
+        raise ValueError(
+            f'{exif.filename.name} has no metadata for latitude, longitude & altitude.'
+        )
+    if not exif.rpy:
+        raise ValueError(
+            f'{exif.filename.name} has no metadata for camera/gimbal roll, pitch & yaw.'
+        )
+    rpy = tuple(np.radians(exif.rpy))
+    opk = rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
+    xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
+    xyz = tuple([coord[0] for coord in xyz])
+    return dict(xyz=xyz, opk=opk, camera=_create_exif_cam_id(exif))
+
+
+def read_exif_params(
+    filenames: Iterable[Union[str, Path]], crs: Union[str, rio.CRS] = None,
+        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+) -> Tuple[Dict, Dict, rio.CRS]:
+    filenames = [filenames] if isinstance(filenames, (str, Path)) else filenames
+    crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
+    lla_crs = rio.CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
+
+    bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]'
+    exif_dict = {}
+    with rio.Env(GDAL_NUM_TRHREADS='ALL_CPUS'):
+        for filename in tqdm(filenames, bar_format=bar_format, dynamic_ncols=True):
+            filename = Path(filename)
+            exif_dict[filename.name] = Exif(filename)
+
+    if not crs:
+        latlons = [e.lla[:2] for e in exif_dict.values()]
+        mean_latlon = np.array(latlons).mean(axis=0)
+        crs = utm_crs_from_latlon(*mean_latlon)
+
+    ext_param_dict = {}
+    int_param_dict = {}
+    for filename, exif in exif_dict.items():
+        int_param = read_exif_int_param(exif)
+        int_param_dict.update(**int_param)
+        ext_param_dict[filename] = read_exif_ext_param(exif, crs=crs, lla_crs=lla_crs)
+
+    return int_param_dict, ext_param_dict, crs
+
+
+class ExifReader:
+    def __init__(self, filenames: Iterable[Union[str, Path]]):
+        filenames = [filenames] if isinstance(filenames, (str, Path)) else filenames
+        self._exif_dict = self._read_exif(filenames)
+
+    @staticmethod
+    def _read_exif(filenames: List[Union[str, Path]]) -> Dict[str, Exif]:
+        exif_dict = {}
+        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]'
+        with rio.Env(GDAL_NUM_TRHREADS='ALL_CPUS'):
+            for filename in tqdm(filenames, bar_format=bar_format, dynamic_ncols=True):
+                filename = Path(filename)
+                exif_dict[filename.name] = Exif(filename)
+        return exif_dict
+
+    def find_utm_crs(self) -> rio.CRS:
+        llas = np.array([e.lla for e in self._exif_dict.values()])
+        if np.any(llas == None):
+            raise ValueError('One or more files have no metadata for latitude, longitude, altitude.')
+        mean_latlon = llas[:, :2].mean(axis=0)
+        return utm_crs_from_latlon(*mean_latlon)
+
+    def read_int(self) -> Dict[str, Dict]:
+        int_param_dict = {}
+        for filename, exif in self._exif_dict.items():
+            int_param = read_exif_int_param(exif)
+            int_param_dict.update(**int_param)
+        return int_param_dict
+
+    def read_ext(
+        self, crs: Union[str, rio.CRS], lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+    ) -> Tuple[Dict[str, Dict], rio.CRS]:
+        crs = crs or self.find_utm_crs()
+        ext_param_dict = {}
+        for filename, exif in self._exif_dict.items():
+            ext_param_dict[filename] = read_exif_ext_param(exif, crs=crs, lla_crs=lla_crs)
+        return ext_param_dict, crs
+
+    @staticmethod
+    def _read(
+        filenames: List[Union[str, Path]], crs: Union[str, rio.CRS] = None,
+        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+    ) -> Tuple[rio.CRS, Dict[str, Dict]]:
+        exif_param_dict = {}
+        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]'
+        with rio.Env(GDAL_NUM_TRHREADS='ALL_CPUS'):
+            for filename in tqdm(filenames, bar_format=bar_format, dynamic_ncols=True):
+                filename = Path(filename)
+                exif = Exif(filename)
+                if not exif.lla:
+                    raise ValueError(
+                        f'{filename.name} does not contain EXIF/XMP metadata for latitude, longitude & altitude.'
+                    )
+                if not exif.rpy:
+                    raise ValueError(
+                        f'{filename.name} does not contain EXIF/XMP metadata for camera/gimbal roll, pitch & yaw.'
+                    )
+                exif_param_dict[filename.name] = dict(lla=exif.lla, rpy=exif.rpy, camera=exif.camera_name)
+
+        if not crs:
+            latlons = [v['lla'][:2] for v in exif_param_dict.values()]
+            mean_latlon = np.array(latlons).mean(axis=0)
+            crs = utm_crs_from_latlon(*mean_latlon)
+
+        ext_param_dict = {}
+        for filename, exif_param in exif_param_dict.items():
+            lla = exif_param['lla']
+            rpy = tuple(np.radians(exif_param['rpy']))
+            opk = rpy_to_opk(rpy, lla, crs, lla_crs=lla_crs)
+            xyz = transform(lla_crs, crs, [lla[1]], [lla[0]], [lla[2]])
+            xyz = tuple([coord[0] for coord in xyz])
+            ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=exif_param['camera'])
+
+        return crs, ext_param_dict

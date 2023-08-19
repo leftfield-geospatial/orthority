@@ -102,9 +102,9 @@ def profiler():
 
 
 def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
-    """ Return a rasterio UTM CRS for the given (lat, lon) coordinates in radians. """
+    """ Return a rasterio UTM CRS for the given (lat, lon) coordinates in degrees. """
     # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
-    band = (np.floor((np.degrees(lon) + 180) / 6) % 60) + 1
-    epsg = 32600 + band if np.degrees(lat) >= 0 else 32700 + band
+    band = (np.floor((lon + 180) / 6) % 60) + 1
+    epsg = 32600 + band if lat >= 0 else 32700 + band
     return rio.CRS.from_epsg(epsg)
 
