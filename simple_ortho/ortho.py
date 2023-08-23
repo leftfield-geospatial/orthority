@@ -30,6 +30,7 @@ from tqdm.auto import tqdm
 
 from simple_ortho.camera import Camera
 from simple_ortho.enums import Interp, Compress
+from simple_ortho.errors import CrsError, CrsMissingError, DemBandError
 from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_equals, profiler
 
 # from scipy.ndimage import map_coordinates
@@ -81,9 +82,9 @@ class Ortho:
         if not Path(dem_filename).exists():
             raise FileNotFoundError(f'DEM image file {dem_filename} does not exist')
         if not isinstance(camera, Camera):
-            raise TypeError('`camera` is not a Camera instance.')
+            raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
-            raise ValueError('`camera` has a field of view that includes, or is above, the horizon.')
+            raise ValueError("'camera' has a field of view that includes, or is above, the horizon.")
 
         # TODO: refactor so that the camera is guaranteed to be the correct one for src_filename (e.g. the camera has a
         #  src_filename property itself, and src_filename is not passed here?  also the separation of crs from camera
@@ -113,15 +114,15 @@ class Ortho:
             try:
                 ortho_crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
             except rio.errors.CRSError as ex:
-                raise ValueError(f'`crs` not supported: {crs}.\n{ex}')
+                raise CrsError(f"Could not interpret 'crs': {crs}. {str(ex)}")
         else:
             with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
                 if src_im.crs:
                     ortho_crs = src_im.crs
                 else:
-                    raise ValueError(f'`crs` should be specified when the source image has no projection.')
+                    raise CrsMissingError(f"No source image projection found, 'crs' should be specified.")
         if ortho_crs.is_geographic:
-            raise ValueError(f'`crs` should be a projected, and not geographic coordinate system.')
+            raise CrsError(f"'crs' should be a projected, not geographic system.")
         return ortho_crs
 
     def _get_init_dem(self, dem_filename: Path, dem_band: int) -> Tuple[np.ndarray, rio.Affine, rio.CRS, bool]:
@@ -135,7 +136,9 @@ class Ortho:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(dem_filename, 'r') as dem_im:
             # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
             if dem_band <= 0 or dem_band > dem_im.count:
-                raise ValueError(f'`dem_band`: {dem_band} is invalid for {dem_filename.name} with {dem_im.count} bands')
+                raise DemBandError(
+                    f"'dem_band': {dem_band} is invalid for {dem_filename.name} with {dem_im.count} bands"
+                )
             # crs comparison is time-consuming - perform it once here, and return result for use elsewhere
             crs_equal = self._ortho_crs == dem_im.crs
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
@@ -305,12 +308,12 @@ class Ortho:
         # interp so these dtypes are excluded).
         dtype = dtype or src_im.profile.get('dtype', None)
         if dtype not in Ortho._nodata_vals:
-            raise ValueError(f'Data type `{dtype}` is not supported.')
+            raise ValueError(f"Data type '{dtype}' is not supported.")
         nodata = Ortho._nodata_vals[dtype]
 
         # setup compression, data interleaving and photometric interpretation
         if compress == Compress.jpeg and dtype != 'uint8':
-            raise ValueError(f'JPEG compression is supported for the `uint8` data type only.')
+            raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.auto:
             compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
@@ -517,10 +520,9 @@ class Ortho:
             ortho_filename = Path(ortho_filename)
             if ortho_filename.exists():
                 if not overwrite:
-                    raise FileExistsError(
-                        f'Ortho file: {ortho_filename.name} exists.'
-                    )
+                    raise FileExistsError(f'Ortho file: {ortho_filename.name} exists.')
                 ortho_filename.unlink()
+                ortho_filename.with_suffix(ortho_filename.suffix + '.aux.xml').unlink(missing_ok=True)
 
             # get dem array covering ortho extents in ortho CRS and resolution
             dem_array, dem_transform = self._reproject_dem(Interp(dem_interp), resolution)
@@ -535,6 +537,7 @@ class Ortho:
 
                 if write_mask is None:
                     # write an internal mask if the ortho is jpeg compressed
+                    # TODO: don't set nodata if write_mask is True
                     write_mask = True if ortho_profile['compress'] == 'jpeg' else False
 
                 with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
