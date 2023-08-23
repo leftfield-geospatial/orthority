@@ -21,7 +21,7 @@ setup(
     ],
     entry_points={'console_scripts': [
         'simple-ortho=simple_ortho.command_line:main_entry',
-        'orthority=simple_ortho.cli:cli'
+        'oty=simple_ortho.cli:cli'
     ]},
 
     scripts=['scripts/batch_recompress.bat']
