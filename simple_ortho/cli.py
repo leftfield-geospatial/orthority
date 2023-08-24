@@ -331,6 +331,8 @@ def ortho(
             reader = io.CsvExtReader(ext_param_file, crs=crs)
         elif ext_param_file.suffix.lower() == '.json':
             reader = io.OsfmReader(ext_param_file, crs=crs)
+        elif ext_param_file.suffix.lower() == '.geojson':
+            reader = io.OtyReader(ext_param_file, crs=crs)
         else:
             raise click.BadParameter(f"'{ext_param_file.suffix}' file type not supported.", param_hint='--ext-param')
         ext_param_dict = reader.read_ext()
