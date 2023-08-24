@@ -19,7 +19,7 @@ import tracemalloc
 import warnings
 import logging
 from contextlib import contextmanager
-from typing import Tuple, Union
+from typing import Tuple, Union, Iterable
 import numpy as np
 import rasterio as rio
 from rasterio.errors import NotGeoreferencedWarning
@@ -108,3 +108,25 @@ def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return rio.CRS.from_epsg(epsg)
 
+
+def validate_collection(template: Iterable, coll: Iterable) -> bool:
+    """
+    Validate a nested dict / list of values (``coll``) against a nested dict / list of types and values (``template``).
+    All items in a ``coll`` list are validated against the first item in the corresponding ``template`` list.
+    """
+    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
+
+    if isinstance(template, dict) and isinstance(coll, dict):
+        # struct is a dict of types or other dicts
+        return all(k in coll and validate_collection(template[k], coll[k]) for k in template)
+    if isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
+        # struct is list in the form [type or dict]
+        return all(validate_collection(template[0], item) for item in coll)
+    elif isinstance(template, type):
+        # struct is the type of conf
+        return isinstance(coll, template)
+    elif isinstance(template, object):
+        # struct is the value of conf
+        return coll == template
+    else:
+        return False
