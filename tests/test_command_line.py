@@ -60,7 +60,8 @@ class TestCommandLine(unittest.TestCase):
                     src_array = src_im.read(1)
                     with rio.open(ortho_filename, 'r', num_threads='all_cpus') as ortho_im:
                         ortho_array = ortho_im.read(1)
-                        ortho_array_masked = ortho_array[ortho_array != ortho_im.nodata]
+                        ortho_mask = ortho_im.dataset_mask().astype('bool')
+                        ortho_array_masked = ortho_array[ortho_mask]
 
                         # compare source and ortho means
                         source_mean = src_array.mean()
@@ -113,13 +114,13 @@ class TestCommandLine(unittest.TestCase):
 
     def test_ortho_im(self):
         self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
-        # self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
-        # self._test_ortho_im(
-        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard='*.JPG'
-        # )
-        # self._test_ortho_im(
-        #     input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
-        # )
+        self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
+        self._test_ortho_im(
+            input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard='*.JPG'
+        )
+        self._test_ortho_im(
+            input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
+        )
 
 
 if __name__ == '__main__':
