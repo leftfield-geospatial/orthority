@@ -329,15 +329,14 @@ def ortho(
     try:
         if ext_param_file.suffix.lower() in ['.csv', '.txt']:
             reader = io.CsvExtReader(ext_param_file, crs=crs)
-            ext_param_dict = reader.read()
         elif ext_param_file.suffix.lower() == '.json':
             reader = io.OsfmReader(ext_param_file, crs=crs)
-            ext_param_dict = reader.read_ext()
         else:
             raise click.BadParameter(f"'{ext_param_file.suffix}' file type not supported.", param_hint='--ext-param')
+        ext_param_dict = reader.read_ext()
     except ParamFileError as ex:
-        raise click.BadParameter(str(ex), param=ext_param_file, param_hint='--ext-param')
-    except CrsMissingError as ex:
+        raise click.BadParameter(str(ex), param_hint='--ext-param')
+    except CrsMissingError:
         raise click.MissingParameter(param_hint='--crs', param_type='option')
 
     # finalise the crs

@@ -18,7 +18,7 @@ import json
 import yaml
 import logging
 from pathlib import Path
-from typing import Union, Tuple, Optional, List, Dict, Callable, Iterable
+from typing import Union, Tuple, Optional, List, Dict, Callable
 from enum import Enum
 from csv import DictReader, Sniffer, Dialect
 from tqdm.auto import tqdm
@@ -32,7 +32,7 @@ import cv2
 
 from simple_ortho.enums import CameraType
 from simple_ortho.exif import Exif
-from simple_ortho.utils import utm_crs_from_latlon
+from simple_ortho.utils import utm_crs_from_latlon, validate_collection
 from simple_ortho.errors import ParamFileError, CrsError, CrsMissingError
 
 logger = logging.getLogger(__name__)
@@ -54,21 +54,21 @@ def read_yaml_int_param(filename: Path) -> Dict[str, Dict]:
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
 
-    def parse_cam_dict(cam_dict: Dict, cam_id: str) -> Dict:
+    def parse_yaml_param(yaml_param: Dict, cam_id: str) -> Dict:
         # TODO: check all keys are valid for camera type
         for req_key in ['type', 'focal_len', 'sensor_size']:
-            if req_key not in cam_dict:
+            if req_key not in yaml_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
-        cam_type = cam_dict.pop('type').lower()
+        cam_type = yaml_param.pop('type').lower()
         try:
-            cam_dict['cam_type'] = CameraType(cam_type)
+            yaml_param['cam_type'] = CameraType(cam_type)
         except ValueError:
             raise ParamFileError(f"Unsupported camera type '{cam_type}'.")
 
-        cam_dict.pop('name', None)
-        cam_dict.pop('im_size', None)
-        return cam_dict
+        yaml_param.pop('name', None)
+        yaml_param.pop('im_size', None)
+        return yaml_param
 
     # flatten if in original simple-ortho format
     yaml_dict = yaml_dict.get('camera', yaml_dict)
@@ -80,63 +80,64 @@ def read_yaml_int_param(filename: Path) -> Dict[str, Dict]:
         yaml_dict = {cam_id: yaml_dict}
 
     # parse each set of camera parameters
-    cams_dict = {}
-    for cam_id, cam_dict in yaml_dict.items():
-        cams_dict[cam_id] = parse_cam_dict(cam_dict, cam_id)
-    return cams_dict
+    int_param_dict = {}
+    for cam_id, yaml_param in yaml_dict.items():
+        int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
+    return int_param_dict
 
 
 def _read_json_int_param(json_dict: Dict) -> Dict[str, Dict]:
-    def parse_json_cam_dict(json_cam_dict: Dict, cam_id: str) -> Dict:
+    def parse_json_param(json_param: Dict, cam_id: str) -> Dict:
         """ Return a dict of interior camera parameters given an ODM / OpenSFM json dict for single camera. """
         # TODO: check all keys are valid for camera type
-        cam_dict = {}
+        int_param = {}
         for req_key in ['projection_type', 'width', 'height']:
-            if req_key not in json_cam_dict:
+            if req_key not in json_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
+        # set 'cam_type' from projection_type'
+        proj_type = json_param.pop('projection_type').lower()
+        try:
+            int_param['cam_type'] = CameraType.from_odm(proj_type)
+        except ValueError:
+            raise ParamFileError(f"Unsupported camera type '{proj_type}'.")
+
         # read focal length(s) (json values are normalised by sensor width)
-        if 'focal' in json_cam_dict:
-            cam_dict['focal_len'] = json_cam_dict.pop('focal')
-        elif 'focal_x' in json_cam_dict and 'focal_y' in json_cam_dict:
-            cam_dict['focal_len'] = (json_cam_dict.pop('focal_x'), json_cam_dict.pop('focal_y'))
+        if 'focal' in json_param:
+            int_param['focal_len'] = json_param.pop('focal')
+        elif 'focal_x' in json_param and 'focal_y' in json_param:
+            int_param['focal_len'] = (json_param.pop('focal_x'), json_param.pop('focal_y'))
         else:
             raise ParamFileError(
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
             )
 
-        proj_type = json_cam_dict.pop('projection_type').lower()
-        try:
-            cam_dict['cam_type'] = CameraType.from_odm(proj_type)
-        except ValueError:
-            raise ParamFileError(f"Unsupported camera type '{proj_type}'.")
-
-        image_size = (json_cam_dict.pop('width'), json_cam_dict.pop('height'))
+        image_size = (json_param.pop('width'), json_param.pop('height'))
 
         # TODO: normalised by width or max(width, height) ?
         # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM / OpenSFM json files do
         # not define sensor size)
-        cam_dict['sensor_size'] = (1, image_size[1] / image_size[0])
+        int_param['sensor_size'] = (1, image_size[1] / image_size[0])
 
         # rename c_x->cx & c_y->cy
         for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy']):
-            if from_key in json_cam_dict:
-                cam_dict[to_key] = json_cam_dict.pop(from_key)
+            if from_key in json_param:
+                int_param[to_key] = json_param.pop(from_key)
 
         # update param_dict with any remaining distortion coefficient parameters and return
-        cam_dict.update(**json_cam_dict)
-        return cam_dict
+        int_param.update(**json_param)
+        return int_param
 
     # extract cameras section if json_dict is from an OpenSFM reconstruction.json file
     if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
         json_dict = json_dict[0]['cameras']
 
-    cams_dict = {}
-    for cam_id, json_cam_dict in json_dict.items():
+    int_param_dict = {}
+    for cam_id, json_param in json_dict.items():
         cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
-        cams_dict[cam_id] = parse_json_cam_dict(json_cam_dict, cam_id)
+        int_param_dict[cam_id] = parse_json_param(json_param, cam_id)
 
-    return cams_dict
+    return int_param_dict
 
 
 def read_json_int_param(filename: Path) -> Dict[str, Dict]:
@@ -360,6 +361,12 @@ class Reader(object):
     def crs(self) -> rio.CRS:
         return self._crs
 
+    def read_int(self) -> Dict[str, Dict]:
+        raise NotImplementedError()
+
+    def read_ext(self) -> Dict[str, Dict]:
+        raise NotImplementedError()
+
 
 class CsvFormat(Enum):
     xyz_opk = 1
@@ -536,7 +543,7 @@ class CsvExtReader(Reader):
 
         return xyz, opk
 
-    def read(self) -> Dict[str, Dict]:
+    def read_ext(self) -> Dict[str, Dict]:
         ext_param_dict = {}
         with open(self._filename, 'r', newline=None) as f:
             reader = DictReader(f, fieldnames=self._fieldnames, dialect=self._dialect)
@@ -573,17 +580,14 @@ class OsfmReader(Reader):
     @staticmethod
     def _read_json_dict(filename: Path) -> Dict[str, Dict]:
         with open(filename, 'r') as f:
-            req_keys = ['shots', 'reference_lla', 'cameras']
             json_data = json.load(f)
 
-        if (
-            not isinstance(json_data, list) or len(json_data) == 0 or not isinstance(json_data[0], dict) or
-            not set(json_data[0].keys()).issuperset(req_keys)
-        ):  # yapf: disable
-            raise ParamFileError(f'Could not interpret reconstruction file {filename.name}.')
+        template = [dict(cameras=dict, shots=dict, reference_lla=dict(latitude=float, longitude=float, altitude=float))]
+        if not validate_collection(template, json_data):
+            raise ParamFileError(f'{filename.name} is not a valid OpenSfM reconstruction file.')
 
-        # keep req_keys and delete the rest
-        json_dict = {k: json_data[0][k] for k in req_keys}
+        # keep root template keys and delete the rest
+        json_dict = {k: json_data[0][k] for k in template[0].keys()}
         del json_data
         return json_dict
 
@@ -592,10 +596,10 @@ class OsfmReader(Reader):
         ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
         return utm_crs_from_latlon(*ref_lla[:2])
 
-    def read_int(self):
+    def read_int(self) -> Dict[str, Dict]:
         return _read_json_int_param(self._json_dict['cameras'])
 
-    def read_ext(self):
+    def read_ext(self) -> Dict[str, Dict]:
         ref_lla = self._json_dict['reference_lla']
         ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
         ref_xyz = transform(self._lla_crs, self._crs, [ref_lla[1]], [ref_lla[0]], [ref_lla[2]],)
@@ -636,7 +640,7 @@ def _read_exif_ext_param(
 class ExifReader(Reader):
     # TODO: test with empty filenames list
     def __init__(
-        self, filenames: Iterable[Union[str, Path]], crs: Union[str, rio.CRS] = None,
+        self, filenames: Tuple[Union[str, Path]], crs: Union[str, rio.CRS] = None,
         lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
     ):
         Reader.__init__(self, crs, lla_crs)
@@ -674,8 +678,99 @@ class ExifReader(Reader):
             int_param_dict.update(**int_param)
         return int_param_dict
 
-    def read_ext(self) -> Tuple[Dict[str, Dict], rio.CRS]:
+    def read_ext(self) -> Dict[str, Dict]:
         ext_param_dict = {}
         for filename, exif in self._exif_dict.items():
             ext_param_dict[filename] = _read_exif_ext_param(exif, crs=self._crs, lla_crs=self._lla_crs)
         return ext_param_dict
+
+
+class OtyReader(Reader):
+    def __init__(
+        self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
+        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+    ):
+        Reader.__init__(self, crs=crs, lla_crs=lla_crs)
+        self._filename = Path(filename)
+        if not self._filename.exists():
+            raise FileNotFoundError(f'File not found: {self._filename}.')
+
+        self._crs, self._json_dict = self._read_json_dict(Path(filename), self._crs)
+
+    @staticmethod
+    def _read_json_dict(filename: Path, crs: rio.CRS) -> Tuple[rio.CRS, Dict]:
+        with open(filename, 'r') as f:
+            json_dict = json.load(f)
+
+        template = dict(
+            type='FeatureCollection', xyz_opk_crs=str, features=[dict(
+                type='Feature', properties=dict(filename=str, camera=str, xyz=list, opk=list),
+                geometry=dict(type='Point', coordinates=list)
+            )]
+        )  # yapf: disable
+        if not validate_collection(template, json_dict):
+            raise ParamFileError(f'{filename.name} is not a valid GeoJSON exterior parameter file.')
+
+        if not crs:
+            try:
+                crs = rio.CRS.from_string(json_dict['xyz_opk_crs'])
+            except RioCrsError as ex:
+                raise ParamFileError(f'Could not interpret CRS in {filename.name}: {str(ex)}')
+
+        return crs, json_dict
+
+    def read_ext(self) -> Dict[str, Dict]:
+        ext_param_dict = {}
+        for feat_dict in self._json_dict['features']:
+            filename = feat_dict['filename']
+            ext_parm = dict(xyz=tuple(feat_dict['xyz']), opk=tuple(feat_dict['opk']), camera=feat_dict['camera'])
+            ext_param_dict[filename] = ext_parm
+        return ext_param_dict
+
+
+def write_int_param(
+    filename: Union[str, Path], int_param_dict: Dict[str, Dict], overwrite: bool = False
+):
+    filename = Path(filename)
+    if filename.exists():
+        if not overwrite:
+            raise FileExistsError(f'Interior parameter file: {filename.name} exists.')
+        filename.unlink()
+
+    # convert 'cam_type' to 'type', with 'type' being the first item
+    yaml_dict = {}
+    for cam_id, int_param in int_param_dict.items():
+        yaml_param = {}
+        if 'cam_type' in int_param:
+            yaml_param['type'] = int_param['cam_type'].value
+        yaml_param.update(**{k: v for k, v in int_param.items() if k != 'cam_type'})
+        yaml_dict[cam_id] = yaml_param
+
+    with open(filename, 'w') as f:
+        yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
+
+
+def write_ext_param(
+    filename: Union[str, Path], ext_param_dict: Dict[str, Dict], crs: Union[str, rio.CRS], overwrite: bool = False
+):
+    filename = Path(filename)
+    if filename.exists():
+        if not overwrite:
+            raise FileExistsError(f'Exterior parameter file: {filename.name} exists.')
+        filename.unlink()
+
+    feat_list = []
+    lla_crs = rio.CRS.from_epsg(4979)
+    for src_file, ext_param in ext_param_dict.items():
+        xyz = ext_param['xyz']
+        lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
+        lla = [lla[0][0], lla[1][0], lla[2][0]]  # (lon, lat) order for geojson point
+        props_dict = dict(filename=src_file, camera=ext_param['camera'], xyz=xyz, opk=ext_param['opk'])
+        geom_dict = dict(type='Point', coordinates=list(lla))
+        feat_dict = dict(type='Feature', properties=props_dict, geometry=geom_dict)
+        feat_list.append(feat_dict)
+
+    json_dict = dict(type='FeatureCollection', xyz_opk_crs=crs.to_string(), features=feat_list)
+    with open(filename, 'w') as f:
+        json.dump(json_dict, f, indent=4)
+
