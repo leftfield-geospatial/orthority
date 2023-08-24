@@ -30,6 +30,8 @@ from simple_ortho.camera import Camera, PinholeCamera
 from simple_ortho.enums import Interp, Compress
 from simple_ortho.ortho import Ortho
 from simple_ortho.utils import nan_equals
+from simple_ortho import errors
+from tests.conftest import _dem_resolution
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -79,21 +81,21 @@ def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
     """ Test Ortho initialisation with incorrect `dem_band` raises an error. """
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(errors.DemBandError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
     assert 'dem_band' in str(ex)
 
 
 def test_init_nocrs_error(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera):
     """ Test Ortho initialisation without a CRS raises an error. """
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(errors.CrsMissingError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=None)
     assert 'crs' in str(ex)
 
 
 def test_init_geogcrs_error(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera):
     """ Test Ortho initialisation with a geographic CRS raises an error. """
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(errors.CrsError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs='EPSG:4326')
     assert 'geographic' in str(ex)
 
@@ -183,9 +185,7 @@ def test_reproject_dem_vdatum_both(
     crs: str = request.getfixturevalue(crs)
 
     ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
-    with rio.open(dem_file, 'r') as dem_im:
-        resolution = dem_im.res
-    array, transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    array, transform = ortho._reproject_dem(Interp.cubic_spline, _dem_resolution)
 
     assert not ortho._crs_equal
     assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
@@ -224,25 +224,27 @@ def test_reproject_dem_vdatum_one(
 
 # @formatter:off
 @pytest.mark.parametrize(
-    '_position, _rotation', [
+    'pos_offset, rot_offset', [
         # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
-        ((2e4, 3e4, 1e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 1e3), (-18., 12., 10.)),
-        ((2e4, 3e4, 1e3), (-33., 22., 10.)),
-        ((2e4, 3e4, 1e3), (-48., 22., 10.)),
+        ((0, 0, 0), (0, 0, 0)),
+        ((0, 0, 0), (-15, 10, 0)),
+        ((0, 0, 0), (-30, 20, 0)),
+        ((0, 0, 0), (-45, 20, 0)),
         # varying positions with partial dem coverage
-        ((2e4, 3.05e4, 1e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 2e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 4e3), (-3., 2., 10.)),
+        ((0, 5e2, 0), (0, 0, 0)),
+        ((0, 0, 1e3), (0, 0, 0)),
+        ((0, 0, 2e3), (0, 0, 0)),
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, _position: Tuple,
-    _rotation: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, pos_offset: Tuple,
+    rot_offset: Tuple, tmp_path: Path
 ):
     """ Test the DEM (ortho boundary) mask contains the ortho valid data mask (without cropping). """
     # note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.
+    _position = tuple(np.array(camera_args['position']) + pos_offset)
+    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
     camera: Camera = PinholeCamera(
         _position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
@@ -254,7 +256,7 @@ def test_mask_dem(
     dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     with rio.open(rgb_byte_src_file, 'r') as src_im:
-        ortho_profile = ortho._create_ortho_profile(
+        ortho_profile, _ = ortho._create_ortho_profile(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
@@ -303,23 +305,25 @@ def test_mask_dem(
 
 # @formatter:off
 @pytest.mark.parametrize(
-    '_position, _rotation', [
+    'pos_offset, rot_offset', [
         # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
-        ((2e4, 3e4, 1e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 1e3), (-18., 12., 10.)),
-        ((2e4, 3e4, 1e3), (-33., 22., 10.)),
-        ((2e4, 3e4, 1e3), (-48., 22., 10.)),
+        ((0, 0, 0), (0, 0, 0)),
+        ((0, 0, 0), (-15, 10, 0)),
+        ((0, 0, 0), (-30, 20, 0)),
+        ((0, 0, 0), (-45, 20, 0)),
         # varying positions with partial dem coverage
-        ((2e4, 3.05e4, 1e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 2e3), (-3., 2., 10.)),
-        ((2e4, 3e4, 4e3), (-3., 2., 10.)),
+        ((0, 5e2, 0), (0, 0, 0)),
+        ((0, 0, 1e3), (0, 0, 0)),
+        ((0, 0, 2e3), (0, 0, 0)),
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem_crop(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, _position: Tuple,
-    _rotation: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, pos_offset: Tuple,
+    rot_offset: Tuple, tmp_path: Path
 ):
     """ Test the DEM mask is cropped to ortho boundaries. """
+    _position = tuple(np.array(camera_args['position']) + pos_offset)
+    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
     camera: Camera = PinholeCamera(
         _position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
@@ -534,7 +538,7 @@ def test_process_write_mask_compress(
 def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
     """ Test the ortho `nodata` is set correctly. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype)
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype, compress=Compress.deflate)
 
     assert ortho_file.exists()
     with rio.open(ortho_file, 'r') as ortho_im:
@@ -563,7 +567,7 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert test_array.mean() == pytest.approx(ref_array.mean(), 10)
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera'])
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
 def test_process_full_remap(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
     request: pytest.FixtureRequest
@@ -648,7 +652,7 @@ def test_process_overview(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
         assert len(ortho_im.overviews(1)) > 0
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera'])
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
 def test_process(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
     request: pytest.FixtureRequest
@@ -684,4 +688,5 @@ def test_process(
 
 
 # TODO: dem reproject changes bounds with different v datum
+# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in different CRSs
 ##

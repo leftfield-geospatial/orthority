@@ -49,7 +49,7 @@ def test_init(
         assert np.all(camera._dist_param == [*dist_param.values()])
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera', ])
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', ])
 def test_project_points(camera: str, request: pytest.FixtureRequest):
     """ Test projection of multiple points between pixel & world coordinates. """
     camera: Camera = request.getfixturevalue(camera)
@@ -76,8 +76,8 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
         ('brown_camera', False),
         ('opencv_camera', True),
         ('opencv_camera', False),
-        ('nadir_fisheye_camera', True),
-        ('nadir_fisheye_camera', False),
+        ('fisheye_camera', True),
+        ('fisheye_camera', False),
     ]
 )  # yapf:disable  # @formatter:on
 def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest):
@@ -117,7 +117,7 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert ji_ == pytest.approx(ji, abs=1)
 
 
-@pytest.mark.parametrize('camera', ['brown_camera', 'opencv_camera', 'nadir_fisheye_camera'], )
+@pytest.mark.parametrize('camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'], )
 def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: pytest.FixtureRequest):
     """ Test projected points with distort==False match pinhole camera. """
     camera: Camera = request.getfixturevalue(camera)
@@ -160,7 +160,7 @@ def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
     assert cv_xyz == pytest.approx(brown_xyz, abs=1e-3)
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera', ])
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', ])
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """ Test world_to_pixel raises a ValueError with invalid coordinate shapes. """
     camera: Camera = request.getfixturevalue(camera)
@@ -223,7 +223,7 @@ def test_instrinsic_nonsquare_pixels(
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'nadir_fisheye_camera'], )
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'], )
 def test_undistort(camera: str, request: pytest.FixtureRequest):
     """ Test undistort method by comparing source & distorted-undistorted checkerboard images. """
     nodata = 0

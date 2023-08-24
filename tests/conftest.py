@@ -117,7 +117,7 @@ def create_src(
 
 @pytest.fixture(scope='session')
 def position() -> Tuple[float, float, float]:
-    """ Example camera UTM (Easting, Northing, altitude) position (m). """
+    """ Example camera (Easting, Northing, altitude) position (m). """
     return (2e4, 3e4, 1e3)
 
 
@@ -188,7 +188,7 @@ def opencv_camera(camera_args, opencv_dist_param: Dict) -> Camera:
 
 
 @pytest.fixture(scope='session')
-def nadir_fisheye_camera(camera_args, fisheye_dist_param: Dict) -> Camera:
+def fisheye_camera(camera_args, fisheye_dist_param: Dict) -> Camera:
     """  Example `FisheyeCamera` object with near-nadir orientation.  """
     return FisheyeCamera(**camera_args, **fisheye_dist_param)
 
@@ -215,6 +215,30 @@ def utm34n_egm96_crs() -> str:
 def utm34n_egm2008_crs() -> str:
     """ CRS string for UTM zone 34N with EGM2008 geoid vertical datum. """
     return 'EPSG:32634+3855'
+
+
+@pytest.fixture(scope='session')
+def webmerc_crs() -> str:
+    """ CRS string for web mercator with no vertical datum. """
+    return '+proj=webmerc +datum=WGS84'
+
+
+@pytest.fixture(scope='session')
+def webmerc_wgs84_crs() -> str:
+    """ CRS string for web mercator with WGS84 ellipsoid vertical datum. """
+    return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
+
+
+@pytest.fixture(scope='session')
+def webmerc_egm96_crs() -> str:
+    """ CRS string for web mercator with EGM96 geoid vertical datum. """
+    return '+proj=webmerc +datum=WGS84 +geoidgrids=egm96_15.gtx +vunits=m'
+
+
+@pytest.fixture(scope='session')
+def webmerc_egm2008_crs() -> str:
+    """ CRS string for web mercator with EGM2008 geoid vertical datum. """
+    return '+proj=webmerc +datum=WGS84 +geoidgrids=egm08_25.gtx +vunits=m'
 
 
 @pytest.fixture(scope='session')
