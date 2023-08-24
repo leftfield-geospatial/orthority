@@ -37,7 +37,8 @@ from simple_ortho.errors import ParamFileError, CrsError, CrsMissingError
 
 logger = logging.getLogger(__name__)
 
-def read_yaml_int_param(filename: Path) -> Dict[str, Dict]:
+
+def read_yaml_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     """
     Read interior parameters for one or more cameras from a yaml file.
 
@@ -51,24 +52,28 @@ def read_yaml_int_param(filename: Path) -> Dict[str, Dict]:
     dict
         A dictionary of camera id - camera interior parameters, key - value pairs.
     """
+    filename = Path(filename)
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
 
     def parse_yaml_param(yaml_param: Dict, cam_id: str) -> Dict:
         # TODO: check all keys are valid for camera type
+        int_param = {}
         for req_key in ['type', 'focal_len', 'sensor_size']:
             if req_key not in yaml_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
         cam_type = yaml_param.pop('type').lower()
         try:
-            yaml_param['cam_type'] = CameraType(cam_type)
+            int_param['cam_type'] = CameraType(cam_type)
         except ValueError:
             raise ParamFileError(f"Unsupported camera type '{cam_type}'.")
 
         yaml_param.pop('name', None)
         yaml_param.pop('im_size', None)
-        return yaml_param
+
+        int_param.update(**{k: tuple(v) if isinstance(v, list) else v for k, v in yaml_param.items()})
+        return int_param
 
     # flatten if in original simple-ortho format
     yaml_dict = yaml_dict.get('camera', yaml_dict)
@@ -722,8 +727,9 @@ class OtyReader(Reader):
     def read_ext(self) -> Dict[str, Dict]:
         ext_param_dict = {}
         for feat_dict in self._json_dict['features']:
-            filename = feat_dict['filename']
-            ext_parm = dict(xyz=tuple(feat_dict['xyz']), opk=tuple(feat_dict['opk']), camera=feat_dict['camera'])
+            prop_dict = feat_dict['properties']
+            filename = prop_dict['filename']
+            ext_parm = dict(xyz=tuple(prop_dict['xyz']), opk=tuple(prop_dict['opk']), camera=prop_dict['camera'])
             ext_param_dict[filename] = ext_parm
         return ext_param_dict
 
