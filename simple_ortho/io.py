@@ -52,6 +52,7 @@ def read_yaml_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     dict
         A dictionary of camera id - camera interior parameters, key - value pairs.
     """
+    # TODO: allow partial spec that can be merged with other int params?
     filename = Path(filename)
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
@@ -392,7 +393,7 @@ class CsvFormat(Enum):
         return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy
 
 
-class CsvExtReader(Reader):
+class CsvReader(Reader):
     _type_schema = dict(
         filename=str, easting=float, northing=float, latitude=float, longitude=float, altitude=float, omega=float,
         phi=float, kappa=float, roll=float, pitch=float, yaw=float, camera=lambda x: str(x) if x else x,
@@ -480,9 +481,9 @@ class CsvExtReader(Reader):
             if has_header:
                 fieldnames = next(iter(csv.reader(sample.splitlines(), dialect=dialect)))
             else:
-                fieldnames = CsvExtReader._std_fieldnames  # assume simple-ortho std format
+                fieldnames = CsvReader._std_fieldnames  # assume simple-ortho std format
         fieldnames = strip_lower_strlist(fieldnames)
-        csv_fmt = CsvExtReader._parse_fieldnames(fieldnames)
+        csv_fmt = CsvReader._parse_fieldnames(fieldnames)
 
         return fieldnames, dialect, has_header, csv_fmt
 
@@ -644,8 +645,9 @@ def _read_exif_ext_param(
 
 class ExifReader(Reader):
     # TODO: test with empty filenames list
+    # TODO: read crs from image file
     def __init__(
-        self, filenames: Tuple[Union[str, Path]], crs: Union[str, rio.CRS] = None,
+        self, filenames: Tuple[Union[str, Path], ...], crs: Union[str, rio.CRS] = None,
         lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
     ):
         Reader.__init__(self, crs, lla_crs)
@@ -740,7 +742,7 @@ def write_int_param(
     filename = Path(filename)
     if filename.exists():
         if not overwrite:
-            raise FileExistsError(f'Interior parameter file: {filename.name} exists.')
+            raise FileExistsError(f'Interior parameter file exists: {filename}.')
         filename.unlink()
 
     # convert 'cam_type' to 'type', with 'type' being the first item
@@ -762,7 +764,7 @@ def write_ext_param(
     filename = Path(filename)
     if filename.exists():
         if not overwrite:
-            raise FileExistsError(f'Exterior parameter file: {filename.name} exists.')
+            raise FileExistsError(f'Exterior parameter file exists: {filename}.')
         filename.unlink()
 
     feat_list = []

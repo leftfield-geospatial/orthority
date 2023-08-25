@@ -119,7 +119,7 @@ def validate_collection(template: Iterable, coll: Iterable) -> bool:
     if isinstance(template, dict) and isinstance(coll, dict):
         # struct is a dict of types or other dicts
         return all(k in coll and validate_collection(template[k], coll[k]) for k in template)
-    if isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
+    elif isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
         # struct is list in the form [type or dict]
         return all(validate_collection(template[0], item) for item in coll)
     elif isinstance(template, type):

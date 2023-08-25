@@ -138,17 +138,33 @@ def _odm_root_cb(ctx: click.Context, param: click.Parameter, odm_root: Path):
             raise click.BadParameter(f'Could not find {req_path}.', param=param)
     return odm_root
 
+
 def _read_src_crs(filename: Path) -> Union[None, rio.CRS]:
     with suppress_no_georef(), rio.open(filename, 'r') as im:
         if not im.crs:
-            logger.debug(f'No source image CRS found for: {filename.name}')
+            logger.debug(f'No CRS found for source image: {filename.name}')
         return im.crs
+
 
 def _ortho(
     src_files: Tuple[Path, ...], dem_file: Path, int_param_dict: Dict[str, Dict], ext_param_dict: Dict[str, Dict],
-    crs: rio.CRS, resolution: Tuple[float, float], dem_band: int, ortho_dir: Path, **kwargs
+    crs: rio.CRS, resolution: Tuple[float, float], dem_band: int, write_params: bool, out_dir: Path, overwrite: bool,
+    **kwargs
 ):
     """ """
+    if write_params:
+        # convert interior / exterior params to oty format files
+        logger.info('Writing parameter files...')
+        if not out_dir:
+            raise click.MissingParameter(
+                '--write-params requires --out-dir to be specified.', param_hint='--out-dir', param_type='option'
+            )
+        int_param_file = out_dir.joinpath('int_param.yaml')
+        ext_param_file = out_dir.joinpath('ext_param.geojson')
+        io.write_int_param(int_param_file, int_param_dict, overwrite)
+        io.write_ext_param(ext_param_file, ext_param_dict, crs, overwrite)
+        return
+
     for src_file in src_files:
         # get exterior params for src_file
         ext_param = ext_param_dict.get(src_file.name, ext_param_dict.get(src_file.stem, None))
@@ -180,8 +196,8 @@ def _ortho(
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
             raise click.BadParameter(str(ex), param_hint='--dem_band')
-        ortho_root = ortho_dir or src_file.parent
-        ortho_file = ortho_root.joinpath(f'{src_file.stem}_ORTHO.tif')
+        out_root = out_dir or src_file.parent
+        ortho_file = out_root.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
         logger.info(f'Orthorectifying {src_file.name}:')
@@ -265,9 +281,13 @@ build_ovw_option = click.option(
     '-bo/-nbo', '--build-ovw/--no-build-ovw', type=click.BOOL, default=True, show_default=True,
     help='Build overviews for the ortho image(s).'
 )
-ortho_dir_option = click.option(
-    '-od', '--ortho-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), default=None,
-    show_default='source image directory.', help='Directory in which to place ortho image(s).'
+write_params_option = click.option(
+    '-wp', '--write-params', is_flag=True, type=click.BOOL, default=False, show_default=True,
+    help='Write interior / exterior parameters to orthority format file(s), and exit.'
+)
+out_dir_option = click.option(
+    '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), default=None,
+    show_default='source file directory.', help='Directory in which to place output file(s).'
 )
 overwrite_option = click.option(
     '-o', '--overwrite', is_flag=True, type=click.BOOL, default=False, show_default=True,
@@ -276,8 +296,8 @@ overwrite_option = click.option(
 
 
 @click.group()
-@click.option('--verbose', '-v', count=True, help="Increase verbosity.")
-@click.option('--quiet', '-q', count=True, help="Decrease verbosity.")
+@click.option('--verbose', '-v', count=True, help='Increase verbosity.')
+@click.option('--quiet', '-q', count=True, help='Decrease verbosity.')
 @click.version_option(version=__version__, message='%(version)s')
 def cli(verbose, quiet):
     """ Orthorectify remotely sensed imagery. """
@@ -302,7 +322,8 @@ def cli(verbose, quiet):
 @dtype_option
 @compress_option
 @build_ovw_option
-@ortho_dir_option
+@write_params_option
+@out_dir_option
 @overwrite_option
 def ortho(
     src_files: Tuple[Path, ...], int_param_file: Path, ext_param_file: Path, crs: rio.CRS, **kwargs
@@ -328,18 +349,21 @@ def ortho(
     # read exterior params
     try:
         if ext_param_file.suffix.lower() in ['.csv', '.txt']:
-            reader = io.CsvExtReader(ext_param_file, crs=crs)
+            reader = io.CsvReader(ext_param_file, crs=crs)
         elif ext_param_file.suffix.lower() == '.json':
             reader = io.OsfmReader(ext_param_file, crs=crs)
         elif ext_param_file.suffix.lower() == '.geojson':
             reader = io.OtyReader(ext_param_file, crs=crs)
         else:
             raise click.BadParameter(f"'{ext_param_file.suffix}' file type not supported.", param_hint='--ext-param')
-        ext_param_dict = reader.read_ext()
+
     except ParamFileError as ex:
         raise click.BadParameter(str(ex), param_hint='--ext-param')
+
     except CrsMissingError:
         raise click.MissingParameter(param_hint='--crs', param_type='option')
+
+    ext_param_dict = reader.read_ext()
 
     # finalise the crs
     crs = crs or reader.crs
@@ -348,6 +372,7 @@ def ortho(
 
     # orthorectify
     _ortho(src_files=src_files, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs, **kwargs)
+
 
 cli.add_command(ortho)
 
@@ -366,7 +391,8 @@ cli.add_command(ortho)
 @dtype_option
 @compress_option
 @build_ovw_option
-@ortho_dir_option
+@write_params_option
+@out_dir_option
 @overwrite_option
 def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     """ Orthorectify using EXIF / XMP metadata. """
@@ -389,6 +415,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     # orthorectify
     _ortho(src_files=src_files, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs, **kwargs)
 
+
 cli.add_command(exif)
 
 
@@ -405,9 +432,10 @@ cli.add_command(exif)
 @dtype_option
 @compress_option
 @build_ovw_option
-@ortho_dir_option
+@write_params_option
+@out_dir_option
 @overwrite_option
-def odm(odm_root: Path, ortho_dir: Path, **kwargs):
+def odm(odm_root: Path, out_dir: Path, **kwargs):
     """ Orthorectify using OpenDroneMap outputs. """
     # find source images
     src_files = None
@@ -433,9 +461,9 @@ def odm(odm_root: Path, ortho_dir: Path, **kwargs):
             resolution = dem_im.res
 
     # create and set output dir
-    if not ortho_dir:
-        ortho_dir = odm_root.joinpath('orthority')
-        ortho_dir.mkdir(exist_ok=True)
+    if not out_dir:
+        out_dir = odm_root.joinpath('orthority')
+        out_dir.mkdir(exist_ok=True)
 
     # read internal and external params from OpenSfM reconstruction file
     rec_file = odm_root.joinpath('opensfm', 'reconstruction.json')
@@ -444,10 +472,10 @@ def odm(odm_root: Path, ortho_dir: Path, **kwargs):
     ext_param_dict = reader.read_ext()
 
     # orthorectify
-    dem_band = 1
     _ortho(
         src_files=src_files, dem_file=dem_file, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs,
-        resolution=resolution, dem_band=1, ortho_dir=ortho_dir, **kwargs
+        resolution=resolution, dem_band=1, out_dir=out_dir, **kwargs
     )
+
 
 cli.add_command(odm)
