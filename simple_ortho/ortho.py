@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
-        dem_band=1, interp=Interp.nearest, dem_interp=Interp.cubic_spline, per_band=False, full_remap=True,
+        dem_band=1, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False, full_remap=True,
         write_mask=None, dtype=None, compress=Compress.auto, build_ovw=True, overwrite=True,
     )
 
@@ -527,7 +527,7 @@ class Ortho:
         overwrite: bool, optional
             Overwrite the ortho image if it exists.
         """
-        with profiler():  # init profiling in DEBUG log level
+        with profiler():  # run profiler in DEBUG log level
             ortho_filename = Path(ortho_filename)
             if ortho_filename.exists():
                 if not overwrite:
