@@ -47,6 +47,9 @@ class CameraType(str, Enum):
     of distortion coefficient estimates.
     """
 
+    def __repr__(self):
+        return self._name_
+
     def __str__(self):
         return self._name_
 
@@ -77,6 +80,9 @@ class Interp(str, Enum):
     """ Lanczos windowed sinc interpolation. """
     nearest = 'nearest'
     """ Nearest neighbor interpolation. """
+
+    def __repr__(self):
+        return self._name_
 
     def __str__(self):
         return self._name_
@@ -117,5 +123,30 @@ class Compress(str, Enum):
     auto = 'auto'
     """ Use jpeg compression if possible, otherwise deflate. """
 
+    def __repr__(self):
+        return self._name_
+
     def __str__(self):
         return self._name_
+
+
+class CsvFormat(Enum):
+    """ Enumeration for CSV exterior parameter format. """
+    xyz_opk = 1
+    """ Projected (easting, northing, altitude) position and (omega, phi, kappa) orientation. """
+    lla_opk = 2
+    """ Geographic (latitude, longitude, altitude) position and (omega, phi, kappa) orientation. """
+    xyz_rpy = 3
+    """ Projected (easting, northing, altitude) position and (roll, pitch, yaw) orientation. """
+    lla_rpy = 4
+    """ Geographic (latitude, longitude, altitude) position and (roll, pitch, yaw) orientation. """
+
+    @property
+    def is_opk(self) -> bool:
+        """ True if format has an (omega, phi, kappa) orientation, otherwise False. """
+        return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
+
+    @property
+    def is_xyz(self) -> bool:
+        """ True if format has an (easting, northing, altitude) position, otherwise False. """
+        return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy
