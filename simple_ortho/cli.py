@@ -22,6 +22,7 @@ import yaml
 import csv
 from typing import Tuple, List, Dict, Union
 
+from tqdm.auto import tqdm
 import numpy as np
 import rasterio as rio
 from rasterio.errors import CRSError
@@ -152,6 +153,7 @@ def _ortho(
     **kwargs
 ):
     """ """
+    # TODO: multiple file progress as a master bar, or 'x of N' prefix to individual bars
     if write_params:
         # convert interior / exterior params to oty format files
         logger.info('Writing parameter files...')
@@ -165,7 +167,7 @@ def _ortho(
         io.write_ext_param(ext_param_file, ext_param_dict, crs, overwrite)
         return
 
-    for src_file in src_files:
+    for src_i, src_file in enumerate(src_files):
         # get exterior params for src_file
         ext_param = ext_param_dict.get(src_file.name, ext_param_dict.get(src_file.stem, None))
         if not ext_param:
@@ -200,7 +202,7 @@ def _ortho(
         ortho_file = out_root.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
-        logger.info(f'Orthorectifying {src_file.name}:')
+        logger.info(f'Orthorectifying {src_file.name} ({src_i +1 } of {len(src_files)}):')
         ortho.process(ortho_file, resolution, **kwargs)
 
 
@@ -233,15 +235,13 @@ dem_band_option = click.option(
     '-db', '--dem-band', type=click.INT, nargs=1, default=1, show_default=True,
     help='Index of the DEM band to use (1 based).'
 )
-# TODO: allow single number for square pixel
 resolution_option = click.option(
     '-r', '--res', 'resolution', type=click.FLOAT, required=True, default=None, multiple=True, callback=_resolution_cb,
     help='Ortho image pixel size in units of the :option:`--crs` (usually meters).  Can be used twice for non-square '
          'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``'
 )
-# TODO: change interp -> src_interp
-src_interp_option = click.option(
-    '-si', '--src-interp', 'interp', type=click.Choice(Interp.cv_list(), case_sensitive=False),
+interp_option = click.option(
+    '-i', '--interp', type=click.Choice(Interp.cv_list(), case_sensitive=False),
     default=Ortho._default_config['interp'], show_default=True,
     help=f'Interpolation method for remapping source to ortho image.'
 )
@@ -306,7 +306,7 @@ def cli(verbose, quiet):
     _configure_logging(verbosity)
 
 
-@click.command(cls=RstCommand)
+@cli.command(cls=RstCommand)
 @src_files_arg
 @dem_file_option
 @int_param_file_option
@@ -314,7 +314,7 @@ def cli(verbose, quiet):
 @crs_option
 @resolution_option
 @dem_band_option
-@src_interp_option
+@interp_option
 @dem_interp_option
 @per_band_option
 @full_remap_option
@@ -338,9 +338,9 @@ def ortho(
     # TODO: create meaningful CLI exceptions
     try:
         if int_param_file.suffix.lower() in ['.yaml', '.yml']:
-            int_param_dict = io.read_yaml_int_param(int_param_file)
+            int_param_dict = io.read_oty_int_param(int_param_file)
         elif int_param_file.suffix.lower() == '.json':
-            int_param_dict = io.read_json_int_param(int_param_file)
+            int_param_dict = io.read_osfm_int_param(int_param_file)
         else:
             raise click.BadParameter(f"'{int_param_file.suffix}' file type not supported.", param_hint='--int-param')
     except ParamFileError as ex:
@@ -363,7 +363,7 @@ def ortho(
     except CrsMissingError:
         raise click.MissingParameter(param_hint='--crs', param_type='option')
 
-    ext_param_dict = reader.read_ext()
+    ext_param_dict = reader.read_ext_param()
 
     # finalise the crs
     crs = crs or reader.crs
@@ -374,16 +374,13 @@ def ortho(
     _ortho(src_files=src_files, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs, **kwargs)
 
 
-cli.add_command(ortho)
-
-
-@click.command(cls=RstCommand)
+@cli.command(cls=RstCommand)
 @src_files_arg
 @dem_file_option
 @crs_option
 @resolution_option
 @dem_band_option
-@src_interp_option
+@interp_option
 @dem_interp_option
 @per_band_option
 @full_remap_option
@@ -404,8 +401,8 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     try:
         logger.info('Reading camera parameters:')
         reader = io.ExifReader(src_files, crs=crs)
-        int_param_dict = reader.read_int()
-        ext_param_dict = reader.read_ext()
+        int_param_dict = reader.read_int_param()
+        ext_param_dict = reader.read_ext_param()
     except ParamFileError as ex:
         raise click.BadParameter(str(ex), param_hint='SOURCE...')  # TODO: match param hint to the help, or don't catch
 
@@ -416,15 +413,12 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     _ortho(src_files=src_files, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs, **kwargs)
 
 
-cli.add_command(exif)
-
-
-@click.command(cls=RstCommand)
+@cli.command(cls=RstCommand)
 @click.option(
     '-or', '--odm-root', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), required=True,
     default=None,  callback=_odm_root_cb, help='Root path of OpenDroneMap outputs.'
 )
-@src_interp_option
+@interp_option
 @dem_interp_option
 @per_band_option
 @full_remap_option
@@ -468,14 +462,11 @@ def odm(odm_root: Path, out_dir: Path, **kwargs):
     # read internal and external params from OpenSfM reconstruction file
     rec_file = odm_root.joinpath('opensfm', 'reconstruction.json')
     reader = io.OsfmReader(rec_file, crs=crs)
-    int_param_dict = reader.read_int()
-    ext_param_dict = reader.read_ext()
+    int_param_dict = reader.read_int_param()
+    ext_param_dict = reader.read_ext_param()
 
     # orthorectify
     _ortho(
         src_files=src_files, dem_file=dem_file, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs,
         resolution=resolution, dem_band=1, out_dir=out_dir, **kwargs
     )
-
-
-cli.add_command(odm)
