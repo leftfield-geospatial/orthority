@@ -487,6 +487,32 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
         assert ortho_im.res == resolution
 
 
+@pytest.mark.parametrize(
+    # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
+    'rot_offset', [(0, 0, 0), (-15, 10, 0), (-45, 20, 0),],
+)
+def test_process_auto_resolution(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, rot_offset: Tuple,
+    position: Tuple, tmp_path: Path
+):
+    """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
+    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
+    camera: Camera = PinholeCamera(
+        position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+    )
+
+    # find the auto res and masked dem
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
+    resolution = ortho._get_auto_res()
+    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    dem_array_mask, dem_transform_mask = ortho._mask_dem(
+        dem_array, dem_transform, full_remap=True, crop=True, mask=True
+    )
+    mask = ~np.isnan(dem_array_mask)
+
+    assert camera._im_size.prod() == pytest.approx(mask.sum(), rel=0.05)
+
+
 # @formatter:off
 @pytest.mark.parametrize(
     'src_file, write_mask, per_band', [
