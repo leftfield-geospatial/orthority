@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
-        dem_band=1, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False, full_remap=True,
+        resolution=None, dem_band=1, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False, full_remap=True,
         write_mask=None, dtype=None, compress=Compress.auto, build_ovw=True, overwrite=True,
     )
 
@@ -61,7 +61,7 @@ class Ortho:
         crs: Union[str, rio.CRS] = None, dem_band: int = 1
     ):
         """
-        Class to orthorectify an image with a specified DEM and camera model.
+        Class for orthorectifying an image with a specified DEM and camera model.
 
         Parameters
         ----------
@@ -184,6 +184,25 @@ class Ortho:
             dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
+
+    def _get_auto_res(self) -> Tuple[float, float]:
+        """ Return an ortho resolution that gives approx. as many valid ortho pixels as valid source pixels. """
+        def area_quad(cnrs: np.array) -> float:
+            """ Area of the quadrilateral defined by (x, y) corners in `cnrs` (4 x 2). """
+            # uses "shoelace formula" - https://en.wikipedia.org/wiki/Shoelace_formula
+            return 0.5 * np.abs(cnrs[:, 0].dot(np.roll(cnrs[:, 1], -1)) - np.roll(cnrs[:, 0], -1).dot(cnrs[:, 1]))
+
+        # find (x, y) coords of image corners in world CRS at z=mean(DEM) (note: ignores vertical datum shifts)
+        src_br = self._camera._im_size
+        src_ji = np.array([[0, 0], [src_br[0], 0], src_br, [0, src_br[1]]])
+        world_xy = self._camera.pixel_to_world_z(src_ji.T, np.nanmean(self._dem_array))[:2].T
+
+        # return the average pixel resolution inside the world CRS quadrilateral
+        pixel_area = self._camera._im_size.prod()
+        world_area = area_quad(world_xy)
+        res = np.sqrt(world_area / pixel_area)
+        logger.debug(f'Using auto resolution: {res:.4f}')
+        return (res, ) * 2
 
     def _reproject_dem(self, dem_interp: Interp, resolution: Tuple[float, float]) -> Tuple[np.ndarray, rio.Affine]:
         """
@@ -480,7 +499,7 @@ class Ortho:
     # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
         self, ortho_filename: Union[str, Path],
-        resolution: Tuple[float, float],
+        resolution: Tuple[float, float] = _default_config['resolution'],
         interp: Union[str, Interp] = _default_config['interp'],
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
         per_band: bool = _default_config['per_band'],
@@ -496,7 +515,7 @@ class Ortho:
 
         ortho_filename: str, pathlib.Path
             Path of the ortho image file to create.
-        resolution: list of float
+        resolution: list of float, optional
             Ortho image pixel (x, y) size in units of the ortho CRS (usually meters).
         interp: str, simple_ortho.enums.Interp, optional
             Interpolation method to use for remapping the source to ortho image.  See
@@ -534,6 +553,9 @@ class Ortho:
                     raise FileExistsError(f'Ortho file: {ortho_filename.name} exists.')
                 ortho_filename.unlink()
                 ortho_filename.with_suffix(ortho_filename.suffix + '.aux.xml').unlink(missing_ok=True)
+
+            # get an auto resolution if resolution not provided
+            resolution = resolution or self._get_auto_res()
 
             # get dem array covering ortho extents in ortho CRS and resolution
             dem_array, dem_transform = self._reproject_dem(Interp(dem_interp), resolution)
