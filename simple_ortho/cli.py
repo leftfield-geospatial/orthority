@@ -53,7 +53,7 @@ class RstCommand(click.Command):
     """ click.Command subclass for formatting help with RST markup. """
 
     def get_help(self, ctx: click.Context):
-        """ Strip some RST markup from the help text for CLI display.  Will not work with grid tables. """
+        """ Strip some RST markup from the help text for CLI display.  Doesn't work with grid tables. """
 
         # Note that this can't easily be done in __init__, as each sub-command's __init__ gets called,
         # which ends up re-assigning self.wrap_text to reformat_text
@@ -63,16 +63,16 @@ class RstCommand(click.Command):
         sub_strings = {
             '\b\n': '\n\b',                 # convert from RST friendly to click literal (unwrapped) block marker
             r'\| ': '',                     # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            '\n\.\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
-            '`(.*?) <(.*?)>`_': r'\g<1>',   # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
+            r'\n\.\. _.*:\n': '',            # strip RST ref directive '\n.. _<name>:\n'
             '::': ':',                      # convert from RST '::' to ':'
             '``(.*?)``': r'\g<1>',          # convert from RST '``literal``' to 'literal'
             ':option:`(.*?)( <.*?>)?`': r'\g<1>',   # convert ':option:`--name <group-command --name>`' to '--name'
             ':option:`(.*?)`': r'\g<1>',    # convert ':option:`--name`' to '--name'
             '-{4,}': r'',                   # strip '----...'
+            '`([^<]*) <([^>]*)>`_': r'\g<1>',  # convert from RST cross-ref '`<name> <<link>>`_' to 'name'
         }  # yapf: disable
 
-        def reformat_text(text: str, width: int, **kwargs):
+        def reformat_text(text, width, **kwargs):
             for sub_key, sub_value in sub_strings.items():
                 text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
             wr_text = self.click_wrap_text(text, width, **kwargs)
@@ -130,7 +130,7 @@ def _resolution_cb(ctx: click.Context, param: click.Parameter, resolution: Tuple
     return resolution
 
 
-def _odm_root_cb(ctx: click.Context, param: click.Parameter, odm_root: Path):
+def _odm_proj_dir_cb(ctx: click.Context, param: click.Parameter, odm_root: Path):
     """ click callback to validate the ODM output directory. """
     req_paths = [Path('opensfm').joinpath('reconstruction.json'), Path('odm_dem').joinpath('dsm.tif'), Path('images')]
     for req_path in req_paths:
@@ -149,23 +149,20 @@ def _read_src_crs(filename: Path) -> Union[None, rio.CRS]:
 
 def _ortho(
     src_files: Tuple[Path, ...], dem_file: Path, int_param_dict: Dict[str, Dict], ext_param_dict: Dict[str, Dict],
-    crs: rio.CRS, resolution: Tuple[float, float], dem_band: int, write_params: bool, out_dir: Path, overwrite: bool,
-    **kwargs
+    crs: rio.CRS, dem_band: int, write_params: bool, out_dir: Path, overwrite: bool, **kwargs
 ):
     """ """
     # TODO: multiple file progress as a master bar, or 'x of N' prefix to individual bars
     if write_params:
         # convert interior / exterior params to oty format files
         logger.info('Writing parameter files...')
-        if not out_dir:
-            raise click.MissingParameter(
-                '--write-params requires --out-dir to be specified.', param_hint='--out-dir', param_type='option'
-            )
         int_param_file = out_dir.joinpath('int_param.yaml')
         ext_param_file = out_dir.joinpath('ext_param.geojson')
         io.write_int_param(int_param_file, int_param_dict, overwrite)
         io.write_ext_param(ext_param_file, ext_param_dict, crs, overwrite)
         return
+    elif not dem_file:
+        raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
 
     for src_i, src_file in enumerate(src_files):
         # get exterior params for src_file
@@ -198,12 +195,11 @@ def _ortho(
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
             raise click.BadParameter(str(ex), param_hint='--dem_band')
-        out_root = out_dir or src_file.parent
-        ortho_file = out_root.joinpath(f'{src_file.stem}_ORTHO.tif')
+        ortho_file = out_dir.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
         logger.info(f'Orthorectifying {src_file.name} ({src_i +1 } of {len(src_files)}):')
-        ortho.process(ortho_file, resolution, **kwargs)
+        ortho.process(ortho_file, **kwargs)
 
 
 # TODO: add mosaic, and write param options
@@ -214,31 +210,32 @@ src_files_arg = click.argument(
 )
 dem_file_option = click.option(
     '-d', '--dem', 'dem_file', type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
-    required=True, default=None, help='Path/URL of a DEM image covering the source image(s).'
+    default=None, help='Path/URL of a DEM image covering the source image(s). [required]'
 )
 int_param_file_option = click.option(
     '-ip', '--int-param', 'int_param_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True, default=None,
-    help='Path of a file specifying camera internal parameters.'
+    help='Path of an internal parameter file.'
 )
 ext_param_file_option = click.option(
     '-ep', '--ext-param', 'ext_param_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True, default=None,
-    help='Path of a file specifying camera external parameters.'
+    help='Path of an external parameter file.'
 )
 crs_option = click.option(
-    '-c', '--crs', type=click.STRING, default=None, show_default='source image CRS.', callback=_crs_cb,
-    help='CRS of the ortho image as an EPSG, proj4, or WKT string, or text file containing string.  Should be a '
-         'projected, and not geographic CRS.  Can be omitted if source image(s) are projected in this CRS.'
-)
-dem_band_option = click.option(
-    '-db', '--dem-band', type=click.INT, nargs=1, default=1, show_default=True,
-    help='Index of the DEM band to use (1 based).'
+    '-c', '--crs', type=click.STRING, default=None, show_default='auto', callback=_crs_cb,
+    help='CRS of the exterior parameters and ortho image as an EPSG, proj4, or WKT string; or path of a text file '
+         'containing string.'
 )
 resolution_option = click.option(
-    '-r', '--res', 'resolution', type=click.FLOAT, required=True, default=None, multiple=True, callback=_resolution_cb,
+    '-r', '--res', 'resolution', type=click.FLOAT, default=None, show_default='auto', multiple=True,
+    callback=_resolution_cb,
     help='Ortho image pixel size in units of the :option:`--crs` (usually meters).  Can be used twice for non-square '
-         'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``'
+         'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.'
+)
+dem_band_option = click.option(
+    '-db', '--dem-band', type=click.INT, nargs=1, default=Ortho._default_config['dem_band'], show_default=True,
+    help='Index of the DEM band to use (1 based).'
 )
 interp_option = click.option(
     '-i', '--interp', type=click.Choice(Interp.cv_list(), case_sensitive=False),
@@ -248,7 +245,7 @@ interp_option = click.option(
 dem_interp_option = click.option(
     '-di', '--dem-interp', type=click.Choice(Interp, case_sensitive=False),
     default=Ortho._default_config['dem_interp'], show_default=True,
-    help=f'Interpolation method for reprojecting the DEM.'
+    help=f'Interpolation method for DEM reprojection.'
 )
 per_band_option = click.option(
     '-pb/-npb', '--per-band/--no-per-band', type=click.BOOL, default=Ortho._default_config['per_band'],
@@ -260,7 +257,7 @@ full_remap_option = click.option(
     '-fr/-nfr', '--full-remap/--no-full-remap', type=click.BOOL, default=Ortho._default_config['full_remap'],
     show_default=True, help='Orthorectify the source image with full camera model (``--full-remap``), or an '
                             'undistorted source image with a pinhole camera model (``--no-full-remap``).  '
-                            '``--no-full-remap`` is faster but can reduce the extents and quality of the ortho image.'
+                            '``--no-full-remap`` is faster but reduces the extents and quality of the ortho image.'
 )
 # TODO: "internal mask"?
 write_mask_option = click.option(
@@ -286,12 +283,12 @@ write_params_option = click.option(
     help='Write interior / exterior parameters to orthority format file(s), and exit.'
 )
 out_dir_option = click.option(
-    '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), default=None,
-    show_default='source file directory.', help='Directory in which to place output file(s).'
+    '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path),
+    default=Path.cwd(), show_default='current working', help='Directory in which to place output file(s).'
 )
 overwrite_option = click.option(
     '-o', '--overwrite', is_flag=True, type=click.BOOL, default=False, show_default=True,
-    help='Overwrite existing ortho image(s).'
+    help='Overwrite existing output(s).'
 )
 
 
@@ -300,7 +297,7 @@ overwrite_option = click.option(
 @click.option('--quiet', '-q', count=True, help='Decrease verbosity.')
 @click.version_option(version=__version__, message='%(version)s')
 def cli(verbose, quiet):
-    """ Orthorectify remotely sensed imagery. """
+    """ Orthorectification toolkit. """
     # TODO: how can you pass options, but not chain commands afer wildcard arguments
     verbosity = verbose - quiet
     _configure_logging(verbosity)
@@ -328,7 +325,43 @@ def cli(verbose, quiet):
 def ortho(
     src_files: Tuple[Path, ...], int_param_file: Path, ext_param_file: Path, crs: rio.CRS, **kwargs
 ):
-    """ Orthorectify using interior and exterior parameter files. """
+    # yapf:disable  @formatter:off
+    """
+    Orthorectify using interior and exterior parameter files.
+
+    Orthorectify images with camera models specified in interior and exterior parameter files. Interior parameters are
+    supported in orthority (.yaml), ODM cameras (.json), and OpenSfM reconstruction (.json) formats.  Exterior
+    parameters are supported in orthority (.geojson), custom CSV (.csv), and ODM / OpenSfM reconstruction (.json)
+    formats.  Note that parameter file extensions are used to distinguish their format.
+
+    If possible, an ortho CRS will be read from other sources, or auto-determined when :option:`--crs <oty-ortho
+    --crs>` is not passed.
+
+    See the `online docs <?>`_ for more detail on file formats and CRS.
+    \b
+
+    Examples
+    ========
+
+    Orthorectify `source.tif` using DEM `dem.tif` and interior and exterior parameters from `reconstruction.json`.  An
+    ortho resolution and UTM CRS are auto-determined::
+
+        oty ortho --dem dem.tif --int-param reconstruction.json --ext-param reconstruction.json source.tif
+
+    Convert `reconstruction.json` internal and external parameters to orthority format files in the current working
+    directory::
+
+        oty ortho --int-param reconstruction.json --ext-param reconstruction.json --write-params
+
+    Orthorectify images matching `*rgb.tif` using DEM `dem.tif`, and `int_param.yaml` interior &
+    `ext_param.csv` exterior parameter files.  Specify a 1m ortho resolution and `EPSG:32651` CRS.  Write ortho files to
+    the `data` directory using `deflate` compression and a `uint16` data type::
+
+        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --res 1 --crs EPSG:32651 --out-dir data --compress deflate --dtype uint16 *rgb.tif
+
+    SOURCE... Path/URL(s) of source image(s) to orthorectify.
+    """
+    # yapf:enable @formatter:on
     if not crs and len(src_files) > 0:
         # read crs from the first source image, if it has one
         # TODO: what if this crs is used, but changes in other source images?
@@ -336,6 +369,8 @@ def ortho(
 
     # read interior params
     # TODO: create meaningful CLI exceptions
+    # TODO: if --write-params is passed it requires both --int-param & --ext-param but it would be useful to only
+    #  require one
     try:
         if int_param_file.suffix.lower() in ['.yaml', '.yml']:
             int_param_dict = io.read_oty_int_param(int_param_file)
@@ -361,14 +396,14 @@ def ortho(
         raise click.BadParameter(str(ex), param_hint='--ext-param')
 
     except CrsMissingError:
-        raise click.MissingParameter(param_hint='--crs', param_type='option')
+        raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
     ext_param_dict = reader.read_ext_param()
 
     # finalise the crs
     crs = crs or reader.crs
     if not crs:
-        raise click.MissingParameter(param_hint='--crs', param_type='option')
+        raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
     # orthorectify
     _ortho(src_files=src_files, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs, **kwargs)
@@ -392,7 +427,30 @@ def ortho(
 @out_dir_option
 @overwrite_option
 def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
-    """ Orthorectify using EXIF / XMP metadata. """
+    """
+    Orthorectify images with EXIF / XMP tags.
+
+    Orthorectify images with pinhole camera models derived from EXIF / XMP metadata.  Image tags should include focal
+    length & sensor size, or 35mm equivalent focal length; camera position; and camera / gimbal roll, pitch & yaw.
+
+    See the `online docs <?>`_ for more detail.
+
+    \b
+
+    Examples
+    ========
+
+    Orthorectify images matching `*rgb.tif` with DEM `dem.tif`::
+
+        oty exif --dem dem.tif *rgb.tif
+
+    Write internal and external parameters for images matching `*rgb.tif` to orthority format files, and exit::
+
+        oty exif --write-params *rgb.tif
+
+    SOURCE... Path/URL(s) of source image(s) to orthorectify.
+    """
+    # TODO: allow partial exif spec with --int-param and --ext-param overrides (?)
     if not crs and len(src_files) > 0:
         # get crs from the first source image, if it has one
         crs = _read_src_crs(src_files[0])
@@ -414,10 +472,12 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
 
 
 @cli.command(cls=RstCommand)
+# TODO: root, project or dataset
 @click.option(
-    '-or', '--odm-root', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), required=True,
-    default=None,  callback=_odm_root_cb, help='Root path of OpenDroneMap outputs.'
+    '-pd', '--proj-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), required=True,
+    default=None,  callback=_odm_proj_dir_cb, help='Path of the ODM project folder to process.'
 )
+@resolution_option
 @interp_option
 @dem_interp_option
 @per_band_option
@@ -427,19 +487,42 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
 @compress_option
 @build_ovw_option
 @write_params_option
-@out_dir_option
 @overwrite_option
-def odm(odm_root: Path, out_dir: Path, **kwargs):
-    """ Orthorectify using OpenDroneMap outputs. """
+def odm(odm_root: Path, resolution: Tuple[float, float], **kwargs):
+    # yapf:disable @formatter:off
+    """
+    Orthorectify existing OpenDroneMap outputs.
+
+    Orthorectify individual images using OpenDroneMap (ODM) generated camera models and DSM.  The DSM is required,
+    and can be generated by running ODM with the `--dsm <https://docs.opendronemap.org/arguments/dsm/#dsm>`_ option.
+
+    By default, the ortho resolution is read from the ODM orthophoto.  If that does not exist, it is read from the DSM.
+    Ortho images & parameter files are placed in the `<odm project>/orthority` directory.
+
+    The ``ortho`` sub-command  can be used for more control over options.
+    \b
+
+    Examples
+    ========
+
+    Orthorectify images in `<odm project>/images` directory using the `<odm project>` camera models and DSM::
+
+        oty odm --proj-dir <odm project>
+
+    Write the `<odm project>` interior and exterior parameters to orthority format files, and exit::
+
+        oty odm --proj-dir <odm project> --write-params
+
+    Orthorectify images in `<odm project>/images` directory using the `<odm project>` camera models and DSM.  Use an
+    ortho resolution of 0.1m and `lanczos` interpolation to remap source to ortho.
+
+        oty odm --proj-dir <odm project> --res 0.1 --interp lanczos
+    """
+    # yapf:enable @formatter:on
     # find source images
-    src_files = None
-    src_wildcards = ['*.jpg', '*.jpeg', '*.tif', '*.tiff']
-    src_wildcards = src_wildcards + [src_wildcard.upper() for src_wildcard in src_wildcards]
-    for src_wildcard in src_wildcards:
-        src_files = (*odm_root.joinpath('images').glob(src_wildcard),)
-        if len(src_files) > 0:
-            break
-    if not src_files:
+    src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
+    src_files = [p for p in odm_root.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts]
+    if len(src_files) == 0:
         raise click.BadParameter(f'No images found in {odm_root.joinpath("images")}.', param_hint='--odm-root')
 
     # set crs and resolution from ODM orthophoto or DSM
@@ -448,16 +531,15 @@ def odm(odm_root: Path, out_dir: Path, **kwargs):
     if orthophoto_file.exists():
         with rio.open(orthophoto_file, 'r') as ortho_im:
             crs = ortho_im.crs
-            resolution = ortho_im.res
+            resolution = resolution or ortho_im.res
     else:
         with rio.open(dem_file, 'r') as dem_im:
             crs = dem_im.crs
-            resolution = dem_im.res
+            resolution = resolution or dem_im.res
 
     # create and set output dir
-    if not out_dir:
-        out_dir = odm_root.joinpath('orthority')
-        out_dir.mkdir(exist_ok=True)
+    out_dir = odm_root.joinpath('orthority')
+    out_dir.mkdir(exist_ok=True)
 
     # read internal and external params from OpenSfM reconstruction file
     rec_file = odm_root.joinpath('opensfm', 'reconstruction.json')

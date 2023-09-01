@@ -441,10 +441,11 @@ class CsvReader(Reader):
         Class for reading camera external parameters from a CSV file.
 
         Reads tabular data from a text CSV file with a row per source image and column fields for the image file
-        name, camera position coordinates and orientation angles. Fields can be identified with a first line file
-        header or by passing the ``fieldnames`` argument.
+        name, camera position coordinates and orientation angles.  Positions and orientations are converted into
+        :class:`~simple_ortho.camera.Camera` compatible values.
 
-        Recognised names and corresponding descriptions for the header and ``fieldnames`` fields are::
+        Fields can be identified with a first line file header or by passing the ``fieldnames`` argument. Recognised
+        names and corresponding descriptions for the header and ``fieldnames`` fields are::
 
             =================================== =======================================================
             Field name(s)                       Description
@@ -685,7 +686,7 @@ class OsfmReader(Reader):
         lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
     ):
         """
-        Class for reading interior and exterior camera parameters from an OpenSfM `reconstruction.json` file.
+        Class for reading camera interior and exterior parameters from an OpenSfM `reconstruction.json` file.
 
         Parameters
         ----------
@@ -739,7 +740,7 @@ class OsfmReader(Reader):
 
         ext_param_dict = {}
         for filename, shot_dict in self._json_dict['shots'].items():
-            # convert  reconstruction `translation` and `rotation` to oty ex
+            # convert  reconstruction `translation` and `rotation` to oty exterior params
             # adapted from https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
             rotation = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
             delta_xyz = -rotation.T.dot(shot_dict['translation'])
