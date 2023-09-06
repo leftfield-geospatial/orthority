@@ -98,6 +98,14 @@ def _configure_logging(verbosity: int):
     logging.captureWarnings(True)
 
 
+def _read_src_crs(filename: Path) -> Union[None, rio.CRS]:
+    """ Read CRS from source image file. """
+    with suppress_no_georef(), rio.open(filename, 'r') as im:
+        if not im.crs:
+            logger.debug(f'No CRS found for source image: {filename.name}')
+        return im.crs
+
+
 def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
     """ click callback to validate and parse the CRS. """
     if crs is not None:
@@ -130,30 +138,23 @@ def _resolution_cb(ctx: click.Context, param: click.Parameter, resolution: Tuple
     return resolution
 
 
-def _odm_proj_dir_cb(ctx: click.Context, param: click.Parameter, odm_root: Path):
-    """ click callback to validate the ODM output directory. """
+def _odm_proj_dir_cb(ctx: click.Context, param: click.Parameter, proj_dir: Path):
+    """ click callback to validate the ODM project directory. """
     req_paths = [Path('opensfm').joinpath('reconstruction.json'), Path('odm_dem').joinpath('dsm.tif'), Path('images')]
     for req_path in req_paths:
-        req_path = odm_root.joinpath(req_path)
-        if not (req_path).exists():
+        req_path = proj_dir.joinpath(req_path)
+        if not req_path.exists():
             raise click.BadParameter(f'Could not find {req_path}.', param=param)
-    return odm_root
-
-
-def _read_src_crs(filename: Path) -> Union[None, rio.CRS]:
-    with suppress_no_georef(), rio.open(filename, 'r') as im:
-        if not im.crs:
-            logger.debug(f'No CRS found for source image: {filename.name}')
-        return im.crs
+    return proj_dir
 
 
 def _ortho(
     src_files: Tuple[Path, ...], dem_file: Path, int_param_dict: Dict[str, Dict], ext_param_dict: Dict[str, Dict],
-    crs: rio.CRS, dem_band: int, write_params: bool, out_dir: Path, overwrite: bool, **kwargs
+    crs: rio.CRS, dem_band: int, export_params: bool, out_dir: Path, overwrite: bool, **kwargs
 ):
     """ """
     # TODO: multiple file progress as a master bar, or 'x of N' prefix to individual bars
-    if write_params:
+    if export_params:
         # convert interior / exterior params to oty format files
         logger.info('Writing parameter files...')
         int_param_file = out_dir.joinpath('int_param.yaml')
@@ -278,9 +279,9 @@ build_ovw_option = click.option(
     '-bo/-nbo', '--build-ovw/--no-build-ovw', type=click.BOOL, default=True, show_default=True,
     help='Build overviews for the ortho image(s).'
 )
-write_params_option = click.option(
-    '-wp', '--write-params', is_flag=True, type=click.BOOL, default=False, show_default=True,
-    help='Write interior / exterior parameters to orthority format file(s), and exit.'
+export_params_option = click.option(
+    '-ep', '--export-params', is_flag=True, type=click.BOOL, default=False, show_default=True,
+    help='Export interior & exterior parameters to orthority format file(s), and exit.'
 )
 out_dir_option = click.option(
     '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path),
@@ -319,7 +320,7 @@ def cli(verbose, quiet):
 @dtype_option
 @compress_option
 @build_ovw_option
-@write_params_option
+@export_params_option
 @out_dir_option
 @overwrite_option
 def ortho(
@@ -423,7 +424,7 @@ def ortho(
 @dtype_option
 @compress_option
 @build_ovw_option
-@write_params_option
+@export_params_option
 @out_dir_option
 @overwrite_option
 def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
@@ -486,9 +487,9 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
 @dtype_option
 @compress_option
 @build_ovw_option
-@write_params_option
+@export_params_option
 @overwrite_option
-def odm(odm_root: Path, resolution: Tuple[float, float], **kwargs):
+def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
     # yapf:disable @formatter:off
     """
     Orthorectify existing OpenDroneMap outputs.
@@ -521,13 +522,13 @@ def odm(odm_root: Path, resolution: Tuple[float, float], **kwargs):
     # yapf:enable @formatter:on
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
-    src_files = [p for p in odm_root.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts]
+    src_files = [p for p in proj_dir.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts]
     if len(src_files) == 0:
-        raise click.BadParameter(f'No images found in {odm_root.joinpath("images")}.', param_hint='--odm-root')
+        raise click.BadParameter(f'No images found in {proj_dir.joinpath("images")}.', param_hint='--odm-root')
 
     # set crs and resolution from ODM orthophoto or DSM
-    orthophoto_file = odm_root.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
-    dem_file = odm_root.joinpath('odm_dem', 'dsm.tif')
+    orthophoto_file = proj_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
+    dem_file = proj_dir.joinpath('odm_dem', 'dsm.tif')
     if orthophoto_file.exists():
         with rio.open(orthophoto_file, 'r') as ortho_im:
             crs = ortho_im.crs
@@ -538,11 +539,11 @@ def odm(odm_root: Path, resolution: Tuple[float, float], **kwargs):
             resolution = resolution or dem_im.res
 
     # create and set output dir
-    out_dir = odm_root.joinpath('orthority')
+    out_dir = proj_dir.joinpath('orthority')
     out_dir.mkdir(exist_ok=True)
 
     # read internal and external params from OpenSfM reconstruction file
-    rec_file = odm_root.joinpath('opensfm', 'reconstruction.json')
+    rec_file = proj_dir.joinpath('opensfm', 'reconstruction.json')
     reader = io.OsfmReader(rec_file, crs=crs)
     int_param_dict = reader.read_int_param()
     ext_param_dict = reader.read_ext_param()
