@@ -160,6 +160,40 @@ def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
     assert cv_xyz == pytest.approx(brown_xyz, abs=1e-3)
 
 
+@pytest.mark.parametrize(
+    'cam_type, dist_param, scale', [
+        (CameraType.pinhole, None, 0.5),
+        (CameraType.pinhole, None, 2),
+        (CameraType.brown, 'brown_dist_param', 0.5),
+        (CameraType.brown, 'brown_dist_param', 2),
+        (CameraType.opencv, 'opencv_dist_param', 0.5),
+        (CameraType.opencv, 'opencv_dist_param', 2),
+        (CameraType.fisheye, 'fisheye_dist_param', 0.5),
+        (CameraType.fisheye, 'fisheye_dist_param', 2),
+    ],
+)
+def test_project_im_size(
+    camera_args: Dict, cam_type: CameraType, dist_param: str, scale: float, request: pytest.FixtureRequest
+):
+    """ Test camera coordinate equivalence for different image sizes. """
+    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    ref_camera = create_camera(cam_type, **camera_args, **dist_param)
+
+    test_camera_args = camera_args.copy()
+    test_camera_args['im_size'] = tuple(np.array(test_camera_args['im_size']) * scale)
+    test_camera = create_camera(cam_type, **test_camera_args, **dist_param)
+
+    # find reference and test camera coords for world pts corresponding to reference image corners
+    ref_br =ref_camera._im_size - 1
+    ref_ji = np.array([[0, 0], [ref_br[0], 0], ref_br, [0, ref_br[1]]]).T
+    xyz = ref_camera.pixel_to_world_z(ref_ji, 0)
+    test_ji = test_camera.world_to_pixel(xyz)
+    ref_xy = ref_camera._pixel_to_camera(ref_ji)[:2]
+    test_xy = test_camera._pixel_to_camera(test_ji)[:2]
+
+    assert test_xy == pytest.approx(ref_xy, abs=1e-3)
+
+
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', ])
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """ Test world_to_pixel raises a ValueError with invalid coordinate shapes. """
