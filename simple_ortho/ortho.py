@@ -192,10 +192,10 @@ class Ortho:
             # uses "shoelace formula" - https://en.wikipedia.org/wiki/Shoelace_formula
             return 0.5 * np.abs(cnrs[:, 0].dot(np.roll(cnrs[:, 1], -1)) - np.roll(cnrs[:, 0], -1).dot(cnrs[:, 1]))
 
-        # find (x, y) coords of image corners in world CRS at z=mean(DEM) (note: ignores vertical datum shifts)
+        # find (x, y) coords of image corners in world CRS at z=median(DEM) (note: ignores vertical datum shifts)
         src_br = self._camera._im_size
         src_ji = np.array([[0, 0], [src_br[0], 0], src_br, [0, src_br[1]]])
-        world_xy = self._camera.pixel_to_world_z(src_ji.T, np.nanmean(self._dem_array))[:2].T
+        world_xy = self._camera.pixel_to_world_z(src_ji.T, np.nanmedian(self._dem_array))[:2].T
 
         # return the average pixel resolution inside the world CRS quadrilateral
         pixel_area = self._camera._im_size.prod()
@@ -250,7 +250,7 @@ class Ortho:
         # limit dem_max to camera height so that rays go forwards only
         dem_max = min(np.nanmax(dem_array), self._camera._T[2, 0])
         # heuristic limit on ray length to conserve memory
-        max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape).sum()).astype('int')
+        max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape, dtype='int64').sum()).astype('int')
         poly_xyz = np.zeros((3, src_ji.shape[1]))
 
         # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in src_ji
