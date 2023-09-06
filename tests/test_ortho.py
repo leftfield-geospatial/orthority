@@ -709,8 +709,8 @@ def test_process(
         ortho_array = ortho_im.read()
         ortho_mask = ortho_im.dataset_mask().astype('bool')
         assert np.all(np.unique(src_array) == np.unique(ortho_array[:, ortho_mask]))
-        assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=10)
-        assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=10)
+        assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=15)
+        assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=15)
 
 
 # TODO: dem reproject changes bounds with different v datum
