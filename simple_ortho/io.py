@@ -609,7 +609,7 @@ class CsvReader(Reader):
         mean_latlon = np.array(latlons).mean(axis=0)
         return utm_crs_from_latlon(*mean_latlon)
 
-    def _get_crs(self, crs: rio.CRS) -> rio.CRS:
+    def _get_crs(self) -> rio.CRS:
         """ Read / auto-determine and validate a CRS when no user CRS was supplied. """
         # TODO: check exception messages make sense if used from CLI without --crs
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
