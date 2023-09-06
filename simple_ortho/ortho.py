@@ -243,6 +243,9 @@ class Ortho:
              np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],)
         )  # yapf: disable
 
+        # transform to convert from world (x, y) to center pixel coords
+        inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
+
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
         if dem_min > self._camera._T[2]:
@@ -267,7 +270,7 @@ class Ortho:
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
             # find the dem pixel coords, and validity mask for the (x, y) points in ray_xyz
-            dem_ji = np.round(~dem_transform * ray_xyz[:2, :]).astype('int')
+            dem_ji = np.round(inv_transform * ray_xyz[:2, :]).astype('int')
             valid_mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T
             valid_mask = valid_mask.all(axis=0)
 
@@ -299,18 +302,19 @@ class Ortho:
 
         if crop:
             # crop dem_array to poly_xy and find corresponding transform
-            dem_cnr_ji = np.array([~dem_transform * poly_xy.min(axis=1), ~dem_transform * poly_xy.max(axis=1)]).T
+            dem_cnr_ji = np.array([inv_transform * poly_xy.min(axis=1), inv_transform * poly_xy.max(axis=1)]).T
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
-            dem_ul_ji = np.max(np.vstack((dem_ul_ji, [0, 0])), axis=0)
+            dem_ul_ji = np.clip(dem_ul_ji, 0, None)
             dem_br_ji = 1 + np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
-            dem_br_ji = np.min(np.vstack((dem_br_ji, dem_array.shape[::-1])), axis=0)
+            dem_br_ji = np.clip(dem_br_ji, None, dem_array.shape[::-1])
             dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
             dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
+            inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
 
         if mask:
             # mask the dem
             # (poly_ji is intersected with dem_array bounds in cv2.fillPoly)
-            poly_ji = np.round(~dem_transform * poly_xy).astype('int')
+            poly_ji = np.round(inv_transform * poly_xy).astype('int')
             mask = np.ones_like(dem_array, dtype='uint8')
             mask = cv2.fillPoly(mask, [poly_ji.T], color=0)
             dem_array[mask.astype('bool', copy=False)] = np.nan
@@ -452,12 +456,15 @@ class Ortho:
         # (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
         # imagery.
+        # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc integer pixel coords
+        # refer to pixel centers, so the (x, y) coords are offset by half a pixel to account for this.
         # j_range = np.arange(0, ortho_im.profile['width'])
         # i_range = np.arange(0, ortho_im.profile['height'])
         j_range = np.arange(0, Ortho._default_blocksize[0])
         i_range = np.arange(0, Ortho._default_blocksize[1])
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
-        init_xgrid, init_ygrid = ortho_im.profile['transform'] * [init_jgrid, init_igrid]
+        center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
+        init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
 
         # create list of band indexes to read, remap & write all bands at once (per_band==False), or per-band
         # (per_band==True)
