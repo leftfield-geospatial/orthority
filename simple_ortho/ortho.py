@@ -171,8 +171,9 @@ class Ortho:
 
             # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
             # case dem-ortho vertical datum offset
-            dem_min = dem_array.min()
+            dem_min = np.nanmin(dem_array)
             dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self._egm96_min)
+            dem_win = dem_win.intersection(dem_array_win)  # ensure it is a sub window of dem_array_win
 
             # crop dem_array to the dem window and find the corresponding transform
             dem_ij_start = (dem_win.row_off - dem_array_win.row_off, dem_win.col_off - dem_array_win.col_off)
@@ -211,7 +212,7 @@ class Ortho:
         """
         # return if dem in ortho crs and resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
-        if self._crs_equal and np.all(resolution == np.round(dem_res, 3)):
+        if self._crs_equal and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
 
         # reproject dem_array to ortho crs and resolution
@@ -246,7 +247,6 @@ class Ortho:
             (np.hstack((side_seq, np.ones(n), side_seq[::-1], np.zeros(n))) * im_br[0],
              np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],)
         )  # yapf: disable
-
 
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
@@ -305,7 +305,7 @@ class Ortho:
 
         if crop:
             # crop dem_array to poly_xy and find corresponding transform
-            dem_cnr_ji = inv_transform(dem_transform, np.array([poly_xy.min(axis=1), poly_xy.max(axis=1)]).T)
+            dem_cnr_ji = inv_transform(dem_transform, np.array([poly_min, poly_max]).T)
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
             dem_ul_ji = np.clip(dem_ul_ji, 0, None)
             dem_br_ji = 1 + np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
