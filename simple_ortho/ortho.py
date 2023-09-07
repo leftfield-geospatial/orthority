@@ -223,8 +223,8 @@ class Ortho:
         return dem_array.squeeze(), dem_transform
 
     def _mask_dem(
-        self, dem_array: np.ndarray, dem_transform: rio.Affine, full_remap: bool, num_pts: int = 400,
-        crop: bool = True, mask: bool = True
+        self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool,
+        num_pts: int = 400, crop: bool = True, mask: bool = True
     ) -> Tuple[np.ndarray, rio.Affine]:
         """
         Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and corresponding
@@ -284,7 +284,7 @@ class Ortho:
                 # its intersection with the dem if it exists, else store the dem_min point.
                 dem_ji = dem_ji[:, valid_mask]
                 ray_z = ray_z[valid_mask]
-                dem_z = np.squeeze(cv2.remap(dem_array, *dem_ji.astype('float32'), cv2.INTER_CUBIC))
+                dem_z = np.squeeze(cv2.remap(dem_array, *dem_ji.astype('float32'), dem_interp.to_cv()))
 
                 intersection_i = np.nonzero(ray_z >= dem_z)[0]
                 poly_xyz[:, pi] = (
@@ -529,8 +529,7 @@ class Ortho:
         interp: str, simple_ortho.enums.Interp, optional
             Interpolation method to use for remapping the source to ortho image.  See
             :class:`~simple_ortho.enums.Interp` for options.  :attr:`~simple_ortho.enums.Interp.nearest` is
-            recommended when the ortho and source image resolutions are similar. Note that
-            :attr:`~simple_ortho.enums.Interp.cubic_spline` is not supported for this value.
+            recommended when the ortho and source image resolutions are similar.
         dem_interp: str, simple_ortho.enums.Interp, optional
             Interpolation method for reprojecting the DEM.  See :class:`~simple_ortho.enums.Interp` for options.
             :attr:`~simple_ortho.enums.Interp.cubic` is recommended when the DEM has a coarser resolution than the
@@ -567,8 +566,9 @@ class Ortho:
             resolution = resolution or self._get_auto_res()
 
             # get dem array covering ortho extents in ortho CRS and resolution
-            dem_array, dem_transform = self._reproject_dem(Interp(dem_interp), resolution)
-            dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, full_remap=full_remap)
+            dem_interp = Interp(dem_interp)
+            dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
+            dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp, full_remap=full_remap)
 
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True,
