@@ -253,7 +253,7 @@ def test_mask_dem(
 
     # create an ortho image without DEM masking
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     with rio.open(rgb_byte_src_file, 'r') as src_im:
         ortho_profile, _ = ortho._create_ortho_profile(

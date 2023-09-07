@@ -232,6 +232,10 @@ class Ortho:
         """
         # TODO: to exclude occluded areas, this should find the first/highest dem intersection, not the last/lowest
         #  as it currently does.
+        def inv_transform(transform: rio.Affine, xy: np.array):
+            """ Return the center (j, i) pixel coords for the given transform and world (x, y) coordinates. """
+            return np.array(~(transform * rio.Affine.translation(0.5, 0.5)) * xy)
+
         if not crop and not mask:
             return dem_array, dem_transform
         # pixel coordinates of source image borders
@@ -243,8 +247,6 @@ class Ortho:
              np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],)
         )  # yapf: disable
 
-        # transform to convert from world (x, y) to center pixel coords
-        inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
 
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
@@ -270,7 +272,7 @@ class Ortho:
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
             # find the dem pixel coords, and validity mask for the (x, y) points in ray_xyz
-            dem_ji = np.round(inv_transform * ray_xyz[:2, :]).astype('int')
+            dem_ji = inv_transform(dem_transform, ray_xyz[:2, :])
             valid_mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T
             valid_mask = valid_mask.all(axis=0)
 
@@ -282,7 +284,8 @@ class Ortho:
                 # its intersection with the dem if it exists, else store the dem_min point.
                 dem_ji = dem_ji[:, valid_mask]
                 ray_z = ray_z[valid_mask]
-                dem_z = dem_array[dem_ji[1], dem_ji[0]]
+                dem_z = np.squeeze(cv2.remap(dem_array, *dem_ji.astype('float32'), cv2.INTER_CUBIC))
+
                 intersection_i = np.nonzero(ray_z >= dem_z)[0]
                 poly_xyz[:, pi] = (
                     ray_xyz[:, valid_mask][:, intersection_i[0] - 1]
@@ -302,19 +305,18 @@ class Ortho:
 
         if crop:
             # crop dem_array to poly_xy and find corresponding transform
-            dem_cnr_ji = np.array([inv_transform * poly_xy.min(axis=1), inv_transform * poly_xy.max(axis=1)]).T
+            dem_cnr_ji = inv_transform(dem_transform, np.array([poly_xy.min(axis=1), poly_xy.max(axis=1)]).T)
             dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
             dem_ul_ji = np.clip(dem_ul_ji, 0, None)
             dem_br_ji = 1 + np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
             dem_br_ji = np.clip(dem_br_ji, None, dem_array.shape[::-1])
             dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
             dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
-            inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
 
         if mask:
             # mask the dem
             # (poly_ji is intersected with dem_array bounds in cv2.fillPoly)
-            poly_ji = np.round(inv_transform * poly_xy).astype('int')
+            poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
             mask = np.ones_like(dem_array, dtype='uint8')
             mask = cv2.fillPoly(mask, [poly_ji.T], color=0)
             dem_array[mask.astype('bool', copy=False)] = np.nan
