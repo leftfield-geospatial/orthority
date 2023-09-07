@@ -19,7 +19,7 @@ ortho:
   # CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has a CRS.
   crs:
   # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
-  dem_interp: cubic_spline
+  dem_interp: cubic
   # 1-based index of band in DEM raster to use
   dem_band: 1
   # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)

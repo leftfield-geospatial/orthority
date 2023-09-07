@@ -250,10 +250,11 @@ def test_mask_dem(
     )
     resolution = (5, 5)
     num_pts = 400
+    dem_interp = Interp.cubic
 
     # create an ortho image without DEM masking
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, resolution)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     with rio.open(rgb_byte_src_file, 'r') as src_im:
         ortho_profile, _ = ortho._create_ortho_profile(
@@ -264,7 +265,7 @@ def test_mask_dem(
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array.copy(), dem_transform, full_remap=True, crop=False, mask=True, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=False, mask=True, num_pts=num_pts
     )
     dem_mask = ~np.isnan(dem_array_mask)
 
@@ -329,18 +330,19 @@ def test_mask_dem_crop(
     )
     resolution = (5, 5)
     num_pts = 400
+    dem_interp = Interp.cubic
 
     # mask the dem without cropping
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array.copy(), dem_transform, full_remap=True, crop=False, mask=True, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=False, mask=True, num_pts=num_pts
     )
     mask = ~np.isnan(dem_array_mask)
 
     # crop & mask the dem
     dem_array_crop, dem_transform_crop = ortho._mask_dem(
-        dem_array.copy(), dem_transform, full_remap=True, crop=True, mask=True, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=True, mask=True, num_pts=num_pts
     )
     mask_crop = ~np.isnan(dem_array_crop)
 
@@ -368,7 +370,7 @@ def test_mask_dem_coverage_error(
 
     # test
     with pytest.raises(ValueError) as ex:
-        ortho._mask_dem(dem_array, dem_transform, full_remap=True)
+        ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
     assert 'bounds' in str(ex)
 
 
@@ -389,7 +391,7 @@ def test_mask_dem_above_camera_error(
 
     # test
     with pytest.raises(ValueError) as ex:
-        ortho._mask_dem(dem_array, dem_transform, full_remap=True)
+        ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
     assert 'higher' in str(ex)
 
 
@@ -500,13 +502,14 @@ def test_process_auto_resolution(
     camera: Camera = PinholeCamera(
         position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
+    dem_interp = Interp.cubic
 
     # find the auto res and masked dem
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
     resolution = ortho._get_auto_res()
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array, dem_transform, full_remap=True, crop=True, mask=True
+        dem_array, dem_transform, dem_interp, full_remap=True, crop=True, mask=True
     )
     mask = ~np.isnan(dem_array_mask)
 
