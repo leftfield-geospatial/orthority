@@ -163,7 +163,7 @@ def test_reproject_dem_crs_equal(
 
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
         resolution = dem_im.res
-    array, transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    array, transform = ortho._reproject_dem(Interp.cubic, resolution)
 
     assert transform == ortho._dem_transform
     assert np.all(nan_equals(array, ortho._dem_array))
@@ -185,7 +185,7 @@ def test_reproject_dem_vdatum_both(
     crs: str = request.getfixturevalue(crs)
 
     ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
-    array, transform = ortho._reproject_dem(Interp.cubic_spline, _dem_resolution)
+    array, transform = ortho._reproject_dem(Interp.cubic, _dem_resolution)
 
     assert not ortho._crs_equal
     assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
@@ -212,7 +212,7 @@ def test_reproject_dem_vdatum_one(
     ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
     with rio.open(dem_file, 'r') as dem_im:
         resolution = dem_im.res
-    array, transform = ortho._reproject_dem(Interp.cubic_spline, resolution)
+    array, transform = ortho._reproject_dem(Interp.cubic, resolution)
 
     assert not ortho._crs_equal
     assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
@@ -363,7 +363,7 @@ def test_mask_dem_coverage_error(
 
     # init & reproject with coverage
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, (30., 30.))
+    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, (30., 30.))
 
     # update camera for no coverage
     camera.update_extrinsic((0., 0., 1000.), (0., 0., 0.))
@@ -387,7 +387,7 @@ def test_mask_dem_above_camera_error(
 
     # init & reproject
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic_spline, (30., 30.))
+    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, (30., 30.))
 
     # test
     with pytest.raises(ValueError) as ex:
