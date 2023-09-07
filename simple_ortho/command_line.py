@@ -149,6 +149,10 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
             if key in ortho_config:
                 ortho_config.pop(key)
                 logger.warning(f'The `{key}` option is deprecated.')
+        for key in ['interp', 'dem_interp']:
+            if ortho_config.get(key, None) == 'cubic_spline':
+                logger.warning(f'`cubic_spline` interpolation is deprecated, using `{key}`=`cubic`.')
+                ortho_config[key] = 'cubic'
 
         # prepare camera config
         camera = None
