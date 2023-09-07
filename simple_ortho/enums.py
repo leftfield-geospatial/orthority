@@ -74,8 +74,6 @@ class Interp(str, Enum):
     """ Bilinear interpolation. """
     cubic = 'cubic'
     """ Bicubic interpolation. """
-    cubic_spline = 'cubic_spline'
-    """ Cubic spline interpolation (not supported by OpenCV). """
     lanczos = 'lanczos'
     """ Lanczos windowed sinc interpolation. """
     nearest = 'nearest'
