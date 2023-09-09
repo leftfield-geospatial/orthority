@@ -60,7 +60,8 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
         if 'focal' in json_param:
             int_param['focal_len'] = json_param.pop('focal')
         elif 'focal_x' in json_param and 'focal_y' in json_param:
-            int_param['focal_len'] = (json_param.pop('focal_x'), json_param.pop('focal_y'))
+            focal_x, focal_y = json_param.pop('focal_x'), json_param.pop('focal_y')
+            int_param['focal_len'] = focal_x if focal_x == focal_y else (focal_x, focal_y)
         else:
             raise ParamFileError(
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
@@ -107,8 +108,22 @@ def _create_exif_cam_id(exif: Exif) -> str:
 
 def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
     """ Read camera internal parameters from an Exif object. """
-    cam_dict = dict(cam_type=CameraType.pinhole)
+    if exif.dewarp:
+        if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
+            logger.warning(f'Cannot interpret dewarp data for {exif.filename.name}.')
+        else:
+            # construct brown camera parameters from dewarp data and return
+            cam_dict = dict(cam_type=CameraType.brown)
+            # TODO: are fx, fy multiplied by width or max(width, height)
+            cam_dict['focal_len'] = tuple(np.array(exif.dewarp[:2]) / exif.tag_im_size[0])
+            cam_dict['sensor_size'] = (1, exif.tag_im_size[1] / exif.tag_im_size[0])
+            cam_dict['cx'], cam_dict['cy'] = tuple(np.array(exif.dewarp[2:4]) / max(exif.tag_im_size))
+            dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:]))
+            cam_dict.update(**dist_params)
+            return {_create_exif_cam_id(exif): cam_dict}
 
+    # construct pinhole camera parameters
+    cam_dict = dict(cam_type=CameraType.pinhole)
     if exif.focal_len and exif.sensor_size:
         # prefer using focal length and sensor size directly
         cam_dict['focal_len'] = exif.focal_len
@@ -123,7 +138,7 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             # normalise 35mm focal length assuming "35mm" = 36 mm sensor width, and find a normalised sensor size
             # in same units, assuming square pixels
             cam_dict['focal_len'] = exif.focal_len_35 / 36.
-            cam_dict['sensor_size'] = (1, exif.image_size[1] / exif.image_size[0])
+            cam_dict['sensor_size'] = (1, exif.im_size[1] / exif.im_size[0])
     else:
         raise ParamFileError(
             f'No focal length & sensor size, or 35mm focal length tags in {exif.filename.name}.'
