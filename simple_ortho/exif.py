@@ -14,11 +14,11 @@
    limitations under the License.
 """
 
-# Adapted from the OpenSFM exif module https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
+# Adapted from the OpenSfM exif module https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
 
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Union
+from typing import Dict, Tuple, Union, List
 from xml.etree import cElementTree as ET
 
 import numpy as np
@@ -40,6 +40,7 @@ xmp_schemas = dict(
             '{http://www.dji.com/drone-dji/1.0/}GimbalPitchDegree',
             '{http://www.dji.com/drone-dji/1.0/}GimbalYawDegree'
         ],
+        dewarp_key='{http://www.dji.com/drone-dji/1.0/}DewarpData',
         rpy_offsets=(0., 90., 0.),
         rpy_gains=(1., 1., 1.)
     ),
@@ -51,6 +52,7 @@ xmp_schemas = dict(
             '{http://ns.sensefly.com/Camera/1.0/}Pitch',
             '{http://ns.sensefly.com/Camera/1.0/}Yaw'
         ],
+        dewarp_key=None,
         rpy_offsets=(0., 0., 0.),
         rpy_gains=(1., 1., 1.)
     ),
@@ -62,6 +64,7 @@ xmp_schemas = dict(
             '{http://pix4d.com/camera/1.0/}Pitch',
             '{http://pix4d.com/camera/1.0/}Yaw'
         ],
+        dewarp_key=None,
         rpy_offsets=(0., 0., 0.),
         rpy_gains=(1., 1., 1.)
     ),
@@ -109,10 +112,11 @@ class Exif:
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
             namespaces = ds.tag_namespaces()
             exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
-            self._image_size = ds.shape[::-1]
+            self._im_size = ds.shape[::-1]
 
             if 'xml:XMP' in namespaces:
-                xmp_str = ds.tags(ns='xml:XMP')['xml:XMP']
+                # read XMP, stripping 'xml:XMP=' for rio copied tags
+                xmp_str = ds.tags(ns='xml:XMP')['xml:XMP'].strip('xml:XMP=')
                 xmp_dict = xml_to_flat_dict(xmp_str)
             else:
                 logger.warning(f'{filename.name} contains no XMP metadata')
@@ -120,26 +124,30 @@ class Exif:
 
         self._filename = filename
         self._make, self._model = self._get_make_model(exif_dict)
-        self._sensor_size = self._get_sensor_size(exif_dict, self._image_size)
+        self._tag_im_size = self._get_tag_im_size(exif_dict)
+        self._sensor_size = self._get_sensor_size(exif_dict, self._im_size)
         self._focal_len, self._focal_len_35 = self._get_focal_len(exif_dict)
         self._lla = self._get_xmp_lla(xmp_dict) or self._get_lla(exif_dict)
         self._rpy = self._get_xmp_rpy(xmp_dict)
+        self._dewarp = self._get_xmp_dewarp(xmp_dict)
 
     def __str__(self):
         lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._lla) if self._lla else 'None'
         rpy_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._rpy) if self._rpy else 'None'
+        dewarp_str = ', '.join([f'{p:.4f}' for p in self._dewarp]) if self._dewarp else 'None'
         return (  # @formatter:off
             f'Image: {self._filename}'
-            f'\nCamera: {self._camera_name}'
-            f'\nImage size: {self.image_size}'
+            f'\nCamera: {self._make} {self._model}'
+            f'\nImage size: {self.im_size}'
             f'\nFocal length: {self._focal_len}'
             f'\nFocal length (35mm): {self._focal_len_35}'
             f'\nSensor size: {self._sensor_size}'
             f'\nLatitude, longitude, altitude: {lla_str}'
             f'\nRoll, pitch, yaw: {rpy_str}'
+            f'\nDewarp: {dewarp_str}'
         )  # yapf: disable  # @formatter:on
 
-    # TODO: standardise naming of properties with camera etc parameters (focal / focal_len, im_size / image_size,
+    # TODO: standardise naming of properties with camera etc parameters (focal / focal_len, im_size / im_size,
     #  cam_name / camera_name etc)
     # TODO: expose orientation property
     @property
@@ -158,9 +166,14 @@ class Exif:
         return self._model
 
     @property
-    def image_size(self) -> Union[None, Tuple[int, int]]:
-        """ Image (width, height) in pixels. """
-        return self._image_size
+    def im_size(self) -> Union[None, Tuple[int, int]]:
+        """ Actual image (width, height) in pixels. """
+        return self._im_size
+
+    @property
+    def tag_im_size(self) -> Union[None, Tuple[int, int]]:
+        """ Tagged image (width, height) in pixels. """
+        return self._tag_im_size
 
     @property
     def sensor_size(self) -> Union[None, Tuple[float, float]]:
@@ -190,6 +203,11 @@ class Exif:
         """ (Roll, pitch, yaw) camera/gimbal angles in degrees. """
         return self._rpy
 
+    @property
+    def dewarp(self) -> Union[None, List[float]]:
+        """ Dewarp parameters. """
+        return self._dewarp
+
     @staticmethod
     def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Union[None, float, Tuple[float]]:
         """ Convert numeric EXIF tag to float(s). """
@@ -209,6 +227,13 @@ class Exif:
         make = exif_dict[make_key].lower() if make_key in exif_dict else None
         model = exif_dict[model_key].lower() if model_key in exif_dict else None
         return make, model
+
+    @staticmethod
+    def _get_tag_im_size(exif_dict: Dict[str, str]) -> Tuple[int, int]:
+        """ Return the tagged image (width, height) in pixels. """
+        width = Exif._get_exif_float(exif_dict, 'EXIF_PixelXDimension')
+        height = Exif._get_exif_float(exif_dict, 'EXIF_PixelYDimension')
+        return (width, height) if width and height else None
 
     @staticmethod
     def _get_sensor_size(
@@ -285,7 +310,7 @@ class Exif:
         """ Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]):
-                lla = np.array([float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']])
+                lla = [float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']]
                 return tuple(lla)
         return None
 
@@ -298,4 +323,13 @@ class Exif:
                 rpy *= np.array(xmp_schema['rpy_gains'])
                 rpy += np.array(xmp_schema['rpy_offsets'])
                 return tuple(rpy)
+        return None
+
+    @staticmethod
+    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Union[None, List[float]]:
+        """ Return the camera dewarp parameters if they exist. """
+        for schema_name, xmp_schema in xmp_schemas.items():
+            dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
+            if dewarp_str:
+                return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
         return None
