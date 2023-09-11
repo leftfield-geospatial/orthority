@@ -37,6 +37,13 @@ from simple_ortho.errors import ParamFileError, CrsError, CrsMissingError
 
 logger = logging.getLogger(__name__)
 
+_distortion_schema = {
+    CameraType.pinhole: [],
+    CameraType.opencv: ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 't1', 't2'],
+    CameraType.brown: ['k1', 'k2', 'p1', 'p2', 'k3', 'cx', 'cy'],
+    CameraType.fisheye: ['k1', 'k2', 'k3', 'k4'],
+}  # yapf: disable
+""" Schema of valid distortion parameters for each camera type. """
 
 def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     """ Read camera internal parameters from an ODM / OpenSfM json dictionary. """
@@ -54,7 +61,7 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
         try:
             int_param['cam_type'] = CameraType.from_odm(proj_type)
         except ValueError:
-            raise ParamFileError(f"Unsupported camera type '{proj_type}'.")
+            raise ParamFileError(f"Unsupported projection type '{proj_type}'.")
 
         # read focal length(s) (json values are normalised by sensor width)
         if 'focal' in json_param:
@@ -79,7 +86,10 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
             if from_key in json_param:
                 int_param[to_key] = json_param.pop(from_key)
 
-        # update param_dict with any remaining distortion coefficient parameters and return
+        # validate any remaining distortion params, update param_dict & return
+        err_keys = set(json_param.keys()).difference(_distortion_schema[int_param['cam_type']])
+        if len(err_keys) > 0:
+            raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
         int_param.update(**json_param)
         return int_param
 
@@ -115,8 +125,8 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             # construct brown camera parameters from dewarp data and return
             cam_dict = dict(cam_type=CameraType.brown)
             # TODO: are fx, fy multiplied by width or max(width, height)
-            cam_dict['focal_len'] = tuple(np.array(exif.dewarp[:2]) / exif.tag_im_size[0])
-            cam_dict['sensor_size'] = (1, exif.tag_im_size[1] / exif.tag_im_size[0])
+            cam_dict['focal_len'] = tuple(exif.dewarp[:2])
+            cam_dict['sensor_size'] = exif.tag_im_size
             cam_dict['cx'], cam_dict['cy'] = tuple(np.array(exif.dewarp[2:4]) / max(exif.tag_im_size))
             dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:]))
             cam_dict.update(**dist_params)
@@ -188,21 +198,32 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
 
     def parse_oty_param(yaml_param: Dict, cam_id: str = None) -> Dict:
         """ Validate & convert the given yaml dictionary for a single camera. """
-        int_param = {}
+        # test required keys for all cameras
         for req_key in ['type', 'focal_len', 'sensor_size']:
             if req_key not in yaml_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
+        # convert type -> cam_type
         cam_type = yaml_param.pop('type').lower()
         try:
-            int_param['cam_type'] = CameraType(cam_type)
+            int_param = dict(cam_type=CameraType(cam_type))
         except ValueError:
             raise ParamFileError(f"Unsupported camera type '{cam_type}'.")
 
+        # pop known legacy keys not supported by Camera.__init__
         yaml_param.pop('name', None)
         yaml_param.pop('im_size', None)
 
-        int_param.update(**{k: tuple(v) if isinstance(v, list) else v for k, v in yaml_param.items()})
+        # set focal_len & sensor_size
+        focal_len = yaml_param.pop('focal_len')
+        int_param['focal_len'] = tuple(focal_len) if isinstance(focal_len, list) else focal_len
+        int_param['sensor_size'] = tuple(yaml_param.pop('sensor_size'))
+
+        # validate any remaining distortion params, update param_dict & return
+        err_keys = set(yaml_param.keys()).difference(_distortion_schema[int_param['cam_type']])
+        if len(err_keys) > 0:
+            raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
+        int_param.update(**yaml_param)
         return int_param
 
     # flatten if in original simple-ortho format
@@ -627,6 +648,7 @@ class CsvReader(Reader):
     def _get_crs(self) -> rio.CRS:
         """ Read / auto-determine and validate a CRS when no user CRS was supplied. """
         # TODO: check exception messages make sense if used from CLI without --crs
+        crs = None
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
             # read CRS of xyz positions / opk orientations from .prj file, if it exists
             prj_filename = self._filename.with_suffix('.prj')
@@ -728,12 +750,14 @@ class OsfmReader(Reader):
         with open(filename, 'r') as f:
             json_data = json.load(f)
 
-        template = [dict(cameras=dict, shots=dict, reference_lla=dict(latitude=float, longitude=float, altitude=float))]
-        if not validate_collection(template, json_data):
-            raise ParamFileError(f'{filename.name} is not a valid OpenSfM reconstruction file.')
+        schema = [dict(cameras=dict, shots=dict, reference_lla=dict(latitude=float, longitude=float, altitude=float))]
+        try:
+            validate_collection(schema, json_data)
+        except (ValueError, TypeError, KeyError) as ex:
+            raise ParamFileError(f'{filename.name} is not a valid OpenSfM reconstruction file: {str(ex)}')
 
-        # keep root template keys and delete the rest
-        json_dict = {k: json_data[0][k] for k in template[0].keys()}
+        # keep root schema keys and delete the rest
+        json_dict = {k: json_data[0][k] for k in schema[0].keys()}
         del json_data
         return json_dict
 
@@ -861,14 +885,16 @@ class OtyReader(Reader):
         with open(filename, 'r') as f:
             json_dict = json.load(f)
 
-        template = dict(
+        schema = dict(
             type='FeatureCollection', xyz_opk_crs=str, features=[dict(
                 type='Feature', properties=dict(filename=str, camera=str, xyz=list, opk=list),
                 geometry=dict(type='Point', coordinates=list)
             )]
         )  # yapf: disable
-        if not validate_collection(template, json_dict):
-            raise ParamFileError(f'{filename.name} is not a valid GeoJSON exterior parameter file.')
+        try:
+            validate_collection(schema, json_dict)
+        except (ValueError, TypeError, KeyError) as ex:
+            raise ParamFileError(f'{filename.name} is not a valid GeoJSON exterior parameter file: {str(ex)}')
 
         if not crs:
             try:
@@ -910,6 +936,7 @@ def write_int_param(
         filename.unlink()
 
     # convert 'cam_type' key to 'type' & make the converted item the first in the dict
+    # TODO: just use 'cam_type' in the file (?)
     yaml_dict = {}
     for cam_id, int_param in int_param_dict.items():
         yaml_param = {}
