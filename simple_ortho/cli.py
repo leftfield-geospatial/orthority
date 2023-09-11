@@ -191,7 +191,7 @@ def _ortho(
         # create camera and ortho objects
         # TODO: generalise exterior params / camera so that the cli can just expand the dict and not need to know
         #  about the internals
-        camera = create_camera(xyz=ext_param['xyz'], opk=ext_param['opk'], im_size=im_size, **int_param)
+        camera = create_camera(im_size=im_size, **int_param, xyz=ext_param['xyz'], opk=ext_param['opk'])
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:

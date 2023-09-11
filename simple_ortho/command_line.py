@@ -181,8 +181,8 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                     raise Exception(f'Could not find {src_filename.stem} in {pos_ori_file}')
 
                 im_pos_ori = cam_pos_orid[src_filename.stem]
-                rotation = np.radians((im_pos_ori['omega'], im_pos_ori['phi'], im_pos_ori['kappa']))
-                position = np.array((im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']))
+                opk = np.radians((im_pos_ori['omega'], im_pos_ori['phi'], im_pos_ori['kappa']))
+                xyz = np.array((im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']))
 
                 # set ortho filename
                 ortho_dir = src_filename.parent if not ortho_dir else ortho_dir
@@ -194,10 +194,10 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
 
                 if not camera or np.any(im_size != camera._im_size):
                     # create a new camera
-                    camera = create_camera(camera_type, position, rotation, im_size=im_size, **camera_config)
+                    camera = create_camera(camera_type, im_size=im_size, **camera_config, xyz=xyz, opk=opk)
                 else:
                     # update existing camera
-                    camera.update_extrinsic(position, rotation)
+                    camera.update(xyz, opk)
 
                 # create Ortho  and orthorectify
                 logger.info(f'Orthorectifying {src_filename.name}:')

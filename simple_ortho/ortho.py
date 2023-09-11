@@ -199,7 +199,7 @@ class Ortho:
         world_xy = self._camera.pixel_to_world_z(src_ji.T, np.nanmedian(self._dem_array))[:2].T
 
         # return the average pixel resolution inside the world CRS quadrilateral
-        pixel_area = self._camera._im_size.prod()
+        pixel_area = np.array(self._camera._im_size).prod()
         world_area = area_quad(world_xy)
         res = np.sqrt(world_area / pixel_area)
         logger.debug(f'Using auto resolution: {res:.4f}')
@@ -241,7 +241,7 @@ class Ortho:
             return dem_array, dem_transform
         # pixel coordinates of source image borders
         n = int(num_pts / 4)
-        im_br = self._camera._im_size - 1
+        im_br = np.array(self._camera._im_size) - 1
         side_seq = np.linspace(0, 1, n)
         src_ji = np.vstack(
             (np.hstack((side_seq, np.ones(n), side_seq[::-1], np.zeros(n))) * im_br[0],

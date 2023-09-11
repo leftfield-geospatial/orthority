@@ -21,30 +21,25 @@ import cv2
 import numpy as np
 
 from simple_ortho.enums import CameraType, Interp
+from simple_ortho.errors import CameraInitError
 
 logger = logging.getLogger(__name__)
 
 
 class Camera:
-    # TODO: only pass intrinsic param on __init__, then extrinsic on update_extrinsic or similar (?)
+    # TODO: only pass intrinsic param on __init__, then extrinsic on update or similar (?)
     def __init__(
-        self, xyz: Union[Tuple[float, float, float], np.ndarray],
-        opk: Union[Tuple[float, float, float], np.ndarray],
-        focal_len: Union[float, Tuple[float, float], np.ndarray],
+        self, focal_len: Union[float, Tuple[float, float], np.ndarray],
         im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None,
+        xyz: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None,
     ):  # yapf: disable
         """
         Pinhole camera class, without any distortion model, for transforming between 3D world and 2D pixel co-ordinates.
 
         Parameters
         ----------
-        xyz: tuple of float, ndarray, optional
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
-        opk: tuple of float, ndarray, optional
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
-            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
-            the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
@@ -54,29 +49,23 @@ class Camera:
             Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not specified, pixels are
             assumed square, and ``focal_len`` should be a normalised & unitless value:
             ``focal_len`` = (focal length) / (sensor width).
+        xyz: tuple of float, ndarray, optional
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
+        opk: tuple of float, ndarray, optional
+            Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-
-        self._T, self._R, self._Rtv = self._create_extrinsic(xyz, opk)
-
-        self._focal_len, self._im_size, self._sensor_size, self._K = self._create_intrinsic(
-            focal_len, im_size, sensor_size
-        )
+        self._im_size = im_size
+        self._K = self._get_intrinsic(focal_len, im_size, sensor_size)
+        self._R, self._T = self._get_extrinsic(xyz, opk)
         self._undistort_maps = None
         self._dist_param = None
 
-        config_dict = dict(focal_len=focal_len, im_size=im_size, sensor_size=sensor_size)
-        logger.debug(f'Camera configuration: {config_dict}')
-        logger.debug(f'Position: {xyz}')
-        logger.debug(f'Orientation: {opk}')
-
     @staticmethod
-    def _create_intrinsic(
+    def _get_intrinsic(
         focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Create camera intrinsic parameters.
-        """
+    ) -> np.ndarray:
+        """ Return the camera intrinsic matrix for the given interior parameters. """
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
         # -Parameters-defined and https://en.wikipedia.org/wiki/Camera_resectioning
         # TODO: incorporate orientation from exif
@@ -107,19 +96,19 @@ class Camera:
         # intrinsic matrix to convert from camera co-ords in ODM convention (x->right, y->down, z->forwards,
         # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
         K = np.array([[sigma_xy[0], 0, c_xy[0]], [0, sigma_xy[1], c_xy[1]], [0, 0, 1]])
-        return focal_len, im_size, sensor_size, K
+        return K
 
     @staticmethod
-    def _create_extrinsic(
+    def _get_extrinsic(
         xyz: Union[Tuple[float, float, float], np.ndarray], opk: Union[Tuple[float, float, float], np.ndarray]
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Create camera extrinsic parameters.
-        """
-        if len(xyz) != 3 or len(opk) != 3:
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """ Return the rotation matrix and translation vector for the given exterior parameters. """
+        if xyz is None or opk is None:
+            return (None, None)
+        elif len(xyz) != 3 or len(opk) != 3:
             raise ValueError('`xyz` and `opk` should contain 3 values.')
-        T = np.array(xyz).reshape(-1, 1)
 
+        T = np.array(xyz).reshape(-1, 1)
         omega, phi, kappa = opk
 
         # Find rotation matriz from OPK in PATB convention
@@ -142,31 +131,30 @@ class Camera:
         # rotate from PATB (x->right, y->up, z->backwards looking through the camera at the scene) to ODM convention
         # (x->right, y->down, z->forwards, looking through the camera at the scene)
         R = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
-        # store angle axis format for opencv
-        Rtv = cv2.Rodrigues(R.T)[0]
-        return T, R, Rtv
+        return R, T
 
     @staticmethod
-    def _create_undistort_maps(
+    def _get_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
-        """"
-        Create cv2.remap() maps for undistorting an image.
-        """
+        """" Return cv2.remap() maps for undistorting an image. """
         return None
 
     @staticmethod
     def _check_world_coordinates(xyz: np.ndarray):
-        """
-        Utility function to check world coordinate dimensions.
-        """
+        """ Utility function to check world coordinate dimensions. """
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
             raise ValueError(f'`xyz` should be a 3xN 2D array.')
         if xyz.dtype != np.float64:
             raise ValueError(f'`xyz` should have float64 data type.')
 
+    def _check_init(self) -> bool:
+        """ Utility function to check if exterior parameters are initialised. """
+        if self._R is None or self._T is None:
+            raise CameraInitError(f'Exterior parameters not initialised.')
+
     def _horizon_fov(self) -> bool:
-        """ Whether this camera's field of view includes, or is above, the horizon. """
+        """ Return True if this camera's field of view includes, or is above, the horizon; otherwise False. """
         # camera coords for image corners
         src_ji = np.array([[0, 0], [self._im_size[0], 0], self._im_size, [0, self._im_size[1]]]).T
         xyz_ = self._pixel_to_camera(src_ji)
@@ -176,19 +164,16 @@ class Camera:
         return np.any(xyz_r[2] >= 0)
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        """
-        Transform 2D pixel to normalised 3D camera co-ordinates.
-        """
+        """ Transform 2D pixel to 3D camera co-ordinates. """
         ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
         xyz_ = np.linalg.inv(self._K).dot(ji_)
         return xyz_
 
-    def update_extrinsic(
-        self, xyz: Union[Tuple[float, float, float], np.ndarray],
-        opk: Union[Tuple[float, float, float], np.ndarray]
+    def update(
+        self, xyz: Union[Tuple[float, float, float], np.ndarray], opk: Union[Tuple[float, float, float], np.ndarray]
     ):
         """
-        Update extrinsic parameters.
+        Update exterior parameters.
 
         Parameters
         ----------
@@ -197,7 +182,8 @@ class Camera:
         opk: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-        self._T, self._R, self._Rtv = self._create_extrinsic(xyz, opk)
+        self._R, self._T = self._get_extrinsic(xyz, opk)
+
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
         """
@@ -216,6 +202,7 @@ class Camera:
         ndarray
             Pixel (j=column, i=row) co-ordinates, as a 2-by-N array with (j, i) along the first dimension.
         """
+        self._check_init()
         self._check_world_coordinates(xyz)
         # transform from world to camera co-ordinates
         xyz_ = self._R.T.dot(xyz - self._T)
@@ -225,7 +212,7 @@ class Camera:
 
     def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray], distort: bool = True) -> np.ndarray:
         """
-        Transform from 2D pixel to 3D world co-ordinates at a specified Z (altitude).
+        Transform from 2D pixel to 3D world co-ordinates at a specified z (altitude).
 
         Parameters
         ----------
@@ -242,6 +229,7 @@ class Camera:
             3D world (x=easting, y=northing, z=altitude) co-ordinates, as a 3-by-N array with (x, y, z) along the first
             dimension.
         """
+        self._check_init()
         if not (ji.ndim == 2 and ji.shape[0] == 2):
             raise ValueError(f'`ji` should be a 2xN 2D array.')
 
@@ -280,6 +268,7 @@ class Camera:
         ndarray
             Undistorted array with the same shape and data type as ``image``.
         """
+        self._check_init()
         if self._undistort_maps is None:
             return image
 
@@ -310,12 +299,12 @@ class PinholeCamera(Camera):
 class OpenCVCamera(Camera):
 
     def __init__(
-        self, xyz: Union[Tuple[float, float, float], np.ndarray],
-        opk: Union[Tuple[float, float, float], np.ndarray],
-        focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
         k3: float = 0., p1: float = 0., p2: float = 0., k4: float = 0., k5: float = 0., k6: float = 0., s1: float = 0.,
         s2: float = 0., s3: float = 0., s4: float = 0., t1: float = 0., t2: float = 0.,
+        xyz: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None,
     ):  # yapf: disable
         """
         Camera class with OpenCV distortion model, for transforming between 3D world and 2D pixel co-ordinates, and
@@ -329,12 +318,6 @@ class OpenCVCamera(Camera):
 
         Parameters
         ----------
-        xyz: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
-        opk: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
-            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
-            the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
@@ -347,9 +330,12 @@ class OpenCVCamera(Camera):
         k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tx, ty: float, optional
             OpenCV distortion coefficients - see their `docs <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_
             for details.
+        xyz: tuple of float, ndarray
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
+        opk: tuple of float, ndarray
+            Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-        Camera.__init__(self, xyz, opk, focal_len, im_size, sensor_size=sensor_size)
-
+        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
         # order _dist_param & truncate zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
         self._dist_param = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
@@ -358,10 +344,10 @@ class OpenCVCamera(Camera):
                 self._dist_param = self._dist_param[:dist_len]
                 break
 
-        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_param)
+        self._undistort_maps = self._get_undistort_maps(self._K, self._im_size, self._dist_param)
 
     @staticmethod
-    def _create_undistort_maps(
+    def _get_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:  # yapf: disable
         undistort_maps = cv2.initUndistortRectifyMap(
@@ -376,10 +362,12 @@ class OpenCVCamera(Camera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
+        self._check_init()
         self._check_world_coordinates(xyz)
         if not distort:
             return PinholeCamera.world_to_pixel(self, xyz)
-        ji, _ = cv2.projectPoints((xyz - self._T).T, self._Rtv, np.zeros(3), self._K, self._dist_param)
+        inv_aa = cv2.Rodrigues(self._R.T)[0]  # inverse rotation in angle axis format
+        ji, _ = cv2.projectPoints((xyz - self._T).T, inv_aa, np.zeros(3), self._K, self._dist_param)
         ji = ji[:, 0, :].T
         return ji
 
@@ -387,11 +375,11 @@ class OpenCVCamera(Camera):
 class BrownCamera(OpenCVCamera):
 
     def __init__(
-        self, xyz: Union[Tuple[float, float, float], np.ndarray],
-        opk: Union[Tuple[float, float, float], np.ndarray],
-        focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
         p1: float = 0., p2: float = 0., k3: float = 0., cx: float = 0., cy: float = 0.,
+        xyz: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None,
     ):  # yapf: disable
         """
         Camera class with Brown-Conrady distortion for transforming between 3D world and 2D pixel co-ordinates, and
@@ -405,12 +393,6 @@ class BrownCamera(OpenCVCamera):
 
         Parameters
         ----------
-        xyz: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
-        opk: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
-            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
-            the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
@@ -424,8 +406,12 @@ class BrownCamera(OpenCVCamera):
             Brown model distortion coefficients.
         cx, cy: float, optional
             ODM / OpenSFM brown model principal point.
+        xyz: tuple of float, ndarray, optional
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
+        opk: tuple of float, ndarray, optional
+            Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-        Camera.__init__(self, xyz, opk, focal_len, im_size, sensor_size=sensor_size)
+        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, p1, p2, k3])
 
@@ -433,7 +419,7 @@ class BrownCamera(OpenCVCamera):
         self._Koff = self._offset_intrinsic(self._K, self._im_size, cx=cx, cy=cy)
 
         # create undistort maps with self._Koff
-        self._undistort_maps = self._create_undistort_maps(self._Koff, self._im_size, self._dist_param)
+        self._undistort_maps = self._get_undistort_maps(self._Koff, self._im_size, self._dist_param)
 
     @staticmethod
     def _offset_intrinsic(K: np.ndarray, im_size: np.ndarray, cx: float = 0., cy: float = 0.) -> np.ndarray:
@@ -459,7 +445,7 @@ class BrownCamera(OpenCVCamera):
         # TODO: test if the OpenCV estimate of the intrinsic principal point incorporates these values.
         Koff = K.copy()
         # Koff[:2, 2] += np.diag(self._K)[:2] * np.array([cx, cy]) / self._focal_len  # equivalent to below
-        Koff[:2, 2] += im_size.max() * np.array([cx, cy])
+        Koff[:2, 2] += np.array(im_size).max() * np.array([cx, cy])
         return Koff
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
@@ -469,6 +455,7 @@ class BrownCamera(OpenCVCamera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
+        self._check_init()
         self._check_world_coordinates(xyz)
 
         # transform from world to camera co-ordinates, and normalise
@@ -504,11 +491,10 @@ class BrownCamera(OpenCVCamera):
 class FisheyeCamera(Camera):
 
     def __init__(
-        self, xyz: Union[Tuple[float, float, float], np.ndarray],
-        opk: Union[Tuple[float, float, float], np.ndarray],
-        focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
-        k3: float = 0., k4: float = 0.,
+        k3: float = 0., k4: float = 0., xyz: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None,
     ):  # yapf: disable
         """
         Camera class with fisheye distortion for transforming between 3D world and 2D pixel co-ordinates, and
@@ -522,12 +508,6 @@ class FisheyeCamera(Camera):
 
         Parameters
         ----------
-        xyz: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
-        opk: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
-            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
-            the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
@@ -539,14 +519,18 @@ class FisheyeCamera(Camera):
             ``focal_len`` = (focal length) / (sensor width).
         k1, k2, k3, k4: float, optional
             Fisheye distortion coefficients.  OpenCV uses all coefficients, while ODM and OpenSFM use k1 & k2 only.
+        xyz: tuple of float, ndarray, optional
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
+        opk: tuple of float, ndarray, optional
+            Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-        Camera.__init__(self, xyz, rotation, focal_len, im_size, sensor_size=sensor_size)
+        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, k3, k4])
-        self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_param)
+        self._undistort_maps = self._get_undistort_maps(self._K, self._im_size, self._dist_param)
 
     @staticmethod
-    def _create_undistort_maps(
+    def _get_undistort_maps(
         K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
     ) -> Union[None, Tuple[np.ndarray, np.ndarray]]:
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires default R & P
@@ -563,6 +547,7 @@ class FisheyeCamera(Camera):
         return xyz_
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
+        self._check_init()
         self._check_world_coordinates(xyz)
 
         # transform from world to camera co-ordinates, and normalise
@@ -576,7 +561,7 @@ class FisheyeCamera(Camera):
             # and OpenCV docs: https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html.
             # Works out faster than the opencv equivalent:
             #   x_cv = np.expand_dims((x - self._T).T, axis=0)
-            #   ji, _ = cv2.fisheye.projectPoints(x_cv, self._Rtv, np.zeros(3), self._K, self._dist_param)
+            #   ji, _ = cv2.fisheye.projectPoints(x_cv, self._inv_aa, np.zeros(3), self._K, self._dist_param)
             #   ji = np.squeeze(ji).T
 
             k1, k2, k3, k4 = self._dist_param
@@ -632,4 +617,6 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
 #  principal point (e.g. all cameras take cx, cy offset from center in pixels, and ODM cx, cy are converted to pixels
 #  before passing to *Camera, or all cameras take normalised cx, cy offsets?)
 # TODO: call ortho coordinates everywhere world coordinates
+# TODO: rename distort and or full_remap to something consistent and meaningful to user
+# TODO: user super rather than Camera.
 ##

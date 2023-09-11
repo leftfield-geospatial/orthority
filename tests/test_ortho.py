@@ -106,7 +106,7 @@ def test_init_dem_coverage_error(
     """ Test Ortho initialisation without DEM coverage raises an error. """
     # create a camera positioned away from dem bounds
     camera = PinholeCamera(**camera_args)
-    camera.update_extrinsic((0, 0, 0), (0, 0, 0))
+    camera.update((0, 0, 0), (0, 0, 0))
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -119,7 +119,7 @@ def test_init_horizon_fov_error(
     """ Test Ortho initialisation with a horizontal FOV camera raises an error. """
     # create a camera pointing away from dem bounds
     camera = PinholeCamera(**camera_args)
-    camera.update_extrinsic((0, 0, 0), (np.pi / 2, 0, 0))
+    camera.update((0, 0, 0), (np.pi / 2, 0, 0))
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -246,7 +246,8 @@ def test_mask_dem(
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        _xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
+        opk=np.radians(_opk),
     )
     resolution = (5, 5)
     num_pts = 400
@@ -326,7 +327,8 @@ def test_mask_dem_crop(
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        _xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
+        opk=np.radians(_opk),
     )
     resolution = (5, 5)
     num_pts = 400
@@ -366,7 +368,7 @@ def test_mask_dem_coverage_error(
     dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, (30., 30.))
 
     # update camera for no coverage
-    camera.update_extrinsic((0., 0., 1000.), (0., 0., 0.))
+    camera.update((0., 0., 1000.), (0., 0., 0.))
 
     # test
     with pytest.raises(ValueError) as ex:
@@ -383,7 +385,7 @@ def test_mask_dem_above_camera_error(
     # move the camera below the DEM
     _xyz = list(camera_args['xyz'])
     _xyz[2] -= 1000
-    camera.update_extrinsic(_xyz, camera_args['opk'])
+    camera.update(_xyz, camera_args['opk'])
 
     # init & reproject
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -500,7 +502,8 @@ def test_process_auto_resolution(
     """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
     _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=xyz,
+        opk=np.radians(_opk)
     )
     dem_interp = Interp.cubic
 
@@ -513,7 +516,7 @@ def test_process_auto_resolution(
     )
     mask = ~np.isnan(dem_array_mask)
 
-    assert camera._im_size.prod() == pytest.approx(mask.sum(), rel=0.05)
+    assert np.array(camera._im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
 
 
 # @formatter:off
