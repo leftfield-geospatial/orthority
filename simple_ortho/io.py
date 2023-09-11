@@ -63,7 +63,7 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
         except ValueError:
             raise ParamFileError(f"Unsupported projection type '{proj_type}'.")
 
-        # read focal length(s) (json values are normalised by sensor width)
+        # read focal length(s) (json values are normalised by max of sensor width & height)
         if 'focal' in json_param:
             int_param['focal_len'] = json_param.pop('focal')
         elif 'focal_x' in json_param and 'focal_y' in json_param:
@@ -74,12 +74,12 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
             )
 
-        image_size = (json_param.pop('width'), json_param.pop('height'))
+        im_size = (json_param.pop('width'), json_param.pop('height'))
 
         # TODO: normalised by width or max(width, height) ?
         # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM / OpenSFM json files do
         # not define sensor size)
-        int_param['sensor_size'] = (1, image_size[1] / image_size[0])
+        int_param['sensor_size'] = tuple(np.array(im_size) / max(im_size))
 
         # rename c_x->cx & c_y->cy
         for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy']):
@@ -141,14 +141,14 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
     elif exif.focal_len_35:
         logger.warning(f'Approximating the focal length for {exif.filename.name} from the 35mm equivalent.')
         if exif.sensor_size:
-            # scale 35mm focal length to actual focal length in mm, assuming "35mm" = 36mm sensor width
-            cam_dict['focal_len'] = exif.sensor_size[0] * exif.focal_len_35 / 36.
+            # scale 35mm focal length to actual focal length in mm, assuming "35mm" = 36mm max sensor dimension
+            cam_dict['focal_len'] = max(exif.sensor_size) * exif.focal_len_35 / 36.
             cam_dict['sensor_size'] = exif.sensor_size
         else:
-            # normalise 35mm focal length assuming "35mm" = 36 mm sensor width, and find a normalised sensor size
-            # in same units, assuming square pixels
+            # normalise 35mm focal length assuming "35mm" = 36 mm max sensor dimension, and find a normalised sensor
+            # size in same units, assuming square pixels
             cam_dict['focal_len'] = exif.focal_len_35 / 36.
-            cam_dict['sensor_size'] = (1, exif.im_size[1] / exif.im_size[0])
+            cam_dict['sensor_size'] = tuple(np.array(exif.im_size) / max(exif.im_size))
     else:
         raise ParamFileError(
             f'No focal length & sensor size, or 35mm focal length tags in {exif.filename.name}.'
@@ -268,8 +268,8 @@ def read_exif_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
 
     Parameters
     ----------
-    exif: simple_ortho.exif.Exif
-        :class:`~simple_ortho.exif.Exif` instance to read.
+    filename: str, pathlib.Path
+        Path of the image file to read.
 
     Returns
     -------
