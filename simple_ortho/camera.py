@@ -28,8 +28,8 @@ logger = logging.getLogger(__name__)
 class Camera:
     # TODO: only pass intrinsic param on __init__, then extrinsic on update_extrinsic or similar (?)
     def __init__(
-        self, position: Union[Tuple[float, float, float], np.ndarray],
-        rotation: Union[Tuple[float, float, float], np.ndarray],
+        self, xyz: Union[Tuple[float, float, float], np.ndarray],
+        opk: Union[Tuple[float, float, float], np.ndarray],
         focal_len: Union[float, Tuple[float, float], np.ndarray],
         im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None,
@@ -39,13 +39,11 @@ class Camera:
 
         Parameters
         ----------
-        position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
-            ortho image CRS.
-        rotation: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
-            co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
+        xyz: tuple of float, ndarray, optional
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
+        opk: tuple of float, ndarray, optional
+            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
+            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
@@ -58,7 +56,7 @@ class Camera:
             ``focal_len`` = (focal length) / (sensor width).
         """
 
-        self._T, self._R, self._Rtv = self._create_extrinsic(position, rotation)
+        self._T, self._R, self._Rtv = self._create_extrinsic(xyz, opk)
 
         self._focal_len, self._im_size, self._sensor_size, self._K = self._create_intrinsic(
             focal_len, im_size, sensor_size
@@ -68,8 +66,8 @@ class Camera:
 
         config_dict = dict(focal_len=focal_len, im_size=im_size, sensor_size=sensor_size)
         logger.debug(f'Camera configuration: {config_dict}')
-        logger.debug(f'Position: {position}')
-        logger.debug(f'Orientation: {rotation}')
+        logger.debug(f'Position: {xyz}')
+        logger.debug(f'Orientation: {opk}')
 
     @staticmethod
     def _create_intrinsic(
@@ -113,16 +111,16 @@ class Camera:
 
     @staticmethod
     def _create_extrinsic(
-        position: Union[Tuple[float, float, float], np.ndarray], rotation: Union[Tuple[float, float, float], np.ndarray]
+        xyz: Union[Tuple[float, float, float], np.ndarray], opk: Union[Tuple[float, float, float], np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Create camera extrinsic parameters.
         """
-        if len(position) != 3 or len(rotation) != 3:
-            raise ValueError('`position` and `rotation` should contain 3 values.')
-        T = np.array(position).reshape(-1, 1)
+        if len(xyz) != 3 or len(opk) != 3:
+            raise ValueError('`xyz` and `opk` should contain 3 values.')
+        T = np.array(xyz).reshape(-1, 1)
 
-        omega, phi, kappa = rotation
+        omega, phi, kappa = opk
 
         # Find rotation matriz from OPK in PATB convention
         # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
@@ -186,20 +184,20 @@ class Camera:
         return xyz_
 
     def update_extrinsic(
-        self, position: Union[Tuple[float, float, float], np.ndarray],
-        rotation: Union[Tuple[float, float, float], np.ndarray]
+        self, xyz: Union[Tuple[float, float, float], np.ndarray],
+        opk: Union[Tuple[float, float, float], np.ndarray]
     ):
         """
         Update extrinsic parameters.
 
         Parameters
         ----------
-        position: tuple of float, ndarray
+        xyz: tuple of float, ndarray
             Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.
-        rotation: tuple of float, ndarray
+        opk: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world co-ordinates.
         """
-        self._T, self._R, self._Rtv = self._create_extrinsic(position, rotation)
+        self._T, self._R, self._Rtv = self._create_extrinsic(xyz, opk)
 
     def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
         """
@@ -251,7 +249,7 @@ class Camera:
             isinstance(z, np.ndarray) and
             (z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1]))
         ):  # yapf: disable
-            raise ValueError(f'`z` should be single value or 1-by-N array where `ji` is 2-by-N or 2-by-1.')
+            raise ValueError(f'`z` should be a single value or 1-by-N array where `ji` is 2-by-N or 2-by-1.')
 
         # transform pixel co-ordinates to camera co-ordinates
         xyz_ = self._pixel_to_camera(ji) if distort else PinholeCamera._pixel_to_camera(self, ji)
@@ -312,8 +310,8 @@ class PinholeCamera(Camera):
 class OpenCVCamera(Camera):
 
     def __init__(
-        self, position: Union[Tuple[float, float, float], np.ndarray],
-        rotation: Union[Tuple[float, float, float], np.ndarray],
+        self, xyz: Union[Tuple[float, float, float], np.ndarray],
+        opk: Union[Tuple[float, float, float], np.ndarray],
         focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
         k3: float = 0., p1: float = 0., p2: float = 0., k4: float = 0., k5: float = 0., k6: float = 0., s1: float = 0.,
@@ -331,13 +329,11 @@ class OpenCVCamera(Camera):
 
         Parameters
         ----------
-        position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
-            ortho image CRS.
-        rotation: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
-            co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
+        xyz: tuple of float, ndarray
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
+        opk: tuple of float, ndarray
+            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
+            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
@@ -352,7 +348,7 @@ class OpenCVCamera(Camera):
             OpenCV distortion coefficients - see their `docs <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_
             for details.
         """
-        Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
+        Camera.__init__(self, xyz, opk, focal_len, im_size, sensor_size=sensor_size)
 
         # order _dist_param & truncate zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
@@ -391,8 +387,8 @@ class OpenCVCamera(Camera):
 class BrownCamera(OpenCVCamera):
 
     def __init__(
-        self, position: Union[Tuple[float, float, float], np.ndarray],
-        rotation: Union[Tuple[float, float, float], np.ndarray],
+        self, xyz: Union[Tuple[float, float, float], np.ndarray],
+        opk: Union[Tuple[float, float, float], np.ndarray],
         focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
         p1: float = 0., p2: float = 0., k3: float = 0., cx: float = 0., cy: float = 0.,
@@ -409,13 +405,11 @@ class BrownCamera(OpenCVCamera):
 
         Parameters
         ----------
-        position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
-            ortho image CRS.
-        rotation: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
-            co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
+        xyz: tuple of float, ndarray
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
+        opk: tuple of float, ndarray
+            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
+            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
@@ -431,7 +425,7 @@ class BrownCamera(OpenCVCamera):
         cx, cy: float, optional
             ODM / OpenSFM brown model principal point.
         """
-        Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
+        Camera.__init__(self, xyz, opk, focal_len, im_size, sensor_size=sensor_size)
 
         self._dist_param = np.array([k1, k2, p1, p2, k3])
 
@@ -510,8 +504,8 @@ class BrownCamera(OpenCVCamera):
 class FisheyeCamera(Camera):
 
     def __init__(
-        self, position: Union[Tuple[float, float, float], np.ndarray],
-        rotation: Union[Tuple[float, float, float], np.ndarray],
+        self, xyz: Union[Tuple[float, float, float], np.ndarray],
+        opk: Union[Tuple[float, float, float], np.ndarray],
         focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, k1: float = 0., k2: float = 0.,
         k3: float = 0., k4: float = 0.,
@@ -528,13 +522,11 @@ class FisheyeCamera(Camera):
 
         Parameters
         ----------
-        position: tuple of float, ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  If the Camera object is being
-            used to generate an ortho image with :class:`~simple_ortho.ortho.Ortho`, ``position`` should be in the
-            ortho image CRS.
-        rotation: tuple of float, ndarray
-            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, where camera
-            co-ordinates are in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
+        xyz: tuple of float, ndarray
+            Camera position (x=easting, y=northing, z=altitude) in world co-ordinates.  
+        opk: tuple of float, ndarray
+            Camera (omega, phi, kappa) angles in radians to rotate camera to world co-ordinates, with camera
+            co-ordinates in PATB convention (i.e. x->right, y->up and z->backwards, looking through the camera at
             the scene).
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
@@ -548,7 +540,7 @@ class FisheyeCamera(Camera):
         k1, k2, k3, k4: float, optional
             Fisheye distortion coefficients.  OpenCV uses all coefficients, while ODM and OpenSFM use k1 & k2 only.
         """
-        Camera.__init__(self, position, rotation, focal_len, im_size, sensor_size=sensor_size)
+        Camera.__init__(self, xyz, rotation, focal_len, im_size, sensor_size=sensor_size)
 
         self._dist_param = np.array([k1, k2, k3, k4])
         self._undistort_maps = self._create_undistort_maps(self._K, self._im_size, self._dist_param)
@@ -637,5 +629,7 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
 # TODO: rotation should be specified in a more general way e.g. angle axis in the ODM co-ordinate
 #  convention.  OPK etc conversions can be done externally.
 # TODO: Allow the intrinsic principal point to be specified in a way that doesn't conflict with the ODM brown model
-#  principal point
+#  principal point (e.g. all cameras take cx, cy offset from center in pixels, and ODM cx, cy are converted to pixels
+#  before passing to *Camera, or all cameras take normalised cx, cy offsets?)
+# TODO: call ortho coordinates everywhere world coordinates
 ##

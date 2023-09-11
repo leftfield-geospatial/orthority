@@ -224,7 +224,7 @@ def test_reproject_dem_vdatum_one(
 
 # @formatter:off
 @pytest.mark.parametrize(
-    'pos_offset, rot_offset', [
+    'xyz_offset, opk_offset', [
         # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
         ((0, 0, 0), (0, 0, 0)),
         ((0, 0, 0), (-15, 10, 0)),
@@ -237,16 +237,16 @@ def test_reproject_dem_vdatum_one(
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, pos_offset: Tuple,
-    rot_offset: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
+    opk_offset: Tuple, tmp_path: Path
 ):
     """ Test the DEM (ortho boundary) mask contains the ortho valid data mask (without cropping). """
     # note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.
-    _position = tuple(np.array(camera_args['position']) + pos_offset)
-    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
+    _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
+    _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        _position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        _xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
     resolution = (5, 5)
     num_pts = 400
@@ -306,7 +306,7 @@ def test_mask_dem(
 
 # @formatter:off
 @pytest.mark.parametrize(
-    'pos_offset, rot_offset', [
+    'xyz_offset, opk_offset', [
         # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
         ((0, 0, 0), (0, 0, 0)),
         ((0, 0, 0), (-15, 10, 0)),
@@ -319,14 +319,14 @@ def test_mask_dem(
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem_crop(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, pos_offset: Tuple,
-    rot_offset: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
+    opk_offset: Tuple, tmp_path: Path
 ):
     """ Test the DEM mask is cropped to ortho boundaries. """
-    _position = tuple(np.array(camera_args['position']) + pos_offset)
-    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
+    _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
+    _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        _position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        _xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
     resolution = (5, 5)
     num_pts = 400
@@ -381,9 +381,9 @@ def test_mask_dem_above_camera_error(
     camera: Camera = PinholeCamera(**camera_args)
 
     # move the camera below the DEM
-    _position = list(camera_args['position'])
-    _position[2] -= 1000
-    camera.update_extrinsic(_position, camera_args['rotation'])
+    _xyz = list(camera_args['xyz'])
+    _xyz[2] -= 1000
+    camera.update_extrinsic(_xyz, camera_args['opk'])
 
     # init & reproject
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -491,16 +491,16 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
 
 @pytest.mark.parametrize(
     # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
-    'rot_offset', [(0, 0, 0), (-15, 10, 0), (-45, 20, 0),],
+    'opk_offset', [(0, 0, 0), (-15, 10, 0), (-45, 20, 0),],
 )
 def test_process_auto_resolution(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, rot_offset: Tuple,
-    position: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, opk_offset: Tuple,
+    xyz: Tuple, tmp_path: Path
 ):
     """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
-    _rotation = tuple(np.array(camera_args['rotation']) + rot_offset)
+    _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        position, np.radians(_rotation), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
+        xyz, np.radians(_opk), camera_args['focal_len'], camera_args['im_size'], camera_args['sensor_size']
     )
     dem_interp = Interp.cubic
 

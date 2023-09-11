@@ -33,11 +33,11 @@ def _create_camera(cam_type: CameraType = CameraType.fisheye, **kwargs):
     """
 
     # hard code camera parameters
-    position = np.array([-55094.504480, -3727407.037480, 5258.307930])
-    orientation = np.array([-0.349216, 0.298484, -179.086702]) * np.pi / 180.
+    xyz = np.array([-55094.504480, -3727407.037480, 5258.307930])
+    opk = np.array([-0.349216, 0.298484, -179.086702]) * np.pi / 180.
 
     # create camera
-    return create_camera(cam_type, position, orientation, 120., (640., 1152.), sensor_size=(92.160, 165.888), **kwargs)
+    return create_camera(cam_type, xyz, opk, 120., (640., 1152.), sensor_size=(92.160, 165.888), **kwargs)
 
 
 class TestSimpleOrthoModule(unittest.TestCase):

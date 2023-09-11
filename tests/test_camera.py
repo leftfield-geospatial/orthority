@@ -34,16 +34,16 @@ from tests.conftest import checkerboard
     ],
 )  # yapf: disable  # @formatter:on
 def test_init(
-    cam_type: CameraType, dist_param: str, exp_type: type, position: Tuple, rotation: Tuple, focal_len: float,
+    cam_type: CameraType, dist_param: str, exp_type: type, xyz: Tuple, opk: Tuple, focal_len: float,
     im_size: Tuple, sensor_size: Tuple, request: pytest.FixtureRequest
 ):
     """ Test camera creation. """
     dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
 
-    camera = create_camera(cam_type, position, rotation, focal_len, im_size, sensor_size=sensor_size, **dist_param)
+    camera = create_camera(cam_type, xyz, opk, focal_len, im_size, sensor_size=sensor_size, **dist_param)
 
     assert isinstance(camera, exp_type)
-    assert np.all(camera._T.flatten() == position)
+    assert np.all(camera._T.flatten() == xyz)
     assert camera._K.diagonal()[:2] == pytest.approx(np.array(focal_len) * im_size / sensor_size, abs=1e-3)
     if dist_param:
         assert np.all(camera._dist_param == [*dist_param.values()])
@@ -227,33 +227,33 @@ def test_pixel_to_world_z_error(pinhole_camera: Camera):
     assert '`z`' in str(ex)
 
 
-def test_instrinsic_equivalence(position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple):
+def test_instrinsic_equivalence(xyz: Tuple, opk: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple):
     """ Test intrinsic matrix validity for equivalent focal_len and sensor_size options. """
-    ref_camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+    ref_camera = PinholeCamera(xyz, opk, focal_len, im_size, sensor_size)
 
     # normalised focal length and no sensor size
-    test_camera = PinholeCamera(position, rotation, focal_len / sensor_size[0], im_size)
+    test_camera = PinholeCamera(xyz, opk, focal_len / sensor_size[0], im_size)
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length and sensor size
     test_camera = PinholeCamera(
-        position, rotation, focal_len / sensor_size[0], im_size,
+        xyz, opk, focal_len / sensor_size[0], im_size,
         np.array(sensor_size) / sensor_size[0]
     )
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length (x, y) tuple and sensor size
-    test_camera = PinholeCamera(position, rotation, np.ones(2) * focal_len, im_size, sensor_size)
+    test_camera = PinholeCamera(xyz, opk, np.ones(2) * focal_len, im_size, sensor_size)
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
 
 def test_instrinsic_nonsquare_pixels(
-    position: Tuple, rotation: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+    xyz: Tuple, opk: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
 ):
     """ Test intrinsic matrix validity for non-square pixels. """
     sensor_size = np.array(sensor_size)
     sensor_size[0] *= 2
-    camera = PinholeCamera(position, rotation, focal_len, im_size, sensor_size)
+    camera = PinholeCamera(xyz, opk, focal_len, im_size, sensor_size)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
 
 

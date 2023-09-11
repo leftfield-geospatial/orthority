@@ -781,8 +781,8 @@ class OsfmReader(Reader):
         for filename, shot_dict in self._json_dict['shots'].items():
             # convert  reconstruction `translation` and `rotation` to oty exterior params
             # adapted from https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
-            rotation = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
-            delta_xyz = -rotation.T.dot(shot_dict['translation'])
+            R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
+            delta_xyz = -R.T.dot(shot_dict['translation'])
             xyz = tuple(ref_xyz + delta_xyz)
             opk = aa_to_opk(shot_dict['rotation'])
             cam_id = shot_dict['camera']

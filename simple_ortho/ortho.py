@@ -72,7 +72,7 @@ class Ortho:
         camera: Camera
             Source image camera model (see :meth:`~simple_ortho.camera.create_camera`).
         crs: str, rasterio.CRS, optional
-            CRS of the ortho image and ``camera`` position as an EPSG, proj4 or WKT string.  It should be a projected,
+            CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string.  It should be a projected,
             and not geographic CRS.  Can be omitted if the source image is projected in the ortho CRS.
         dem_band: int, optional
             Index of the DEM band to use (1-based).

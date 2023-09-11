@@ -5,6 +5,8 @@ import rasterio as rio
 from rasterio.enums import Resampling
 from rasterio.warp import reproject
 from simple_ortho.utils import expand_window_to_grid
+from simple_ortho.exif import Exif
+from simple_ortho import io
 import csv
 import numpy as np
 import json
@@ -31,10 +33,11 @@ def downsample_rgb(src_file: Path, dst_file: Path, ds_fact: int = 4, scale_clip:
             # copy metadata
             dst_im.update_tags(**src_im.tags())
             for namespace in src_im.tag_namespaces():
+                # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namspace/ tag name,
+                # where 'xml:XMP=' gets prefixed to the value
                 dst_im.update_tags(ns=namespace, **src_im.tags(ns=namespace))
             for index in dst_im.indexes:
                 dst_im.update_tags(index, **src_im.tags(index))
-
             # copy image data, scaling and clipping if required
             array = src_im.read(indexes=dst_im.indexes, out_shape=dst_shape, resampling=rio.enums.Resampling.cubic)
             if scale_clip:
@@ -179,6 +182,42 @@ def create_odm_test_data():
         json.dump(json_obj, f, indent=4)
 
 
+def create_io_test_data():
+    # create lla_rpy csv file for odm data
+    src_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
+    dst_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
+    dst_root.mkdir(exist_ok=True)
+
+    osfm_reader = io.OsfmReader(src_root.joinpath('opensfm', 'reconstruction.json'))
+    cam_id = next(iter(osfm_reader.read_int_param().keys()))
+    exif_list = [Exif(sf) for sf in src_root.joinpath('images').glob('*.tif')]
+    with open(dst_root.joinpath('odm_lla_rpy.csv'), 'w', newline='') as f:
+        writer = csv.writer(f, delimiter=' ', quotechar='"')
+        writer.writerow(['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'other'])
+        for exif in exif_list:
+            writer.writerow([exif.filename.name, *exif.lla, *exif.rpy, cam_id, 'ignored'])
+
+    # create xyz_opk csv file for ngi data
+    ngi_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+    src_csv_file = ngi_root.joinpath('camera_pos_ori.txt')
+    reader = io.CsvReader(src_csv_file)
+    ext_param_dict = reader.read_ext_param()
+    with open(dst_root.joinpath('ngi_xyz_opk.csv'), 'w', newline='') as f:
+        writer = csv.writer(f, delimiter=',', quotechar='"')
+        writer.writerow(['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+        for filename, ext_param in ext_param_dict.items():
+            writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk'])])
+
+    # create proj file for above
+    src_im_file = next(iter(ngi_root.glob('*RGB.tif')))
+    with rio.open(src_im_file, 'r') as src_im:
+        crs = src_im.crs
+
+    with open(dst_root.joinpath('ngi_xyz_opk.proj'), 'w', newline='') as f:
+        f.write(crs.to_proj4())
+
+
 if __name__ == '__main__':
-    create_odm_test_data()
-    create_ngi_test_data()
+    # create_odm_test_data()
+    # create_ngi_test_data()
+    create_io_test_data()
