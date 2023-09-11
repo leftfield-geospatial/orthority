@@ -111,22 +111,31 @@ def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
 
 def validate_collection(template: Iterable, coll: Iterable) -> bool:
     """
-    Validate a nested dict / list of values (``coll``) against a nested dict / list of types and values (``template``).
-    All items in a ``coll`` list are validated against the first item in the corresponding ``template`` list.
+    Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples of types, and
+    values (``template``).  All items in a ``coll`` list are validated against the first item in the corresponding
+    ``template`` list.
     """
     # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
-
     if isinstance(template, dict) and isinstance(coll, dict):
         # struct is a dict of types or other dicts
-        return all(k in coll and validate_collection(template[k], coll[k]) for k in template)
+        for k in template:
+            if k in coll:
+                _validate_collection(template[k], coll[k])
+            else:
+                raise KeyError(f"No key: '{k}'.")
     elif isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
         # struct is list in the form [type or dict]
-        return all(validate_collection(template[0], item) for item in coll)
+        for item in coll:
+            _validate_collection(template[0], item)
     elif isinstance(template, type):
         # struct is the type of conf
-        return isinstance(coll, template)
-    elif isinstance(template, object):
+        if not isinstance(coll, template):
+            raise TypeError(f"'{coll}' is not an instance of {template}.")
+    elif isinstance(template, tuple) and all([isinstance(item, type) for item in template]):
+        # struct is a tuple of types
+        if not isinstance(coll, template):
+            raise TypeError(f"'{coll}' is not an instance of any of {template}.")
+    elif isinstance(template, object) and template is not None:
         # struct is the value of conf
-        return coll == template
-    else:
-        return False
+        if not coll == template:
+            raise ValueError(f"'{coll}' does not equal '{template}'.")
