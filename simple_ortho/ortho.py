@@ -42,7 +42,7 @@ class Ortho:
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_band=1, resolution=None, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False, full_remap=True,
-        write_mask=None, dtype=None, compress=Compress.auto, build_ovw=True, overwrite=True,
+        write_mask=None, dtype=None, compress=Compress.auto, build_ovw=True, overwrite=False,
     )
 
     # default ortho (x, y) block size
