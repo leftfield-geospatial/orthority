@@ -19,7 +19,7 @@ import multiprocessing
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Tuple, Union, Dict, List
+from typing import Tuple, Union, Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -224,7 +224,7 @@ class Ortho:
         return dem_array.squeeze(), dem_transform
 
     def _mask_dem(
-        self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool,
+        self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool = True,
         num_pts: int = 400, crop: bool = True, mask: bool = True
     ) -> Tuple[np.ndarray, rio.Affine]:
         """
@@ -325,7 +325,7 @@ class Ortho:
 
     def _create_ortho_profile(
         self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine,
-        dtype: Union[str, None] = _default_config['dtype'], compress: Compress = _default_config['compress'],
+        dtype: Optional[str] = _default_config['dtype'], compress: Compress = _default_config['compress'],
         write_mask: bool = _default_config['write_mask']
     ) -> Tuple[Dict, bool]:
         """ Return a rasterio profile for the ortho image. """
@@ -456,7 +456,7 @@ class Ortho:
         bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles in _remap_tile
         # (requires N-up transform).
-        # float64 precision is needed for the (x, y) ortho grids in world co-ordinates for e.g. high resolution drone
+        # float64 precision is needed for the (x, y) ortho grids in world coordinates for e.g. high resolution drone
         # imagery.
         # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc integer pixel coords
         # refer to pixel centers, so the (x, y) coords are offset by half a pixel to account for this.
@@ -513,7 +513,7 @@ class Ortho:
         dem_interp: Union[str, Interp] = _default_config['dem_interp'],
         per_band: bool = _default_config['per_band'],
         full_remap: bool = _default_config['full_remap'],
-        write_mask: Union[None, bool] = _default_config['write_mask'],
+        write_mask: Optional[bool] = _default_config['write_mask'],
         dtype: str = _default_config['dtype'],
         compress: Union[str, Compress] = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],

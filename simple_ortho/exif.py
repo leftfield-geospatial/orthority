@@ -18,7 +18,7 @@
 
 import logging
 from pathlib import Path
-from typing import Dict, Tuple, Union, List
+from typing import Dict, Tuple, Union, List, Optional
 from xml.etree import cElementTree as ET
 
 import numpy as np
@@ -156,60 +156,60 @@ class Exif:
         return self._filename
 
     @property
-    def make(self) -> Union[None, str]:
+    def make(self) -> Optional[str]:
         """ Camera make. """
         return self._make
 
     @property
-    def model(self) -> Union[None, str]:
+    def model(self) -> Optional[str]:
         """ Camera model. """
         return self._model
 
     @property
-    def im_size(self) -> Union[None, Tuple[int, int]]:
+    def im_size(self) -> Optional[Tuple[int, int]]:
         """ Actual image (width, height) in pixels. """
         return self._im_size
 
     @property
-    def tag_im_size(self) -> Union[None, Tuple[int, int]]:
+    def tag_im_size(self) -> Optional[Tuple[int, int]]:
         """ Tagged image (width, height) in pixels. """
         return self._tag_im_size
 
     @property
-    def sensor_size(self) -> Union[None, Tuple[float, float]]:
+    def sensor_size(self) -> Optional[Tuple[float, float]]:
         """ Sensor (width, height) in mm. """
         return self._sensor_size
 
     @property
-    def focal_len(self) -> Union[None, float]:
+    def focal_len(self) -> Optional[float]:
         """ Focal length in mm. """
         return self._focal_len
 
     @property
-    def focal_len_35(self) -> Union[None, float]:
+    def focal_len_35(self) -> Optional[float]:
         """ 35mm equivalent focal length in mm. """
         return self._focal_len_35
 
     @property
-    def lla(self) -> Union[None, Tuple[float, float, float]]:
+    def lla(self) -> Optional[Tuple[float, float, float]]:
         """
-        (Latitude, longitude, altitude) co-ordinates with latitude and longitude in decimal degrees, and altitude in
+        (Latitude, longitude, altitude) coordinates with latitude and longitude in decimal degrees, and altitude in
         meters.
         """
         return self._lla
 
     @property
-    def rpy(self) -> Union[None, Tuple[float, float, float]]:
+    def rpy(self) -> Optional[Tuple[float, float, float]]:
         """ (Roll, pitch, yaw) camera/gimbal angles in degrees. """
         return self._rpy
 
     @property
-    def dewarp(self) -> Union[None, List[float]]:
+    def dewarp(self) -> Optional[List[float]]:
         """ Dewarp parameters. """
         return self._dewarp
 
     @staticmethod
-    def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Union[None, float, Tuple[float]]:
+    def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Optional[Union[float, Tuple[float]]]:
         """ Convert numeric EXIF tag to float(s). """
         if key not in exif_dict:
             return None
@@ -238,7 +238,7 @@ class Exif:
     @staticmethod
     def _get_sensor_size(
         exif_dict: Dict[str, str], im_size: Union[Tuple[int, int], np.ndarray]
-    ) -> Union[None, Tuple[float, float]]:
+    ) -> Optional[Tuple[float, float]]:
         """ Return the sensor (width, height) in mm. """
 
         unit_key = 'EXIF_FocalPlaneResolutionUnit'
@@ -276,7 +276,7 @@ class Exif:
         return focal, focal_35
 
     @staticmethod
-    def _get_lla(exif_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
+    def _get_lla(exif_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
         """
         Return the (latitutde, longitude, altitude) EXIF image location with latitude, longitude in decimal degrees, and
         altitude in meters.
@@ -306,7 +306,7 @@ class Exif:
         return lat, lon, alt
 
     @staticmethod
-    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
+    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
         """ Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]):
@@ -315,7 +315,7 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Union[None, Tuple[float, float, float]]:
+    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
         """ Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist. """
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]):
@@ -326,7 +326,7 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Union[None, List[float]]:
+    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Optional[List[float]]:
         """ Return the camera dewarp parameters if they exist. """
         for schema_name, xmp_schema in xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)

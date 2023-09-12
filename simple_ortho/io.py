@@ -18,7 +18,7 @@ import json
 import yaml
 import logging
 from pathlib import Path
-from typing import Union, Tuple, Optional, List, Dict, Callable
+from typing import Union, Tuple, Optional, List, Dict, Callable, Optional
 from enum import Enum
 from csv import DictReader, Sniffer, Dialect
 from tqdm.auto import tqdm
@@ -310,7 +310,7 @@ def aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
 
 def rpy_to_opk(
     rpy: Tuple[float, float, float], lla: Tuple[float, float, float], crs: CRS, lla_crs: CRS = CRS.from_epsg(4979),
-    cbb: Union[None, List[List]] = None
+    cbb: Optional[List[List]] = None
 ) -> Tuple[float, float, float]:
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
@@ -830,7 +830,7 @@ class ExifReader(Reader):
                 exif_dict[filename.name] = Exif(filename)
         return exif_dict
 
-    def _find_utm_crs(self) -> Union[None, rio.CRS]:
+    def _find_utm_crs(self) -> Optional[rio.CRS]:
         """ Return a UTM CRS that covers the mean of the camera positions. """
         llas = []
         for e in self._exif_dict.values():
