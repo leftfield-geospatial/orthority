@@ -20,7 +20,7 @@ import re
 import click
 import yaml
 import csv
-from typing import Tuple, List, Dict, Union
+from typing import Tuple, List, Dict, Union, Optional
 
 from tqdm.auto import tqdm
 import numpy as np
@@ -98,7 +98,7 @@ def _configure_logging(verbosity: int):
     logging.captureWarnings(True)
 
 
-def _read_src_crs(filename: Path) -> Union[None, rio.CRS]:
+def _read_src_crs(filename: Path) -> Optional[rio.CRS]:
     """ Read CRS from source image file. """
     with suppress_no_georef(), rio.open(filename, 'r') as im:
         if not im.crs:
@@ -200,7 +200,7 @@ def _ortho(
 
         # orthorectify
         logger.info(f'Orthorectifying {src_file.name} ({src_i +1 } of {len(src_files)}):')
-        ortho.process(ortho_file, **kwargs)
+        ortho.process(ortho_file, overwrite=overwrite, **kwargs)
 
 
 # TODO: add mosaic, and write param options
