@@ -67,9 +67,9 @@ def distort_image(camera: Camera, image: np.ndarray, nodata=0, interp=Interp.nea
     j_grid, i_grid = np.meshgrid(j_range, i_range, indexing='xy')
     ji = np.row_stack((j_grid.reshape(1, -1), i_grid.reshape(1, -1)))
 
-    # find the corresponding undistorted/ source (j, i) pixel coords corresponding
+    # find the corresponding undistorted/ source (j, i) pixel coords
     camera_xyz = camera._pixel_to_camera(ji)
-    undist_ji = camera._K.dot(camera_xyz)[:2].astype('float32')
+    undist_ji = camera._K_undistort.dot(camera_xyz)[:2].astype('float32')
 
     # remap the distorted image from the source image
     dist_image = cv2.remap(

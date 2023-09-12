@@ -496,8 +496,8 @@ class Ortho:
                     # ortho_win_full = Window(0, 0, ortho_im.width, ortho_im.height)
                     futures = [
                         executor.submit(
-                            self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid, init_ygrid,
-                            interp, full_remap, write_mask
+                            self._remap_tile, ortho_im, src_array, dem_array, ortho_win, indexes, init_xgrid,
+                            init_ygrid, interp, full_remap, write_mask
                         )
                         for ortho_win in ortho_wins
                     ]  # yapf: disable
