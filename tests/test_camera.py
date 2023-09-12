@@ -145,13 +145,13 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
 
 
 @pytest.mark.parametrize('camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'], )
-def test_project_points_nodistort(pinhole_camera: Camera, camera: str, request: pytest.FixtureRequest):
+def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
     """ Test projected points with distort==False match pinhole camera. """
     camera: Camera = request.getfixturevalue(camera)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
     z = np.random.rand(1000) * (camera._T[2] * .8)
-    pinhole_xyz = pinhole_camera.pixel_to_world_z(ji, z)
+    pinhole_xyz = PinholeCamera.pixel_to_world_z(camera, ji, z, distort=False)
     xyz = camera.pixel_to_world_z(ji, z, distort=False)
     ji_ = camera.world_to_pixel(xyz, distort=False)
 
@@ -175,7 +175,7 @@ def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, ca
 
 
 def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
-    """ Test OpenCV and Brown cameras are equivalent for the (cx, cy) == (0, 0) special case. """
+    """ Test OpenCV and Brown cameras are equivalent for the Brown distortion parameter set. """
     brown_camera = BrownCamera(**camera_args, **brown_dist_param)
     opencv_camera = OpenCVCamera(**camera_args, **brown_dist_param)
 
