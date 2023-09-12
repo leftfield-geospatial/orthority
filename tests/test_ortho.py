@@ -187,12 +187,20 @@ def test_reproject_dem_vdatum_both(
     ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
     array, transform = ortho._reproject_dem(Interp.cubic, _dem_resolution)
 
-    assert not ortho._crs_equal
-    assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
-    assert array.shape == ortho._dem_array.shape
+    # crop array & transform to correspond to ortho._dem_array & ortho._dem_transform (assumes ortho._dem_array lies
+    # inside array, which it should)
+    dem_win = rio.windows.from_bounds(
+        *array_bounds(*ortho._dem_array.shape, ortho._dem_transform), transform=transform
+    ).round_offsets().round_shape()
+    cmp_array = array[dem_win.toslices()]
+    cmp_transform = rio.windows.transform(dem_win, transform)
 
-    mask = ~np.isnan(array) & ~np.isnan(ortho._dem_array)
-    assert array[mask] != pytest.approx(ortho._dem_array[mask], abs=5)
+    assert not ortho._crs_equal
+    assert cmp_transform.almost_equals(ortho._dem_transform, precision=1e-6)
+    assert cmp_array.shape == ortho._dem_array.shape
+
+    mask = ~np.isnan(cmp_array) & ~np.isnan(ortho._dem_array)
+    assert cmp_array[mask] != pytest.approx(ortho._dem_array[mask], abs=5)
 
 
 # @formatter:off
@@ -214,12 +222,20 @@ def test_reproject_dem_vdatum_one(
         resolution = dem_im.res
     array, transform = ortho._reproject_dem(Interp.cubic, resolution)
 
-    assert not ortho._crs_equal
-    assert transform.almost_equals(ortho._dem_transform, precision=1e-6)
-    assert array.shape == ortho._dem_array.shape
+    # crop array & transform to correspond to ortho._dem_array & ortho._dem_transform (assumes ortho._dem_array lies
+    # inside array, which it should)
+    dem_win = rio.windows.from_bounds(
+        *array_bounds(*ortho._dem_array.shape, ortho._dem_transform), transform=transform
+    ).round_offsets().round_shape()
+    cmp_array = array[dem_win.toslices()]
+    cmp_transform = rio.windows.transform(dem_win, transform)
 
-    mask = ~np.isnan(array) & ~np.isnan(ortho._dem_array)
-    assert array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
+    assert not ortho._crs_equal
+    assert cmp_transform.almost_equals(ortho._dem_transform, precision=1e-6)
+    assert cmp_array.shape == ortho._dem_array.shape
+
+    mask = ~np.isnan(cmp_array) & ~np.isnan(ortho._dem_array)
+    assert cmp_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
 
 
 # @formatter:off
