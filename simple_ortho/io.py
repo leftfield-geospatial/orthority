@@ -37,13 +37,13 @@ from simple_ortho.errors import ParamFileError, CrsError, CrsMissingError
 
 logger = logging.getLogger(__name__)
 
-_distortion_schema = {
-    CameraType.pinhole: [],
-    CameraType.opencv: ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 't1', 't2'],
+_optional_schema = {
+    CameraType.pinhole: ['cx', 'cy'],
+    CameraType.opencv: ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 't1', 't2', 'cx', 'cy'],
     CameraType.brown: ['k1', 'k2', 'p1', 'p2', 'k3', 'cx', 'cy'],
-    CameraType.fisheye: ['k1', 'k2', 'k3', 'k4'],
+    CameraType.fisheye: ['k1', 'k2', 'k3', 'k4', 'cx', 'cy'],
 }  # yapf: disable
-""" Schema of valid distortion parameters for each camera type. """
+""" Schema of valid optional parameters for each camera type. """
 
 def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     """ Read camera internal parameters from an ODM / OpenSfM json dictionary. """
@@ -86,8 +86,8 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
             if from_key in json_param:
                 int_param[to_key] = json_param.pop(from_key)
 
-        # validate any remaining distortion params, update param_dict & return
-        err_keys = set(json_param.keys()).difference(_distortion_schema[int_param['cam_type']])
+        # validate any remaining optional params, update param_dict & return
+        err_keys = set(json_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
             raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
         int_param.update(**json_param)
@@ -220,7 +220,7 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
         int_param['sensor_size'] = tuple(yaml_param.pop('sensor_size'))
 
         # validate any remaining distortion params, update param_dict & return
-        err_keys = set(yaml_param.keys()).difference(_distortion_schema[int_param['cam_type']])
+        err_keys = set(yaml_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
             raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
         int_param.update(**yaml_param)
