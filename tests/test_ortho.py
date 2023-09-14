@@ -29,9 +29,9 @@ from rasterio.windows import from_bounds
 from simple_ortho.camera import Camera, PinholeCamera
 from simple_ortho.enums import Interp, Compress
 from simple_ortho.ortho import Ortho
-from simple_ortho.utils import nan_equals
+from simple_ortho.utils import nan_equals, distort_image
 from simple_ortho import errors
-from tests.conftest import _dem_resolution
+from tests.conftest import _dem_resolution, checkerboard
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -411,6 +411,32 @@ def test_mask_dem_above_camera_error(
     with pytest.raises(ValueError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
     assert 'higher' in str(ex)
+
+
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'], )
+def test_undistort(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, utm34n_crs: str, camera: str, request: pytest.FixtureRequest
+):
+    """ Test _undistort method by comparing source & distorted-undistorted checkerboard images. """
+    nodata = 0
+    interp = Interp.bilinear
+    camera: Camera = request.getfixturevalue(camera)
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
+
+    # create checkerboard source image
+    image = checkerboard(camera._im_size[::-1])
+
+    # distort then undistort
+    dist_image = distort_image(camera, image, nodata=nodata, interp=interp)
+    undist_image = ortho._undistort(dist_image, nodata=nodata, interp=interp)
+
+    # test similarity of source and distorted-undistorted images
+    dist_mask = dist_image != nodata
+    cc_dist = np.corrcoef(image[dist_mask], dist_image[dist_mask])
+    undist_mask = undist_image != nodata
+    cc = np.corrcoef(image[undist_mask], undist_image[undist_mask])
+    assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
+    assert cc[0, 1] > 0.95
 
 
 # @formatter:off

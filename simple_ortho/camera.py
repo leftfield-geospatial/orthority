@@ -138,19 +138,18 @@ class Camera:
         return R, T
 
     @staticmethod
-    def _get_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: Optional[np.ndarray]
-    ) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
-        """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
-        return None, K
-
-    @staticmethod
     def _check_world_coordinates(xyz: np.ndarray):
         """ Utility function to check world coordinate dimensions. """
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
             raise ValueError(f'`xyz` should be a 3xN 2D array.')
         if xyz.dtype != np.float64:
             raise ValueError(f'`xyz` should have float64 data type.')
+
+    @staticmethod
+    def _check_pixel_coordinates(ji: np.ndarray):
+        """ Utility function to check pixel coordinate dimensions. """
+        if not (ji.ndim == 2 and ji.shape[0] == 2):
+            raise ValueError(f'`ji` should be a 2xN 2D array.')
 
     def _check_init(self):
         """ Utility function to check if exterior parameters are initialised. """
@@ -166,6 +165,51 @@ class Camera:
         # rotate camera to world alignment & test if any z vals are above the camera / origin
         xyz_r = self._R.dot(xyz_)
         return np.any(xyz_r[2] >= 0)
+
+    def _get_undistort_intrinsic(self, alpha: float = 1.):
+        """
+        Return a new camera intrinsic matrix for an undistorted image that is the same size as the source image.
+        `alpha` (0-1) controls the portion of the source included in the distorted image.
+        For `alpha`=1, the undistorted image includes all source pixels and some invalid (nodata) areas. For `alpha`=0,
+        the undistorted image includes a maximum portion of the source image such that all undistorted pixels are valid.
+        """
+        # Adapted from and equivalent to cv2.getOptimalNewCameraMatrix(newImageSize=self._im_size,
+        # centerPrincipalPoint=False).
+        # See https://github.com/opencv/opencv/blob/4790a3732e725b102f6c27858e7b43d78aee2c3e/modules/calib3d/src
+        # /calibration.cpp#L2772
+        def _get_rectangles(im_size: Union[Tuple[int, int], np.ndarray]):
+            """ Return inner and outer rectangles for distorted image boundary points. """
+            w, h = np.array(im_size) - 1
+            n = 9
+            scale_j, scale_i = np.meshgrid(range(0, n), range(0, n))
+            scale_j, scale_i = scale_j.flatten(), scale_i.flatten()
+            ji = np.row_stack([scale_j * w / (n - 1), scale_i * h / (n - 1)])
+            xy = self._pixel_to_camera(ji)[:2]
+            outer = xy.min(axis=1), xy.max(axis=1) - xy.min(axis=1)
+            inner_ul = np.array((xy[0][scale_j == 0].max(), xy[1][scale_i == 0].max()))
+            inner_br = np.array((xy[0][scale_j == n - 1].min(), xy[1][scale_i == n - 1].min()))
+            inner = inner_ul, inner_br - inner_ul
+            return inner, outer
+
+        alpha = np.clip(alpha, a_min=0, a_max=1)
+        im_size = np.array(self._im_size)
+        (inner_off, inner_size), (outer_off, outer_size) = _get_rectangles(im_size)
+
+        f0 = (im_size - 1) / inner_size
+        c0 = -f0 * inner_off
+        f1 = (im_size - 1) / outer_size
+        c1 = -f1 * outer_off
+        f = f0 * (1 - alpha) + f1 * alpha
+        c = c0 * (1 - alpha) + c1 * alpha
+
+        K_undistort = np.eye(3)
+        K_undistort[[0, 1], [0, 1]] = f
+        K_undistort[:2, 2] = c
+        return K_undistort
+
+    def _get_undistort_maps(self) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+        """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
+        return None, self._K
 
     def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         """ Transform from 3D world to 2D pixel coordinates. """
@@ -237,8 +281,7 @@ class Camera:
             dimension.
         """
         self._check_init()
-        if not (ji.ndim == 2 and ji.shape[0] == 2):
-            raise ValueError(f'`ji` should be a 2xN 2D array.')
+        self._check_pixel_coordinates(ji)
 
         if (
             isinstance(z, np.ndarray) and
@@ -254,48 +297,32 @@ class Camera:
         xyz = (xyz_r * (z - self._T[2]) / xyz_r[2]) + self._T
         return xyz
 
-    def undistort(
-        self, image: np.ndarray, nodata: Union[float, int] = 0, interp: Union[str, Interp] = Interp.bilinear
-    ) -> np.ndarray:
+    def undistort(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
         """
-        Undistort an image in-place.
+        Undistort pixel coordinates.
 
         Parameters
         ----------
-        image: ndarray
-            Image array to undistort, as a single 2D band, or multiple bands in rasterio format i.e. with bands
-            along the first dimension.
-        nodata: float, int, optional
-            Fill invalid areas in the undistorted image with this value.
-        interp: str, Interp, optional
-            Interpolation type to use when undistorting.
+        ji: ndarray
+            Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first dimension.
+        clip: bool
+            Whether to clip the undistorted coordinates to the image dimensions.
 
         Returns
         -------
         ndarray
-            Undistorted array with the same shape and data type as ``image``.
+            Undistorted pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first dimension.
         """
         self._check_init()
-        if self._undistort_maps is None:
-            return image
+        self._check_pixel_coordinates(ji)
 
-        def undistort_band(band: np.array) -> np.array:
-            """ Undistort a 2D band array. """
-            # equivalent without stored _undistort_maps:
-            # return cv2.undistort(band_array, self._K, self._dist_param)
-            return cv2.remap(
-                band, *self._undistort_maps, Interp[interp].to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
-            )
+        xyz_ = self._pixel_to_camera(ji)
+        ji = self._K_undistort.dot(xyz_ / xyz_[2, :])[:2, :]
 
-        if image.ndim > 2:
-            # undistort by band so that output data stays in the rasterio ordering
-            out_image = np.full(image.shape, fill_value=nodata, dtype=image.dtype)
-            for bi in range(image.shape[0]):
-                out_image[bi] = undistort_band(image[bi])
-        else:
-            out_image = undistort_band(image)
+        if clip:
+            ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
 
-        return out_image
+        return ji
 
 
 class PinholeCamera(Camera):
@@ -353,20 +380,19 @@ class OpenCVCamera(Camera):
             if np.all(self._dist_param[dist_len:] == 0.):
                 self._dist_param = self._dist_param[:dist_len]
                 break
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps(self._K, self._im_size, self._dist_param)
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
 
-    @staticmethod
-    def _get_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
-    ) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:  # yapf: disable
+    def _get_undistort_maps(self, alpha: float = 1.) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:  # yapf:
+        # disable
         # TODO: expose alpha to the API
         # TODO: is centerPrincipalPoint=True necessary to avoid nodata ortho borders?
         # TODO: add tests for alpha (e.g. 1~=full_remap=True, 0<full_remap=True (both valid and entire image areas)
         # TODO: test --no-full-remap with fisheye
-        K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, np.array(im_size).astype(int), 1.)
-        # K_undistort = K
+        im_size = np.array(self._im_size).astype(int)
+        # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha)  # cv2 equivalent
+        K_undistort = self._get_undistort_intrinsic(alpha=alpha)
         undistort_maps = cv2.initUndistortRectifyMap(
-            K, dist_param, np.eye(3), K_undistort, np.array(im_size).astype(int), cv2.CV_16SC2
+            self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
         )
         return undistort_maps, K_undistort
 
@@ -425,7 +451,7 @@ class BrownCamera(OpenCVCamera):
         Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, p1, p2, k3])
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps(self._K, self._im_size, self._dist_param)
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
 
     def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         # transform from world to camera coordinates, and normalise
@@ -502,20 +528,19 @@ class FisheyeCamera(Camera):
         Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, k3, k4])
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps(self._K, self._im_size, self._dist_param)
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
 
-    @staticmethod
-    def _get_undistort_maps(
-        K: np.ndarray, im_size: Union[Tuple[int, int], np.ndarray], dist_param: np.ndarray
-    ) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:  # yapf: disable
-        K_undistort = cv2.fisheye.estimateNewCameraMatrixForUndistortRectify(
-            K, dist_param, np.array(im_size).astype(int), np.eye(3), balance=1.
-        )
-        # K_undistort = K
+    def _get_undistort_maps(self, alpha: float = 1.) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+        im_size = np.array(self._im_size).astype(int)
+
+        # use internal method to get K_undistort as cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() does not
+        # include all source pixels for balance=1.
+        K_undistort = self._get_undistort_intrinsic(alpha=alpha)
+
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires default R & P
         # (new camera matrix) params to be specified
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
-            K, dist_param, np.eye(3), K_undistort, np.array(im_size).astype(int), cv2.CV_16SC2
+            self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
         )
         return undistort_maps, K_undistort
 

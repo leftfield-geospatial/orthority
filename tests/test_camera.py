@@ -281,26 +281,3 @@ def test_instrinsic_nonsquare_pixels(
     sensor_size[0] *= 2
     camera = PinholeCamera(focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
-
-
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'], )
-def test_undistort(camera: str, request: pytest.FixtureRequest):
-    """ Test undistort method by comparing source & distorted-undistorted checkerboard images. """
-    nodata = 0
-    interp = Interp.bilinear
-    camera: Camera = request.getfixturevalue(camera)
-
-    # create checkerboard source image
-    image = checkerboard(camera._im_size[::-1])
-
-    # distort then undistort
-    dist_image = distort_image(camera, image, nodata=nodata, interp=interp)
-    undist_image = camera.undistort(dist_image, nodata=nodata, interp=interp)
-
-    # test similarity of source and distorted-undistorted images
-    dist_mask = dist_image != nodata
-    cc_dist = np.corrcoef(image[dist_mask], dist_image[dist_mask])
-    undist_mask = undist_image != nodata
-    cc = np.corrcoef(image[undist_mask], undist_image[undist_mask])
-    assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
-    assert cc[0, 1] > 0.95

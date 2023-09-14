@@ -20,6 +20,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Tuple, Union, Dict, List, Optional
+from math import ceil
 
 import cv2
 import numpy as np
@@ -223,9 +224,32 @@ class Ortho:
         )
         return dem_array.squeeze(), dem_transform
 
+    def _get_src_boundary(self, full_remap: bool = True, num_pts: int = 400) -> np.ndarray:
+        """ Return a pixel coordinate boundary of the source image with `num_pts` points. """
+
+        def im_boundary(im_size: np.array, num_pts: int = 400):
+            """
+            Return a rectangular pixel coordinate boundary of `num_pts` ~evenly spaced points for the given image
+            size `im_size`.
+            """
+            br = im_size - 1
+            perim = 2 * br.sum()
+            cnr_ji = np.array([[0, 0], [br[0], 0], br, [0, br[1]], [0, 0]])
+            dist = np.sum(np.abs(np.diff(cnr_ji, axis=0)), axis=1)
+            return np.row_stack([
+                np.linspace(cnr_ji[i], cnr_ji[i+1], np.round(num_pts * dist[i] / perim).astype('int'), endpoint=False)
+                for i in range(0, 4)
+            ]).T  # yapf: disable
+
+        ji = im_boundary(np.array(self._camera._im_size), num_pts=num_pts)
+        if not full_remap:
+            # undistort ji to match the boundary of the self._camera.undistort() image
+            ji = self._camera.undistort(ji, clip=True)
+        return ji
+
     def _mask_dem(
         self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool = True,
-        num_pts: int = 400, crop: bool = True, mask: bool = True
+        crop: bool = True, mask: bool = True, num_pts: int = 400
     ) -> Tuple[np.ndarray, rio.Affine]:
         """
         Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and corresponding
@@ -239,14 +263,8 @@ class Ortho:
 
         if not crop and not mask:
             return dem_array, dem_transform
-        # pixel coordinates of source image borders
-        n = int(num_pts / 4)
-        im_br = np.array(self._camera._im_size) - 1
-        side_seq = np.linspace(0, 1, n)
-        src_ji = np.vstack(
-            (np.hstack((side_seq, np.ones(n), side_seq[::-1], np.zeros(n))) * im_br[0],
-             np.hstack((np.zeros(n), side_seq, np.ones(n), side_seq[::-1])) * im_br[1],)
-        )  # yapf: disable
+        # get polygon of source boundary with 'num_pts' points
+        src_ji = self._get_src_boundary(full_remap=full_remap, num_pts=num_pts)
 
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
@@ -444,6 +462,32 @@ class Ortho:
             if write_mask and (indexes == [1] or len(indexes) == ortho_im.count):
                 ortho_im.write_mask(~tile_mask, window=tile_win)
 
+    def _undistort(
+        self, image: np.ndarray, nodata: Union[float, int] = 0, interp: Union[str, Interp] = Interp.bilinear
+    ) -> np.ndarray:
+        """ Undistort an image using `interp` interpolation and setting invalid pixels to `nodata`. """
+        if self._camera._undistort_maps is None:
+            return image
+
+        def undistort_band(band: np.array) -> np.array:
+            """ Undistort a 2D band array. """
+            # equivalent without stored _undistort_maps:
+            # return cv2.undistort(band_array, self._K, self._dist_param)
+            return cv2.remap(
+                band, *self._camera._undistort_maps, Interp[interp].to_cv(), borderMode=cv2.BORDER_CONSTANT,
+                borderValue=nodata
+            )
+
+        if image.ndim > 2:
+            # undistort by band so that output data stays in the rasterio ordering
+            out_image = np.full(image.shape, fill_value=nodata, dtype=image.dtype)
+            for bi in range(image.shape[0]):
+                out_image[bi] = undistort_band(image[bi])
+        else:
+            out_image = undistort_band(image)
+
+        return out_image
+
     def _remap(
         self, src_im: rio.DatasetReader, ortho_im: rio.io.DatasetWriter, dem_array: np.ndarray,
         interp: Interp = _default_config['interp'], per_band: bool = _default_config['per_band'],
@@ -481,7 +525,7 @@ class Ortho:
         with tqdm(bar_format=bar_format, total=len(ortho_wins) * len(index_list), dynamic_ncols=True) as bar:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:
-                # read source image band(s) (as ortho dtype is required for cv2.remap() to set invalid ortho areas to
+                # read source image band(s) (ortho dtype is required for cv2.remap() to set invalid ortho areas to
                 # ortho nodata value)
                 src_array = src_im.read(indexes, out_dtype=ortho_im.profile['dtype'])
 
@@ -489,7 +533,7 @@ class Ortho:
                     # undistort the source image so the distortion model can be excluded from
                     # self._camera.world_to_pixel() in self._remap_tile()
                     dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
-                    src_array = self._camera.undistort(src_array, nodata=dtype_nodata, interp=interp)
+                    src_array = self._undistort(src_array, nodata=dtype_nodata, interp=interp)
 
                 # map ortho tiles concurrently
                 with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
