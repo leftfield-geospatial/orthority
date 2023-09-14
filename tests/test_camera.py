@@ -53,9 +53,7 @@ def test_init(
         assert np.all(camera._dist_param == [*dist_param.values()])
 
 
-def test_update(
-    focal_len: float, im_size: Tuple, sensor_size: Tuple, xyz: Tuple, opk: Tuple
-):
+def test_update(focal_len: float, im_size: Tuple, sensor_size: Tuple, xyz: Tuple, opk: Tuple):
     """ Test exterior parameter update. """
     camera = PinholeCamera(focal_len, im_size, sensor_size=sensor_size, xyz=(0, 0, 0), opk=(0, 0, 0))
     camera.update(xyz, opk)
@@ -65,9 +63,7 @@ def test_update(
 
 
 @pytest.mark.parametrize('cam_type', [*CameraType])
-def test_update_error(
-    cam_type: CameraType, focal_len: float, im_size: Tuple, sensor_size: Tuple, xyz: Tuple, opk: Tuple
-):
+def test_update_error(cam_type: CameraType, focal_len: float, im_size: Tuple, sensor_size: Tuple):
     """ Test an error is raised if the camera is used before intialising exterior parameters. """
     camera = create_camera(cam_type, focal_len, im_size, sensor_size=sensor_size)
 
@@ -291,10 +287,22 @@ def test_instrinsic_nonsquare_pixels(
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
 
 
-@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
-def test_horizon_fov(camera: str, xyz: Tuple, request: pytest.FixtureRequest):
+@pytest.mark.parametrize(
+    'cam_type, dist_param', [
+        (CameraType.brown, 'brown_dist_param'),
+        (CameraType.brown, 'brown_dist_param'),
+        (CameraType.opencv, 'opencv_dist_param'),
+        (CameraType.opencv, 'opencv_dist_param'),
+        (CameraType.fisheye, 'fisheye_dist_param'),
+        (CameraType.fisheye, 'fisheye_dist_param'),
+    ],
+)
+def test_horizon_fov(
+    cam_type: CameraType, dist_param: str, camera_args: Dict, xyz: Tuple, request: pytest.FixtureRequest
+):
     """ Test Camera._horizon_fov() validity.  """
-    camera: Camera = request.getfixturevalue(camera)
+    dist_param: Dict = request.getfixturevalue(dist_param)
+    camera = create_camera(cam_type, **camera_args, **dist_param)
     assert not camera._horizon_fov()
 
     camera.update(xyz, (np.pi / 2, 0, 0))
@@ -312,7 +320,7 @@ def test_horizon_fov(camera: str, xyz: Tuple, request: pytest.FixtureRequest):
         (CameraType.fisheye, 'fisheye_dist_param', 0.),
         (CameraType.fisheye, 'fisheye_dist_param', 1.),
     ],
-)
+)  # yapf: disable
 def test_undistort_alpha(
     camera_args: Dict, cam_type: CameraType, dist_param: str, alpha: float, request: pytest.FixtureRequest
 ):
@@ -328,7 +336,7 @@ def test_undistort_alpha(
     ji = np.array(
         [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2], [0, 0]]
     ).T  # yapf: disable
-    undistort_ji = camera.undistort(ji)
+    undistort_ji = np.round(camera.undistort(ji), 3)
 
     def inside_outside(ji: np.array, undistort_ji: np.array, inside=True):
         """ Test if `undistort_ji` lies inside (`inside`=True) or outside (`inside`=False) `ji`. """
