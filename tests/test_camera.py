@@ -19,10 +19,8 @@ import numpy as np
 import pytest
 
 from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, FisheyeCamera, create_camera
-from simple_ortho.enums import CameraType, Interp
+from simple_ortho.enums import CameraType
 from simple_ortho.errors import CameraInitError
-from simple_ortho.utils import distort_image
-from tests.conftest import checkerboard
 
 
 # @formatter:off
@@ -36,16 +34,21 @@ from tests.conftest import checkerboard
 )  # yapf: disable  # @formatter:on
 def test_init(
     cam_type: CameraType, dist_param: str, exp_type: type, xyz: Tuple, opk: Tuple, focal_len: float,
-    im_size: Tuple, sensor_size: Tuple, request: pytest.FixtureRequest
+    im_size: Tuple, sensor_size: Tuple, cxy: Tuple, request: pytest.FixtureRequest
 ):
     """ Test camera creation. """
     dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
 
-    camera = create_camera(cam_type, focal_len, im_size, sensor_size=sensor_size, **dist_param, xyz=xyz, opk=opk)
+    camera = create_camera(
+        cam_type, focal_len, im_size, sensor_size=sensor_size, cx=cxy[0], cy=cxy[1], **dist_param, xyz=xyz, opk=opk
+    )
+    im_size = np.array(im_size)
+    cxy_pixel = (im_size - 1) / 2 + np.array(cxy) * im_size.max()
 
     assert isinstance(camera, exp_type)
     assert np.all(camera._T.flatten() == xyz)
     assert camera._K.diagonal()[:2] == pytest.approx(np.array(focal_len) * im_size / sensor_size, abs=1e-3)
+    assert all(camera._K[:2, 2] == cxy_pixel)
     if dist_param:
         assert np.all(camera._dist_param == [*dist_param.values()])
 
@@ -254,30 +257,103 @@ def test_pixel_to_world_z_error(pinhole_camera: Camera):
     assert '`z`' in str(ex)
 
 
-def test_instrinsic_equivalence(xyz: Tuple, opk: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple):
-    """ Test intrinsic matrix validity for equivalent focal_len and sensor_size options. """
-    ref_camera = PinholeCamera(focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
+def test_intrinsic_equivalence(
+    focal_len: float, im_size: Tuple, sensor_size: Tuple, cxy: Tuple, xyz: Tuple, opk: Tuple,
+):
+    """ Test intrinsic matrix validity for equivalent focal_len & sensor_size options. """
+    ref_camera = PinholeCamera(focal_len, im_size, sensor_size=sensor_size, cx=cxy[0], cy=cxy[1], xyz=xyz, opk=opk)
 
     # normalised focal length and no sensor size
-    test_camera = PinholeCamera(focal_len / sensor_size[0], im_size, xyz=xyz, opk=opk)
+    test_camera = PinholeCamera(focal_len / sensor_size[0], im_size, cx=cxy[0], cy=cxy[1], xyz=xyz, opk=opk)
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length and sensor size
     test_camera = PinholeCamera(
-        focal_len / sensor_size[0], im_size, sensor_size=np.array(sensor_size) / sensor_size[0], xyz=xyz, opk=opk
+        focal_len / sensor_size[0], im_size, sensor_size=np.array(sensor_size) / sensor_size[0], cx=cxy[0], cy=cxy[1],
+        xyz=xyz, opk=opk
     )
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
     # normalised focal length (x, y) tuple and sensor size
-    test_camera = PinholeCamera(np.ones(2) * focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
+    test_camera = PinholeCamera(
+        np.ones(2) * focal_len, im_size, sensor_size=sensor_size, cx=cxy[0], cy=cxy[1], xyz=xyz, opk=opk
+    )
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
 
 def test_instrinsic_nonsquare_pixels(
-    xyz: Tuple, opk: Tuple, focal_len: float, im_size: Tuple, sensor_size: Tuple
+    focal_len: float, im_size: Tuple, sensor_size: Tuple, xyz: Tuple, opk: Tuple,
 ):
     """ Test intrinsic matrix validity for non-square pixels. """
     sensor_size = np.array(sensor_size)
     sensor_size[0] *= 2
     camera = PinholeCamera(focal_len, im_size, sensor_size=sensor_size, xyz=xyz, opk=opk)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
+
+
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
+def test_horizon_fov(camera: str, xyz: Tuple, request: pytest.FixtureRequest):
+    """ Test Camera._horizon_fov() validity.  """
+    camera: Camera = request.getfixturevalue(camera)
+    assert not camera._horizon_fov()
+
+    camera.update(xyz, (np.pi / 2, 0, 0))
+    assert camera._horizon_fov()
+    camera.update(xyz, (0, np.pi, 0))
+    assert camera._horizon_fov()
+
+
+@pytest.mark.parametrize(
+    'cam_type, dist_param, alpha', [
+        (CameraType.brown, 'brown_dist_param', 0.),
+        (CameraType.brown, 'brown_dist_param', 1.),
+        (CameraType.opencv, 'opencv_dist_param', 0.),
+        (CameraType.opencv, 'opencv_dist_param', 1.),
+        (CameraType.fisheye, 'fisheye_dist_param', 0.),
+        (CameraType.fisheye, 'fisheye_dist_param', 1.),
+    ],
+)
+def test_undistort_alpha(
+    camera_args: Dict, cam_type: CameraType, dist_param: str, alpha: float, request: pytest.FixtureRequest
+):
+    """
+    Test alpha=0 gives undistorted image boundaries outside, and alpha=1 gives undistorted image boundaries inside
+    the source image.
+    """
+    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    camera = create_camera(cam_type, **camera_args, **dist_param, alpha=alpha)
+
+    # create boundary coordinates and undistort
+    w, h = np.array(camera._im_size) - 1
+    ji = np.array(
+        [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2], [0, 0]]
+    ).T  # yapf: disable
+    undistort_ji = camera.undistort(ji)
+
+    def inside_outside(ji: np.array, undistort_ji: np.array, inside=True):
+        """ Test if `undistort_ji` lies inside (`inside`=True) or outside (`inside`=False) `ji`. """
+        # setup indexes to extract bottom i, right j, top i, left j edge values
+        edge_idxs = [1, 0, 1, 0]
+        edge_slices = [slice(0, 3), slice(2, 5), slice(4, 7), slice(6, 9)]
+
+        # edge - undistorted edge comparison functions
+        if inside:
+            edge_cmps = [np.less_equal, np.greater_equal, np.greater_equal, np.less_equal]
+        else:
+            edge_cmps = [np.greater_equal, np.less_equal, np.less_equal, np.greater_equal]
+
+        # extract bottom, right, top, left edges and compare
+        for edge_idx, edge_slice, edge_cmp in zip(edge_idxs, edge_slices, edge_cmps):
+            undistort_edge = undistort_ji[edge_idx, edge_slice]
+            edge = ji[edge_idx, edge_slice]
+            assert np.all(edge_cmp(edge, undistort_edge))
+
+    # test undistorted coords are inside / outside source coords
+    if alpha == 1:
+        assert np.all(undistort_ji.min(axis=1) >= ji.min(axis=1))
+        assert np.all(undistort_ji.max(axis=1) <= ji.max(axis=1))
+        inside_outside(ji, undistort_ji, inside=True)
+    else:
+        assert np.all(undistort_ji.min(axis=1) <= ji.min(axis=1))
+        assert np.all(undistort_ji.max(axis=1) >= ji.max(axis=1))
+        inside_outside(ji, undistort_ji, inside=False)
