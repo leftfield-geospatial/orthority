@@ -20,20 +20,21 @@ from typing import Union, Tuple, Optional
 import cv2
 import numpy as np
 
-from simple_ortho.enums import CameraType, Interp
+from simple_ortho.enums import CameraType
 from simple_ortho.errors import CameraInitError
 
 logger = logging.getLogger(__name__)
 
 
 class Camera:
+    _default_alpha: float = 1.
     # TODO: only pass intrinsic param on __init__, then extrinsic on update or similar (?)
     def __init__(
         self, focal_len: Union[float, Tuple[float, float], np.ndarray],
         im_size: Union[Tuple[int, int], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None,
         cx: float = 0, cy: float = 0, xyz: Union[Tuple[float, float, float], np.ndarray] = None,
-        opk: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None, alpha: float = _default_alpha
     ):  # yapf: disable
         """
         Pinhole camera class, without any distortion model, for transforming between 3D world and 2D pixel coordinates.
@@ -56,6 +57,9 @@ class Camera:
             Camera position (x=easting, y=northing, z=altitude) in world coordinates.
         opk: tuple of float, ndarray, optional
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world coordinates.
+        alpha: float
+            Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
+            undistorted image that keeps all source pixels.  Not used for the pinhole camera model.
         """
         self._im_size = im_size
         self._K = self._get_intrinsic(focal_len, im_size, sensor_size, cx, cy)
@@ -158,27 +162,32 @@ class Camera:
 
     def _horizon_fov(self) -> bool:
         """ Return True if this camera's field of view includes, or is above, the horizon; otherwise False. """
-        # camera coords for image corners
-        src_ji = np.array([[0, 0], [self._im_size[0], 0], self._im_size, [0, self._im_size[1]]]).T
+        # camera coords for image boundary
+        # TODO: check image world / camera coord bounds are found similarly elsewhere
+        w, h = np.array(self._im_size) - 1
+        src_ji = np.array([
+            [0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]
+        ]).T  # yapf: disable
         xyz_ = self._pixel_to_camera(src_ji)
 
         # rotate camera to world alignment & test if any z vals are above the camera / origin
         xyz_r = self._R.dot(xyz_)
         return np.any(xyz_r[2] >= 0)
 
-    def _get_undistort_intrinsic(self, alpha: float = 1.):
+    def _get_undistort_intrinsic(self, alpha: float):
         """
         Return a new camera intrinsic matrix for an undistorted image that is the same size as the source image.
         `alpha` (0-1) controls the portion of the source included in the distorted image.
         For `alpha`=1, the undistorted image includes all source pixels and some invalid (nodata) areas. For `alpha`=0,
-        the undistorted image includes a maximum portion of the source image such that all undistorted pixels are valid.
+        the undistorted image includes the largest portion of the source image that allows all undistorted pixels to be
+        valid.
         """
         # Adapted from and equivalent to cv2.getOptimalNewCameraMatrix(newImageSize=self._im_size,
         # centerPrincipalPoint=False).
         # See https://github.com/opencv/opencv/blob/4790a3732e725b102f6c27858e7b43d78aee2c3e/modules/calib3d/src
         # /calibration.cpp#L2772
         def _get_rectangles(im_size: Union[Tuple[int, int], np.ndarray]):
-            """ Return inner and outer rectangles for distorted image boundary points. """
+            """ Return inner and outer rectangles for distorted image grid points. """
             w, h = np.array(im_size) - 1
             n = 9
             scale_j, scale_i = np.meshgrid(range(0, n), range(0, n))
@@ -207,7 +216,9 @@ class Camera:
         K_undistort[:2, 2] = c
         return K_undistort
 
-    def _get_undistort_maps(self) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+    def _get_undistort_maps(self, alpha: float) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
+        # TODO: make a design decision if internal methods can have keyword args with default values or should be
+        #  forced to positional args
         """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
         return None, self._K
 
@@ -337,7 +348,7 @@ class OpenCVCamera(Camera):
         k1: float = 0., k2: float = 0., k3: float = 0., p1: float = 0., p2: float = 0., k4: float = 0., k5: float = 0.,
         k6: float = 0., s1: float = 0., s2: float = 0., s3: float = 0., s4: float = 0., t1: float = 0., t2: float = 0.,
         xyz: Union[Tuple[float, float, float], np.ndarray] = None,
-        opk: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None, alpha: float = Camera._default_alpha
     ):  # yapf: disable
         """
         Camera class with OpenCV distortion model, for transforming between 3D world and 2D pixel coordinates, and
@@ -370,6 +381,9 @@ class OpenCVCamera(Camera):
             Camera position (x=easting, y=northing, z=altitude) in world coordinates.
         opk: tuple of float, ndarray
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world coordinates.
+        alpha: float
+            Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
+            undistorted image that keeps all source pixels.
         """
         Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
@@ -380,9 +394,10 @@ class OpenCVCamera(Camera):
             if np.all(self._dist_param[dist_len:] == 0.):
                 self._dist_param = self._dist_param[:dist_len]
                 break
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
-    def _get_undistort_maps(self, alpha: float = 1.) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:  # yapf:
+    def _get_undistort_maps(self, alpha: float) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+        # yapf:
         # disable
         # TODO: expose alpha to the API
         # TODO: is centerPrincipalPoint=True necessary to avoid nodata ortho borders?
@@ -390,7 +405,7 @@ class OpenCVCamera(Camera):
         # TODO: test --no-full-remap with fisheye
         im_size = np.array(self._im_size).astype(int)
         # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha)  # cv2 equivalent
-        K_undistort = self._get_undistort_intrinsic(alpha=alpha)
+        K_undistort = self._get_undistort_intrinsic(alpha)
         undistort_maps = cv2.initUndistortRectifyMap(
             self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
         )
@@ -415,7 +430,7 @@ class BrownCamera(OpenCVCamera):
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0., cy: float = 0.,
         k1: float = 0., k2: float = 0., p1: float = 0., p2: float = 0., k3: float = 0.,
         xyz: Union[Tuple[float, float, float], np.ndarray] = None,
-        opk: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None, alpha: float = Camera._default_alpha
     ):  # yapf: disable
         """
         Camera class with Brown-Conrady distortion for transforming between 3D world and 2D pixel coordinates, and
@@ -447,11 +462,14 @@ class BrownCamera(OpenCVCamera):
             Camera position (x=easting, y=northing, z=altitude) in world coordinates.
         opk: tuple of float, ndarray, optional
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world coordinates.
+        alpha: float
+            Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
+            undistorted image that keeps all source pixels.
         """
         Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, p1, p2, k3])
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
     def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         # transform from world to camera coordinates, and normalise
@@ -492,7 +510,7 @@ class FisheyeCamera(Camera):
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0., cy: float = 0.,
         k1: float = 0., k2: float = 0., k3: float = 0., k4: float = 0.,
         xyz: Union[Tuple[float, float, float], np.ndarray] = None,
-        opk: Union[Tuple[float, float, float], np.ndarray] = None,
+        opk: Union[Tuple[float, float, float], np.ndarray] = None, alpha: float = Camera._default_alpha
     ):  # yapf: disable
         """
         Camera class with fisheye distortion for transforming between 3D world and 2D pixel coordinates, and
@@ -524,18 +542,21 @@ class FisheyeCamera(Camera):
             Camera position (x=easting, y=northing, z=altitude) in world coordinates.
         opk: tuple of float, ndarray, optional
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to world coordinates.
+        alpha: float
+            Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
+            undistorted image that keeps all source pixels.
         """
         Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, k3, k4])
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps()
+        self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
-    def _get_undistort_maps(self, alpha: float = 1.) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
+    def _get_undistort_maps(self, alpha: float) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
         im_size = np.array(self._im_size).astype(int)
 
         # use internal method to get K_undistort as cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() does not
         # include all source pixels for balance=1.
-        K_undistort = self._get_undistort_intrinsic(alpha=alpha)
+        K_undistort = self._get_undistort_intrinsic(alpha)
 
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires default R & P
         # (new camera matrix) params to be specified

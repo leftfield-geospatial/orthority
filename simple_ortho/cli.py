@@ -150,7 +150,7 @@ def _odm_proj_dir_cb(ctx: click.Context, param: click.Parameter, proj_dir: Path)
 
 def _ortho(
     src_files: Tuple[Path, ...], dem_file: Path, int_param_dict: Dict[str, Dict], ext_param_dict: Dict[str, Dict],
-    crs: rio.CRS, dem_band: int, export_params: bool, out_dir: Path, overwrite: bool, **kwargs
+    crs: rio.CRS, dem_band: int, alpha: float, export_params: bool, out_dir: Path, overwrite: bool, **kwargs
 ):
     """ """
     # TODO: multiple file progress as a master bar, or 'x of N' prefix to individual bars
@@ -191,7 +191,7 @@ def _ortho(
         # create camera and ortho objects
         # TODO: generalise exterior params / camera so that the cli can just expand the dict and not need to know
         #  about the internals
-        camera = create_camera(im_size=im_size, **int_param, xyz=ext_param['xyz'], opk=ext_param['opk'])
+        camera = create_camera(im_size=im_size, **int_param, alpha=alpha, xyz=ext_param['xyz'], opk=ext_param['opk'])
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
@@ -257,8 +257,13 @@ per_band_option = click.option(
 full_remap_option = click.option(
     '-fr/-nfr', '--full-remap/--no-full-remap', type=click.BOOL, default=Ortho._default_config['full_remap'],
     show_default=True, help='Orthorectify the source image with full camera model (``--full-remap``), or an '
-                            'undistorted source image with a pinhole camera model (``--no-full-remap``).  '
-                            '``--no-full-remap`` is faster but reduces the extents and quality of the ortho image.'
+                            'undistorted source image with pinhole camera model (``--no-full-remap``).  '
+                            '``--no-full-remap`` is faster but can reduce the ortho image quality.'
+)
+alpha_option = click.option(
+    '-a', '--alpha', type=click.FloatRange(0, 1), nargs=1, default=1, show_default=True,
+    help='Scaling of the ``--no-full-remap`` undistorted image: 0 results in an undistorted image with all valid '
+         'pixels, 1 results in an undistorted image with all source pixels.'
 )
 # TODO: "internal mask"?
 write_mask_option = click.option(
@@ -320,6 +325,7 @@ def cli(verbose, quiet):
 @dtype_option
 @compress_option
 @build_ovw_option
+@alpha_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -424,6 +430,7 @@ def ortho(
 @dtype_option
 @compress_option
 @build_ovw_option
+@alpha_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -487,6 +494,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
 @dtype_option
 @compress_option
 @build_ovw_option
+@alpha_option
 @export_params_option
 @overwrite_option
 def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
@@ -522,7 +530,7 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
     # yapf:enable @formatter:on
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
-    src_files = [p for p in proj_dir.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts]
+    src_files = tuple([p for p in proj_dir.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts])
     if len(src_files) == 0:
         raise click.BadParameter(f'No images found in {proj_dir.joinpath("images")}.', param_hint='--odm-root')
 

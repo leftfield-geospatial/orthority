@@ -243,7 +243,7 @@ class Ortho:
 
         ji = im_boundary(np.array(self._camera._im_size), num_pts=num_pts)
         if not full_remap:
-            # undistort ji to match the boundary of the self._camera.undistort() image
+            # undistort ji to match the boundary of the self._undistort() image
             ji = self._camera.undistort(ji, clip=True)
         return ji
 
