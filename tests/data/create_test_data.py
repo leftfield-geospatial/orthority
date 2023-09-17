@@ -175,16 +175,20 @@ def create_odm_test_data():
         dst_dem_file.with_suffix(dst_dem_file.suffix + '.aux.xml').unlink(missing_ok=True)
     downsample_dem(src_root.joinpath('odm_dem', 'dsm.tif'), dst_dem_file, bounds=bounds, ds_fact=16)
 
-    # copy relevant parts of opensfm reconstruction file
+    # copy relevant parts of opensfm reconstruction file with image size conversion
     src_rec_file = src_root.joinpath('opensfm/reconstruction.json')
     dst_rec_file = dst_root.joinpath('opensfm/reconstruction.json')
     dst_root.joinpath('opensfm').mkdir(exist_ok=True, parents=True)
+    with rio.open(dst_rgb_file, 'r') as dst_im:
+        im_size = (dst_im.width, dst_im.height)
     if dst_rec_file.exists():
         dst_rec_file.unlink()
     with open(src_rec_file, 'r') as f:
         json_obj = json.load(f)
-    json_obj = [{k: v for k, v in json_obj[0].items() if k in['cameras', 'shots', 'reference_lla']}]
+    json_obj = [{k: v for k, v in json_obj[0].items() if k in ['cameras', 'shots', 'reference_lla']}]
     json_obj[0]['shots'] = {k[:-4]: v for k, v in json_obj[0]['shots'].items() if k.lower() in src_rgb_files}
+    for camera in json_obj[0]['cameras'].values():
+        camera['width'], camera['height'] = im_size[0], im_size[1]
     with open(dst_rec_file, 'w') as f:
         json.dump(json_obj, f, indent=4)
 
@@ -232,6 +236,6 @@ def create_io_test_data():
 
 
 if __name__ == '__main__':
-    # create_odm_test_data()
+    create_odm_test_data()
     # create_ngi_test_data()
-    create_io_test_data()
+    # create_io_test_data()
