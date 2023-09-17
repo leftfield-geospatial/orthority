@@ -8,11 +8,14 @@ from simple_ortho.utils import expand_window_to_grid
 from simple_ortho.exif import Exif
 from simple_ortho import io
 import csv
+import re
 import numpy as np
 import json
 
 
-def downsample_rgb(src_file: Path, dst_file: Path, ds_fact: int = 4, scale_clip: float = None):
+def downsample_rgb(
+    src_file: Path, dst_file: Path, ds_fact: int = 4, scale_clip: float = None, strip_dewarp: bool = False
+):
     """ Downsample `src_file` by `ds_fact`, scale & clip to `scale_clip` and write to uint8 jpeg geotiff `dst_file`. """
     with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False), rio.open(src_file, 'r') as src_im:
         # raise error if aspect ratio will not be maintained
@@ -35,7 +38,11 @@ def downsample_rgb(src_file: Path, dst_file: Path, ds_fact: int = 4, scale_clip:
             for namespace in src_im.tag_namespaces():
                 # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namspace/ tag name,
                 # where 'xml:XMP=' gets prefixed to the value
-                dst_im.update_tags(ns=namespace, **src_im.tags(ns=namespace))
+                ns_dict = src_im.tags(ns=namespace)
+                if strip_dewarp and namespace == 'xml:XMP':
+                    ns_dict[namespace] = re.sub(r'[ ]*?drone-dji:DewarpData(.*?)"\n', '', ns_dict[namespace])
+                dst_im.update_tags(ns=namespace, **ns_dict)
+
             for index in dst_im.indexes:
                 dst_im.update_tags(index, **src_im.tags(index))
             # copy image data, scaling and clipping if required
@@ -184,13 +191,13 @@ def create_odm_test_data():
 
 def create_io_test_data():
     # create lla_rpy csv file for odm data
-    src_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
+    odm_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
     dst_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
     dst_root.mkdir(exist_ok=True)
 
-    osfm_reader = io.OsfmReader(src_root.joinpath('opensfm', 'reconstruction.json'))
+    osfm_reader = io.OsfmReader(odm_root.joinpath('opensfm', 'reconstruction.json'))
     cam_id = next(iter(osfm_reader.read_int_param().keys()))
-    exif_list = [Exif(sf) for sf in src_root.joinpath('images').glob('*.tif')]
+    exif_list = [Exif(sf) for sf in odm_root.joinpath('images').glob('*.tif')]
     with open(dst_root.joinpath('odm_lla_rpy.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=' ', quotechar='"')
         writer.writerow(['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'other'])
@@ -215,6 +222,13 @@ def create_io_test_data():
 
     with open(dst_root.joinpath('ngi_xyz_opk.proj'), 'w', newline='') as f:
         f.write(crs.to_proj4())
+
+    # create an image w/o xmp DeWarpData tag
+    src_im_file = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River/images/100_0005_0140.jpg')
+    dst_im_file = dst_root.joinpath(src_im_file.name[:-4] + '.tif')
+    if dst_im_file.exists():
+        dst_im_file.unlink()
+    downsample_rgb(src_im_file, dst_root.joinpath(src_im_file.name).with_suffix('.tif'), ds_fact=16, strip_dewarp=True)
 
 
 if __name__ == '__main__':
