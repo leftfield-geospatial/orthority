@@ -29,11 +29,11 @@ logger = logging.getLogger(__name__)
 class Camera:
     _default_alpha: float = 1.
     # TODO: only pass intrinsic param on __init__, then extrinsic on update or similar (?)
+
     def __init__(
-        self, focal_len: Union[float, Tuple[float, float], np.ndarray],
-        im_size: Union[Tuple[int, int], np.ndarray],
-        sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None,
-        cx: float = 0, cy: float = 0, xyz: Union[Tuple[float, float, float], np.ndarray] = None,
+        self, im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
+        sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0, cy: float = 0,
+        xyz: Union[Tuple[float, float, float], np.ndarray] = None,
         opk: Union[Tuple[float, float, float], np.ndarray] = None, alpha: float = _default_alpha
     ):  # yapf: disable
         """
@@ -41,11 +41,11 @@ class Camera:
 
         Parameters
         ----------
+        im_size: tuple of int, ndarray
+            Image (width, height) in pixels.
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
-        im_size: tuple of int, ndarray
-            Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
             Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not specified, pixels are
             assumed square, and ``focal_len`` should be a normalised & unitless value:
@@ -62,14 +62,14 @@ class Camera:
             undistorted image that keeps all source pixels.  Not used for the pinhole camera model.
         """
         self._im_size = im_size
-        self._K = self._get_intrinsic(focal_len, im_size, sensor_size, cx, cy)
+        self._K = self._get_intrinsic(im_size, focal_len, sensor_size, cx, cy)
         self._R, self._T = self._get_extrinsic(xyz, opk)
         self._undistort_maps = None
         self._K_undistort = self._K
 
     @staticmethod
     def _get_intrinsic(
-        focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]], cx: float, cy: float
     ) -> np.ndarray:
         """ Return the camera intrinsic matrix for the given interior parameters. """
@@ -343,7 +343,7 @@ class PinholeCamera(Camera):
 class OpenCVCamera(Camera):
 
     def __init__(
-        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0, cy: float = 0,
         k1: float = 0., k2: float = 0., k3: float = 0., p1: float = 0., p2: float = 0., k4: float = 0., k5: float = 0.,
         k6: float = 0., s1: float = 0., s2: float = 0., s3: float = 0., s4: float = 0., t1: float = 0., t2: float = 0.,
@@ -362,11 +362,11 @@ class OpenCVCamera(Camera):
 
         Parameters
         ----------
+        im_size: tuple of int, ndarray
+            Image (width, height) in pixels.
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
-        im_size: tuple of int, ndarray
-            Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
             Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not specified, pixels are
             assumed square, and ``focal_len`` should be a normalised & unitless value:
@@ -385,7 +385,7 @@ class OpenCVCamera(Camera):
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
             undistorted image that keeps all source pixels.
         """
-        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
+        Camera.__init__(self, im_size, focal_len, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         # order _dist_param & truncate zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
@@ -426,7 +426,7 @@ class OpenCVCamera(Camera):
 class BrownCamera(OpenCVCamera):
 
     def __init__(
-        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0., cy: float = 0.,
         k1: float = 0., k2: float = 0., p1: float = 0., p2: float = 0., k3: float = 0.,
         xyz: Union[Tuple[float, float, float], np.ndarray] = None,
@@ -444,11 +444,11 @@ class BrownCamera(OpenCVCamera):
 
         Parameters
         ----------
+        im_size: tuple of int, ndarray
+            Image (width, height) in pixels.
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
-        im_size: tuple of int, ndarray
-            Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
             Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not specified, pixels are
             assumed square, and ``focal_len`` should be a normalised & unitless value:
@@ -466,7 +466,7 @@ class BrownCamera(OpenCVCamera):
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
             undistorted image that keeps all source pixels.
         """
-        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
+        Camera.__init__(self, im_size, focal_len, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, p1, p2, k3])
         self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
@@ -506,7 +506,7 @@ class BrownCamera(OpenCVCamera):
 class FisheyeCamera(Camera):
 
     def __init__(
-        self, focal_len: Union[float, Tuple[float, float], np.ndarray], im_size: Union[Tuple[int, int], np.ndarray],
+        self, im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
         sensor_size: Optional[Union[Tuple[float, float], np.ndarray]] = None, cx: float = 0., cy: float = 0.,
         k1: float = 0., k2: float = 0., k3: float = 0., k4: float = 0.,
         xyz: Union[Tuple[float, float, float], np.ndarray] = None,
@@ -524,11 +524,11 @@ class FisheyeCamera(Camera):
 
         Parameters
         ----------
+        im_size: tuple of int, ndarray
+            Image (width, height) in pixels.
         focal_len: float, tuple of float, ndarray
             Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or (x, y)
             tuple/ndarray pair.
-        im_size: tuple of int, ndarray
-            Image (width, height) in pixels.
         sensor_size: tuple of float, ndarray, optional
             Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not specified, pixels are
             assumed square, and ``focal_len`` should be a normalised & unitless value:
@@ -546,7 +546,7 @@ class FisheyeCamera(Camera):
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
             undistorted image that keeps all source pixels.
         """
-        Camera.__init__(self, focal_len, im_size, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
+        Camera.__init__(self, im_size, focal_len, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
 
         self._dist_param = np.array([k1, k2, k3, k4])
         self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)

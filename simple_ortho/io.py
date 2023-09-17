@@ -19,7 +19,6 @@ import yaml
 import logging
 from pathlib import Path
 from typing import Union, Tuple, Optional, List, Dict, Callable, Optional
-from enum import Enum
 from csv import DictReader, Sniffer, Dialect
 from tqdm.auto import tqdm
 
@@ -45,10 +44,11 @@ _optional_schema = {
 }  # yapf: disable
 """ Schema of valid optional parameters for each camera type. """
 
+
 def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     """ Read camera internal parameters from an ODM / OpenSfM json dictionary. """
 
-    def parse_osfm_param(json_param: Dict, cam_id: str) -> Dict:
+    def parse_json_param(json_param: Dict, cam_id: str) -> Dict:
         """ Validate & convert the given json dictionary for a single camera. """
         # TODO: check all keys are valid for camera type
         int_param = {}
@@ -63,6 +63,9 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
         except ValueError:
             raise ParamFileError(f"Unsupported projection type '{proj_type}'.")
 
+        im_size = (json_param.pop('width'), json_param.pop('height'))
+        int_param['im_size'] = im_size
+
         # read focal length(s) (json values are normalised by max of sensor width & height)
         if 'focal' in json_param:
             int_param['focal_len'] = json_param.pop('focal')
@@ -73,8 +76,6 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
             raise ParamFileError(
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
             )
-
-        im_size = (json_param.pop('width'), json_param.pop('height'))
 
         # TODO: normalised by width or max(width, height) ?
         # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM / OpenSFM json files do
@@ -101,7 +102,7 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     int_param_dict = {}
     for cam_id, json_param in json_dict.items():
         cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
-        int_param_dict[cam_id] = parse_osfm_param(json_param, cam_id)
+        int_param_dict[cam_id] = parse_json_param(json_param, cam_id)
 
     return int_param_dict
 
@@ -123,17 +124,18 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             logger.warning(f'Cannot interpret dewarp data for {exif.filename.name}.')
         else:
             # construct brown camera parameters from dewarp data and return
-            cam_dict = dict(cam_type=CameraType.brown)
+            cam_dict = dict(
+                cam_type=CameraType.brown, im_size=exif.im_size, focal_len=tuple(exif.dewarp[:2]),
+                sensor_size=exif.tag_im_size
+            )
             # TODO: are fx, fy multiplied by width or max(width, height)
-            cam_dict['focal_len'] = tuple(exif.dewarp[:2])
-            cam_dict['sensor_size'] = exif.tag_im_size
             cam_dict['cx'], cam_dict['cy'] = tuple(np.array(exif.dewarp[2:4]) / max(exif.tag_im_size))
             dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:]))
             cam_dict.update(**dist_params)
             return {_create_exif_cam_id(exif): cam_dict}
 
     # construct pinhole camera parameters
-    cam_dict = dict(cam_type=CameraType.pinhole)
+    cam_dict = dict(cam_type=CameraType.pinhole, im_size=exif.im_size)
     if exif.focal_len and exif.sensor_size:
         # prefer using focal length and sensor size directly
         cam_dict['focal_len'] = exif.focal_len
@@ -196,10 +198,10 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
 
-    def parse_oty_param(yaml_param: Dict, cam_id: str = None) -> Dict:
+    def parse_yaml_param(yaml_param: Dict, cam_id: str = None) -> Dict:
         """ Validate & convert the given yaml dictionary for a single camera. """
         # test required keys for all cameras
-        for req_key in ['type', 'focal_len', 'sensor_size']:
+        for req_key in ['type', 'im_size', 'focal_len', 'sensor_size']:
             if req_key not in yaml_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
@@ -210,9 +212,10 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
         except ValueError:
             raise ParamFileError(f"Unsupported camera type '{cam_type}'.")
 
+        int_param['im_size'] = tuple(yaml_param.pop('im_size'))
+
         # pop known legacy keys not supported by Camera.__init__
         yaml_param.pop('name', None)
-        yaml_param.pop('im_size', None)
 
         # set focal_len & sensor_size
         focal_len = yaml_param.pop('focal_len')
@@ -238,7 +241,7 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     # parse each set of internal parameters
     int_param_dict = {}
     for cam_id, yaml_param in yaml_dict.items():
-        int_param_dict[cam_id] = parse_oty_param(yaml_param, cam_id)
+        int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
     return int_param_dict
 
 

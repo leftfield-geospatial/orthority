@@ -184,14 +184,14 @@ def _ortho(
         else:
             raise click.BadParameter(f"'camera' ID for {src_file.name} should be specified.", param_hint='--ext-param')
 
-        # get image size
-        with suppress_no_georef(), rio.open(src_file, 'r') as src_im:
-            im_size = (src_im.width, src_im.height)
+        # # get image size # TODO: remove
+        # with suppress_no_georef(), rio.open(src_file, 'r') as src_im:
+        #     im_size = (src_im.width, src_im.height)
 
         # create camera and ortho objects
         # TODO: generalise exterior params / camera so that the cli can just expand the dict and not need to know
         #  about the internals
-        camera = create_camera(im_size=im_size, **int_param, alpha=alpha, xyz=ext_param['xyz'], opk=ext_param['opk'])
+        camera = create_camera(**int_param, xyz=ext_param['xyz'], opk=ext_param['opk'], alpha=alpha)
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:

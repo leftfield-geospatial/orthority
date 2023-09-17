@@ -2,6 +2,7 @@
 camera:
   name: Integraph DMC               # Not used
   type: pinhole                     # Camera model type (pinhole, brown, fisheye, opencv)
+  im_size: [640, 1152]              # Image [width, height] in pixels
   focal_len: 120.                   # Focal length in mm
   sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in mm
 

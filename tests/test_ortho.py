@@ -282,7 +282,7 @@ def test_mask_dem(
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
+        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
         opk=np.radians(_opk),
     )
     resolution = (5, 5)
@@ -363,7 +363,7 @@ def test_mask_dem_crop(
     _xyz = np.array(camera_args['xyz']) + xyz_offset
     _opk = np.array(camera_args['opk']) + opk_offset
     camera: Camera = PinholeCamera(
-        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
+        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
         opk=np.radians(_opk),
     )
     resolution = (5, 5)
@@ -621,7 +621,7 @@ def test_process_auto_resolution(
     """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
     _opk = tuple(np.array(camera_args['opk']) + opk_offset)
     camera: Camera = PinholeCamera(
-        camera_args['focal_len'], camera_args['im_size'], sensor_size=camera_args['sensor_size'], xyz=xyz,
+        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=xyz,
         opk=np.radians(_opk)
     )
     dem_interp = Interp.cubic

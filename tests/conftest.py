@@ -127,19 +127,19 @@ def create_src(
         src_im.write(array)
 
 
-def oty_to_osfm_int_param(int_param_dict: Dict, im_size: Tuple) -> Dict:
+def oty_to_osfm_int_param(int_param_dict: Dict) -> Dict:
     """ Return equivalent OpenSfM / ODM format interior parameters for given orthority format parameters. """
     osfm_dict = {}
     for cam_id, int_params in int_param_dict.items():
         osfm_params = int_params.copy()
         cam_type = osfm_params.pop('cam_type')
         osfm_params['projection_type'] = 'perspective' if cam_type == 'brown' else cam_type
+        im_size = osfm_params.pop('im_size')
+        osfm_params['width'] = im_size[0]
+        osfm_params['height'] = im_size[1]
 
         sensor_size = osfm_params.pop('sensor_size')
         osfm_params['focal_x'] = osfm_params['focal_y'] = osfm_params.pop('focal_len') / sensor_size[0]
-        # osfm_params['sensor_size'] = (1, sensor_size[1] / sensor_size[0])
-        osfm_params['width'] = im_size[0]
-        osfm_params['height'] = im_size[1]
 
         for from_key, to_key in zip(['cx', 'cy'], ['c_x', 'c_y']):
             if from_key in osfm_params:
@@ -151,7 +151,7 @@ def oty_to_osfm_int_param(int_param_dict: Dict, im_size: Tuple) -> Dict:
 @pytest.fixture(scope='session')
 def xyz() -> Tuple[float, float, float]:
     """ Example camera (Easting, Northing, altitude) position (m). """
-    return (2e4, 3e4, 1e3)
+    return 2e4, 3e4, 1e3
 
 
 @pytest.fixture(scope='session')
@@ -169,13 +169,13 @@ def focal_len() -> float:
 @pytest.fixture(scope='session')
 def im_size() -> Tuple[int, int]:
     """ Example camera image size (pixels). """
-    return (200, 150)
+    return 200, 150
 
 
 @pytest.fixture(scope='session')
 def sensor_size() -> Tuple[float, float]:
     """ Example camera sensor size (mm). """
-    return (6.0, 4.5)
+    return 6.0, 4.5
 
 
 @pytest.fixture(scope='session')
@@ -188,7 +188,7 @@ def cxy() -> Tuple[float, float]:
 def interior_args(focal_len, im_size, sensor_size, cxy) -> Dict:
     """ A dictionary of interior parameters for `Camera.__init__()`. """
     return dict(
-        focal_len=focal_len / sensor_size[0], sensor_size=(1, sensor_size[1] / sensor_size[0]),
+        im_size=im_size, focal_len=focal_len / sensor_size[0], sensor_size=(1, sensor_size[1] / sensor_size[0]),
         cx=cxy[0], cy=cxy[1]
     )
 
@@ -200,9 +200,9 @@ def exterior_args(xyz: Tuple, opk: Tuple) -> Dict:
 
 
 @pytest.fixture(scope='session')
-def camera_args(interior_args: Dict, im_size: Tuple, exterior_args: Dict) -> Dict:
+def camera_args(interior_args: Dict, exterior_args: Dict) -> Dict:
     """ A dictionary of interior and exterior parameters for `Camera.__init__()`. """
-    return dict(**interior_args, im_size=im_size, **exterior_args)
+    return dict(**interior_args, **exterior_args)
 
 
 @pytest.fixture(scope='session')
@@ -420,27 +420,27 @@ def mult_int_param_dict(
 @pytest.fixture(scope='session')
 def oty_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict,) -> Path:
     """ An interior parameter file in orthority yaml format. """
-    filename = Path(tmpdir_factory.mktemp('data').join('oty_int_param_file.yaml'))
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('oty_int_param_file.yaml')
     with open(filename, 'w') as f:
         yaml.dump(mult_int_param_dict, f)
     return filename
 
 
 @pytest.fixture(scope='session')
-def odm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict, im_size: Tuple) -> Path:
+def odm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict) -> Path:
     """ An interior parameter file in ODM cameras.json format. """
-    filename = Path(tmpdir_factory.mktemp('data').join('odm_int_param_file.json'))
-    int_param = oty_to_osfm_int_param(mult_int_param_dict, im_size)
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('odm_int_param_file.json')
+    int_param = oty_to_osfm_int_param(mult_int_param_dict)
     with open(filename, 'w') as f:
         json.dump(int_param, f)
     return filename
 
 
 @pytest.fixture(scope='session')
-def osfm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict, im_size: Tuple) -> Path:
+def osfm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict) -> Path:
     """ An interior parameter file in OpenSfM reconstruction.json format. """
-    filename = Path(tmpdir_factory.mktemp('data').join('osfm_int_param_file.json'))
-    int_param = oty_to_osfm_int_param(mult_int_param_dict, im_size)
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('osfm_int_param_file.json')
+    int_param = oty_to_osfm_int_param(mult_int_param_dict)
     int_param = [dict(cameras=int_param)]
     with open(filename, 'w') as f:
         json.dump(int_param, f)
@@ -455,13 +455,13 @@ def odm_proj_dir() -> Path:
 
 @pytest.fixture(scope='session')
 def odm_image_files(odm_proj_dir: Path) -> Tuple[Path, ...]:
-    """ ODM image files. """
+    """ ODM drone image files. """
     return tuple([fn for fn in odm_proj_dir.joinpath('images').glob('*.tif')])
 
 
 @pytest.fixture(scope='session')
-def odm_image_file(odm_proj_dir: Path) -> Tuple[Path, ...]:
-    """ ODM image file. """
+def odm_image_file(odm_proj_dir: Path) -> Path:
+    """ ODM drone image file. """
     return next(iter(odm_proj_dir.joinpath('images').glob('*.tif')))
 
 
@@ -484,8 +484,8 @@ def ngi_image_files() -> Tuple[Path, ...]:
 
 
 @pytest.fixture(scope='session')
-def ngi_image_file() -> Tuple[Path, ...]:
-    """ NGI image file. """
+def ngi_image_file() -> Path:
+    """ NGI aerial image file. """
     return next(iter(root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')))
 
 
@@ -505,3 +505,9 @@ def ngi_config_file() -> Path:
 def ngi_csv_file() -> Path:
     """ Legacy format exterior parameter CSV file for NGI test data. """
     return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
+
+
+@pytest.fixture(scope='session')
+def exif_image_file() -> Path:
+    """ An ODM image file without the 'DewarpData' XMP tag. """
+    return root_path.joinpath('tests', 'data', 'io', '100_0005_0140.tif')

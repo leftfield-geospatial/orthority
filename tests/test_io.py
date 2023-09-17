@@ -81,7 +81,7 @@ def test_read_osfm_int_param(filename: str, mult_int_param_dict: Dict, request: 
 @pytest.mark.parametrize('missing_key', ['focal_x', 'focal_y'])
 def test_read_osfm_int_param_missing_error(pinhole_int_param_dict: Dict, missing_key: str, tmp_path: Path):
     """ Test reading orthority format interior parameters raises an error when required keys are missing. """
-    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict, (1, 1))
+    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params.pop(missing_key)
     with pytest.raises(ParamFileError) as ex:
@@ -91,7 +91,7 @@ def test_read_osfm_int_param_missing_error(pinhole_int_param_dict: Dict, missing
 
 def test_read_osfm_int_param_distortion_error(pinhole_int_param_dict: Dict, tmp_path: Path):
     """ Test reading orthority format interior parameters raises an error when unknown keys are present. """
-    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict, (1, 1))
+    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['other'] = 0.
     with pytest.raises(ParamFileError) as ex:
@@ -101,7 +101,7 @@ def test_read_osfm_int_param_distortion_error(pinhole_int_param_dict: Dict, tmp_
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: Dict, tmp_path: Path):
     """ Test reading orthority format interior parameters raises an error the projection type is unsupported. """
-    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict, (1, 1))
+    osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['projection_type'] = 'other'
     with pytest.raises(ParamFileError) as ex:
@@ -109,9 +109,19 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: Dict, tmp_p
     assert 'projection type' in str(ex)
 
 
-def test_read_exif_int_param(odm_image_file: Path):
-    """ Testing reading EXIF tag interior parameters from a valid EXIF image. """
-    _ = io.read_exif_int_param(odm_image_file)
+def test_read_exif_int_param_dewarp(odm_image_file: Path):
+    """ Testing reading EXIF / XMP tag interior parameters from an image with the `DewarpData` XMP tag. """
+    int_param_dict = io.read_exif_int_param(odm_image_file)
+    int_params = next(iter(int_param_dict.values()))
+    assert int_params.get('cam_type', None) == 'brown'
+    assert {'k1', 'k2', 'p1', 'p2', 'k3'}.issubset(int_params.keys())
+
+
+def test_read_exif_int_param_no_dewarp(exif_image_file: Path):
+    """ Testing reading EXIF / XMP tag interior parameters from an image without the `DewarpData` XMP tag. """
+    int_param_dict = io.read_exif_int_param(exif_image_file)
+    int_params = next(iter(int_param_dict.values()))
+    assert int_params.get('cam_type', None) == 'pinhole'
 
 
 def test_read_exif_int_param_error(ngi_image_file: Path):

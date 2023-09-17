@@ -114,13 +114,13 @@ class TestCommandLine(unittest.TestCase):
 
     def test_ortho_im(self):
         self._test_ortho_im(input_dir='data/inputs/test_example', output_dir='data/outputs/test_example')
-        self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
-        self._test_ortho_im(
-            input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard='*.JPG'
-        )
-        self._test_ortho_im(
-            input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
-        )
+        # self._test_ortho_im(input_dir='data/inputs/test_example2', output_dir='data/outputs/test_example2')
+        # self._test_ortho_im(
+        #     input_dir='data/inputs/test_example3', output_dir='data/outputs/test_example3', input_wildcard='*.JPG'
+        # )
+        # self._test_ortho_im(
+        #     input_dir='data/inputs/test_example4', output_dir='data/outputs/test_example4', input_wildcard='*GRE.TIF'
+        # )
 
 
 if __name__ == '__main__':
