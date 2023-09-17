@@ -192,12 +192,15 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 with suppress_no_georef(), rio.open(src_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
-                if not camera or np.any(im_size != camera._im_size):
+                if not camera:
                     # create a new camera
-                    camera = create_camera(camera_type, im_size=im_size, **camera_config, xyz=xyz, opk=opk)
+                    camera = create_camera(camera_type, **camera_config, xyz=xyz, opk=opk)
                 else:
                     # update existing camera
                     camera.update(xyz, opk)
+
+                if np.any(im_size != camera._im_size):
+                    logger.warning(f'{src_filename.name} size ({im_size}) does not match configuration.')
 
                 # create Ortho  and orthorectify
                 logger.info(f'Orthorectifying {src_filename.name}:')
