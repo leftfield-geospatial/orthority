@@ -120,13 +120,13 @@ def validate_collection(template: Iterable, coll: Iterable) -> bool:
         # struct is a dict of types or other dicts
         for k in template:
             if k in coll:
-                _validate_collection(template[k], coll[k])
+                validate_collection(template[k], coll[k])
             else:
                 raise KeyError(f"No key: '{k}'.")
     elif isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
         # struct is list in the form [type or dict]
         for item in coll:
-            _validate_collection(template[0], item)
+            validate_collection(template[0], item)
     elif isinstance(template, type):
         # struct is the type of conf
         if not isinstance(coll, template):
