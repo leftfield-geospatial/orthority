@@ -165,6 +165,7 @@ def _ortho(
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
 
+    cameras = {}
     for src_i, src_file in enumerate(src_files):
         # get exterior params for src_file
         ext_param = ext_param_dict.get(src_file.name, ext_param_dict.get(src_file.stem, None))
@@ -180,18 +181,19 @@ def _ortho(
                 raise click.BadParameter(f"Could not find parameters for camera '{cam_id}'.", param_hint='--int-param')
             int_param = int_param_dict[cam_id]
         elif len(int_param_dict) == 1:
+            cam_id = None
             int_param = list(int_param_dict.values())[0]
         else:
             raise click.BadParameter(f"'camera' ID for {src_file.name} should be specified.", param_hint='--ext-param')
 
-        # # get image size # TODO: remove
-        # with suppress_no_georef(), rio.open(src_file, 'r') as src_im:
-        #     im_size = (src_im.width, src_im.height)
+        # get camera if it exists, otherwise create camera, then update with exterior parameters and store
+        camera = cameras[cam_id] if cam_id in cameras else create_camera(**int_param, alpha=alpha)
+        camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+        cameras[cam_id] = camera
 
         # create camera and ortho objects
         # TODO: generalise exterior params / camera so that the cli can just expand the dict and not need to know
         #  about the internals
-        camera = create_camera(**int_param, xyz=ext_param['xyz'], opk=ext_param['opk'], alpha=alpha)
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
