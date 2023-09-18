@@ -109,12 +109,10 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
 
 def _create_exif_cam_id(exif: Exif) -> str:
     """ Return a camera ID string for the given Exif object.  """
-    focal_str = ''
-    if exif.focal_len:
-        focal_str = f'{exif.focal_len:.4f}'
-    elif exif.focal_len_35:
-        focal_str = f'{exif.focal_len_35:.4f} (35)'
-    return f'{exif.make or "unknown"} {exif.model or "unknown"} pinhole {focal_str}'
+    cam_id = ' '.join([exif.make, exif.model, exif.serial])
+    if len(cam_id) == 0:
+        cam_id = 'unknown'
+    return cam_id
 
 
 def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
@@ -164,13 +162,9 @@ def _read_exif_ext_param(
 ) -> Dict:
     """ Read camera external parameters from an Exif object. """
     if not exif.lla:
-        raise ParamFileError(
-            f'No latitude, longitude & altitude tags in {exif.filename.name}.'
-        )
+        raise ParamFileError(f'No latitude, longitude & altitude tags in {exif.filename.name}.')
     if not exif.rpy:
-        raise ParamFileError(
-            f'No camera / gimbal roll, pitch & yaw tags in {exif.filename.name}.'
-        )
+        raise ParamFileError(f'No camera / gimbal roll, pitch & yaw tags in {exif.filename.name}.')
     rpy = tuple(np.radians(exif.rpy))
     opk = rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
@@ -235,7 +229,7 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     # convert to nested dict if in flat format
     first_value = next(iter(yaml_dict.values()))
     if not isinstance(first_value, dict):
-        cam_id = yaml_dict.get('name', None) or 'default'
+        cam_id = yaml_dict['name'] if 'name' in yaml_dict else 'unknown'
         yaml_dict = {cam_id: yaml_dict}
 
     # parse each set of internal parameters
