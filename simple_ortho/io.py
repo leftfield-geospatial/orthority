@@ -80,7 +80,7 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
         # TODO: normalised by width or max(width, height) ?
         # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM / OpenSFM json files do
         # not define sensor size)
-        int_param['sensor_size'] = tuple(np.array(im_size) / max(im_size))
+        int_param['sensor_size'] = tuple((np.array(im_size) / max(im_size)).tolist())
 
         # rename c_x->cx & c_y->cy
         for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy']):
@@ -124,10 +124,10 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             # construct brown camera parameters from dewarp data and return
             cam_dict = dict(
                 cam_type=CameraType.brown, im_size=exif.im_size, focal_len=tuple(exif.dewarp[:2]),
-                sensor_size=exif.tag_im_size
+                sensor_size=(float(exif.tag_im_size[0]), float(exif.tag_im_size[1]))
             )
             # TODO: are fx, fy multiplied by width or max(width, height)
-            cam_dict['cx'], cam_dict['cy'] = tuple(np.array(exif.dewarp[2:4]) / max(exif.tag_im_size))
+            cam_dict['cx'], cam_dict['cy'] = tuple((np.array(exif.dewarp[2:4]) / max(exif.tag_im_size)).tolist())
             dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:]))
             cam_dict.update(**dist_params)
             return {_create_exif_cam_id(exif): cam_dict}
@@ -148,7 +148,7 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
             # normalise 35mm focal length assuming "35mm" = 36 mm max sensor dimension, and find a normalised sensor
             # size in same units, assuming square pixels
             cam_dict['focal_len'] = exif.focal_len_35 / 36.
-            cam_dict['sensor_size'] = tuple(np.array(exif.im_size) / max(exif.im_size))
+            cam_dict['sensor_size'] = tuple((np.array(exif.im_size) / max(exif.im_size)).tolist())
     else:
         raise ParamFileError(
             f'No focal length & sensor size, or 35mm focal length tags in {exif.filename.name}.'
@@ -165,7 +165,7 @@ def _read_exif_ext_param(
         raise ParamFileError(f'No latitude, longitude & altitude tags in {exif.filename.name}.')
     if not exif.rpy:
         raise ParamFileError(f'No camera / gimbal roll, pitch & yaw tags in {exif.filename.name}.')
-    rpy = tuple(np.radians(exif.rpy))
+    rpy = tuple(np.radians(exif.rpy).tolist())
     opk = rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
     xyz = tuple([coord[0] for coord in xyz])
@@ -682,10 +682,10 @@ class CsvReader(Reader):
 
         if self._format.is_opk:
             opk = (row['omega'], row['phi'], row['kappa'])
-            opk = opk if radians else tuple(np.radians(opk))
+            opk = opk if radians else tuple(np.radians(opk).tolist())
         else:
             rpy = (row['roll'], row['pitch'], row['yaw'])
-            rpy = rpy if radians else tuple(np.radians(rpy))
+            rpy = rpy if radians else tuple(np.radians(rpy).tolist())
             if self._format.is_xyz:
                 lla = transform(self._crs, self._lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
                 lla = (lla[1][0], lla[0][0], lla[2][0])  # x, y order -> lat, lon order
@@ -780,7 +780,7 @@ class OsfmReader(Reader):
             # adapted from https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
             R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
             delta_xyz = -R.T.dot(shot_dict['translation'])
-            xyz = tuple(ref_xyz + delta_xyz)
+            xyz = tuple((ref_xyz + delta_xyz).tolist())
             opk = aa_to_opk(shot_dict['rotation'])
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id

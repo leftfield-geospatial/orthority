@@ -273,7 +273,7 @@ class Exif:
         pixels_per_unit = np.array(
             [Exif._get_exif_float(exif_dict, xres_key), Exif._get_exif_float(exif_dict, yres_key)]
         )
-        return tuple(mm_per_unit * np.array(im_size) / pixels_per_unit)
+        return tuple((mm_per_unit * np.array(im_size) / pixels_per_unit).tolist())
 
     @staticmethod
     def _get_focal_len(exif_dict: Dict[str, str]) -> Tuple:
@@ -329,7 +329,7 @@ class Exif:
                 rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
                 rpy *= np.array(xmp_schema['rpy_gains'])
                 rpy += np.array(xmp_schema['rpy_offsets'])
-                return tuple(rpy)
+                return tuple(rpy.tolist())
         return None
 
     @staticmethod
