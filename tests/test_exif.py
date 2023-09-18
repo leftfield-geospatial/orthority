@@ -13,16 +13,13 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
-import logging
 from pathlib import Path
-from typing import Tuple, Dict
 
-import numpy as np
-import pytest
 from simple_ortho.exif import Exif
 
 
 def test_odm_image(odm_image_file: Path):
+    """ Test reading a valid EXIF / XMP image sets the properties. """
     exif = Exif(odm_image_file)
     assert exif.filename == odm_image_file
     for attr in [
@@ -32,8 +29,11 @@ def test_odm_image(odm_image_file: Path):
 
 
 def test_ngi_image(ngi_image_file: Path):
+    """ Test reading a non EXIF / XMP image. """
     exif = Exif(ngi_image_file)
     assert exif.filename == ngi_image_file
     assert exif.im_size is not None
-    for attr in ['make', 'model', 'focal_len', 'focal_len_35', 'tag_im_size', 'lla', 'rpy', 'sensor_size', 'dewarp']:
+    for attr in [
+        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'tag_im_size', 'lla', 'rpy', 'sensor_size', 'dewarp'
+    ]:
         assert getattr(exif, attr) is None
