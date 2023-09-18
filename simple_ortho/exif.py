@@ -123,7 +123,7 @@ class Exif:
                 xmp_dict = {}
 
         self._filename = filename
-        self._make, self._model = self._get_make_model(exif_dict)
+        self._make, self._model, self._serial = self._get_make_model_serial(exif_dict)
         self._tag_im_size = self._get_tag_im_size(exif_dict)
         self._sensor_size = self._get_sensor_size(exif_dict, self._im_size)
         self._focal_len, self._focal_len_35 = self._get_focal_len(exif_dict)
@@ -166,6 +166,11 @@ class Exif:
         return self._model
 
     @property
+    def serial(self) -> Optional[str]:
+        """ Camera serial number. """
+        return self._serial
+
+    @property
     def im_size(self) -> Optional[Tuple[int, int]]:
         """ Actual image (width, height) in pixels. """
         return self._im_size
@@ -204,12 +209,12 @@ class Exif:
         return self._rpy
 
     @property
-    def dewarp(self) -> Optional[List[float]]:
+    def dewarp(self) -> Optional[Tuple[float]]:
         """ Dewarp parameters. """
         return self._dewarp
 
     @staticmethod
-    def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Optional[Union[float, Tuple[float]]]:
+    def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Optional[Union[float, Tuple]]:
         """ Convert numeric EXIF tag to float(s). """
         if key not in exif_dict:
             return None
@@ -220,25 +225,27 @@ class Exif:
         return val_list[0] if len(val_list) == 1 else tuple(val_list)
 
     @staticmethod
-    def _get_make_model(exif_dict: Dict[str, str]) -> Tuple:
+    def _get_make_model_serial(exif_dict: Dict[str, str]) -> Tuple:
         """ Return camera make and model string. """
         make_key = 'EXIF_Make'
         model_key = 'EXIF_Model'
+        serial_key = 'EXIF_BodySerialNumber'
         make = exif_dict[make_key].lower() if make_key in exif_dict else None
         model = exif_dict[model_key].lower() if model_key in exif_dict else None
-        return make, model
+        serial = exif_dict[serial_key] if serial_key in exif_dict else None
+        return make, model, serial
 
     @staticmethod
-    def _get_tag_im_size(exif_dict: Dict[str, str]) -> Tuple[int, int]:
+    def _get_tag_im_size(exif_dict: Dict[str, str]) -> Optional[Tuple]:
         """ Return the tagged image (width, height) in pixels. """
         width = Exif._get_exif_float(exif_dict, 'EXIF_PixelXDimension')
         height = Exif._get_exif_float(exif_dict, 'EXIF_PixelYDimension')
-        return (width, height) if width and height else None
+        return (int(width), int(height)) if width and height else None
 
     @staticmethod
     def _get_sensor_size(
-        exif_dict: Dict[str, str], im_size: Union[Tuple[int, int], np.ndarray]
-    ) -> Optional[Tuple[float, float]]:
+        exif_dict: Dict[str, str], im_size: Union[Tuple, np.ndarray]
+    ) -> Optional[Tuple]:
         """ Return the sensor (width, height) in mm. """
 
         unit_key = 'EXIF_FocalPlaneResolutionUnit'
@@ -269,14 +276,14 @@ class Exif:
         return tuple(mm_per_unit * np.array(im_size) / pixels_per_unit)
 
     @staticmethod
-    def _get_focal_len(exif_dict: Dict[str, str]) -> Tuple[float, float]:
+    def _get_focal_len(exif_dict: Dict[str, str]) -> Tuple:
         """ Return the actual and 35mm equivalent focal lengths in mm. """
         focal_35 = Exif._get_exif_float(exif_dict, 'EXIF_FocalLengthIn35mmFilm')
         focal = Exif._get_exif_float(exif_dict, 'EXIF_FocalLength')
         return focal, focal_35
 
     @staticmethod
-    def _get_lla(exif_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
+    def _get_lla(exif_dict: Dict[str, str]) -> Optional[Tuple]:
         """
         Return the (latitutde, longitude, altitude) EXIF image location with latitude, longitude in decimal degrees, and
         altitude in meters.
@@ -306,7 +313,7 @@ class Exif:
         return lat, lon, alt
 
     @staticmethod
-    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
+    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
         """ Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]):
@@ -315,7 +322,7 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Optional[Tuple[float, float, float]]:
+    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
         """ Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist. """
         for schema_name, xmp_schema in xmp_schemas.items():
             if all([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]):
@@ -326,7 +333,7 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Optional[List[float]]:
+    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
         """ Return the camera dewarp parameters if they exist. """
         for schema_name, xmp_schema in xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
