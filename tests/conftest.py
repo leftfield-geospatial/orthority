@@ -478,6 +478,14 @@ def osfm_reconstruction_file(odm_proj_dir: Path) -> Path:
 
 
 @pytest.fixture(scope='session')
+def odm_crs(odm_dem_file) -> str:
+    """ CRS string for ODM exterior parameters & orthos in EPSG format. """
+    with rio.open(odm_dem_file, 'r') as im:
+        crs = im.crs
+    return f'EPSG:{crs.to_epsg()}'
+
+
+@pytest.fixture(scope='session')
 def ngi_image_files() -> Tuple[Path, ...]:
     """ NGI image files. """
     return tuple([fn for fn in root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')])
@@ -496,13 +504,20 @@ def ngi_dem_file() -> Path:
 
 
 @pytest.fixture(scope='session')
-def ngi_config_file() -> Path:
-    """ Legacy format interior parameter configuration file for NGI test data. """
-    return root_path.joinpath('tests', 'data', 'ngi', 'config.yaml')
+def ngi_crs(ngi_image_file) -> str:
+    """ CRS string for NGI exterior parameters & orthos in proj4 format. """
+    with rio.open(ngi_image_file, 'r') as im:
+        crs = im.crs
+    return crs.to_proj4()
+
+
+def ngi_legacy_csv_file() -> Path:
+    """ Legacy format exterior parameter CSV file for NGI test data. """
+    return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
 
 
 @pytest.fixture(scope='session')
-def ngi_csv_file() -> Path:
+def ngi_legacy_csv_file() -> Path:
     """ Legacy format exterior parameter CSV file for NGI test data. """
     return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
 
@@ -511,3 +526,22 @@ def ngi_csv_file() -> Path:
 def exif_image_file() -> Path:
     """ An ODM image file without the 'DewarpData' XMP tag. """
     return root_path.joinpath('tests', 'data', 'io', '100_0005_0140.tif')
+
+
+@pytest.fixture(scope='session')
+def ngi_xyz_opk_csv_file() -> Path:
+    """
+    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
+    a header and .proj file.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'ngi_xyz_opk.csv')
+
+
+@pytest.fixture(scope='session')
+def odm_lla_rpy_csv_file() -> Path:
+    """
+    Exterior parameters for ODM data in (latitude, longitude, altitude), (roll, pitch, yaw) CSV format. Includes
+    a header.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
+
