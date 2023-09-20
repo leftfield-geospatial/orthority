@@ -560,7 +560,7 @@ class CsvReader(Reader):
             raise FileNotFoundError(f'File not found: {self._filename}.')
 
         self._radians = radians
-        self._fieldnames, self._dialect, self._has_header, self._format = self._parse(
+        self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
             filename, fieldnames=fieldnames, dialect=dialect
         )
         self._crs = self._crs or self._get_crs()
@@ -596,7 +596,7 @@ class CsvReader(Reader):
         return format_dict[(has_xyz, has_opk)]
 
     @staticmethod
-    def _parse(
+    def _parse_file(
         filename: Path, fieldnames: List[str] = None, dialect: Dialect = None
     ) -> Tuple[List[str], Dialect, bool, CsvFormat]:
         """ Determine and validate the CSV file format. """

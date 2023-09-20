@@ -340,3 +340,7 @@ class Exif:
             if dewarp_str:
                 return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
         return None
+
+    def to_dict(self) -> Dict:
+        """ Convert to a dictionary of properties. """
+        return {k: getattr(self, k) for k, v in vars(type(self)).items() if isinstance(v, property)}
