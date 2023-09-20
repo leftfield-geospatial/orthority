@@ -224,7 +224,7 @@ def create_io_test_data():
     with rio.open(src_im_file, 'r') as src_im:
         crs = src_im.crs
 
-    with open(dst_root.joinpath('ngi_xyz_opk.proj'), 'w', newline='') as f:
+    with open(dst_root.joinpath('ngi_xyz_opk.prj'), 'w', newline='') as f:
         f.write(crs.to_proj4())
 
     # create an image w/o xmp DeWarpData tag
@@ -237,5 +237,5 @@ def create_io_test_data():
 
 if __name__ == '__main__':
     create_odm_test_data()
-    # create_ngi_test_data()
-    # create_io_test_data()
+    create_ngi_test_data()
+    create_io_test_data()
