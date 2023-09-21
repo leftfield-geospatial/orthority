@@ -19,11 +19,14 @@ import logging
 from pathlib import Path
 from typing import Tuple, Dict, List
 
+import cv2
 import numpy as np
 import pytest
 import rasterio as rio
+import rasterio.warp
+
 from simple_ortho import io
-from simple_ortho.utils import validate_collection
+from simple_ortho.camera import Camera
 from simple_ortho.enums import CameraType, Interp, CsvFormat
 from simple_ortho.errors import ParamFileError, CrsMissingError
 from tests.conftest import oty_to_osfm_int_param
@@ -145,6 +148,44 @@ def test_read_exif_int_param_error(ngi_image_file: Path):
     assert 'focal length' in str(ex)
 
 
+def test_aa_to_opk(xyz: Tuple, opk: Tuple):
+    """ Test _aa_to_opk(). """
+    R, _ = Camera._get_extrinsic(xyz, opk)
+    aa = cv2.Rodrigues(R.T)[0]
+    test_opk = io._aa_to_opk(aa)
+    assert test_opk == pytest.approx(opk, 1e-6)
+
+
+@pytest.mark.parametrize('C_bB', [
+    np.array([[0., 1., 0.], [1., 0, 0], [0, 0, -1]]), np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]),
+])
+def test_rpy_to_opk(C_bB: np.ndarray):
+    """ Test _rpy_to_opk() validity for aligned world and navigation systems. """
+    # From https://s3.amazonaws.com/mics.pix4d.com/KB/documents
+    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf:
+    # RPY rotates from body to navigation, and OPK from camera to world. If world is a topcentric system, centered on
+    # the camera, then world (E) & navigation (n) are aligned with same origin, and C_En = np.array([[ 0, 1, 0], [1, 0,
+    # 0], [0, 0, -1]]) (== C_En.T) rotates between them. If body (b) and camera (B) describe a typical drone geometry,
+    # then C_bB = C_En (== C_En.T) rotates between them.
+    # This test uses the topocentric special case to compare OPK and RPY rotation matrices using:
+    # R(o, p, k) = C_EB = C_En * R(o, p, k) * C_bB = C_En * C_nb * C_bB
+
+    n = 100
+    llas = np.random.rand(n, 3) * (180, 360, 1000) + (-90, 0, 0)
+    rpys = np.random.rand(n, 3) * (4 * np.pi) - (2 * np.pi)
+    C_En = np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+
+    for lla, rpy in zip(llas, rpys):
+        # create orthographic (2D topopcentric) CRS centered on lla
+        crs = rio.CRS.from_string(f'+proj=ortho +lat_0={lla[0]:.4f} +lon_0={lla[1]:.4f} +ellps=WGS84')
+        opk = io._rpy_to_opk(rpy, lla, crs, C_bB=C_bB)
+
+        C_nb = io._rpy_to_rotation(rpy)
+        R_opk = io._opk_to_rotation(opk)
+        assert R_opk == pytest.approx(C_En.dot(C_nb).dot(C_bB), abs=1e-6)
+        assert C_En.T.dot(R_opk).dot(C_bB.T) == pytest.approx(C_nb, abs=1e-6)
+
+
 def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: Tuple[Path, ...]):
     """ Test reading exterior parameters from a legacy format CSV file. """
     reader = io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs)
@@ -207,12 +248,34 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
+@pytest.mark.parametrize('fieldnames', [
+    ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw'],
+    ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
+])  # yapf: disable
+def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
+    """ Test that CsvReader initialised with a xyz_rpy or lla_opk format file and no CRS raises an error. """
+    fieldnames = ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw']
+    with pytest.raises(CrsMissingError) as ex:
+        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
+    assert 'crs' in str(ex).lower()
+
+
 def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
     """ Test reading exterior parameters from a CSV file with `fieldnames` argument. """
     fieldnames = ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'custom']
     reader = io.CsvReader(odm_lla_rpy_csv_file, fieldnames=fieldnames)
     assert set(reader._fieldnames) == set(fieldnames)
     _ = reader.read_ext_param()
+
+
+@pytest.mark.parametrize('missing_field', io.CsvReader._legacy_fieldnames)
+def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_field):
+    """ Test that CsvReader intialised with a missing fieldname raises an error. """
+    fieldnames = io.CsvReader._legacy_fieldnames.copy()
+    fieldnames.remove(missing_field)
+    with pytest.raises(ParamFileError) as ex:
+        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
+    assert missing_field in str(ex)
 
 
 @pytest.mark.parametrize('filename, crs, fieldnames, exp_format', [
@@ -236,7 +299,7 @@ def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
 def test_csv_reader_format(
     filename: str, crs: str, fieldnames: List, exp_format:CsvFormat, request: pytest.FixtureRequest
 ):
-    """ Test reading exterior parameters from a CSV file in different (simlated) position / orientation formats. """
+    """ Test reading exterior parameters from a CSV file in different (simulated) position / orientation formats. """
     filename: Path = request.getfixturevalue(filename)
     crs: str = request.getfixturevalue(crs)
 
@@ -290,47 +353,12 @@ def test_csv_reader_dialect(
     _validate_ext_param_dict(ext_param_dict, camera=cam_id)
 
 
-@pytest.mark.parametrize('fieldnames', [
-    ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw'],
-    ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
-])  # yapf: disable
-def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
-    """ Test that CsvReader initialised with a xyz_rpy or lla_opk format file and no CRS raises an error. """
-    fieldnames = ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw']
-    with pytest.raises(CrsMissingError) as ex:
-        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert 'crs' in str(ex).lower()
-
-
-@pytest.mark.parametrize('missing_field', io.CsvReader._legacy_fieldnames)
-def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_field):
-    """ Test that CsvReader intialised with a missing fieldname raises an error. """
-    fieldnames = io.CsvReader._legacy_fieldnames.copy()
-    fieldnames.remove(missing_field)
-    with pytest.raises(ParamFileError) as ex:
-        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert missing_field in str(ex)
-
-
 
 # TODO:
 # - Interior:
-#   - Test reading different formats is done correctly
-#   - Test error conditions reported meaningfully (missing keys?)
-#   - Have a test int-param dict / fixture
-#   - Fixtures that are the above written to oty, cameras.json & reconstruction.json files
-#   - For now, I think just use existing test ngi/odm images for testing exif.  It is not complete, but seems overkill
-#     to make code for generating exif test data.
-#   - Can there be a single set of interior params that is used for testing io and testing camera & ortho?  We would
-#   probably need to change how camera is initialised.
-#   - Writing oty & then reading oty params.
-#   - We still haven't done checking of distortion params for different cam types...  Use a schema with validate_collection?
 #   - Test multiple camera config & legacy format(s)
 # Exterior & readers:
 #   - Maybe have an exterior param dict fixture, that is used to create different formats, and test reading against.
 #   - The "create different formats" is not that trivial though...
-#   CSV
-#   - Different angle / position formats
-#   - With / without header, different delimiters, additional columns, with / without camera id
-#   - With / without proj CRS file
-#   - Error conditions
+# Multi-camera configurations
+

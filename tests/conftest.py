@@ -24,7 +24,7 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.transform import from_origin, from_bounds
-from rasterio.warp import transform_bounds
+from rasterio.warp import transform_bounds, transform
 
 from simple_ortho.enums import CameraType
 from simple_ortho.camera import Camera, PinholeCamera, BrownCamera, OpenCVCamera, FisheyeCamera
@@ -150,14 +150,14 @@ def oty_to_osfm_int_param(int_param_dict: Dict) -> Dict:
 
 @pytest.fixture(scope='session')
 def xyz() -> Tuple[float, float, float]:
-    """ Example camera (Easting, Northing, altitude) position (m). """
+    """ Example camera (easting, northing, altitude) position (m). """
     return 2e4, 3e4, 1e3
 
 
 @pytest.fixture(scope='session')
 def opk() -> Tuple[float, float, float]:
     """ Example camera (omega, phi, kappa) rotation (radians). """
-    return tuple(np.radians((-3., 2., 10.)))
+    return tuple(np.radians((-3., 2., 10.)).tolist())
 
 
 @pytest.fixture(scope='session')
