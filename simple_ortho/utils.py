@@ -26,7 +26,6 @@ from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
 import cv2
 
-from simple_ortho.camera import Camera
 from simple_ortho.enums import Interp
 
 logger = logging.getLogger(__name__)
@@ -55,7 +54,7 @@ def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.n
     return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
-def distort_image(camera: Camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
+def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
     """ Return a distorted image given a camera model and source image. """
 
     if not np.all(np.array(image.shape[::-1]) == camera._im_size):

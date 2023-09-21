@@ -166,7 +166,7 @@ def _read_exif_ext_param(
     if not exif.rpy:
         raise ParamFileError(f'No camera / gimbal roll, pitch & yaw tags in {exif.filename.name}.')
     rpy = tuple(np.radians(exif.rpy).tolist())
-    opk = rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
+    opk = _rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
     xyz = tuple([coord[0] for coord in xyz])
     return dict(xyz=xyz, opk=opk, camera=_create_exif_cam_id(exif))
@@ -276,20 +276,48 @@ def read_exif_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
     return _read_exif_int_param(Exif(filename))
 
 
-def aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
+def _rpy_to_rotation(rpy: Tuple[float, float, float]) -> np.ndarray:
+    """ Return the rotation matrix for the given (roll, pitch, yaw) orientations in radians. """
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    roll, pitch, yaw = rpy
+    R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
+    R_y = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
+    R_z = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
+    return R_z.dot(R_y).dot(R_x)
+
+
+def _opk_to_rotation(opk: Tuple[float, float, float]) -> np.ndarray:
+    """ Return the rotation matrix for the given (omega, phi, kappa) orientations in radians. """
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    omega, phi, kappa = opk
+    R_x = np.array([[1, 0, 0], [0, np.cos(omega), -np.sin(omega)], [0, np.sin(omega), np.cos(omega)]])
+    R_y = np.array([[np.cos(phi), 0, np.sin(phi)], [0, 1, 0], [-np.sin(phi), 0, np.cos(phi)]])
+    R_z = np.array([[np.cos(kappa), -np.sin(kappa), 0], [np.sin(kappa), np.cos(kappa), 0], [0, 0, 1]])
+    return R_x.dot(R_y).dot(R_z)
+
+
+def _rotation_to_opk(R: np.ndarray) -> Tuple[float, float, float]:
+    """ Return the (omega, phi, kappa) orientations in radians for the given rotation matrix. """
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    omega = np.arctan2(-R[1, 2], R[2, 2])
+    phi = np.arcsin(R[0, 2])
+    kappa = np.arctan2(-R[0, 1], R[0, 0])
+    return omega, phi, kappa
+
+
+def _aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
     """
-    Convert ODM convention angle axis vector to PATB convention omega, phi, kappa angles.
+    Convert angle axis vector to (omega, phi, kappa) angles.
 
     Parameters
     ----------
     aa: tuple of float
-        Angle axis vector in ODM convention (x->right, y->down, and z->forward looking through the camera at the scene).
+        Angle axis vector to rotate from camera (OpenSfM / OpenCV convention) to world coordinates.
 
     Returns
     -------
     tuple of float
-        Omega, phi, kappa angles (radians) in PATB convention (x->right, y->up, and z->backward looking through the
-        camera at the scene).
+        (omega, phi, kappa) angles in radians to rotate from camera (Pix4D / PATB convention) to world coordinates.
     """
     # convert ODM angle/axis to rotation matrix (see https://github.com/mapillary/OpenSfM/issues/121)
     R = cv2.Rodrigues(np.array(aa))[0].T
@@ -297,34 +325,24 @@ def aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
     # rotate from ODM to PATB convention
     R = np.dot(R, np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
 
-    # extract OPK from R (see https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf)
-    omega = np.arctan2(-R[1, 2], R[2, 2])
-    phi = np.arcsin(R[0, 2])
-    kappa = np.arctan2(-R[0, 1], R[0, 0])
+    # extract OPK from R
+    omega, phi, kappa = _rotation_to_opk(R)
     return omega, phi, kappa
 
 
-def rpy_to_opk(
+def _rpy_to_opk(
     rpy: Tuple[float, float, float], lla: Tuple[float, float, float], crs: CRS, lla_crs: CRS = CRS.from_epsg(4979),
-    cbb: Optional[List[List]] = None
+    C_bB: Optional[List[List]] = None
 ) -> Tuple[float, float, float]:
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
 
-    Roll, pitch & yaw (RPY) angles rotate from body to navigation systems, where the body system (x->front, y->right,
-    z->down) is centered on and aligned with the gimbal/camera.  The navigation system shares its center with
-    the body system, but is rotated relative to it, with its xy-plane perpendicular to the local plumbline (x->N,
-    y->E, z->down).
+    Coordinate conventions are as defined in: https://s3.amazonaws.com/mics.pix4d.com/KB/documents
+    /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
 
-    Omega, phi & kappa (OPK) angles rotate from world to camera coordinate systems. For orthorectification,
-    world coordinates are a projected system like UTM (origin fixed near earth surface, and usually some distance from
-    camera), and camera coordinates are centered on and aligned with the camera (orthority uses PATB convention:
-    x->right, y->up, z->backwards looking through the camera at the scene).
-
-    Note that this conversion does not correct for earth curvature & assumes the world ``crs`` is orthogonal and
-    uniform scale in the vicinity of the ``lla`` camera position.  For this approximation to be accurate, ``crs``
-    should be conformal, and have its central meridian(s) close to the camera postion.
+    Note this conversion does not correct for earth curvature & assumes ``crs`` is orthogonal and uniform scale
+    (cartesian) in the vicinity of ``lla``.  ``crs`` should be conformal, and have its central meridian(s) close to
+    ``lla`` for this assumption to be accurate.
 
     Parameters
     ----------
@@ -333,18 +351,17 @@ def rpy_to_opk(
     lla: tuple of float
         (latitude, longitude, altitude) geographic coordinates of the camera (degrees).
     crs: rasterio.crs.CRS
-        CRS of the world coordinate system (for orthorectification this is also the CRS of the camera positions and
-        ortho image).
+        CRS of the world / ortho coordinate system.
     lla_crs: rasterio.crs.CRS
         CRS of the ``lla`` geographic coordinates.
-    cbb: list of list of float, optional
+    C_bB: list of list of float, optional
         Optional camera to body rotation matrix.  Defaults to : ``[[0, 1, 0], [1, 0, 0], [0, 0, -1]]``,
-        which describe typical drone geometry where the camera looks down with its top toward the flying direction.
+        which describes typical drone geometry.
 
     Returns
     -------
     tuple of float
-        (omega, phi, kappa) angles in radians, to rotate from PATB convention camera to world coordinate systems.
+        omega, phi, kappa angles in radians, to rotate from Pix4D / PATB convention camera to world coordinate systems.
     """
     # Adapted from the OpenSfM exif module https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py and Pix4D doc
     # https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
@@ -352,19 +369,23 @@ def rpy_to_opk(
     # Note that what the Pix4D reference calls Object (E), and Image (B) coordinates, orthority calls world and
     # camera coordinates respectively.
 
+    # RPY rotates from body (b) to navigation (n) coordinates, and OPK from camera ('Image' B) to world ('Object' E)
+    # coordinates.  Body (b) coordinates are defined as x->front, y->right, z->down, and navigation (n) coordinates as
+    # x->N, y->E, z->down.  Navigation is a tangent plane type system and shares its origin with body (b) at ``lla``.
+    # Camera (B) coordinates are in the Pix4D / PATB convention i.e. x->right, y->top, z->back (looking through the
+    # camera at the scene), and are aligned with & centered on the body (b) system.  World (E) coordinates are ENU i.e.
+    # x->E, y->N, z->up.
+
     # TODO: test this different vertical datums for crs and lla_crs
     # TODO: consider changing lla ordering to x,y,z everywhere
     lla = np.array(lla)
     roll, pitch, yaw = rpy
     crs = CRS.from_string(crs) if isinstance(crs, str) else crs
 
-    # find rotation matrix cnb, to rotate from body to navigation coordinates.
-    rx = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
-    ry = np.array([[np.cos(pitch), 0, np.sin(pitch)], [0, 1, 0], [-np.sin(pitch), 0, np.cos(pitch)]])
-    rz = np.array([[np.cos(yaw), -np.sin(yaw), 0], [np.sin(yaw), np.cos(yaw), 0], [0, 0, 1]])
-    cnb = rz.dot(ry).dot(rx)
+    # find rotation matrix C_nb, to rotate from body (b) to navigation (n) coordinates.
+    C_nb = _rpy_to_rotation(rpy)
 
-    # find rotation matrix cen, to rotate from navigation to world (object E) coordinates
+    # find rotation matrix C_En, to rotate from navigation (n) to world (object E) coordinates
     delta = 1e-7
     lla1 = lla + (delta, 0, 0)
     lla2 = lla - (delta, 0, 0)
@@ -374,23 +395,21 @@ def rpy_to_opk(
     p2 = np.array(transform(lla_crs, crs, [lla2[1]], [lla2[0]], [lla2[2]])).squeeze()
 
     # approximate the relative alignment of world and navigation systems in the vicinity of lla
-    xnp = p1 - p2
-    m = np.linalg.norm(xnp)
-    xnp /= m                # unit vector in navigation system N direction
-    znp = np.array([0, 0, -1]).T
-    ynp = np.cross(znp, xnp)
-    cen = np.array([xnp, ynp, znp]).T
+    x_np = p1 - p2
+    m = np.linalg.norm(x_np)
+    x_np /= m                # unit vector in navigation system N direction
+    z_np = np.array([0, 0, -1]).T
+    y_np = np.cross(z_np, x_np)
+    C_En = np.array([x_np, y_np, z_np]).T
 
-    # cbb is the rotation from camera (image B) to body coordinates
-    cbb = np.array(cbb) if cbb is not None else np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+    # C_bB is the rotation from camera (image B) to body (b) coordinates
+    C_bB = np.array(C_bB) if C_bB is not None else np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
 
-    # combine cen, cnb, cbb to find rotation from camera (B) to world (E) coordinates.
-    ceb = cen.dot(cnb).dot(cbb)
+    # combine C_En, C_nb, C_bB to find rotation from camera (B) to world (E) coordinates.
+    C_EB = C_En.dot(C_nb).dot(C_bB)
 
-    # extract OPK angles from ceb
-    omega = np.arctan2(-ceb[1][2], ceb[2][2])
-    phi = np.arcsin(ceb[0][2])
-    kappa = np.arctan2(-ceb[0][1], ceb[0][0])
+    # extract OPK angles from C_EB and return
+    omega, phi, kappa = _rotation_to_opk(C_EB)
     return omega, phi, kappa
 
 
@@ -689,7 +708,7 @@ class CsvReader(Reader):
             if self._format.is_xyz:
                 lla = transform(self._crs, self._lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
                 lla = (lla[1][0], lla[0][0], lla[2][0])  # x, y order -> lat, lon order
-            opk = rpy_to_opk(rpy, lla, self._crs, lla_crs=self._lla_crs)
+            opk = _rpy_to_opk(rpy, lla, self._crs, lla_crs=self._lla_crs)
 
         return xyz, opk
 
@@ -781,7 +800,7 @@ class OsfmReader(Reader):
             R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
             delta_xyz = -R.T.dot(shot_dict['translation'])
             xyz = tuple((ref_xyz + delta_xyz).tolist())
-            opk = aa_to_opk(shot_dict['rotation'])
+            opk = _aa_to_opk(shot_dict['rotation'])
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
             ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)

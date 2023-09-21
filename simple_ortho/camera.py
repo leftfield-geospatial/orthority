@@ -22,6 +22,7 @@ import numpy as np
 
 from simple_ortho.enums import CameraType
 from simple_ortho.errors import CameraInitError
+from simple_ortho.io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
 
@@ -79,13 +80,12 @@ class Camera:
 
         if len(im_size) != 2:
             raise ValueError('`im_size` should contain 2 values: (width, height).')
+        im_size = np.array(im_size)
         if sensor_size is not None and len(sensor_size) != 2:
             raise ValueError('`sensor_size` should contain 2 values: (width, height).')
         focal_len = np.array(focal_len)
         if focal_len.size > 2:
             raise ValueError('`focal_len` should contain at most 2 values.')
-
-        im_size = np.array(im_size)
 
         # find the xy focal lengths in pixels
         if sensor_size is None:
@@ -101,8 +101,9 @@ class Camera:
         c_xy = (im_size - 1) / 2
         c_xy += im_size.max() * np.array((cx, cy))
 
-        # intrinsic matrix to convert from camera co-ords in ODM convention (x->right, y->down, z->forwards,
-        # looking through the camera at the scene) to pixel co-ords in standard convention (x->right, y->down).
+        # intrinsic matrix to convert from camera co-ords in OpenSfM / OpenCV convention (x->right, y->down,
+        # z->forwards, looking through the camera at the scene) to pixel co-ords in standard convention (x->right,
+        # y->down).
         K = np.array([[sigma_xy[0], 0, c_xy[0]], [0, sigma_xy[1], c_xy[1]], [0, 0, 1]])
         return K
 
@@ -116,28 +117,13 @@ class Camera:
         elif len(xyz) != 3 or len(opk) != 3:
             raise ValueError('`xyz` and `opk` should contain 3 values.')
 
+        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters
+        # -defined
         T = np.array(xyz).reshape(-1, 1)
-        omega, phi, kappa = opk
+        R = _opk_to_rotation(opk)
 
-        # Find rotation matriz from OPK in PATB convention
-        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera
-        # -Parameters-defined
-        omega_r = np.array(
-            [[1, 0, 0], [0, np.cos(omega), -np.sin(omega)], [0, np.sin(omega), np.cos(omega)]]
-        )  # yapf: disable
-
-        phi_r = np.array(
-            [[np.cos(phi), 0, np.sin(phi)], [0, 1, 0], [-np.sin(phi), 0, np.cos(phi)]]
-        )  # yapf: disable
-
-        kappa_r = np.array(
-            [[np.cos(kappa), -np.sin(kappa), 0], [np.sin(kappa), np.cos(kappa), 0], [0, 0, 1]]
-        )  # yapf: disable
-
-        R = omega_r.dot(phi_r).dot(kappa_r)
-
-        # rotate from PATB (x->right, y->up, z->backwards looking through the camera at the scene) to ODM convention
-        # (x->right, y->down, z->forwards, looking through the camera at the scene)
+        # rotate from PATB (x->right, y->up, z->backwards looking through the camera at the scene) to OpenSfM / OpenCV
+        # convention (x->right, y->down, z->forwards, looking through the camera at the scene)
         R = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
         return R, T
 
