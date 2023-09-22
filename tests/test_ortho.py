@@ -43,9 +43,9 @@ def test_init(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_came
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
         dem_crs = dem_im.crs
 
-    assert ortho._ortho_crs == rio.CRS.from_string(utm34n_crs)
+    assert ortho._crs == rio.CRS.from_string(utm34n_crs)
     assert ortho._dem_crs == dem_crs
-    assert ortho._crs_equal == (ortho._ortho_crs == dem_crs)
+    assert ortho._crs_equal == (ortho._crs == dem_crs)
     assert ortho._dem_array is not None
     assert ortho._dem_transform is not None
 
@@ -58,9 +58,9 @@ def test_init_src_crs(rgb_byte_utm34n_src_file: Path, float_utm34n_dem_file: Pat
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
         dem_crs = dem_im.crs
 
-    assert ortho._ortho_crs == src_crs
+    assert ortho._crs == src_crs
     assert ortho._dem_crs == dem_crs
-    assert ortho._crs_equal == (ortho._ortho_crs == dem_crs)
+    assert ortho._crs_equal == (ortho._crs == dem_crs)
     assert ortho._dem_array is not None
     assert ortho._dem_transform is not None
 
@@ -141,7 +141,7 @@ def test_reproject_dem(
     with rio.open(float_wgs84_wgs84_dem_file, 'r') as dem_im:
         init_crs = dem_im.crs
     init_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
-    init_bounds = np.array(transform_bounds(init_crs, ortho._ortho_crs, *init_bounds))
+    init_bounds = np.array(transform_bounds(init_crs, ortho._crs, *init_bounds))
 
     # reproject
     array, transform = ortho._reproject_dem(interp, resolution)
