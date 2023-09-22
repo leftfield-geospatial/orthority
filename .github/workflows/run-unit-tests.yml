@@ -4,9 +4,9 @@ name: Tests
 
 on:
   push:
-    branches: [ main ]
+    branches: [main, feature_pytest_click]
   pull_request:
-    branches: [ main ]
+    branches: [main]
   workflow_dispatch:
  
 jobs:
