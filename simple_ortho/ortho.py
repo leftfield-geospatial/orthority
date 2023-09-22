@@ -73,8 +73,8 @@ class Ortho:
         camera: Camera
             Source image camera model (see :meth:`~simple_ortho.camera.create_camera`).
         crs: str, rasterio.CRS, optional
-            CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string.  It should be a projected,
-            and not geographic CRS.  Can be omitted if the source image is projected in the ortho CRS.
+            CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string.  It should be a
+            projected, not geographic CRS.  Can be omitted if the source image is projected in the world / ortho CRS.
         dem_band: int, optional
             Index of the DEM band to use (1-based).
         """
@@ -95,7 +95,7 @@ class Ortho:
         self._camera = camera
         self._write_lock = threading.Lock()
 
-        self._ortho_crs = self._parse_crs(crs)
+        self._crs = self._parse_crs(crs)
         self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
             Path(dem_filename), dem_band
         )
@@ -110,21 +110,21 @@ class Ortho:
         im.build_overviews(ovw_levels, Resampling.average)
 
     def _parse_crs(self, crs: Union[str, rio.CRS]) -> rio.CRS:
-        """ Derive an ortho CRS from the ``crs`` parameter and source image. """
+        """ Derive a world / ortho CRS from the ``crs`` parameter and source image. """
         if crs:
             try:
-                ortho_crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
+                crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
             except rio.errors.CRSError as ex:
                 raise CrsError(f"Could not interpret 'crs': {crs}. {str(ex)}")
         else:
             with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
                 if src_im.crs:
-                    ortho_crs = src_im.crs
+                    crs = src_im.crs
                 else:
                     raise CrsMissingError(f"No source image projection found, 'crs' should be specified.")
-        if ortho_crs.is_geographic:
+        if crs.is_geographic:
             raise CrsError(f"'crs' should be a projected, not geographic system.")
-        return ortho_crs
+        return crs
 
     def _get_init_dem(self, dem_filename: Path, dem_band: int) -> Tuple[np.ndarray, rio.Affine, rio.CRS, bool]:
         """
@@ -141,7 +141,7 @@ class Ortho:
                     f"'dem_band': {dem_band} is invalid for {dem_filename.name} with {dem_im.count} bands"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use elsewhere
-            crs_equal = self._ortho_crs == dem_im.crs
+            crs_equal = self._crs == dem_im.crs
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
 
             # corner pixel coordinates of source image
@@ -156,7 +156,7 @@ class Ortho:
                 world_xyz_T = np.column_stack((world_xyz, self._camera._T))
                 world_bounds = [*np.min(world_xyz_T[:2], axis=1), *np.max(world_xyz_T[:2], axis=1)]
                 dem_bounds = (
-                    transform_bounds(self._ortho_crs, dem_im.crs, *world_bounds) if not crs_equal else world_bounds
+                    transform_bounds(self._crs, dem_im.crs, *world_bounds) if not crs_equal else world_bounds
                 )
                 dem_win = dem_im.window(*dem_bounds)
                 try:
@@ -219,7 +219,7 @@ class Ortho:
         # reproject dem_array to ortho crs and resolution
         dem_array, dem_transform = reproject(
             self._dem_array, None, src_crs=self._dem_crs, src_transform=self._dem_transform, src_nodata=float('nan'),
-            dst_crs=self._ortho_crs, dst_resolution=resolution, resampling=dem_interp.to_rio(), dst_nodata=float('nan'),
+            dst_crs=self._crs, dst_resolution=resolution, resampling=dem_interp.to_rio(), dst_nodata=float('nan'),
             init_dest_nodata=True, apply_vertical_shift=True, num_threads=multiprocessing.cpu_count()
         )
         return dem_array.squeeze(), dem_transform
@@ -375,7 +375,7 @@ class Ortho:
 
         # create ortho profile
         ortho_profile = dict(
-            driver='GTiff', dtype=dtype, crs=self._ortho_crs, transform=transform, width=shape[1], height=shape[0],
+            driver='GTiff', dtype=dtype, crs=self._crs, transform=transform, width=shape[1], height=shape[0],
             count=src_im.count, tiled=True, blockxsize=Ortho._default_blocksize[0],
             blockysize=Ortho._default_blocksize[1], nodata=nodata, compress=compress.value, interleave=interleave,
             photometric=photometric,
