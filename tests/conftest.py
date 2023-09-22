@@ -298,7 +298,7 @@ def webmerc_egm2008_crs() -> str:
 @pytest.fixture(scope='session')
 def rgb_byte_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
     """ An RGB byte checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data').join('rgb_byte_src.tif'))
+    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_byte_src.tif')
     create_src(src_filename, im_size, dtype='uint8', count=3)
     return src_filename
 
@@ -306,7 +306,7 @@ def rgb_byte_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> 
 @pytest.fixture(scope='session')
 def rgb_float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
     """ An RGB float32 checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data').join('rgb_float_src.tif'))
+    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_float_src.tif')
     create_src(src_filename, im_size, dtype='float32', count=3)
     return src_filename
 
@@ -314,7 +314,7 @@ def rgb_float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) ->
 @pytest.fixture(scope='session')
 def float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
     """ A single band float64 checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data').join('float_src.tif'))
+    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_src.tif')
     create_src(src_filename, im_size, dtype='float32', count=1)
     return src_filename
 
@@ -322,7 +322,7 @@ def float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Pat
 @pytest.fixture(scope='session')
 def rgb_byte_utm34n_src_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
     """ An RGB byte checkerboard image with UTM zone 34N CRS and bounds 100m below `pinhole_camera`. """
-    src_filename = Path(tmpdir_factory.mktemp('data').join('rgb_byte_src.tif'))
+    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_byte_src.tif')
     create_src(src_filename, pinhole_camera._im_size, dtype='uint8', count=3, camera=pinhole_camera, crs=utm34n_crs)
     return src_filename
 
@@ -333,7 +333,7 @@ def float_utm34n_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera,
     A 2 band float DEM file in UTM zone 34N with no vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data').join('float_utm34n_dem.tif'))
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
     create_dem(filename, pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
     return filename
 
@@ -344,7 +344,7 @@ def float_utm34n_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
     A 2 band float DEM file in UTM zone 34N with WGS84 ellipsoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data').join('float_utm34n_wgs84_dem.tif'))
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_wgs84_dem.tif')
     create_dem(filename, pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32')
     return filename
 
@@ -355,7 +355,7 @@ def float_utm34n_egm96_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
     A 2 band float DEM file in UTM zone 34N with EGM96 geoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data').join('float_utm34n_egm96_dem.tif'))
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_egm96_dem.tif')
     create_dem(filename, pinhole_camera, utm34n_egm96_crs, resolution=_dem_resolution, dtype='float32')
     return filename
 
@@ -366,7 +366,7 @@ def float_wgs84_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_ca
     A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data').join('float_wgs84_wgs84_dem.tif'))
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_wgs84_wgs84_dem.tif')
     create_dem(
         filename, pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32',
         dem_crs='EPSG:4326+4326'
