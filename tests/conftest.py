@@ -510,16 +510,29 @@ def ngi_crs(ngi_image_file) -> str:
         crs = im.crs
     return crs.to_proj4()
 
+# TODO: move fixtures used by a single module to that module
+@pytest.fixture(scope='session')
+def ngi_legacy_config_file() -> Path:
+    """ Legacy format configuration file for NGI test data. """
+    return root_path.joinpath('tests', 'data', 'ngi', 'config.yaml')
 
-def ngi_legacy_csv_file() -> Path:
-    """ Legacy format exterior parameter CSV file for NGI test data. """
-    return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
+
+@pytest.fixture(scope='session')
+def ngi_oty_int_param_file() -> Path:
+    """ Orthority format interior parameter file for NGI test data. """
+    return root_path.joinpath('tests', 'data', 'io', 'ngi_int_param.yaml')
 
 
 @pytest.fixture(scope='session')
 def ngi_legacy_csv_file() -> Path:
     """ Legacy format exterior parameter CSV file for NGI test data. """
     return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
+
+
+@pytest.fixture(scope='session')
+def ngi_oty_ext_param_file() -> Path:
+    """ Orthority format exterior parameter file for NGI test data. """
+    return root_path.joinpath('tests', 'data', 'io', 'ngi_ext_param.geojson')
 
 
 @pytest.fixture(scope='session')

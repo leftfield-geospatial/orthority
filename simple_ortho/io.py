@@ -332,7 +332,7 @@ def _aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
 
 def _rpy_to_opk(
     rpy: Tuple[float, float, float], lla: Tuple[float, float, float], crs: CRS, lla_crs: CRS = CRS.from_epsg(4979),
-    C_bB: Optional[List[List]] = None
+    C_bB: Union[Optional[List[List]], np.ndarray] = None
 ) -> Tuple[float, float, float]:
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
@@ -354,7 +354,7 @@ def _rpy_to_opk(
         CRS of the world / ortho coordinate system.
     lla_crs: rasterio.crs.CRS
         CRS of the ``lla`` geographic coordinates.
-    C_bB: list of list of float, optional
+    C_bB: list of list of float, ndarray, optional
         Optional camera to body rotation matrix.  Defaults to : ``[[0, 1, 0], [1, 0, 0], [0, 0, -1]]``,
         which describes typical drone geometry.
 

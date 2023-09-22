@@ -32,7 +32,25 @@ from simple_ortho.errors import ParamFileError, CrsMissingError
 from tests.conftest import oty_to_osfm_int_param
 
 
-def _validate_ext_param_dict(ext_param_dict: Dict, camera: str=None):
+def _validate_int_param_dict(int_param_dict: Dict):
+    """ Basic validation of an internal parameter dictionary. """
+    for cam_id, int_params in int_param_dict.items():
+        assert isinstance(cam_id, str) or cam_id is None
+        req_keys = {'cam_type', 'im_size', 'focal_len', 'sensor_size'}
+        assert set(int_params.keys()).issuperset(req_keys)
+        cam_type = CameraType(int_params['cam_type'])
+        assert len(int_params['im_size']) == 2 and all([isinstance(dim, int) for dim in int_params['im_size']])
+        assert len(int_params['sensor_size']) == 2 and all(
+            [isinstance(dim, float) for dim in int_params['sensor_size']]
+        )
+        assert isinstance(int_params['focal_len'], float) or (
+            len(int_params['focal_len']) == 2 and all([isinstance(f, float) for f in int_params['focal_len']])
+        )
+        optional_keys = set(int_params.keys()).difference(req_keys)
+        assert set(optional_keys).issubset(io._optional_schema[cam_type])
+
+
+def _validate_ext_param_dict(ext_param_dict: Dict, cameras: List[str]=None):
     """ Basic validation of an external parameter dictionary. """
     for filename, ext_params in ext_param_dict.items():
         assert set(ext_params.keys()) == {'opk', 'xyz', 'camera'}
@@ -42,7 +60,8 @@ def _validate_ext_param_dict(ext_param_dict: Dict, camera: str=None):
         assert all(np.abs(opk) <= 2 * np.pi) and any(opk != 0.)
         # rough check for not latitude, longitude, & altitude > 0
         assert all(xyz != 0) and np.abs(xyz[0]) > 180. and np.abs(xyz[1]) > 90. and xyz[2] > 0
-        assert ext_params['camera'] == camera
+        if cameras:
+            assert ext_params['camera'] in cameras
 
 
 def test_rw_oty_int_param(mult_int_param_dict: Dict, tmp_path: Path):
@@ -117,7 +136,7 @@ def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: Dict, tmp_pat
 
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: Dict, tmp_path: Path):
-    """ Test reading orthority format interior parameters raises an error the projection type is unsupported. """
+    """ Test reading orthority format interior parameters raises an error when the projection type is unsupported. """
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['projection_type'] = 'other'
@@ -132,6 +151,7 @@ def test_read_exif_int_param_dewarp(odm_image_file: Path):
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'brown'
     assert {'k1', 'k2', 'p1', 'p2', 'k3'}.issubset(int_params.keys())
+    _validate_int_param_dict(int_param_dict)
 
 
 def test_read_exif_int_param_no_dewarp(exif_image_file: Path):
@@ -139,6 +159,7 @@ def test_read_exif_int_param_no_dewarp(exif_image_file: Path):
     int_param_dict = io.read_exif_int_param(exif_image_file)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'pinhole'
+    _validate_int_param_dict(int_param_dict)
 
 
 def test_read_exif_int_param_error(ngi_image_file: Path):
@@ -196,7 +217,7 @@ def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_fi
     ext_param_dict = reader.read_ext_param()
     file_keys = [filename.stem for filename in ngi_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
-    _validate_ext_param_dict(ext_param_dict)
+    _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
 def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: Tuple[Path, ...]):
@@ -210,7 +231,7 @@ def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_
     ext_param_dict = reader.read_ext_param()
     file_keys = [filename.stem for filename in ngi_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
-    _validate_ext_param_dict(ext_param_dict)
+    _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
 def test_csv_reader_lla_rpy(
@@ -231,7 +252,7 @@ def test_csv_reader_lla_rpy(
     with open(osfm_reconstruction_file, 'r') as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
-    _validate_ext_param_dict(ext_param_dict, camera=cam_id)
+    _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
 
 
 def test_csv_reader_xyz_opk_prj_crs(ngi_xyz_opk_csv_file: Path):
@@ -309,7 +330,7 @@ def test_csv_reader_format(
 
     ext_param_dict = reader.read_ext_param()
     assert len(ext_param_dict) > 0
-    _validate_ext_param_dict(ext_param_dict)
+    _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
 @pytest.mark.parametrize('dialect', [
@@ -328,7 +349,7 @@ def test_csv_reader_dialect(
     odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], osfm_reconstruction_file: Path,
     dialect: Dict, tmp_path: Path
 ):
-    """ Test reading exterior parameters from a CSV files in different dialects. """
+    """ Test reading exterior parameters from CSV files in different dialects. """
     # create test CSV file
     test_filename = tmp_path.joinpath('ext-param-test.csv')
     with open(odm_lla_rpy_csv_file, 'r') as fin:
@@ -350,15 +371,81 @@ def test_csv_reader_dialect(
     with open(osfm_reconstruction_file, 'r') as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
-    _validate_ext_param_dict(ext_param_dict, camera=cam_id)
+    _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
 
 
+def test_osfm_reader(osfm_reconstruction_file: Path, odm_crs: str):
+    """ Test OsfmReader reads internal and external parameters successfully. """
+    reader = io.OsfmReader(osfm_reconstruction_file, crs=odm_crs)
+    assert reader.crs == rio.CRS.from_string(odm_crs)
 
-# TODO:
-# - Interior:
-#   - Test multiple camera config & legacy format(s)
-# Exterior & readers:
-#   - Maybe have an exterior param dict fixture, that is used to create different formats, and test reading against.
-#   - The "create different formats" is not that trivial though...
-# Multi-camera configurations
+    int_param_dict = reader.read_int_param()
+    int_cam_ids = set(int_param_dict.keys())
+    ext_param_dict = reader.read_ext_param()
+    ext_cam_ids = set([ext_param['camera'] for ext_param in ext_param_dict.values()])
+
+    _validate_int_param_dict(int_param_dict)
+    _validate_ext_param_dict(ext_param_dict, cameras=int_cam_ids)
+    assert ext_cam_ids.issubset(int_cam_ids)
+
+
+def test_osfm_reader_auto_crs(osfm_reconstruction_file: Path, odm_crs: str):
+    """ Test OsfmReader auto determines a UTM CRS correctly. """
+    reader = io.OsfmReader(osfm_reconstruction_file, crs=None)
+    assert reader.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_osfm_reader_validity_error(odm_int_param_file: Path):
+    """ Test OsfmReader raises an error with an invalid file format. """
+    with pytest.raises(ParamFileError) as ex:
+        reader = io.OsfmReader(odm_int_param_file, crs=None)
+    assert 'valid' in str(ex)
+
+
+def test_exif_reader(odm_image_files: Tuple[Path, ...], odm_crs: str):
+    """ Test ExifReader reads internal and external parameters successfully. """
+    reader = io.ExifReader(odm_image_files, crs=odm_crs)
+    assert reader.crs == rio.CRS.from_string(odm_crs)
+
+    int_param_dict = reader.read_int_param()
+    int_cam_ids = set(int_param_dict.keys())
+    ext_param_dict = reader.read_ext_param()
+    ext_cam_ids = set([ext_param['camera'] for ext_param in ext_param_dict.values()])
+
+    _validate_int_param_dict(int_param_dict)
+    _validate_ext_param_dict(ext_param_dict, cameras=int_cam_ids)
+    assert ext_cam_ids.issubset(int_cam_ids)
+
+
+def test_exif_reader_mult_cameras(odm_image_files: Tuple[Path, ...], odm_crs: str):
+    """ Test ExifReader auto determines a UTM CRS correctly. """
+    reader = io.ExifReader(odm_image_files, crs=None)
+    assert reader.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_oty_reader(ngi_oty_ext_param_file: Path, ngi_crs: str):
+    """ Test OtyReader reads external parameters successfully. """
+    reader = io.OtyReader(ngi_oty_ext_param_file, crs=ngi_crs)
+    assert reader.crs == rio.CRS.from_string(ngi_crs)
+
+    ext_param_dict = reader.read_ext_param()
+    ext_cam_ids = set([ext_param['camera'] for ext_param in ext_param_dict.values()])
+    assert len(ext_cam_ids) == 1 and isinstance(list(ext_cam_ids)[0], str) and len(list(ext_cam_ids)[0]) > 0
+    _validate_ext_param_dict(ext_param_dict, cameras=None)
+
+
+def test_oty_reader_validity_error(osfm_reconstruction_file: Path):
+    """ Test OtyReader raises an error with an invalid file format. """
+    with pytest.raises(ParamFileError) as ex:
+        reader = io.OtyReader(osfm_reconstruction_file, crs=None)
+    assert 'valid' in str(ex)
+
+
+def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
+    """ Test OtyReader reads the crs correctly. """
+    reader = io.OtyReader(ngi_oty_ext_param_file, crs=None)
+    assert reader.crs == rio.CRS.from_string(ngi_crs)
+
+
+# TODO: Multi-camera configurations
 
