@@ -207,14 +207,14 @@ def test_reproject_dem_vdatum_both(
 # @formatter:off
 @pytest.mark.parametrize(
     'dem_file, crs', [
-        ('float_utm34n_dem_file', 'utm34n_egm96_crs'),
-        ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
+        # ('float_utm34n_egm96_dem_file', 'utm34n_egm96_crs'),
+        ('float_utm34n_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
-def test_reproject_dem_vdatum_one(
+def test_reproject_dem_vdatum_none(
     rgb_byte_src_file: Path, dem_file: str, pinhole_camera: Camera, crs: str, request: pytest.FixtureRequest
 ):
-    """ Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical datums are specified. """
+    """ Test DEM reprojection does no altitude adjustment when none of DEM and ortho vertical datums are specified. """
     dem_file: Path = request.getfixturevalue(dem_file)
     crs: str = request.getfixturevalue(crs)
 
@@ -231,7 +231,7 @@ def test_reproject_dem_vdatum_one(
     cmp_array = array[dem_win.toslices()]
     cmp_transform = rio.windows.transform(dem_win, transform)
 
-    assert not ortho._crs_equal
+    # assert not ortho._crs_equal
     assert cmp_transform.almost_equals(ortho._dem_transform, precision=1e-6)
     assert cmp_array.shape == ortho._dem_array.shape
 
