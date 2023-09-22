@@ -12,6 +12,14 @@ import re
 import numpy as np
 import json
 
+ngi_src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
+ngi_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+
+odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River')
+odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
+
+io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+
 
 def downsample_rgb(
     src_file: Path, dst_file: Path, ds_fact: int = 4, scale_clip: float = None, strip_dewarp: bool = False
@@ -91,31 +99,29 @@ def create_ngi_test_data():
         '3324c_2015_1004_06_0253_RGBN_CMP.tif',
     ]
     dem_file = 'sudem_l3a_clip.tif'
-    src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
-    dst_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
     ds_fact = 12
 
     # downsample rgb images
-    dst_root.mkdir(exist_ok=True, parents=True)
+    ngi_test_root.mkdir(exist_ok=True, parents=True)
     for src_rgb_file in src_rgb_files:
-        dst_rgb_file = dst_root.joinpath(src_rgb_file[:-9]).with_suffix('.tif')
-        src_rgb_file = src_root.joinpath(src_rgb_file)
+        dst_rgb_file = ngi_test_root.joinpath(src_rgb_file[:-9]).with_suffix('.tif')
+        src_rgb_file = ngi_src_root.joinpath(src_rgb_file)
         if dst_rgb_file.exists():
             dst_rgb_file.unlink()
             dst_rgb_file.with_suffix(dst_rgb_file.suffix + '.aux.xml').unlink(missing_ok=True)
         downsample_rgb(src_rgb_file, dst_rgb_file, ds_fact=ds_fact, scale_clip=(255 / 3000))
 
     # downsample dem
-    src_dem_file = src_root.joinpath(dem_file)
-    dst_dem_file = dst_root.joinpath('dem.tif')
+    src_dem_file = ngi_src_root.joinpath(dem_file)
+    dst_dem_file = ngi_test_root.joinpath('dem.tif')
     if dst_dem_file.exists():
         dst_dem_file.unlink()
         dst_dem_file.with_suffix(dst_dem_file.suffix + '.aux.xml').unlink(missing_ok=True)
     downsample_dem(src_dem_file, dst_dem_file, bounds=None, ds_fact=ds_fact)
 
     # copy & convert csv exterior params
-    src_ext_file = src_root.joinpath('camera_pos_ori.txt')
-    dst_ext_file = dst_root.joinpath('camera_pos_ori.txt')
+    src_ext_file = ngi_src_root.joinpath('camera_pos_ori.txt')
+    dst_ext_file = ngi_test_root.joinpath('camera_pos_ori.txt')
     if dst_ext_file.exists():
         dst_ext_file.unlink()
     with open(src_ext_file, 'r', newline=None) as fin, open(dst_ext_file, 'w', newline='') as fout:
@@ -145,14 +151,11 @@ def create_odm_test_data():
         '100_0005_0142_ORTHO.tif'
     ]
 
-    src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River')
-    dst_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
-
     # downsample rgb images
-    dst_root.joinpath('images').mkdir(exist_ok=True, parents=True)
+    odm_test_root.joinpath('images').mkdir(exist_ok=True, parents=True)
     for src_rgb_file in src_rgb_files:
-        dst_rgb_file = dst_root.joinpath('images', src_rgb_file).with_suffix('.tif')
-        src_rgb_file = src_root.joinpath('images', src_rgb_file)
+        dst_rgb_file = odm_test_root.joinpath('images', src_rgb_file).with_suffix('.tif')
+        src_rgb_file = odm_src_root.joinpath('images', src_rgb_file)
         if dst_rgb_file.exists():
             dst_rgb_file.unlink()
             dst_rgb_file.with_suffix(dst_rgb_file.suffix + '.aux.xml').unlink(missing_ok=True)
@@ -164,21 +167,21 @@ def create_odm_test_data():
 
     bounds = None
     for ortho_file in ortho_files:
-        with rio.open(src_root.joinpath('orthority', ortho_file), 'r') as ortho_im:
+        with rio.open(odm_src_root.joinpath('orthority', ortho_file), 'r') as ortho_im:
             bounds = ortho_im.bounds if not bounds else bounds_union(bounds, ortho_im.bounds)
 
     # crop and downsample dem
-    dst_root.joinpath('odm_dem').mkdir(exist_ok=True, parents=True)
-    dst_dem_file = dst_root.joinpath('odm_dem', 'dsm.tif')
+    odm_test_root.joinpath('odm_dem').mkdir(exist_ok=True, parents=True)
+    dst_dem_file = odm_test_root.joinpath('odm_dem', 'dsm.tif')
     if dst_dem_file.exists():
         dst_dem_file.unlink()
         dst_dem_file.with_suffix(dst_dem_file.suffix + '.aux.xml').unlink(missing_ok=True)
-    downsample_dem(src_root.joinpath('odm_dem', 'dsm.tif'), dst_dem_file, bounds=bounds, ds_fact=16)
+    downsample_dem(odm_src_root.joinpath('odm_dem', 'dsm.tif'), dst_dem_file, bounds=bounds, ds_fact=16)
 
     # copy relevant parts of opensfm reconstruction file with image size conversion
-    src_rec_file = src_root.joinpath('opensfm/reconstruction.json')
-    dst_rec_file = dst_root.joinpath('opensfm/reconstruction.json')
-    dst_root.joinpath('opensfm').mkdir(exist_ok=True, parents=True)
+    src_rec_file = odm_src_root.joinpath('opensfm/reconstruction.json')
+    dst_rec_file = odm_test_root.joinpath('opensfm/reconstruction.json')
+    odm_test_root.joinpath('opensfm').mkdir(exist_ok=True, parents=True)
     with rio.open(dst_rgb_file, 'r') as dst_im:
         im_size = (dst_im.width, dst_im.height)
     if dst_rec_file.exists():
@@ -195,44 +198,52 @@ def create_odm_test_data():
 
 def create_io_test_data():
     # create lla_rpy csv file for odm data
-    odm_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
-    dst_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
-    dst_root.mkdir(exist_ok=True)
+    io_root.mkdir(exist_ok=True)
 
-    osfm_reader = io.OsfmReader(odm_root.joinpath('opensfm', 'reconstruction.json'))
+    osfm_reader = io.OsfmReader(odm_test_root.joinpath('opensfm', 'reconstruction.json'))
     cam_id = next(iter(osfm_reader.read_int_param().keys()))
-    exif_list = [Exif(sf) for sf in odm_root.joinpath('images').glob('*.tif')]
-    with open(dst_root.joinpath('odm_lla_rpy.csv'), 'w', newline='') as f:
+    exif_list = [Exif(sf) for sf in odm_test_root.joinpath('images').glob('*.tif')]
+    with open(io_root.joinpath('odm_lla_rpy.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=' ', quotechar='"')
         writer.writerow(['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'other'])
         for exif in exif_list:
             writer.writerow([exif.filename.name, *exif.lla, *exif.rpy, cam_id, 'ignored'])
 
     # create xyz_opk csv file for ngi data
-    ngi_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
-    src_csv_file = ngi_root.joinpath('camera_pos_ori.txt')
+    src_csv_file = ngi_test_root.joinpath('camera_pos_ori.txt')
     reader = io.CsvReader(src_csv_file)
     ext_param_dict = reader.read_ext_param()
-    with open(dst_root.joinpath('ngi_xyz_opk.csv'), 'w', newline='') as f:
+    with open(io_root.joinpath('ngi_xyz_opk.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=',', quotechar='"')
         writer.writerow(['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
         for filename, ext_param in ext_param_dict.items():
             writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk'])])
 
     # create proj file for above
-    src_im_file = next(iter(ngi_root.glob('*RGB.tif')))
+    src_im_file = next(iter(ngi_test_root.glob('*RGB.tif')))
     with rio.open(src_im_file, 'r') as src_im:
         crs = src_im.crs
 
-    with open(dst_root.joinpath('ngi_xyz_opk.prj'), 'w', newline='') as f:
+    with open(io_root.joinpath('ngi_xyz_opk.prj'), 'w', newline='') as f:
         f.write(crs.to_proj4())
 
+    # create oty format interior and exterior param files for ngi data
+    int_param_dict = io.read_oty_int_param(ngi_test_root.joinpath('config.yaml'))
+    io.write_int_param(io_root.joinpath('ngi_int_param.yaml'), int_param_dict, overwrite=True)
+    cam_id = next(iter(int_param_dict.keys()))
+    for ext_params in ext_param_dict.values():
+        ext_params.update(camera=cam_id)
+    ngi_image_file = ngi_test_root.joinpath(next(iter(ext_param_dict.keys()))).with_suffix('.tif')
+    with rio.open(ngi_image_file, 'r') as im:
+        ngi_crs = im.crs
+    io.write_ext_param(io_root.joinpath('ngi_ext_param.geojson'), ext_param_dict, crs=ngi_crs, overwrite=True)
+
     # create an image w/o xmp DeWarpData tag
-    src_im_file = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River/images/100_0005_0140.jpg')
-    dst_im_file = dst_root.joinpath(src_im_file.name[:-4] + '.tif')
+    src_im_file = odm_src_root.joinpath('images', '100_0005_0140.jpg')
+    dst_im_file = io_root.joinpath(src_im_file.name[:-4] + '.tif')
     if dst_im_file.exists():
         dst_im_file.unlink()
-    downsample_rgb(src_im_file, dst_root.joinpath(src_im_file.name).with_suffix('.tif'), ds_fact=16, strip_dewarp=True)
+    downsample_rgb(src_im_file, io_root.joinpath(src_im_file.name).with_suffix('.tif'), ds_fact=16, strip_dewarp=True)
 
 
 if __name__ == '__main__':
