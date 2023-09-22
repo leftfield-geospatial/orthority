@@ -1,0 +1,21 @@
+# Legacy simple-ortho configuration - note this format is deprecated, see the online docs for alternatives
+camera:
+  name: Integraph DMC               # Camera ID 
+  type: pinhole                     # Camera model type (pinhole, brown, fisheye, opencv)
+  im_size: [640, 1152]              # Image [width, height] in pixels
+  focal_len: 120.                   # Focal length in mm
+  sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in mm
+
+ortho:
+  crs:                        # CRS of the ortho image and camera positions as an EPSG or WKT string.  Can be omitted if the source image has a CRS.
+  dem_interp: cubic           # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
+  dem_band: 1                 # 1-based index of band in DEM raster to use
+  interp: bilinear            # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
+  per_band: False             # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
+  build_ovw: True             # Build internal overviews
+  overwrite: True             # Overwrite ortho raster if it exists
+  write_mask: True            # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
+  full_remap: True            # Remap source to ortho with full camera model (True), or undistorted source to ortho with pinhole model (False).
+  dtype: uint8                # Data type of ortho raster (e.g. uint8, uint16, float32 etc)  (None = same type as source image)
+  resolution: [5., 5.]        # Output pixel size [x, y] in m
+  compress: auto              # Compress type (deflate, jpeg, auto)
