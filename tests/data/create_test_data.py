@@ -18,7 +18,7 @@ ngi_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
 odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River')
 odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
 
-io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
 
 
 def downsample_rgb(
