@@ -563,3 +563,7 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
         src_files=src_files, dem_file=dem_file, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs,
         resolution=resolution, dem_band=1, out_dir=out_dir, **kwargs
     )
+
+
+if __name__ == '__main__':
+    cli()
