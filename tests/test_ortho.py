@@ -192,7 +192,7 @@ def test_reproject_dem_vdatum_both(
     # inside array, which it should)
     dem_win = rio.windows.from_bounds(
         *array_bounds(*ortho._dem_array.shape, ortho._dem_transform), transform=transform
-    ).round_offsets().round_shape()
+    ).round_offsets().round_lengths()
     cmp_array = array[dem_win.toslices()]
     cmp_transform = rio.windows.transform(dem_win, transform)
 
@@ -227,7 +227,7 @@ def test_reproject_dem_vdatum_none(
     # inside array, which it should)
     dem_win = rio.windows.from_bounds(
         *array_bounds(*ortho._dem_array.shape, ortho._dem_transform), transform=transform
-    ).round_offsets().round_shape()
+    ).round_offsets().round_lengths()
     cmp_array = array[dem_win.toslices()]
     cmp_transform = rio.windows.transform(dem_win, transform)
 
