@@ -207,14 +207,14 @@ def test_reproject_dem_vdatum_both(
 # @formatter:off
 @pytest.mark.parametrize(
     'dem_file, crs', [
-        # ('float_utm34n_egm96_dem_file', 'utm34n_egm96_crs'),
-        ('float_utm34n_dem_file', 'utm34n_crs'),
+        ('float_utm34n_dem_file', 'utm34n_egm96_crs'),
+        ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
-def test_reproject_dem_vdatum_none(
+def test_reproject_dem_vdatum_one(
     rgb_byte_src_file: Path, dem_file: str, pinhole_camera: Camera, crs: str, request: pytest.FixtureRequest
 ):
-    """ Test DEM reprojection does no altitude adjustment when none of DEM and ortho vertical datums are specified. """
+    """ Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical datums are specified. """
     dem_file: Path = request.getfixturevalue(dem_file)
     crs: str = request.getfixturevalue(crs)
 
@@ -231,7 +231,7 @@ def test_reproject_dem_vdatum_none(
     cmp_array = array[dem_win.toslices()]
     cmp_transform = rio.windows.transform(dem_win, transform)
 
-    # assert not ortho._crs_equal
+    assert not ortho._crs_equal
     assert cmp_transform.almost_equals(ortho._dem_transform, precision=1e-6)
     assert cmp_array.shape == ortho._dem_array.shape
 
@@ -836,8 +836,8 @@ def test_process(
         ortho_array = ortho_im.read()
         ortho_mask = ortho_im.dataset_mask().astype('bool')
         assert np.all(np.unique(src_array) == np.unique(ortho_array[:, ortho_mask]))
-        assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), rel=0.25)
-        assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), rel=0.25)
+        assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=15)
+        assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=15)
 
 
 # TODO: dem reproject changes bounds with different v datum
