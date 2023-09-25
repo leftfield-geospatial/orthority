@@ -257,6 +257,7 @@ class Ortho:
         """
         # TODO: to exclude occluded areas, this should find the first/highest dem intersection, not the last/lowest
         #  as it currently does.
+        # TODO: trace rays in a thread pool?
         def inv_transform(transform: rio.Affine, xy: np.array):
             """ Return the center (j, i) pixel coords for the given transform and world (x, y) coordinates. """
             return np.array(~(transform * rio.Affine.translation(0.5, 0.5)) * xy)
@@ -274,7 +275,7 @@ class Ortho:
         dem_max = min(np.nanmax(dem_array), self._camera._T[2, 0])
         # heuristic limit on ray length to conserve memory
         max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape, dtype='int64').sum()).astype('int')
-        poly_xyz = np.zeros((3, src_ji.shape[1]))
+        poly_xy = np.zeros((2, src_ji.shape[1]))
 
         # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in src_ji
         for pi in range(src_ji.shape[1]):
@@ -289,55 +290,47 @@ class Ortho:
             ray_z = np.linspace(dem_min, dem_max, ray_steps)
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
-            # find the dem pixel coords, and validity mask for the (x, y) points in ray_xyz
+            # find the dem z values corresponding to the ray (dem_z will be nan outside the dem bounds and for already
+            # masked / nan dem pixels)
+            # TODO: deal with boundary issues (round or remap)
             dem_ji = inv_transform(dem_transform, ray_xyz[:2, :])
-            valid_mask = np.logical_and(dem_ji.T >= (0, 0), dem_ji.T < dem_array.shape[::-1]).T
-            valid_mask = valid_mask.all(axis=0)
+            dem_z = np.squeeze(cv2.remap(
+                dem_array, *dem_ji.astype('float32', copy=False), dem_interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
+                borderValue=float('nan')
+            ))
 
-            if not np.any(valid_mask):
-                # ray_xyz lies entirely outside the dem (x, y) bounds - store the dem_min point
-                poly_xyz[:, pi] = ray_xyz[:, 0]
+            # store the ray-dem intersection point if it exists, otherwise the dem_min point
+            intersection_i = np.nonzero(ray_xyz[2] >= dem_z)[0]
+            if len(intersection_i) > 0 and intersection_i[0] > 0:
+                poly_xy[:, pi] = ray_xyz[:2, intersection_i[0] - 1]
             else:
-                # ray_xyz lies at least partially inside the dem (x, y) bounds, but may not have an intersection. Store
-                # its intersection with the dem if it exists, else store the dem_min point.
-                dem_ji = dem_ji[:, valid_mask]
-                ray_z = ray_z[valid_mask]
-                dem_z = np.squeeze(cv2.remap(dem_array, *dem_ji.astype('float32'), dem_interp.to_cv()))
+                poly_xy[:, pi] = ray_xyz[:2, 0]
 
-                intersection_i = np.nonzero(ray_z >= dem_z)[0]
-                poly_xyz[:, pi] = (
-                    ray_xyz[:, valid_mask][:, intersection_i[0] - 1]
-                    if len(intersection_i) > 0 and intersection_i[0] > 0 else
-                    ray_xyz[:, 0]
-                )  # yapf: disable
-
-        # check dem coverage of poly_xy
-        poly_xy = poly_xyz[:2]
-        dem_bounds = rio.transform.array_bounds(*dem_array.shape, dem_transform)
-        poly_min = poly_xy.min(axis=1)
-        poly_max = poly_xy.max(axis=1)
-        if np.all(poly_min > dem_bounds[-2:]) or np.all(poly_max < dem_bounds[:2]):
-            raise ValueError(f'Ortho bounds for {self._src_filename.name} lie outside the DEM.')
-        elif np.any(poly_max > dem_bounds[-2:]) or np.any(poly_min < dem_bounds[:2]):
-            logger.warning(f'Ortho bounds for {self._src_filename.name} are not fully covered by the DEM.')
+        # find intersection of poly_xy and dem mask, and check dem coverage
+        poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
+        poly_mask = np.zeros(dem_array.shape, dtype='uint8')
+        poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=255).astype('bool', copy=False)
+        dem_valid_mask = ~np.isnan(dem_array)
+        dem_mask = np.logical_and(poly_mask, dem_valid_mask)
+        dem_mask_sum = dem_mask.sum()
+        if dem_mask_sum == 0:
+            raise ValueError(f'Ortho boundary for {self._src_filename.name} lies outside the valid DEM area.')
+        elif poly_mask.sum() > dem_mask_sum:
+            logger.warning(f'Ortho boundary for {self._src_filename.name} is not fully covered by the DEM.')
 
         if crop:
-            # crop dem_array to poly_xy and find corresponding transform
-            dem_cnr_ji = inv_transform(dem_transform, np.array([poly_min, poly_max]).T)
-            dem_ul_ji = np.floor(dem_cnr_ji.min(axis=1)).astype('int')
-            dem_ul_ji = np.clip(dem_ul_ji, 0, None)
-            dem_br_ji = 1 + np.ceil(dem_cnr_ji.max(axis=1)).astype('int')
-            dem_br_ji = np.clip(dem_br_ji, None, dem_array.shape[::-1])
-            dem_array = dem_array[dem_ul_ji[1]:dem_br_ji[1], dem_ul_ji[0]:dem_br_ji[0]]
-            dem_transform = dem_transform * rio.Affine.translation(*dem_ul_ji)
+            # crop dem_mask & dem_array to poly_xy and find corresponding transform
+            dem_mask_ij = np.where(dem_mask)
+            ul_ij = np.min(dem_mask_ij, axis=1)
+            br_ij = 1 + np.max(dem_mask_ij, axis=1)
+            slices = (slice(ul_ij[0], br_ij[0]), slice(ul_ij[1], br_ij[1]))
+            dem_array = dem_array[slices]
+            dem_mask = dem_mask[slices]
+            dem_transform = dem_transform * rio.Affine.translation(*ul_ij[::-1])
 
         if mask:
             # mask the dem
-            # (poly_ji is intersected with dem_array bounds in cv2.fillPoly)
-            poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
-            mask = np.ones_like(dem_array, dtype='uint8')
-            mask = cv2.fillPoly(mask, [poly_ji.T], color=0)
-            dem_array[mask.astype('bool', copy=False)] = np.nan
+            dem_array[~dem_mask] = np.nan
 
         return dem_array, dem_transform
 
