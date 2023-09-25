@@ -412,7 +412,7 @@ class Ortho:
         # separate tile_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
         tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
         tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')
-        # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
+        tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
         tile_array = np.full(
