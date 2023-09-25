@@ -44,7 +44,7 @@ else:
 def checkerboard(shape, square: int = 25, vals: np.ndarray = None):
     """ Return a checkerboard image given an image shape. """
     # adapted from https://stackoverflow.com/questions/2169478/how-to-make-a-checkerboard-in-numpy
-    vals = np.array([1, 255], dtype=np.uint8) if vals is None else vals
+    vals = np.array([127, 255], dtype=np.uint8) if vals is None else vals
     coords = np.ogrid[0:shape[0], 0:shape[1]]
     idx = (coords[0] // square + coords[1] // square) % 2
     return vals[idx]
@@ -81,6 +81,7 @@ def create_dem(
     Create a 2 band DEM file that covers the ortho bounds of the given `camera`.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
+    # TODO: add partial dem fixture
     # wgs84_bounds = transform_bounds(rio.CRS.from_string(ortho_crs_wgs84_vdatum), dem_crs, *bounds)
     # size = 1 + np.ceil((bounds[2:] - bounds[:2]) / (30, 30)).astype('int')
     # transform = from_bounds(*wgs84_bounds, *size)
