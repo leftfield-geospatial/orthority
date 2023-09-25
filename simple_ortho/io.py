@@ -903,7 +903,7 @@ class OtyReader(Reader):
 
         schema = dict(
             type='FeatureCollection', xyz_opk_crs=str, features=[dict(
-                type='Feature', properties=dict(filename=str, camera=str, xyz=list, opk=list),
+                type='Feature', properties=dict(filename=str, camera=None, xyz=list, opk=list),
                 geometry=dict(type='Point', coordinates=list)
             )]
         )  # yapf: disable
