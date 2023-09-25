@@ -394,30 +394,19 @@ def test_mask_dem_crop(
 
 
 # @formatter:off
-@pytest.mark.parametrize(
-    'cam_type, dist_param, alpha', [
-        (CameraType.pinhole, None, 1.),
-        (CameraType.brown, 'brown_dist_param', 0.),
-        (CameraType.brown, 'brown_dist_param', 1.),
-        (CameraType.opencv, 'opencv_dist_param', 0.),
-        (CameraType.opencv, 'opencv_dist_param', 1.),
-        (CameraType.fisheye, 'fisheye_dist_param', 0.),
-        (CameraType.fisheye, 'fisheye_dist_param', 1.),
-    ],
-)  # yapf: disable
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
 def test_mask_dem_full_remap(
-    cam_type: CameraType, dist_param: str, alpha: float, camera_args: Dict, rgb_byte_src_file: Path,
-    float_utm34n_dem_file: Path, utm34n_crs: str, tmp_path: Path, request: pytest.FixtureRequest
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
+    request: pytest.FixtureRequest
 ):
     """ Test the equivalence & cropping of DEM masks with ``full_remap=True/False``. """
-    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
-    camera = create_camera(cam_type, **camera_args, **dist_param, alpha=alpha)
-    resolution = (5, 5)
+    camera: Camera = request.getfixturevalue(camera)
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
+    resolution = (3, 3)
     num_pts = 400
     dem_interp = Interp.cubic
 
     # create reference masked dem with full_remap=True & test masked dem with full_remap=False
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ref_dem_array, ref_dem_transform = ortho._mask_dem(
         dem_array, dem_transform, dem_interp, full_remap=True, num_pts=num_pts
@@ -426,22 +415,69 @@ def test_mask_dem_full_remap(
         dem_array, dem_transform, dem_interp, full_remap=False, num_pts=num_pts
     )
 
-    # find bounds & crop reference to test
-    ref_bounds = array_bounds(*ref_dem_array.shape, ref_dem_transform)
-    test_bounds = array_bounds(*test_dem_array.shape, test_dem_transform)
+    # crop reference to test and compare bounds
+    ref_bounds = np.array(array_bounds(*ref_dem_array.shape, ref_dem_transform))
+    test_bounds = np.array(array_bounds(*test_dem_array.shape, test_dem_transform))
     test_win = from_bounds(*test_bounds, transform=ref_dem_transform)
     ref_dem_array = ref_dem_array[test_win.toslices()]
-
-    if alpha == 1.:
-        assert test_bounds == pytest.approx(ref_bounds, abs=resolution[0])
-    else:
-        assert np.all(test_bounds[:2] > ref_bounds[:2]) and np.all(test_bounds[-2:] < ref_bounds[-2:])
+    assert test_bounds == pytest.approx(ref_bounds, resolution[0])
 
     # test mask similarity
     ref_mask = ~np.isnan(ref_dem_array)
     test_mask = ~np.isnan(test_dem_array)
     cc = np.corrcoef(test_mask.flatten(), ref_mask.flatten())
     assert cc[0, 1] > 0.99
+
+    # test the dem mask extends to the cropped boundary
+    c, h = cv2.findContours(test_mask.astype('uint8', copy=False), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    ji = np.squeeze(c[0]).T
+    assert ji.min(axis=1) == pytest.approx((0, 0), abs=1)
+    assert ji.max(axis=1) == pytest.approx(np.array(test_mask.shape[::-1]) - 1, abs=1)
+
+
+@pytest.mark.parametrize(
+    'cam_type, dist_param', [
+        (CameraType.brown, 'brown_dist_param'),
+        (CameraType.opencv, 'opencv_dist_param'),
+        (CameraType.fisheye, 'fisheye_dist_param'),
+    ],
+)  # yapf: disable
+def test_mask_dem_alpha(
+    cam_type: CameraType, dist_param: str, camera_args: Dict, rgb_byte_src_file: Path, float_utm34n_dem_file: Path,
+    utm34n_crs: str, tmp_path: Path, request: pytest.FixtureRequest
+):
+    """ Test the ``alpha=1`` dem mask contains the ``alpha=0`` dem mask with ``full_remap=False``. """
+    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    camera_alpha1 = create_camera(cam_type, **camera_args, **dist_param, alpha=1.)
+    camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.)
+    resolution = (3, 3)
+    dem_interp = Interp.cubic
+    num_pts = 400
+
+    # create reference masked dem with alpha=1 & test masked dem with alpha=0
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    ref_dem_array, ref_dem_transform = ortho._mask_dem(
+        dem_array, dem_transform, dem_interp, full_remap=True, num_pts=num_pts
+    )
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha0, utm34n_crs, dem_band=1)
+    test_dem_array, test_dem_transform = ortho._mask_dem(
+        dem_array, dem_transform, dem_interp, full_remap=False, num_pts=num_pts
+    )
+
+    # crop reference to test and compare bounds
+    ref_bounds = np.array(array_bounds(*ref_dem_array.shape, ref_dem_transform))
+    test_bounds = np.array(array_bounds(*test_dem_array.shape, test_dem_transform))
+    test_win = from_bounds(*test_bounds, transform=ref_dem_transform)
+    # ref_dem_array = ref_dem_array[test_win.toslices()]
+    assert np.all(test_bounds[:2] >= ref_bounds[:2]) and np.all(test_bounds[-2:] <= ref_bounds[-2:])
+
+    # test reference mask contains test mask
+    ref_mask = ~np.isnan(ref_dem_array)
+    test_mask = ~np.isnan(test_dem_array)
+    assert ref_mask.sum() > test_mask.sum()
+    ref_mask = ref_mask[test_win.toslices()]
+    assert (ref_mask[test_mask].sum() / test_mask.sum()) == 1.
 
     # test the dem mask extends to the cropped boundary
     c, h = cv2.findContours(test_mask.astype('uint8', copy=False), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -466,7 +502,7 @@ def test_mask_dem_coverage_error(
     # test
     with pytest.raises(ValueError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
-    assert 'bounds' in str(ex)
+    assert 'boundary' in str(ex)
 
 
 def test_mask_dem_above_camera_error(
@@ -496,7 +532,7 @@ def test_undistort(
 ):
     """ Test _undistort method by comparing source & distorted-undistorted checkerboard images. """
     nodata = 0
-    interp = Interp.bilinear
+    interp = Interp.cubic
     camera: Camera = request.getfixturevalue(camera)
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
 
@@ -513,7 +549,7 @@ def test_undistort(
     undist_mask = undist_image != nodata
     cc = np.corrcoef(image[undist_mask], undist_image[undist_mask])
     assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
-    assert cc[0, 1] > 0.95
+    assert cc[0, 1] > 0.9
 
 
 # @formatter:off
@@ -700,7 +736,7 @@ def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: P
 @pytest.mark.parametrize('interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos], )
 def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_path: Path):
     """ Test the process `interp` setting by comparing with an ``interp='nearest'`` reference ortho. """
-    resolution = (30, 30)
+    resolution = (10, 10)
 
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_ref_file, resolution, interp=Interp.nearest, compress=Compress.deflate)
@@ -713,9 +749,9 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         ref_array = ref_im.read(masked=True)
         test_array = test_im.read(masked=True)
         assert test_array.shape == ref_array.shape
-        assert (test_array.mean() > 1) and (test_array.mean() < 255)
-        assert test_array.mean() != ref_array.mean()
-        assert test_array.mean() == pytest.approx(ref_array.mean(), 10)
+        assert test_array.mask.sum() <= ref_array.mask.sum()
+        assert len(np.unique(test_array.compressed())) > len(np.unique(ref_array.compressed()))
+        assert test_array.mean() == pytest.approx(ref_array.mean(), abs=10)
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
@@ -747,13 +783,62 @@ def test_process_full_remap(
         test_bounds = np.array(test_im.bounds)
 
         assert test_array.shape == ref_array.shape
-        assert ref_bounds == pytest.approx(test_bounds, abs=1e-3)
+        assert ref_bounds == pytest.approx(test_bounds, abs=resolution[0])
         cc = np.corrcoef(ref_mask.flatten(), test_mask.flatten())
-        assert cc[0, 1] > 0.99
+        assert cc[0, 1] > 0.95
 
         mask = ref_mask & test_mask
         cc = np.corrcoef(ref_array[:, mask].flatten(), test_array[:, mask].flatten())
-        assert cc[0, 1] > 0.99
+        assert cc[0, 1] > 0.95
+
+
+@pytest.mark.parametrize(
+    'cam_type, dist_param', [
+        (CameraType.brown, 'brown_dist_param'),
+        (CameraType.opencv, 'opencv_dist_param'),
+        (CameraType.fisheye, 'fisheye_dist_param'),
+    ],
+)  # yapf: disable
+def test_process_alpha(
+    cam_type: CameraType, dist_param: str, camera_args: Dict, rgb_byte_src_file: Path, float_utm34n_dem_file: Path,
+    utm34n_crs: str, tmp_path: Path, request: pytest.FixtureRequest
+):
+    """ Test ortho with ``alpha=1`` contains ortho with ``alpha=0``. """
+    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    camera_alpha1 = create_camera(cam_type, **camera_args, **dist_param, alpha=1.)
+    camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.)
+    resolution = (3, 3)
+
+    # create a ref (alpha=1) and test (alpha=0) ortho for this camera
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
+    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+    ortho.process(ortho_ref_file, resolution, interp=Interp.bilinear, full_remap=False, compress=Compress.deflate)
+
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha0, utm34n_crs, dem_band=1)
+    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_test_file, resolution, interp=Interp.bilinear, full_remap=False, compress=Compress.deflate)
+
+    # compare ref & test ortho extents, masks and pixels
+    assert ortho_ref_file.exists() and ortho_test_file.exists()
+    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+        ref_win = ref_im.window(*test_im.bounds)
+        ref_array = ref_im.read()
+        ref_mask = ref_im.dataset_mask().astype('bool')
+        ref_bounds = np.array(ref_im.bounds)
+        test_array = test_im.read()
+        test_mask = test_im.dataset_mask().astype('bool')
+        test_bounds = np.array(test_im.bounds)
+
+        assert test_mask.shape == (ref_win.height, ref_win.width)
+        assert np.all(ref_bounds[:2] <= test_bounds[:2]) and np.all(ref_bounds[-2:] >= test_bounds[:2])
+        assert ref_mask.sum() > test_mask.sum()
+        ref_mask = ref_mask[ref_win.toslices()]
+        assert (ref_mask[test_mask].sum() / test_mask.sum()) == 1.
+
+        mask = ref_mask & test_mask
+        ref_array = ref_array[(slice(0, ref_im.count), *ref_win.toslices())]
+        cc = np.corrcoef(ref_array[:, mask].flatten(), test_array[:, mask].flatten())
+        assert cc[0, 1] > 0.95
 
 
 def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):

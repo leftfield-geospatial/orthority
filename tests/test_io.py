@@ -437,7 +437,7 @@ def test_oty_reader(ngi_oty_ext_param_file: Path, ngi_crs: str):
 def test_oty_reader_validity_error(osfm_reconstruction_file: Path):
     """ Test OtyReader raises an error with an invalid file format. """
     with pytest.raises(ParamFileError) as ex:
-        reader = io.OtyReader(osfm_reconstruction_file, crs=None)
+        _ = io.OtyReader(osfm_reconstruction_file, crs=None)
     assert 'valid' in str(ex)
 
 
@@ -448,4 +448,4 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
 
 
 # TODO: Multi-camera configurations
-
+# TODO: Add config conversions e.g. ODM / Legacy / CSV internal + external -> oty format -> inputs
