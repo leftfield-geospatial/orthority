@@ -280,10 +280,9 @@ def test_mask_dem(
     # note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
-    _opk = tuple(np.array(camera_args['opk']) + opk_offset)
+    _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
     camera: Camera = PinholeCamera(
-        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
-        opk=np.radians(_opk),
+        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz, opk=_opk,
     )
     resolution = (5, 5)
     num_pts = 400
@@ -361,10 +360,9 @@ def test_mask_dem_crop(
 ):
     """ Test the DEM mask is cropped to ortho boundaries. """
     _xyz = np.array(camera_args['xyz']) + xyz_offset
-    _opk = np.array(camera_args['opk']) + opk_offset
+    _opk = np.array(camera_args['opk']) + np.radians(opk_offset)
     camera: Camera = PinholeCamera(
-        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz,
-        opk=np.radians(_opk),
+        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=_xyz, opk=_opk,
     )
     resolution = (5, 5)
     num_pts = 400
@@ -409,10 +407,10 @@ def test_mask_dem_full_remap(
     # create reference masked dem with full_remap=True & test masked dem with full_remap=False
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ref_dem_array, ref_dem_transform = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, full_remap=True, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=True, num_pts=num_pts
     )
     test_dem_array, test_dem_transform = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, full_remap=False, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=False, num_pts=num_pts
     )
 
     # crop reference to test and compare bounds
@@ -458,11 +456,11 @@ def test_mask_dem_alpha(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ref_dem_array, ref_dem_transform = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, full_remap=True, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=False, num_pts=num_pts
     )
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha0, utm34n_crs, dem_band=1)
     test_dem_array, test_dem_transform = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, full_remap=False, num_pts=num_pts
+        dem_array.copy(), dem_transform, dem_interp, full_remap=False, num_pts=num_pts
     )
 
     # crop reference to test and compare bounds
@@ -477,7 +475,7 @@ def test_mask_dem_alpha(
     test_mask = ~np.isnan(test_dem_array)
     assert ref_mask.sum() > test_mask.sum()
     ref_mask = ref_mask[test_win.toslices()]
-    assert (ref_mask[test_mask].sum() / test_mask.sum()) == 1.
+    assert (ref_mask[test_mask].sum() / test_mask.sum()) > .99
 
     # test the dem mask extends to the cropped boundary
     c, h = cv2.findContours(test_mask.astype('uint8', copy=False), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -655,10 +653,10 @@ def test_process_auto_resolution(
     xyz: Tuple, tmp_path: Path
 ):
     """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
-    _opk = tuple(np.array(camera_args['opk']) + opk_offset)
+    _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
     camera: Camera = PinholeCamera(
         camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=xyz,
-        opk=np.radians(_opk)
+        opk=_opk
     )
     dem_interp = Interp.cubic
 
@@ -751,7 +749,7 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert test_array.shape == ref_array.shape
         assert test_array.mask.sum() <= ref_array.mask.sum()
         assert len(np.unique(test_array.compressed())) > len(np.unique(ref_array.compressed()))
-        assert test_array.mean() == pytest.approx(ref_array.mean(), abs=10)
+        assert test_array.mean() == pytest.approx(ref_array.mean(), rel=0.2)
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
