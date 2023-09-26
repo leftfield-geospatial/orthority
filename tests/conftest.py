@@ -74,9 +74,9 @@ def ortho_bounds(camera: Camera, dem_min: float = Ortho._egm96_min, include_came
 
 
 def create_dem(
-    filename: Path, camera: Camera, camera_crs: str, dem_crs: str = None, resolution: Tuple = _dem_resolution,
+    camera: Camera, camera_crs: str, dem_crs: str = None, resolution: Tuple = _dem_resolution,
     dtype: str = 'float32', include_camera=False,
-):
+) -> Tuple[np.ndarray, Dict]:
     """
     Create a 2 band DEM file that covers the ortho bounds of the given `camera`.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
@@ -102,10 +102,10 @@ def create_dem(
         dem_crs = camera_crs
         transform = from_origin(bounds[0], bounds[3], *resolution)
 
-    profile = dict(crs=dem_crs, transform=transform, dtype=dtype, width=size[0], height=size[1], count=2)
-
-    with rio.open(filename, 'w', **profile) as dem_im:
-        dem_im.write(array)
+    profile = dict(
+        crs=dem_crs, transform=transform, dtype=dtype, width=size[0], height=size[1], count=2, nodata=float('nan')
+    )
+    return array, profile
 
 
 def create_src(
@@ -335,7 +335,9 @@ def float_utm34n_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera,
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
-    create_dem(filename, pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
+    array, profile = create_dem(pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
     return filename
 
 
@@ -346,7 +348,9 @@ def float_utm34n_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_wgs84_dem.tif')
-    create_dem(filename, pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32')
+    array, profile = create_dem(pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32')
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
     return filename
 
 
@@ -357,7 +361,9 @@ def float_utm34n_egm96_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_egm96_dem.tif')
-    create_dem(filename, pinhole_camera, utm34n_egm96_crs, resolution=_dem_resolution, dtype='float32')
+    array, profile = create_dem(pinhole_camera, utm34n_egm96_crs, resolution=_dem_resolution, dtype='float32')
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
     return filename
 
 
@@ -368,10 +374,27 @@ def float_wgs84_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_ca
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_wgs84_wgs84_dem.tif')
-    create_dem(
-        filename, pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32',
+    array, profile = create_dem(
+        pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32',
         dem_crs='EPSG:4326+4326'
     )
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
+    return filename
+
+
+@pytest.fixture(scope='session')
+def float_utm34n_partial_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
+    """
+    A 2 band float DEM file in UTM zone 34N with no vertical datum.  Pixels below the diagonal are nodata.
+    Band 1 is a sinusoidal surface, and band 2, a planar surface.
+    """
+    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
+    array, profile = create_dem(pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
+    mask = np.fliplr(np.tril(np.ones(array.shape, dtype='bool'), k=1))
+    array[mask] = profile['nodata']
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
     return filename
 
 
