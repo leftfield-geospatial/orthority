@@ -267,18 +267,20 @@ def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
         ((0, 0, 0), (-30, 20, 0)),
         ((0, 0, 0), (-45, 20, 0)),
         # varying positions with partial dem coverage
-        ((0, 5e2, 0), (0, 0, 0)),
-        ((0, 0, 1e3), (0, 0, 0)),
-        ((0, 0, 2e3), (0, 0, 0)),
+        ((0, 5.5e2, 0), (0, 0, 0)),
+        ((0, 0, 1.1e3), (0, 0, 0)),
+        ((0, 0, 2.e3), (0, 0, 0)),
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
     opk_offset: Tuple, tmp_path: Path
 ):
-    """ Test the DEM (ortho boundary) mask contains the ortho valid data mask (without cropping). """
-    # note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
-    #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.
+    """ Test the similarity of the DEM (ortho boundary) and ortho valid data mask (without cropping). """
+    # Note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
+    #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.  As the the DEM (ortho
+    #  boundary) excludes occluded pixels, while the ortho image does not, the flat dem band (2) is used so there is no
+    #  occlusion.
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
     camera: Camera = PinholeCamera(
@@ -289,7 +291,7 @@ def test_mask_dem(
     dem_interp = Interp.cubic
 
     # create an ortho image without DEM masking
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     with rio.open(rgb_byte_src_file, 'r') as src_im:
@@ -297,7 +299,7 @@ def test_mask_dem(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
-            ortho._remap(src_im, ortho_im, dem_array, interp=Interp.nearest, full_remap=True, write_mask=False)
+            ortho._remap(src_im, ortho_im, dem_array, interp=Interp.bilinear, full_remap=True, write_mask=False)
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
@@ -349,9 +351,9 @@ def test_mask_dem(
         ((0, 0, 0), (-30, 20, 0)),
         ((0, 0, 0), (-45, 20, 0)),
         # varying positions with partial dem coverage
-        ((0, 5e2, 0), (0, 0, 0)),
-        ((0, 0, 1e3), (0, 0, 0)),
-        ((0, 0, 2e3), (0, 0, 0)),
+        ((0, 5.5e2, 0), (0, 0, 0)),
+        ((0, 0, 1.1e3), (0, 0, 0)),
+        ((0, 0, 2.e3), (0, 0, 0)),
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem_crop(
@@ -390,6 +392,11 @@ def test_mask_dem_crop(
     assert np.all(mask_crop == mask[win_crop.toslices()])
     assert mask.sum() == mask[win_crop.toslices()].sum()
 
+    # test mask_crop extends to the boundaries
+    ij = np.where(mask_crop)
+    assert np.min(ij, axis=1) == pytest.approx((0, 0), abs=1)
+    assert np.max(ij, axis=1) == pytest.approx(np.array(mask_crop.shape) - 1, abs=1)
+
 
 # @formatter:off
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
@@ -397,7 +404,8 @@ def test_mask_dem_full_remap(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
     request: pytest.FixtureRequest
 ):
-    """ Test the equivalence & cropping of DEM masks with ``full_remap=True/False``. """
+    """ Test the similarity of DEM masks with ``full_remap=True/False``. """
+    # TODO: add or change to test with oblique view with partial dem coverage
     camera: Camera = request.getfixturevalue(camera)
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
     resolution = (3, 3)
@@ -425,12 +433,6 @@ def test_mask_dem_full_remap(
     test_mask = ~np.isnan(test_dem_array)
     cc = np.corrcoef(test_mask.flatten(), ref_mask.flatten())
     assert cc[0, 1] > 0.99
-
-    # test the dem mask extends to the cropped boundary
-    c, h = cv2.findContours(test_mask.astype('uint8', copy=False), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    ji = np.squeeze(c[0]).T
-    assert ji.min(axis=1) == pytest.approx((0, 0), abs=1)
-    assert ji.max(axis=1) == pytest.approx(np.array(test_mask.shape[::-1]) - 1, abs=1)
 
 
 @pytest.mark.parametrize(
@@ -467,7 +469,6 @@ def test_mask_dem_alpha(
     ref_bounds = np.array(array_bounds(*ref_dem_array.shape, ref_dem_transform))
     test_bounds = np.array(array_bounds(*test_dem_array.shape, test_dem_transform))
     test_win = from_bounds(*test_bounds, transform=ref_dem_transform)
-    # ref_dem_array = ref_dem_array[test_win.toslices()]
     assert np.all(test_bounds[:2] >= ref_bounds[:2]) and np.all(test_bounds[-2:] <= ref_bounds[-2:])
 
     # test reference mask contains test mask
@@ -476,12 +477,6 @@ def test_mask_dem_alpha(
     assert ref_mask.sum() > test_mask.sum()
     ref_mask = ref_mask[test_win.toslices()]
     assert (ref_mask[test_mask].sum() / test_mask.sum()) > .99
-
-    # test the dem mask extends to the cropped boundary
-    c, h = cv2.findContours(test_mask.astype('uint8', copy=False), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    ji = np.squeeze(c[0]).T
-    assert ji.min(axis=1) == pytest.approx((0, 0), abs=1)
-    assert ji.max(axis=1) == pytest.approx(np.array(test_mask.shape[::-1]) - 1, abs=1)
 
 
 def test_mask_dem_coverage_error(
@@ -646,7 +641,7 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
 
 @pytest.mark.parametrize(
     # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
-    'opk_offset', [(0, 0, 0), (-15, 10, 0), (-45, 20, 0),],
+    'opk_offset', [(0, 0, 0), (-15, 10, 0), (-45, 20, 0)],
 )
 def test_process_auto_resolution(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, opk_offset: Tuple,
