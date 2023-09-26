@@ -395,7 +395,7 @@ class OpenCVCamera(Camera):
         undistort_maps = cv2.initUndistortRectifyMap(
             self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
         )
-        undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
+        # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
         return undistort_maps, K_undistort
 
     def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
@@ -550,7 +550,7 @@ class FisheyeCamera(Camera):
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
             self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
         )
-        undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
+        # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
         return undistort_maps, K_undistort
 
     def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:

@@ -304,7 +304,7 @@ class Ortho:
             # masked / nan dem pixels)
             # TODO: deal with boundary issues (round or remap)
             dem_ji = inv_transform(dem_transform, ray_xyz[:2, :]).astype('float32', copy=False)
-            dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
+            # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
             dem_z = np.squeeze(cv2.remap(
                 dem_array, *dem_ji, dem_interp.to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=float('nan')
             ), axis=1)  # yapf: disable
@@ -427,9 +427,11 @@ class Ortho:
         )  # yapf: disable
 
         # separate tile_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
+        # (nans are converted to -1 as cv2.remap maps nans to the first src pixel on some packages/platforms)
+        tile_ji[np.isnan(tile_ji)] = -1
         tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
         tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')
-        tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
+        # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
         tile_array = np.full(

@@ -299,7 +299,7 @@ def test_mask_dem(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
-            ortho._remap(src_im, ortho_im, dem_array, interp=Interp.bilinear, full_remap=True, write_mask=False)
+            ortho._remap(src_im, ortho_im, dem_array, full_remap=True, write_mask=False)
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
