@@ -144,9 +144,13 @@ class Ortho:
             crs_equal = self._crs == dem_im.crs
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
 
-            # corner pixel coordinates of source image
-            src_br = self._camera._im_size
-            src_ji = np.array([[0, 0], [src_br[0], 0], src_br, [0, src_br[1]]]).T
+            # boundary pixel coordinates of source image
+            w, h = np.array(self._camera._im_size) - 1
+            src_ji = np.array(
+                [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
+            ).T  # yapf: disable
+            # src_br = self._camera._im_size
+            # src_ji = np.array([[0, 0], [src_br[0], 0], src_br, [0, src_br[1]]]).T
 
             def get_win_at_z_min(z_min: float) -> Window:
                 """ Return a DEM window corresponding to the ortho bounds at z=z_min. """
@@ -183,25 +187,31 @@ class Ortho:
             dem_transform = dem_im.window_transform(dem_win)
 
             # Cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
+            if np.all(dem_array.mask):
+                raise ValueError(f'Ortho bounds for {self._src_filename.name} lie outside the valid DEM area.')
             dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
     def _get_auto_res(self) -> Tuple[float, float]:
         """ Return an ortho resolution that gives approx. as many valid ortho pixels as valid source pixels. """
-        def area_quad(cnrs: np.array) -> float:
-            """ Area of the quadrilateral defined by (x, y) corners in `cnrs` (4 x 2). """
+        def area_poly(coords: np.array) -> float:
+            """ Area of the polygon defined by (x, y) `coords` with (x, y) along 2nd dimension. """
             # uses "shoelace formula" - https://en.wikipedia.org/wiki/Shoelace_formula
-            return 0.5 * np.abs(cnrs[:, 0].dot(np.roll(cnrs[:, 1], -1)) - np.roll(cnrs[:, 0], -1).dot(cnrs[:, 1]))
+            return 0.5 * np.abs(
+                coords[:, 0].dot(np.roll(coords[:, 1], -1)) - np.roll(coords[:, 0], -1).dot(coords[:, 1])
+            )
 
-        # find (x, y) coords of image corners in world CRS at z=median(DEM) (note: ignores vertical datum shifts)
-        src_br = self._camera._im_size
-        src_ji = np.array([[0, 0], [src_br[0], 0], src_br, [0, src_br[1]]])
-        world_xy = self._camera.pixel_to_world_z(src_ji.T, np.nanmedian(self._dem_array))[:2].T
+        # find (x, y) coords of image boundary in world CRS at z=median(DEM) (note: ignores vertical datum shifts)
+        w, h = np.array(self._camera._im_size) - 1
+        src_ji = np.array(
+            [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
+        ).T  # yapf: disable
+        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmedian(self._dem_array))[:2].T
 
-        # return the average pixel resolution inside the world CRS quadrilateral
+        # return the average pixel resolution inside the world CRS boundary
         pixel_area = np.array(self._camera._im_size).prod()
-        world_area = area_quad(world_xy)
+        world_area = area_poly(world_xy)
         res = np.sqrt(world_area / pixel_area)
         logger.debug(f'Using auto resolution: {res:.4f}')
         return (res, ) * 2
@@ -287,24 +297,29 @@ class Ortho:
             stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max, distort=full_remap)
             ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4]))
             ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
-            ray_z = np.linspace(dem_min, dem_max, ray_steps)
+            ray_z = np.linspace(dem_max, dem_min, ray_steps)
             ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
 
             # find the dem z values corresponding to the ray (dem_z will be nan outside the dem bounds and for already
             # masked / nan dem pixels)
             # TODO: deal with boundary issues (round or remap)
-            dem_ji = inv_transform(dem_transform, ray_xyz[:2, :])
+            dem_ji = inv_transform(dem_transform, ray_xyz[:2, :]).astype('float32', copy=False)
+            # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
             dem_z = np.squeeze(cv2.remap(
-                dem_array, *dem_ji.astype('float32', copy=False), dem_interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
-                borderValue=float('nan')
-            ))
+                dem_array, *dem_ji, dem_interp.to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=float('nan')
+            ), axis=1)  # yapf: disable
 
-            # store the ray-dem intersection point if it exists, otherwise the dem_min point
-            intersection_i = np.nonzero(ray_xyz[2] >= dem_z)[0]
-            if len(intersection_i) > 0 and intersection_i[0] > 0:
-                poly_xy[:, pi] = ray_xyz[:2, intersection_i[0] - 1]
+            # store the first ray-dem intersection point if it exists, otherwise the dem_min point
+            # intersection_i = np.nonzero(np.logical_or(ray_xyz[2] >= dem_z, np.isnan(dem_z)))[0]
+            valid_mask = ~np.isnan(dem_z)
+            dem_z = dem_z[valid_mask]
+            dem_min_xy = ray_xyz[:2, -1]
+            ray_xyz = ray_xyz[:, valid_mask]
+            intersection_i = np.nonzero(ray_xyz[2] <= dem_z)[0]
+            if len(intersection_i) > 0:
+                poly_xy[:, pi] = ray_xyz[:2, intersection_i[0]]
             else:
-                poly_xy[:, pi] = ray_xyz[:2, 0]
+                poly_xy[:, pi] = dem_min_xy
 
         # find intersection of poly_xy and dem mask, and check dem coverage
         poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
@@ -315,7 +330,9 @@ class Ortho:
         dem_mask_sum = dem_mask.sum()
         if dem_mask_sum == 0:
             raise ValueError(f'Ortho boundary for {self._src_filename.name} lies outside the valid DEM area.')
-        elif poly_mask.sum() > dem_mask_sum:
+        elif poly_mask.sum() > dem_mask_sum or (
+            np.any(np.min(poly_ji, axis=1) < (0, 0)) or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
+        ):
             logger.warning(f'Ortho boundary for {self._src_filename.name} is not fully covered by the DEM.')
 
         if crop:
@@ -412,7 +429,7 @@ class Ortho:
         # separate tile_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
         tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
         tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')
-        tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
+        # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
         tile_array = np.full(
