@@ -441,9 +441,9 @@ class Ortho:
 
         # remap source image to ortho tile, looping over band(s) (cv2.remap execution time depends on array ordering)
         for oi in range(0, src_array.shape[0]):
-            tile_array[oi, :, :] = cv2.remap(
-                src_array[oi, :, :], tile_jgrid, tile_igrid, interp.to_cv(), borderMode=cv2.BORDER_CONSTANT,
-                borderValue=dtype_nodata,
+            cv2.remap(
+                src_array[oi, :, :], tile_jgrid, tile_igrid, interp.to_cv(), dst=tile_array[oi, :, :],
+                borderMode=cv2.BORDER_CONSTANT, borderValue=dtype_nodata,
             )
             # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with nodata
             # tile_array[oi, :, :] = map_coordinates(
@@ -481,22 +481,22 @@ class Ortho:
         if self._camera._undistort_maps is None:
             return image
 
-        def undistort_band(band: np.array) -> np.array:
+        def undistort_band(src_array: np.ndarray, dst_array: np.ndarray):
             """ Undistort a 2D band array. """
             # equivalent without stored _undistort_maps:
             # return cv2.undistort(band_array, self._K, self._dist_param)
-            return cv2.remap(
-                band, *self._camera._undistort_maps, Interp[interp].to_cv(), borderMode=cv2.BORDER_CONSTANT,
-                borderValue=nodata
+            cv2.remap(
+                src_array, *self._camera._undistort_maps, Interp[interp].to_cv(), dst=dst_array,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
             )
 
+        out_image = np.full(image.shape, fill_value=nodata, dtype=image.dtype)
         if image.ndim > 2:
             # undistort by band so that output data stays in the rasterio ordering
-            out_image = np.full(image.shape, fill_value=nodata, dtype=image.dtype)
             for bi in range(image.shape[0]):
-                out_image[bi] = undistort_band(image[bi])
+                undistort_band(image[bi], out_image[bi])
         else:
-            out_image = undistort_band(image)
+            undistort_band(image, out_image)
 
         return out_image
 
