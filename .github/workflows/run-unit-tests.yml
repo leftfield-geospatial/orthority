@@ -9,69 +9,69 @@ on:
     branches: [main]
   workflow_dispatch:
 
-#jobs:
-#  test:
-#    runs-on: ${{ matrix.os }}
-#    defaults:
-#      run:
-#        shell: bash -l {0}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        os: [ macos-latest, ubuntu-latest, windows-2019 ]
-#        python-version: ['3.9', '3.10', '3.11']
-#    steps:
-#    - uses: actions/checkout@v3  # for the test data
-#    - uses: conda-incubator/setup-miniconda@v2
-#      with:
-#        python-version: ${{ matrix.python-version }}
-#        channels: conda-forge
-#        channel-priority: true
-#        activate-environment: test
-#        mamba-version: "*"
-#    - name: Install dependencies
-#      run: |
-#        mamba info
-#        mamba list
-#        mamba install -c conda-forge rasterio opencv numpy click tqdm pyyaml pytest pytest-cov
-#        mamba list
-#    - name: Run unit tests
-#      run: |
-#        python -m pytest --cov=simple_ortho --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
-
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -l {0}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.10', '3.11']
         os: [ macos-latest, ubuntu-latest, windows-2019 ]
+        python-version: ['3.9', '3.10', '3.11']
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
+    - uses: actions/checkout@v3  # for the test data
+    - uses: conda-incubator/setup-miniconda@v2
       with:
         python-version: ${{ matrix.python-version }}
+        channels: conda-forge
+        channel-priority: true
+        activate-environment: test
+        mamba-version: "*"
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        python -m pip install flake8 pytest pytest-cov
-        python -m pip install rasterio "opencv-python-headless<4.8" numpy click tqdm pyyaml
-        python -m pip list
-    - name: Lint with flake8
-      run: |
-        # stop the build if there are Python syntax errors or undefined names
-        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
-    - name: Test with pytest
-      timeout-minutes: 5
+        mamba info
+        mamba list
+        mamba install -c conda-forge rasterio opencv numpy click tqdm pyyaml pytest pytest-cov
+        mamba list
+    - name: Run unit tests
       run: |
         python -m pytest --cov=simple_ortho --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
-      with:
-        fail_ci_if_error: true
-        files: ./coverage.xml
-        token: ${{ secrets.CODECOV_TOKEN }}
+
+#jobs:
+#  test:
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        python-version: ['3.9', '3.10', '3.11']
+#        os: [ macos-latest, ubuntu-latest, windows-2019 ]
+#    steps:
+#    - uses: actions/checkout@v3
+#    - name: Set up Python ${{ matrix.python-version }}
+#      uses: actions/setup-python@v4
+#      with:
+#        python-version: ${{ matrix.python-version }}
+#    - name: Install dependencies
+#      run: |
+#        python -m pip install --upgrade pip
+#        python -m pip install flake8 pytest pytest-cov
+#        python -m pip install rasterio "opencv-python-headless<4.8" numpy click tqdm pyyaml
+#        python -m pip list
+#    - name: Lint with flake8
+#      run: |
+#        # stop the build if there are Python syntax errors or undefined names
+#        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+#        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+#        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+#    - name: Test with pytest
+#      timeout-minutes: 5
+#      run: |
+#        python -m pytest --cov=simple_ortho --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
+#    - name: Upload coverage
+#      uses: codecov/codecov-action@v3
+#      with:
+#        fail_ci_if_error: true
+#        files: ./coverage.xml
+#        token: ${{ secrets.CODECOV_TOKEN }}
