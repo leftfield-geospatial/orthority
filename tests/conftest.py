@@ -386,7 +386,7 @@ def float_wgs84_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_ca
 @pytest.fixture(scope='session')
 def float_utm34n_partial_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with no vertical datum.  Pixels below the diagonal are nodata.
+    A 2 band float DEM file in UTM zone 34N with no vertical datum.  Pixels above the diagonal are nodata.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')

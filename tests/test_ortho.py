@@ -104,7 +104,7 @@ def test_init_geogcrs_error(rgb_byte_src_file: Path, float_utm34n_dem_file: Path
 def test_init_dem_coverage_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str
 ):
-    """ Test Ortho initialisation without DEM coverage raises an error. """
+    """ Test Ortho initialisation without DEM coverage of ortho bounds raises an error. """
     # create a camera positioned away from dem bounds
     camera = PinholeCamera(**camera_args)
     camera.update((0, 0, 0), (0, 0, 0))
@@ -360,7 +360,7 @@ def test_mask_dem_crop(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
     opk_offset: Tuple, tmp_path: Path
 ):
-    """ Test the DEM mask is cropped to ortho boundaries. """
+    """ Test the DEM mask is cropped to mask boundaries. """
     _xyz = np.array(camera_args['xyz']) + xyz_offset
     _opk = np.array(camera_args['opk']) + np.radians(opk_offset)
     camera: Camera = PinholeCamera(
@@ -396,6 +396,28 @@ def test_mask_dem_crop(
     ij = np.where(mask_crop)
     assert np.min(ij, axis=1) == pytest.approx((0, 0), abs=1)
     assert np.max(ij, axis=1) == pytest.approx(np.array(mask_crop.shape) - 1, abs=1)
+
+
+def test_mask_dem_partial(
+    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str,
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+):
+    """
+    Test that masking a partial nodata DEM generates a coverage warning and the mask is cropped to its boundaries.
+    """
+    dem_interp = Interp.cubic
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_partial_dem_file, pinhole_camera, utm34n_crs)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, (5, 5))
+
+    dem_array, dem_transform = ortho._mask_dem(
+        dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=True, mask=True, num_pts=400
+    )
+    assert 'boundary' in caplog.text
+
+    mask = ~np.isnan(dem_array)
+    ij = np.where(mask)
+    assert np.min(ij, axis=1) == pytest.approx((0, 0), abs=1)
+    assert np.max(ij, axis=1) == pytest.approx(np.array(mask.shape) - 1, abs=1)
 
 
 # @formatter:off
