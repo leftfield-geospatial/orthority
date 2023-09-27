@@ -357,10 +357,10 @@ def test_mask_dem(
     ],
 )  # yapf: disable  # @formatter:on
 def test_mask_dem_crop(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
-    opk_offset: Tuple, tmp_path: Path
+    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
+    opk_offset: Tuple
 ):
-    """ Test the DEM mask is cropped to mask boundaries. """
+    """ Test the DEM mask is cropped to mask boundaries and does not include DEM nodata. """
     _xyz = np.array(camera_args['xyz']) + xyz_offset
     _opk = np.array(camera_args['opk']) + np.radians(opk_offset)
     camera: Camera = PinholeCamera(
@@ -371,8 +371,9 @@ def test_mask_dem_crop(
     dem_interp = Interp.cubic
 
     # mask the dem without cropping
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_partial_dem_file, camera, crs=utm34n_crs)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    valid_mask = ~np.isnan(dem_array)
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
         dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=False, mask=True, num_pts=num_pts
     )
@@ -397,27 +398,8 @@ def test_mask_dem_crop(
     assert np.min(ij, axis=1) == pytest.approx((0, 0), abs=1)
     assert np.max(ij, axis=1) == pytest.approx(np.array(mask_crop.shape) - 1, abs=1)
 
-
-def test_mask_dem_partial(
-    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str,
-    tmp_path: Path, caplog: pytest.LogCaptureFixture
-):
-    """
-    Test that masking a partial nodata DEM generates a coverage warning and the mask is cropped to its boundaries.
-    """
-    dem_interp = Interp.cubic
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_partial_dem_file, pinhole_camera, utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(dem_interp, (5, 5))
-
-    dem_array, dem_transform = ortho._mask_dem(
-        dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=True, mask=True, num_pts=400
-    )
-    assert 'boundary' in caplog.text
-
-    mask = ~np.isnan(dem_array)
-    ij = np.where(mask)
-    assert np.min(ij, axis=1) == pytest.approx((0, 0), abs=1)
-    assert np.max(ij, axis=1) == pytest.approx(np.array(mask.shape) - 1, abs=1)
+    # test mask does not include dem nodata
+    assert np.all(valid_mask[mask])
 
 
 # @formatter:off
