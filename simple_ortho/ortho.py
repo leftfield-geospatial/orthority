@@ -169,14 +169,15 @@ class Ortho:
                     raise ValueError(f'Ortho bounds for {self._src_filename.name} lie outside the DEM.')
                 return expand_window_to_grid(dem_win)
 
-            # get a dem window corresponding to ortho world bounds at min possible altitude
+            # get a dem window corresponding to ortho world bounds at min possible altitude, read the window from the
+            # dem & convert to float32 with nodata=nan
             dem_win = get_win_at_z_min(self._egm96_min)
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
 
             # reduce the dem window to correspond to the ortho world bounds at min dem altitude, accounting for worst
             # case dem-ortho vertical datum offset
-            dem_min = np.nanmin(dem_array)
+            dem_min = dem_array.min()
             dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self._egm96_min)
             dem_win = dem_win.intersection(dem_array_win)  # ensure it is a sub window of dem_array_win
 
@@ -186,9 +187,7 @@ class Ortho:
             dem_array = dem_array[dem_ij_start[0]:dem_ij_stop[0], dem_ij_start[1]:dem_ij_stop[1]]
             dem_transform = dem_im.window_transform(dem_win)
 
-            # Cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
-            if np.all(dem_array.mask):
-                raise ValueError(f'Ortho bounds for {self._src_filename.name} lie outside the valid DEM area.')
+            # cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
             dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
@@ -427,7 +426,8 @@ class Ortho:
         )  # yapf: disable
 
         # separate tile_ji into (j, i) grids, converting to float32 for compatibility with cv2.remap
-        # (nans are converted to -1 as cv2.remap maps nans to the first src pixel on some packages/platforms)
+        # (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel) on some packages/platforms
+        # see https://answers.opencv.org/question/1057/behavior-of-not-a-number-nan-values-in-remap/)
         tile_ji[np.isnan(tile_ji)] = -1
         tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
         tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')

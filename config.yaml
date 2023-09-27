@@ -5,7 +5,7 @@ camera:
   # Camera model type (pinhole, brown, fisheye, opencv)
   type: pinhole
   # Image [width, height] in pixels
-  im_size: [640, 1152]
+  im_size: [7680, 13824]
   # Focal length in same units/scale as `sensor_size` - can be single value or [x, y] pair.
   focal_len: 120.
   # Optional sensor [width, height] in same units/scale as `focal_len`.  If omitted, `focal_len` should be normalised
