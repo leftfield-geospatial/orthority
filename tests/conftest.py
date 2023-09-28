@@ -89,7 +89,7 @@ def create_dem(
     bounds = np.array(ortho_bounds(camera, include_camera=include_camera))
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / resolution).astype('int')
     array = np.stack(
-        (sinusoidal(size[::-1]) * 250 + camera._T[2] - 200, np.ones(size[::-1]) * (250 / 2) + camera._T[2] - 200,),
+        (sinusoidal(size[::-1]) * 50 + camera._T[2] - 200, np.ones(size[::-1]) * (50 / 2) + camera._T[2] - 200,),
         axis=0
     ).astype(dtype)  # yapf: disable
 
@@ -391,7 +391,7 @@ def float_utm34n_partial_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole
     """
     filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
     array, profile = create_dem(pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
-    mask = np.tril(np.ones(array.shape, dtype='bool'), k=-1)
+    mask = np.fliplr(np.tril(np.ones(array.shape, dtype='bool'), k=1))
     array[mask] = profile['nodata']
     with rio.open(filename, 'w', **profile) as im:
         im.write(array)

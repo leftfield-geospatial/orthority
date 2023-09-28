@@ -89,7 +89,7 @@ def _configure_logging(verbosity: int):
     log_level = max(10, 20 - 10 * verbosity)
 
     # apply config to package logger, rather than root logger
-    pkg_logger = logging.getLogger(__package__)
+    pkg_logger = logging.getLogger('simple_ortho')
     formatter = PlainInfoFormatter()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
