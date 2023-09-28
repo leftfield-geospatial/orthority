@@ -309,7 +309,6 @@ class Ortho:
             ), axis=1)  # yapf: disable
 
             # store the first ray-dem intersection point if it exists, otherwise the dem_min point
-            # intersection_i = np.nonzero(np.logical_or(ray_xyz[2] >= dem_z, np.isnan(dem_z)))[0]
             valid_mask = ~np.isnan(dem_z)
             dem_z = dem_z[valid_mask]
             dem_min_xy = ray_xyz[:2, -1]
@@ -324,8 +323,7 @@ class Ortho:
         poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
         poly_mask = np.zeros(dem_array.shape, dtype='uint8')
         poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=255).astype('bool', copy=False)
-        dem_valid_mask = ~np.isnan(dem_array)
-        dem_mask = np.logical_and(poly_mask, dem_valid_mask)
+        dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
         if dem_mask_sum == 0:
             raise ValueError(f'Ortho boundary for {self._src_filename.name} lies outside the valid DEM area.')
@@ -621,16 +619,16 @@ class Ortho:
             # get an auto resolution if resolution not provided
             resolution = resolution or self._get_auto_res()
 
-            # get dem array covering ortho extents in ortho CRS and resolution
-            dem_interp = Interp(dem_interp)
-            dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
-            dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp, full_remap=full_remap)
-
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True,
-                ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=True
+                ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=True,
             )
             with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
+                # get dem array covering ortho extents in ortho CRS and resolution
+                dem_interp = Interp(dem_interp)
+                dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
+                dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp, full_remap=full_remap)
+
                 # create ortho profile & set write_mask
                 ortho_profile, write_mask = self._create_ortho_profile(
                     src_im, dem_array.shape, dem_transform, dtype=dtype, compress=Compress(compress),
