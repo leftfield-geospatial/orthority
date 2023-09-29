@@ -507,8 +507,9 @@ def test_process_compress(
     with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
         if compress == Compress.auto:
             compress = Compress.jpeg if src_im.dtypes[0] == 'uint8' else compress.deflate
-        interleave, photometric = (('pixel', 'ycbcr') if compress == Compress.jpeg and src_im.count == 3 else
-                                   ('band', 'minisblack'))
+        interleave, photometric = (
+            ('pixel', 'ycbcr') if compress == Compress.jpeg and src_im.count == 3 else ('band', 'minisblack')
+        )  # yapf: disable
         assert ortho_im.profile['compress'] == compress.name
         assert ortho_im.profile['interleave'] == interleave
         if 'photometric' in ortho_im.profile:
@@ -583,14 +584,12 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
 )
 def test_process_auto_resolution(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, opk_offset: Tuple,
-    xyz: Tuple, tmp_path: Path
+    tmp_path: Path
 ):
     """ Test that auto resolution generates approx as many ortho pixels as source pixels. """
     _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
-    camera: Camera = PinholeCamera(
-        camera_args['im_size'], camera_args['focal_len'], sensor_size=camera_args['sensor_size'], xyz=xyz,
-        opk=_opk
-    )
+    camera: Camera = PinholeCamera(**camera_args)
+    camera.update(xyz=camera_args['xyz'], opk=_opk)
     dem_interp = Interp.cubic
 
     # find the auto res and masked dem
@@ -632,10 +631,7 @@ def test_process_write_mask_per_band(
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
 
 
-# @formatter:off
-@pytest.mark.parametrize(
-    'compress', [Compress.jpeg, Compress.deflate, Compress.auto]
-)  # yapf: disable  # @formatter:on
+@pytest.mark.parametrize('compress', [*Compress])
 def test_process_write_mask_compress(
     rgb_pinhole_utm34n_ortho: Ortho, compress: Compress, tmp_path: Path
 ):
@@ -682,7 +678,10 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert test_array.shape == ref_array.shape
         assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.05)
         assert len(np.unique(test_array.compressed())) > len(np.unique(ref_array.compressed()))
-        assert test_array.mean() == pytest.approx(ref_array.mean(), rel=0.2)
+        test_array.mask &= ref_array.mask
+        ref_array.mask &= test_array.mask
+        cc = np.corrcoef(test_array.flatten(), ref_array.flatten())
+        assert cc[0, 1] > 0.9
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
@@ -695,7 +694,8 @@ def test_process_full_remap(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
     resolution = (3, 3)
 
-    # create a ref (full_remap=True) and test (full_remap=False) ortho for this camera
+    # Create a ref (full_remap=True) and test (full_remap=False) ortho for this camera. Note that full_remap=False
+    # erodes the ortho mask to remove nodata blur so the reference is expected to contain the test mask.
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
     ortho.process(ortho_ref_file, resolution, full_remap=True, compress=Compress.deflate)
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
@@ -712,6 +712,7 @@ def test_process_full_remap(
         test_mask = test_im.dataset_mask().astype('bool')
         test_bounds = np.array(test_im.bounds)
 
+        # test ref_mask contains and is similar to test_mask
         assert test_array.shape == ref_array.shape
         assert ref_bounds == pytest.approx(test_bounds, abs=resolution[0])
         assert ref_mask[test_mask].sum() / test_mask.sum() > 0.99
@@ -719,6 +720,7 @@ def test_process_full_remap(
         assert cc[0, 1] > 0.9
         assert cc[0, 1] == pytest.approx(1., abs=1e-3) if isinstance(camera, PinholeCamera) else cc[0, 1] < 1.
 
+        # test similarity of ortho pixels in intersecting ref-test area
         mask = ref_mask & test_mask
         cc = np.corrcoef(ref_array[:, mask].flatten(), test_array[:, mask].flatten())
         assert cc[0, 1] > 0.95
@@ -743,7 +745,7 @@ def test_process_alpha(
     camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.)
     resolution = (3, 3)
 
-    # create a ref (alpha=1) and test (alpha=0) ortho for this camera
+    # create a ref (alpha=1) and test (alpha=0) orthos
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
     ortho.process(ortho_ref_file, resolution, full_remap=False, compress=Compress.deflate)
@@ -830,7 +832,7 @@ def test_process_overview(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])
-def test_process(
+def test_process_camera(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
     request: pytest.FixtureRequest
 ):
