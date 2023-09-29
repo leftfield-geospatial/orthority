@@ -212,7 +212,6 @@ class Ortho:
         pixel_area = np.array(self._camera._im_size).prod()
         world_area = area_poly(world_xy)
         res = np.sqrt(world_area / pixel_area)
-        logger.debug(f'Using auto resolution: {res:.4f}')
         return (res, ) * 2
 
     def _reproject_dem(self, dem_interp: Interp, resolution: Tuple[float, float]) -> Tuple[np.ndarray, rio.Affine]:
@@ -446,6 +445,21 @@ class Ortho:
         # mask of invalid ortho pixels
         tile_mask = np.all(nan_equals(tile_array, dtype_nodata), axis=0)
 
+        # remove undistort cv2.remap blurring with nodata at the nodata boundary when full_remap=False...
+        if (
+            not full_remap and interp != Interp.nearest and not np.isnan(dtype_nodata) and
+            self._camera._undistort_maps is not None
+        ):
+            # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
+            #  nodata=nan internally, then convert to config dtype and nodata on writing.
+            src_res = np.array(self._get_auto_res())
+            ortho_res = np.abs((tile_transform.a, tile_transform.e))
+            kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
+            kernel = np.ones(kernel_size[::-1], np.uint8)
+            tile_mask = cv2.dilate(tile_mask.astype(np.uint8, copy=False), kernel)
+            tile_mask = tile_mask.astype(bool, copy=False)
+            tile_array[:, tile_mask] = dtype_nodata
+
         # write tile_array to the ortho image
         with self._write_lock:
             ortho_im.write(tile_array, indexes, window=tile_win)
@@ -598,7 +612,9 @@ class Ortho:
                 ortho_filename.with_suffix(ortho_filename.suffix + '.aux.xml').unlink(missing_ok=True)
 
             # get an auto resolution if resolution not provided
-            resolution = resolution or self._get_auto_res()
+            if not resolution:
+                resolution = self._get_auto_res()
+                logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True,

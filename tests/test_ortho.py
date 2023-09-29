@@ -714,8 +714,9 @@ def test_process_full_remap(
 
         assert test_array.shape == ref_array.shape
         assert ref_bounds == pytest.approx(test_bounds, abs=resolution[0])
+        assert ref_mask[test_mask].sum() / test_mask.sum() > 0.99
         cc = np.corrcoef(ref_mask.flatten(), test_mask.flatten())
-        assert cc[0, 1] > 0.95
+        assert cc[0, 1] > 0.9
         assert cc[0, 1] == pytest.approx(1., abs=1e-3) if isinstance(camera, PinholeCamera) else cc[0, 1] < 1.
 
         mask = ref_mask & test_mask
