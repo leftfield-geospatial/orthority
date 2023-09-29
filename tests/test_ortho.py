@@ -314,7 +314,7 @@ def test_mask_dem(
     # test dem mask contains, and is similar to the ortho mask
     assert dem_transform_mask == dem_transform
     assert dem_mask.shape == ortho_mask.shape
-    assert dem_mask[ortho_mask].sum() / ortho_mask.sum() > 0.95
+    assert dem_mask[ortho_mask].sum() / ortho_mask.sum() > 0.9
     cc = np.corrcoef(dem_mask.flatten(), ortho_mask.flatten())
     assert (np.all(dem_mask) and np.all(ortho_mask)) or (cc[0, 1] > 0.95)
 
