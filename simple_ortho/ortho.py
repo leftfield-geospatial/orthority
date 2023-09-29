@@ -442,27 +442,9 @@ class Ortho:
                 src_array[oi, :, :], tile_jgrid, tile_igrid, interp.to_cv(), dst=tile_array[oi, :, :],
                 borderMode=cv2.BORDER_TRANSPARENT,
             )
-            # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with nodata
-            # tile_array[oi, :, :] = map_coordinates(
-            #     src_array[oi, :, :], (tile_igrid, tile_jgrid), order=2, mode='constant', cval=dtype_nodata,
-            #     prefilter=False
-            # )
 
         # mask of invalid ortho pixels
         tile_mask = np.all(nan_equals(tile_array, dtype_nodata), axis=0)
-
-        # remove cv2.remap blurring with nodata at the nodata boundary when necessary
-        # @formatter:off
-        if (
-            False and interp != Interp.nearest and not np.isnan(dtype_nodata) and
-            np.sum(tile_mask) > min(Ortho._default_blocksize[0], Ortho._default_blocksize[1])
-        ):  # yapf: disable @formatter:on
-            # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
-            #  nodata=nan internally, then convert to config dtype and nodata on writing.
-            kernel = np.ones((5, 5), np.uint8) if interp == Interp.bilinear else np.ones((9, 9), np.uint8)
-            tile_mask = cv2.dilate(tile_mask.astype(np.uint8, copy=False), kernel)
-            tile_mask = tile_mask.astype(bool, copy=False)
-            tile_array[:, tile_mask] = dtype_nodata
 
         # write tile_array to the ortho image
         with self._write_lock:
