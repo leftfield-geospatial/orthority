@@ -277,8 +277,8 @@ def test_mask_dem(
     """ Test the similarity of the DEM (ortho boundary) and ortho valid data mask (without cropping). """
     # Note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.  While the DEM mask excludes
-    #  (boundary) occluded pixels while, the ortho image mask does not i.e. to compare these masks, there should be no
-    #  DEM-ortho occlusion.
+    #  (boundary) occluded pixels, the ortho image mask does not i.e. to compare these masks, there should be no
+    #  DEM - ortho occlusion.
     # TODO: add test with dem that includes occlusion
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
@@ -298,7 +298,7 @@ def test_mask_dem(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
-            ortho._remap(src_im, ortho_im, dem_array, interp=Interp.nearest, full_remap=True, write_mask=False)
+            ortho._remap(src_im, ortho_im, dem_array, full_remap=True, write_mask=False)
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
@@ -316,7 +316,7 @@ def test_mask_dem(
     assert dem_mask.shape == ortho_mask.shape
     assert dem_mask[ortho_mask].sum() / ortho_mask.sum() > 0.95
     cc = np.corrcoef(dem_mask.flatten(), ortho_mask.flatten())
-    assert (np.all(dem_mask) and np.all(ortho_mask)) or (cc[0, 1] > 0.9)
+    assert (np.all(dem_mask) and np.all(ortho_mask)) or (cc[0, 1] > 0.95)
 
     if False:
         # debug plotting code
@@ -480,7 +480,7 @@ def test_undistort(
     undist_mask = undist_image != nodata
     cc = np.corrcoef(image[undist_mask], undist_image[undist_mask])
     assert cc[0, 1] > cc_dist[0, 1] or cc[0, 1] == 1
-    assert cc[0, 1] > 0.9
+    assert cc[0, 1] > 0.95
 
 
 # @formatter:off
@@ -680,7 +680,7 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         ref_array = ref_im.read(masked=True)
         test_array = test_im.read(masked=True)
         assert test_array.shape == ref_array.shape
-        assert test_array.mask.sum() <= ref_array.mask.sum()
+        assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.05)
         assert len(np.unique(test_array.compressed())) > len(np.unique(ref_array.compressed()))
         assert test_array.mean() == pytest.approx(ref_array.mean(), rel=0.2)
 
@@ -691,25 +691,15 @@ def test_process_full_remap(
     request: pytest.FixtureRequest
 ):
     """ Test ortho equivalence for ``full_remap=True/False`` with ``alpha=1``. """
-    # Note the full_remap=False ortho is a twice interpolated, while the full_remap=True is a once interpolated
-    # source.  This means the full_remap=False has slightly eroded mask boundaries compared to the full_remap=True
-    # ortho when using any interpolation except for nearest.  As a compromise between mask and ortho pixel
-    # full_remap=True/False similarity, bilinear interpolation is used (bilinear has a smaller kernel than
-    # cubic/lanzos).
     camera: Camera = request.getfixturevalue(camera)
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
     resolution = (3, 3)
 
     # create a ref (full_remap=True) and test (full_remap=False) ortho for this camera
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    ortho.process(
-        ortho_ref_file, resolution, interp=Interp.bilinear, full_remap=True, dtype='float32', compress=Compress.deflate
-    )
+    ortho.process(ortho_ref_file, resolution, full_remap=True, compress=Compress.deflate)
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(
-        ortho_test_file, resolution, interp=Interp.bilinear, full_remap=False, dtype='float32',
-        compress=Compress.deflate
-    )
+    ortho.process(ortho_test_file, resolution, full_remap=False, compress=Compress.deflate)
 
     # compare ref & test ortho extents, masks and pixels
     assert ortho_ref_file.exists() and ortho_test_file.exists()
@@ -747,7 +737,6 @@ def test_process_alpha(
     utm34n_crs: str, tmp_path: Path, request: pytest.FixtureRequest
 ):
     """ Test ortho with ``alpha=1`` contains and is similar to ortho with ``alpha=0``. """
-    # See the starting note for test_process_remap
     dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
     camera_alpha1 = create_camera(cam_type, **camera_args, **dist_param, alpha=1.)
     camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.)
@@ -756,16 +745,11 @@ def test_process_alpha(
     # create a ref (alpha=1) and test (alpha=0) ortho for this camera
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    ortho.process(
-        ortho_ref_file, resolution, interp=Interp.bilinear, full_remap=False, dtype='float32', compress=Compress.deflate
-    )
+    ortho.process(ortho_ref_file, resolution, full_remap=False, compress=Compress.deflate)
 
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha0, utm34n_crs, dem_band=1)
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(
-        ortho_test_file, resolution, interp=Interp.bilinear, full_remap=False, dtype='float32',
-        compress=Compress.deflate
-    )
+    ortho.process(ortho_test_file, resolution, full_remap=False,compress=Compress.deflate)
 
     # compare ref & test ortho extents, masks and pixels
     assert ortho_ref_file.exists() and ortho_test_file.exists()
