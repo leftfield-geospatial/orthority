@@ -303,10 +303,9 @@ class Ortho:
             # masked / nan dem pixels)
             # TODO: deal with boundary issues (round or remap)
             dem_ji = inv_transform(dem_transform, ray_xyz[:2, :]).astype('float32', copy=False)
+            dem_z = np.full((dem_ji.shape[1],), dtype=dem_array.dtype, fill_value=float('nan'))
             # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
-            dem_z = np.squeeze(cv2.remap(
-                dem_array, *dem_ji, dem_interp.to_cv(), borderMode=cv2.BORDER_CONSTANT, borderValue=float('nan')
-            ), axis=1)  # yapf: disable
+            cv2.remap(dem_array, *dem_ji, dem_interp.to_cv(), dst=dem_z, borderMode=cv2.BORDER_TRANSPARENT)
 
             # store the first ray-dem intersection point if it exists, otherwise the dem_min point
             valid_mask = ~np.isnan(dem_z)
@@ -441,7 +440,7 @@ class Ortho:
         for oi in range(0, src_array.shape[0]):
             cv2.remap(
                 src_array[oi, :, :], tile_jgrid, tile_igrid, interp.to_cv(), dst=tile_array[oi, :, :],
-                borderMode=cv2.BORDER_CONSTANT, borderValue=dtype_nodata,
+                borderMode=cv2.BORDER_TRANSPARENT,
             )
             # below is the scipy equivalent to cv2.remap - it is slower but doesn't blur with nodata
             # tile_array[oi, :, :] = map_coordinates(
@@ -455,7 +454,7 @@ class Ortho:
         # remove cv2.remap blurring with nodata at the nodata boundary when necessary
         # @formatter:off
         if (
-            interp != Interp.nearest and not np.isnan(dtype_nodata) and
+            False and interp != Interp.nearest and not np.isnan(dtype_nodata) and
             np.sum(tile_mask) > min(Ortho._default_blocksize[0], Ortho._default_blocksize[1])
         ):  # yapf: disable @formatter:on
             # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
@@ -485,10 +484,10 @@ class Ortho:
             # return cv2.undistort(band_array, self._K, self._dist_param)
             cv2.remap(
                 src_array, *self._camera._undistort_maps, Interp[interp].to_cv(), dst=dst_array,
-                borderMode=cv2.BORDER_CONSTANT, borderValue=nodata
+                borderMode=cv2.BORDER_TRANSPARENT
             )
 
-        out_image = np.full(image.shape, fill_value=nodata, dtype=image.dtype)
+        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
         if image.ndim > 2:
             # undistort by band so that output data stays in the rasterio ordering
             for bi in range(image.shape[0]):

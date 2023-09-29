@@ -71,9 +71,10 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
     undist_ji = camera._K_undistort.dot(camera_xyz)[:2].astype('float32')
 
     # remap the distorted image from the source image
-    dist_image = cv2.remap(
-        image, undist_ji[0].reshape(image.shape), undist_ji[1].reshape(image.shape), interp.to_cv(),
-        borderMode=cv2.BORDER_CONSTANT, borderValue=nodata,
+    dist_image = np.full_like(image, fill_value=nodata)
+    cv2.remap(
+        image, undist_ji[0].reshape(image.shape), undist_ji[1].reshape(image.shape), interp.to_cv(), dst=dist_image,
+        borderMode=cv2.BORDER_TRANSPARENT
     )
     return dist_image
 
