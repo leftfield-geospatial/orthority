@@ -29,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 class Camera:
     _default_alpha: float = 1.
-    # TODO: only pass intrinsic param on __init__, then extrinsic on update or similar (?)
 
     def __init__(
         self, im_size: Union[Tuple[int, int], np.ndarray], focal_len: Union[float, Tuple[float, float], np.ndarray],
@@ -62,7 +61,7 @@ class Camera:
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
             undistorted image that keeps all source pixels.  Not used for the pinhole camera model.
         """
-        self._im_size = im_size
+        self._im_size = tuple([int(dim) for dim in im_size])
         self._K = self._get_intrinsic(im_size, focal_len, sensor_size, cx, cy)
         self._R, self._T = self._get_extrinsic(xyz, opk)
         self._undistort_maps = None
@@ -149,7 +148,6 @@ class Camera:
     def _horizon_fov(self) -> bool:
         """ Return True if this camera's field of view includes, or is above, the horizon; otherwise False. """
         # camera coords for image boundary
-        # TODO: check image world / camera coord bounds are found similarly elsewhere
         w, h = np.array(self._im_size) - 1
         src_ji = np.array([
             [0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]
@@ -208,12 +206,9 @@ class Camera:
         """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
         return None, self._K
 
-    def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
-        """ Transform from 3D world to 2D pixel coordinates. """
-        # transform from world to camera coordinates
-        xyz_ = self._R.T.dot(xyz - self._T)
-        # normalise, and transform to pixel coordinates
-        ji = self._K_undistort.dot(xyz_ / xyz_[2, :])[:2, :]
+    def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
+        """ Transform from homogenous 3D camera to 2D pixel coordinates. """
+        ji = self._K_undistort.dot(xyz_)[:2, :]
         return ji
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
@@ -256,7 +251,13 @@ class Camera:
         """
         self._check_init()
         self._check_world_coordinates(xyz)
-        return self._world_to_pixel(xyz) if distort else Camera._world_to_pixel(self, xyz)
+
+        # transform from world to camera coordinates & scale to origin
+        xyz_ = self._R.T.dot(xyz - self._T)
+        xyz_ = xyz_ / xyz_[2, :]
+        # transform from camera to pixel coordinates, including the distortion model if distort==True
+        ji = self._camera_to_pixel(xyz_) if distort else Camera._camera_to_pixel(self, xyz_)
+        return ji
 
     def pixel_to_world_z(self, ji: np.ndarray, z: Union[float, np.ndarray], distort: bool = True) -> np.ndarray:
         """
@@ -318,7 +319,6 @@ class Camera:
 
         if clip:
             ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
-
         return ji
 
 
@@ -383,13 +383,7 @@ class OpenCVCamera(Camera):
         self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
     def _get_undistort_maps(self, alpha: float) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
-        # yapf:
-        # disable
-        # TODO: expose alpha to the API
-        # TODO: is centerPrincipalPoint=True necessary to avoid nodata ortho borders?
-        # TODO: add tests for alpha (e.g. 1~=full_remap=True, 0<full_remap=True (both valid and entire image areas)
-        # TODO: test --no-full-remap with fisheye
-        im_size = np.array(self._im_size).astype(int)
+        im_size = np.array(self._im_size)
         # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha)  # cv2 equivalent
         K_undistort = self._get_undistort_intrinsic(alpha)
         undistort_maps = cv2.initUndistortRectifyMap(
@@ -398,9 +392,9 @@ class OpenCVCamera(Camera):
         # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
         return undistort_maps, K_undistort
 
-    def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
-        inv_aa = cv2.Rodrigues(self._R.T)[0]  # inverse rotation in angle axis format
-        ji, _ = cv2.projectPoints((xyz - self._T).T, inv_aa, np.zeros(3), self._K, self._dist_param)
+    def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
+        # omit world to camera rotation & translation to transform from camera to pixel coords
+        ji, _ = cv2.projectPoints(xyz_.T, np.zeros(3), np.zeros(3), self._K, self._dist_param)
         return ji[:, 0, :].T
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
@@ -458,11 +452,7 @@ class BrownCamera(OpenCVCamera):
         self._dist_param = np.array([k1, k2, p1, p2, k3])
         self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
-    def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
-        # transform from world to camera coordinates, and normalise
-        xyz_ = self._R.T.dot(xyz - self._T)
-        xyz_ = xyz_ / xyz_[2, :]
-
+    def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
         # Brown model adapted from the OpenSFM implementation:
         # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h
         # #LL299C25-L299C25.
@@ -482,12 +472,6 @@ class BrownCamera(OpenCVCamera):
         # transform from distorted camera to pixel coordinates
         ji = self._K.dot(xyz_)[:2, :]
         return ji
-
-    def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        ji_cv = ji.T.astype('float64', copy=False)
-        xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_param)
-        xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
-        return xyz_
 
 
 class FisheyeCamera(Camera):
@@ -539,7 +523,7 @@ class FisheyeCamera(Camera):
         self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
     def _get_undistort_maps(self, alpha: float) -> Tuple[Tuple[np.ndarray, np.ndarray], np.ndarray]:
-        im_size = np.array(self._im_size).astype(int)
+        im_size = np.array(self._im_size)
 
         # use internal method to get K_undistort as cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() does not
         # include all source pixels for balance=1.
@@ -553,10 +537,7 @@ class FisheyeCamera(Camera):
         # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
         return undistort_maps, K_undistort
 
-    def _world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
-        # transform from world to camera coordinates, and normalise
-        xyz_ = self._R.T.dot(xyz - self._T)
-        xyz_ = xyz_ / xyz_[2, :]
+    def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
         # Fisheye distortion adapted from the OpenSFM implementation:
         # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h
         # #L365.
@@ -577,6 +558,7 @@ class FisheyeCamera(Camera):
             # opencv 4 parameter version
             theta_d = theta * (1.0 + theta2 * (k1 + theta2 * (k2 + theta2 * (k3 + theta2 * k4))))
         xyz_[:2, :] *= theta_d / r
+
         # transform from distorted camera to pixel coordinates
         ji = self._K.dot(xyz_)[:2, :]
         return ji
@@ -618,13 +600,4 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
 
     return cam_class(*args, **kwargs)
 
-# TODO: rotation should be specified in a more general way e.g. angle axis in the ODM co-ordinate
-#  convention.  OPK etc conversions can be done externally.
-# TODO: Allow the intrinsic principal point to be specified in a way that doesn't conflict with the ODM brown model
-#  principal point (e.g. all cameras take cx, cy offset from center in pixels, and ODM cx, cy are converted to pixels
-#  before passing to *Camera, or all cameras take normalised cx, cy offsets?)
-# TODO: call ortho coordinates everywhere world coordinates
-# TODO: rename distort and or full_remap to something consistent and meaningful to user
-# TODO: user super rather than Camera.
-# TODO: normalise by width or by max(width, height)
 ##
