@@ -81,7 +81,6 @@ def create_dem(
     Create a 2 band DEM file that covers the ortho bounds of the given `camera`.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    # TODO: add partial dem fixture
     # wgs84_bounds = transform_bounds(rio.CRS.from_string(ortho_crs_wgs84_vdatum), dem_crs, *bounds)
     # size = 1 + np.ceil((bounds[2:] - bounds[:2]) / (30, 30)).astype('int')
     # transform = from_bounds(*wgs84_bounds, *size)
@@ -534,7 +533,7 @@ def ngi_crs(ngi_image_file) -> str:
         crs = im.crs
     return crs.to_proj4()
 
-# TODO: move fixtures used by a single module to that module
+
 @pytest.fixture(scope='session')
 def ngi_legacy_config_file() -> Path:
     """ Legacy format configuration file for NGI test data. """
@@ -582,3 +581,5 @@ def odm_lla_rpy_csv_file() -> Path:
     """
     return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
 
+
+# TODO: move fixtures used by a single module to that module

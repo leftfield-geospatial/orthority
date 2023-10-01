@@ -279,7 +279,6 @@ def test_mask_dem(
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.  While the DEM mask excludes
     #  (boundary) occluded pixels, the ortho image mask does not i.e. to compare these masks, there should be no
     #  DEM - ortho occlusion.
-    # TODO: add test with dem that includes occlusion
     _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
     _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
     camera: Camera = PinholeCamera(
@@ -866,6 +865,6 @@ def test_process_camera(
         assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=15)
 
 
-# TODO: dem reproject changes bounds with different v datum
+# TODO: add test with dem that includes occlusion
 # TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in different CRSs
 ##

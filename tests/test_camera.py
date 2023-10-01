@@ -209,9 +209,9 @@ def test_project_im_size(
     test_camera_args['im_size'] = tuple(np.array(test_camera_args['im_size']) * scale)
     test_camera = create_camera(cam_type, **test_camera_args, **dist_param)
 
-    # find reference and test camera coords for world pts corresponding to reference image corners
-    ref_br = np.array(ref_camera._im_size) - 1
-    ref_ji = np.array([[0, 0], [ref_br[0], 0], ref_br, [0, ref_br[1]]]).T
+    # find reference and test camera coords for world pts corresponding to reference image boundary pts
+    w, h = np.array(ref_camera._im_size) - 1
+    ref_ji = np.array([[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]).T
     xyz = ref_camera.pixel_to_world_z(ref_ji, 0)
     test_ji = test_camera.world_to_pixel(xyz)
     ref_xy = ref_camera._pixel_to_camera(ref_ji)[:2]
