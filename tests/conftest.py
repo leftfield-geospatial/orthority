@@ -81,10 +81,6 @@ def create_dem(
     Create a 2 band DEM file that covers the ortho bounds of the given `camera`.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    # wgs84_bounds = transform_bounds(rio.CRS.from_string(ortho_crs_wgs84_vdatum), dem_crs, *bounds)
-    # size = 1 + np.ceil((bounds[2:] - bounds[:2]) / (30, 30)).astype('int')
-    # transform = from_bounds(*wgs84_bounds, *size)
-
     bounds = np.array(ortho_bounds(camera, include_camera=include_camera))
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / resolution).astype('int')
     array = np.stack(
@@ -293,6 +289,30 @@ def webmerc_egm96_crs() -> str:
 def webmerc_egm2008_crs() -> str:
     """ CRS string for web mercator with EGM2008 geoid vertical datum. """
     return '+proj=webmerc +datum=WGS84 +geoidgrids=egm08_25.gtx +vunits=m'
+
+
+@pytest.fixture(scope='session')
+def wgs84_crs() -> str:
+    """ CRS string for WGS84 with no vertical datum. """
+    return 'EPSG:4326'
+
+
+@pytest.fixture(scope='session')
+def wgs84_wgs84_crs() -> str:
+    """ CRS string for WGS84 with WGS84 ellipsoid vertical datum. """
+    return 'EPSG:4326+4326'
+
+
+@pytest.fixture(scope='session')
+def wgs84_egm96_crs() -> str:
+    """ CRS string for WGS84 with EGM96 geoid vertical datum. """
+    return 'EPSG:4326+5773'
+
+
+@pytest.fixture(scope='session')
+def wgs84_egm2008_crs() -> str:
+    """ CRS string for WGS84 with EGM2008 geoid vertical datum. """
+    return 'EPSG:4326+3855'
 
 
 @pytest.fixture(scope='session')
