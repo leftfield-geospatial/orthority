@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 import pytest
 import rasterio as rio
-import rasterio.warp
+from rasterio.warp import transform
 
 from simple_ortho import io
 from simple_ortho.camera import Camera
@@ -177,6 +177,56 @@ def test_aa_to_opk(xyz: Tuple, opk: Tuple):
     assert test_opk == pytest.approx(opk, 1e-6)
 
 
+@pytest.mark.parametrize('src_crs, dst_crs', [
+    ('wgs84_wgs84_crs', 'utm34n_egm96_crs'),
+    ('wgs84_wgs84_crs', 'utm34n_egm2008_crs'),
+    ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
+    ('utm34n_egm96_crs', 'wgs84_wgs84_crs'),
+    ('utm34n_egm2008_crs', 'wgs84_wgs84_crs'),
+    ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
+    ('wgs84_wgs84_crs', 'webmerc_egm96_crs'),
+    ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
+    ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
+])  # yapf: disable
+def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
+    """
+    Test rasterio.warp.transform adjusts the z coordinate with source and destination CRS vertical datums specified.
+    """
+    src_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(src_crs))
+    dst_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(dst_crs))
+    src_xyz = [[10.], [10.], [100.]]
+
+    dst_xyz = transform(src_crs, src_crs, *src_xyz)
+    assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
+
+    dst_xyz = transform(src_crs, dst_crs, *src_xyz)
+    assert dst_xyz[2][0] != pytest.approx(src_xyz[2][0], abs=1.)
+
+
+@pytest.mark.parametrize('src_crs, dst_crs', [
+    ('wgs84_crs', 'utm34n_wgs84_crs'),
+    ('wgs84_crs', 'utm34n_egm96_crs'),
+    ('wgs84_crs', 'utm34n_egm2008_crs'),
+    ('wgs84_crs', 'webmerc_wgs84_crs'),
+    ('wgs84_crs', 'webmerc_egm96_crs'),
+    ('wgs84_crs', 'webmerc_egm2008_crs'),
+    ('utm34n_crs', 'wgs84_wgs84_crs'),
+    ('utm34n_crs', 'wgs84_egm96_crs'),
+    ('utm34n_crs', 'wgs84_egm2008_crs'),
+])  # yapf: disable
+def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
+    """
+    Test rasterio.warp.transform does not adjust the z coordinate with one of the source and destination CRS vertical
+    datums specified.
+    """
+    src_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(src_crs))
+    dst_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(dst_crs))
+    src_xyz = [[10.], [10.], [100.]]
+
+    dst_xyz = transform(src_crs, dst_crs, *src_xyz)
+    assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
+
+
 @pytest.mark.parametrize('C_bB', [
     np.array([[0., 1., 0.], [1., 0, 0], [0, 0, -1]]), np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]),
 ])
@@ -184,7 +234,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
     """ Test _rpy_to_opk() validity for aligned world and navigation systems. """
     # From https://s3.amazonaws.com/mics.pix4d.com/KB/documents
     # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf:
-    # RPY rotates from body to navigation, and OPK from camera to world. If world is a topcentric system, centered on
+    # RPY rotates from body to navigation, and OPK from camera to world. If world is a topocentric system, centered on
     # the camera, then world (E) & navigation (n) are aligned with same origin, and C_En = np.array([[ 0, 1, 0], [1, 0,
     # 0], [0, 0, -1]]) (== C_En.T) rotates between them. If body (b) and camera (B) describe a typical drone geometry,
     # then C_bB = C_En (== C_En.T) rotates between them.
