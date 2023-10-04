@@ -201,8 +201,6 @@ class Camera:
         return K_undistort
 
     def _get_undistort_maps(self, alpha: float) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
-        # TODO: make a design decision if internal methods can have keyword args for __init__ args with default values
-        #  or should be forced to positional args
         """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
         return None, self._K
 

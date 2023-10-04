@@ -236,10 +236,10 @@ class Ortho:
         )
         return dem_array.squeeze(), dem_transform
 
-    def _get_src_boundary(self, full_remap: bool = True, num_pts: int = 400) -> np.ndarray:
+    def _get_src_boundary(self, full_remap: bool, num_pts: int) -> np.ndarray:
         """ Return a pixel coordinate boundary of the source image with ``num_pts`` points. """
 
-        def im_boundary(im_size: np.array, num_pts: int = 400):
+        def im_boundary(im_size: np.array, num_pts: int):
             """
             Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points for the given image
             size ``im_size``.
@@ -260,7 +260,7 @@ class Ortho:
         return ji
 
     def _mask_dem(
-        self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool = True,
+        self, dem_array: np.ndarray, dem_transform: rio.Affine, dem_interp: Interp, full_remap: bool,
         crop: bool = True, mask: bool = True, num_pts: int = 400
     ) -> Tuple[np.ndarray, rio.Affine]:
         """
@@ -352,9 +352,8 @@ class Ortho:
         return dem_array, dem_transform
 
     def _create_ortho_profile(
-        self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine,
-        dtype: Optional[str] = _default_config['dtype'], compress: Compress = _default_config['compress'],
-        write_mask: bool = _default_config['write_mask']
+        self, src_im: rio.DatasetReader, shape: Tuple[int, int], transform: rio.Affine, dtype: str, compress: Compress,
+        write_mask: bool
     ) -> Tuple[Dict, bool]:
         """ Return a rasterio profile for the ortho image. """
         # Determine dtype, check dtype support
@@ -472,9 +471,7 @@ class Ortho:
             if write_mask and (indexes == [1] or len(indexes) == ortho_im.count):
                 ortho_im.write_mask(~tile_mask, window=tile_win)
 
-    def _undistort(
-        self, image: np.ndarray, nodata: Union[float, int] = 0, interp: Union[str, Interp] = Interp.bilinear
-    ) -> np.ndarray:
+    def _undistort(self, image: np.ndarray, nodata: Union[float, int], interp: Union[str, Interp]) -> np.ndarray:
         """ Undistort an image using ``interp`` interpolation and setting invalid pixels to ``nodata``. """
         if self._camera._undistort_maps is None:
             return image
@@ -500,8 +497,7 @@ class Ortho:
 
     def _remap(
         self, src_im: rio.DatasetReader, ortho_im: rio.io.DatasetWriter, dem_array: np.ndarray,
-        interp: Interp = _default_config['interp'], per_band: bool = _default_config['per_band'],
-        full_remap: bool = _default_config['full_remap'], write_mask: bool = _default_config['write_mask'],
+        interp: Interp, per_band: bool, full_remap: bool, write_mask: bool
     ):
         """
         Map the source to ortho image by interpolation, given open source and ortho datasets, DEM array in the ortho

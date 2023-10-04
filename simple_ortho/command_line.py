@@ -143,7 +143,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
 
         # prepare ortho config
         ortho_config = config.get('ortho', {})
-        ortho_crs = ortho_config.pop('crs', None)
+        crs = ortho_config.pop('crs', None)
         dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
         for key in ['driver', 'tile_size', 'nodata', 'interleave', 'photometric']:
             if key in ortho_config:
@@ -205,7 +205,7 @@ def main(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, wr
                 # create Ortho  and orthorectify
                 logger.info(f'Orthorectifying {src_filename.name}:')
                 start_ttl = datetime.datetime.now()
-                ortho_im = Ortho(src_filename, dem_file, camera, crs=ortho_crs, dem_band=dem_band)
+                ortho_im = Ortho(src_filename, dem_file, camera, crs=crs, dem_band=dem_band)
                 ortho_im.process(ortho_filename, **ortho_config)
                 ttl_time = (datetime.datetime.now() - start_ttl)
                 logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')

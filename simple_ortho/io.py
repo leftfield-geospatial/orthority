@@ -44,6 +44,8 @@ _optional_schema = {
 }  # yapf: disable
 """ Schema of valid optional parameters for each camera type. """
 
+_default_lla_crs = CRS.from_epsg(4979)
+""" Default CRS for geographic camera coordinates. """
 
 def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     """ Read camera internal parameters from an ODM / OpenSfM json dictionary. """
@@ -154,9 +156,7 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
     return {_create_exif_cam_id(exif): cam_dict}
 
 
-def _read_exif_ext_param(
-    exif: Exif, crs: Union[str, rio.CRS], lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
-) -> Dict:
+def _read_exif_ext_param(exif: Exif, crs: Union[str, rio.CRS], lla_crs: Union[str, rio.CRS]) -> Dict:
     """ Read camera external parameters from an Exif object. """
     if not exif.lla:
         raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif.filename.name}'.")
@@ -326,7 +326,7 @@ def _aa_to_opk(aa: Tuple[float, float, float]) -> Tuple[float, float, float]:
 
 
 def _rpy_to_opk(
-    rpy: Tuple[float, float, float], lla: Tuple[float, float, float], crs: CRS, lla_crs: CRS = CRS.from_epsg(4979),
+    rpy: Tuple[float, float, float], lla: Tuple[float, float, float], crs: CRS, lla_crs: CRS,
     C_bB: Union[Optional[List[List]], np.ndarray] = None
 ) -> Tuple[float, float, float]:
     """
@@ -406,7 +406,7 @@ def _rpy_to_opk(
 
 class Reader:
     def __init__(
-        self, crs: Union[str, rio.CRS] = None, lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+        self, crs: Union[str, rio.CRS] = None, lla_crs: Union[str, rio.CRS] = _default_lla_crs
     ):
         """
         Abstract class for reading interior and exterior camera parameters.
@@ -477,7 +477,7 @@ class CsvReader(Reader):
 
     def __init__(
         self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
-        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979), fieldnames: List[str] = None,
+        lla_crs: Union[str, rio.CRS] = _default_lla_crs, fieldnames: List[str] = None,
         dialect: Dialect = None, radians: bool = False,
     ):
         """
@@ -561,7 +561,6 @@ class CsvReader(Reader):
             Orientation angles are in radians (True), or degrees (False).
         """
         # TODO: allow other coordinate conventions for opk / rpy (bluh, odm, patb)
-        # TODO: use super() and implement a best practice abstract class pattern (?)
         Reader.__init__(self, crs, lla_crs=lla_crs)
         self._filename = Path(filename)
         if not self._filename.exists():
@@ -651,7 +650,6 @@ class CsvReader(Reader):
 
     def _get_crs(self) -> rio.CRS:
         """ Read / auto-determine and validate a CRS when no user CRS was supplied. """
-        # TODO: check exception messages make sense if used from CLI without --crs
         crs = None
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
             # read CRS of xyz positions / opk orientations from .prj file, if it exists
@@ -661,6 +659,8 @@ class CsvReader(Reader):
                     crs = rio.CRS.from_string(prj_filename.read_text())
                 except RioCrsError as ex:
                     raise CrsError(f"Could not interpret CRS in '{prj_filename.name}': '{str(ex)}'")
+                if crs.is_geographic:
+                    raise CrsError(f"CRS in '{prj_filename.name}' should be a projected, not geographic system")
                 logger.debug(f"Using '{prj_filename.name}' CRS: '{crs.to_proj4()}'")
             elif self._format is CsvFormat.xyz_rpy:
                 raise CrsMissingError(f"'crs' should be specified for positions in '{self._filename.name}'.")
@@ -718,13 +718,13 @@ class CsvReader(Reader):
 
 
 class OsfmReader(Reader):
-    # TODO: OSFM reconstruction is in a topocentric system AFAICT, so the direct transfer of 3D cartesian positions &
-    #  rotations into a 2D+1D UTM CRS is an approximation, with similar issues to the RPY->OPK conversion.  Ideally the
+    # TODO: OSFM reconstruction is in a topocentric system, so the transfer of 3D cartesian positions & rotations into a
+    #  2D+1D UTM CRS is an approximation, with similar issues to the Pix4D RPY->OPK conversion.  Ideally the
     #  orthorectification should also happen in this topocentric system, with the DEM being transformed into it. Then
     #  the orthorectified image can be reprojected to UTM.
     def __init__(
         self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
-        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+        lla_crs: Union[str, rio.CRS] = _default_lla_crs
     ):
         """
         Class for reading camera interior and exterior parameters from an OpenSfM 'reconstruction.json' file.
@@ -797,11 +797,9 @@ class OsfmReader(Reader):
 
 
 class ExifReader(Reader):
-    # TODO: test with empty filenames list
-    # TODO: read crs from image file
     def __init__(
         self, filenames: Tuple[Union[str, Path], ...], crs: Union[str, rio.CRS] = None,
-        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+        lla_crs: Union[str, rio.CRS] = _default_lla_crs
     ):
         """
         Class for reading interior and exterior camera parameters from image files with EXIF / XMP tags.
@@ -862,7 +860,7 @@ class ExifReader(Reader):
 class OtyReader(Reader):
     def __init__(
         self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
-        lla_crs: Union[str, rio.CRS] = rio.CRS.from_epsg(4979)
+        lla_crs: Union[str, rio.CRS] = _default_lla_crs
     ):
         """
         Class for reading exterior camera parameters from an orthority format geojson file.
@@ -976,7 +974,7 @@ def write_ext_param(
         filename.unlink()
 
     feat_list = []
-    lla_crs = rio.CRS.from_epsg(4979)
+    lla_crs = _default_lla_crs
     for src_file, ext_param in ext_param_dict.items():
         xyz = ext_param['xyz']
         lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])

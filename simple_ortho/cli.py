@@ -408,10 +408,8 @@ def ortho(
             raise click.BadParameter(
                 f"'{ext_param_file.suffix}' file type not supported.", param_hint="'-ep' / '--ext-param'"
             )
-
     except ParamFileError as ex:
         raise click.BadParameter(str(ex), param_hint="'-ep' / '--ext-param'")
-
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 

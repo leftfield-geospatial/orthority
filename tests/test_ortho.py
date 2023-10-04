@@ -248,7 +248,7 @@ def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
     ref_ji = {(0., 0.), (w, 0.), (w, h), (0., h)}
 
     # get the boundary and simplify
-    ji = rgb_pinhole_utm34n_ortho._get_src_boundary(num_pts=num_pts).astype('float32')
+    ji = rgb_pinhole_utm34n_ortho._get_src_boundary(full_remap=True, num_pts=num_pts).astype('float32')
     test_ji = cv2.approxPolyDP(ji.T, epsilon=1e-6, closed=True)
     test_ji = set([tuple(*pt) for pt in test_ji])
 
@@ -292,12 +292,14 @@ def test_mask_dem(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=1)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    with rio.open(rgb_byte_src_file, 'r') as src_im:
+    with (rio.open(rgb_byte_src_file, 'r') as src_im):
         ortho_profile, _ = ortho._create_ortho_profile(
-            src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate
+            src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate, write_mask=False
         )
         with rio.open(ortho_file, 'w', **ortho_profile) as ortho_im:
-            ortho._remap(src_im, ortho_im, dem_array, full_remap=True, write_mask=False)
+            ortho._remap(
+                src_im, ortho_im, dem_array, interp=Interp.cubic, per_band=False, full_remap=True, write_mask=False,
+            )
 
     # create the dem mask
     dem_array_mask, dem_transform_mask = ortho._mask_dem(

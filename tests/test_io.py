@@ -249,7 +249,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
     for lla, rpy in zip(llas, rpys):
         # create orthographic (2D topopcentric) CRS centered on lla
         crs = rio.CRS.from_string(f'+proj=ortho +lat_0={lla[0]:.4f} +lon_0={lla[1]:.4f} +ellps=WGS84')
-        opk = io._rpy_to_opk(rpy, lla, crs, C_bB=C_bB)
+        opk = io._rpy_to_opk(rpy, lla, crs, C_bB=C_bB, lla_crs=io._default_lla_crs)
 
         C_nb = io._rpy_to_rotation(rpy)
         R_opk = io._opk_to_rotation(opk)
@@ -467,10 +467,18 @@ def test_exif_reader(odm_image_files: Tuple[Path, ...], odm_crs: str):
     assert ext_cam_ids.issubset(int_cam_ids)
 
 
-def test_exif_reader_mult_cameras(odm_image_files: Tuple[Path, ...], odm_crs: str):
+def test_exif_reader_auto_crs(odm_image_files: Tuple[Path, ...], odm_crs: str):
     """ Test ExifReader auto determines a UTM CRS correctly. """
     reader = io.ExifReader(odm_image_files, crs=None)
     assert reader.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_exif_reader_empty():
+    """ Test ExifReader with empty list of of files. """
+    reader = io.ExifReader([], crs=None)
+    assert reader.crs is None
+    assert reader.read_int_param() == {}
+    assert reader.read_ext_param() == {}
 
 
 def test_oty_reader(ngi_oty_ext_param_file: Path, ngi_crs: str):
