@@ -28,7 +28,8 @@ jobs:
         channels: conda-forge
         channel-priority: true
         activate-environment: test
-        mamba-version: "*"
+        miniforge-variant: Mambaforge
+#        mamba-version: "*"
     - name: Install dependencies
       run: |
         mamba info
