@@ -40,7 +40,6 @@ logger = logging.getLogger(__name__)
 
 class PlainInfoFormatter(logging.Formatter):
     """ logging formatter to format INFO logs without the module name etc. prefix. """
-    # TODO: do we need this ?
     def format(self, record: logging.LogRecord):
         if record.levelno == logging.INFO:
             self._style._fmt = '%(message)s'
@@ -108,27 +107,44 @@ def _read_src_crs(filename: Path) -> Optional[rio.CRS]:
         return im.crs
 
 
+def _read_crs(crs: str):
+    """ Read a CRS from a string, text file, or image file. """
+    crs_file = Path(crs)
+    if crs_file.is_file():
+        # read CRS from geotiff / txt file
+        if crs_file.suffix.lower() in ['.tif', '.tiff']:
+            with suppress_no_georef(), rio.open(crs_file, 'r') as im:
+                crs = im.crs
+        else:
+            crs_str = crs_file.read_text()
+            crs = rio.CRS.from_string(crs_str)
+    else:
+        # read CRS from string
+        crs = rio.CRS.from_string(crs)
+    return crs
+
 def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
     """ click callback to validate and parse the CRS. """
     if crs is not None:
         try:
-            crs_file = Path(crs)
-            if crs_file.is_file():
-                # read CRS from geotiff / txt file
-                if crs_file.suffix.lower() in ['.tif', '.tiff']:
-                    with suppress_no_georef(), rio.open(crs_file, 'r') as im:
-                        crs = im.crs
-                else:
-                    crs_str = crs_file.read_text()
-                    crs = rio.CRS.from_string(crs_str)
-            else:
-                # read CRS from string
-                crs = rio.CRS.from_string(crs)
+            crs = _read_crs(crs)
         except Exception as ex:
             raise click.BadParameter(f'{str(ex)}', param=param)
         if crs.is_geographic:
             raise click.BadParameter(f"CRS should be a projected, not geographic system.", param=param)
     return crs
+
+
+def _lla_crs_cb(ctx: click.Context, param: click.Parameter, lla_crs: str):
+    """ click callback to validate and parse the LLA CRS. """
+    if lla_crs is not None:
+        try:
+            lla_crs = _read_crs(lla_crs)
+        except Exception as ex:
+            raise click.BadParameter(f'{str(ex)}', param=param)
+        if not lla_crs.is_geographic:
+            raise click.BadParameter(f"CRS should be a geographic, not projected system.", param=param)
+    return lla_crs
 
 
 def _resolution_cb(ctx: click.Context, param: click.Parameter, resolution: Tuple):
@@ -231,8 +247,13 @@ ext_param_file_option = click.option(
 )
 crs_option = click.option(
     '-c', '--crs', type=click.STRING, default=None, show_default='auto', callback=_crs_cb,
-    help='CRS of the exterior parameters and ortho image as an EPSG, proj4, or WKT string; or path of a text file '
-         'containing string.'
+    help='CRS of the ortho image and any projected coordinate exterior parameters as an EPSG, proj4, or WKT string; or '
+         'path of a text file containing string.'
+)
+lla_crs_option = click.option(
+    '-lc', '--lla-crs', type=click.STRING, default='EPSG:4979', show_default=True, callback=_lla_crs_cb,
+    help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; or path of a text '
+         'file containing string'
 )
 resolution_option = click.option(
     '-r', '--res', 'resolution', type=click.FLOAT, default=None, show_default='auto', multiple=True,
@@ -321,6 +342,7 @@ def cli(verbose, quiet):
 @int_param_file_option
 @ext_param_file_option
 @crs_option
+@lla_crs_option
 @resolution_option
 @dem_band_option
 @interp_option
@@ -336,7 +358,7 @@ def cli(verbose, quiet):
 @out_dir_option
 @overwrite_option
 def ortho(
-    src_files: Tuple[Path, ...], int_param_file: Path, ext_param_file: Path, crs: rio.CRS, **kwargs
+    src_files: Tuple[Path, ...], int_param_file: Path, ext_param_file: Path, crs: rio.CRS, lla_crs: rio.CRS, **kwargs
 ):
     # yapf:disable  @formatter:off
     """
@@ -399,11 +421,11 @@ def ortho(
     # read exterior params
     try:
         if ext_param_file.suffix.lower() in ['.csv', '.txt']:
-            reader = io.CsvReader(ext_param_file, crs=crs)
+            reader = io.CsvReader(ext_param_file, crs=crs, lla_crs=lla_crs)
         elif ext_param_file.suffix.lower() == '.json':
-            reader = io.OsfmReader(ext_param_file, crs=crs)
+            reader = io.OsfmReader(ext_param_file, crs=crs, lla_crs=lla_crs)
         elif ext_param_file.suffix.lower() == '.geojson':
-            reader = io.OtyReader(ext_param_file, crs=crs)
+            reader = io.OtyReader(ext_param_file, crs=crs, lla_crs=lla_crs)
         else:
             raise click.BadParameter(
                 f"'{ext_param_file.suffix}' file type not supported.", param_hint="'-ep' / '--ext-param'"
@@ -428,6 +450,7 @@ def ortho(
 @src_files_arg
 @dem_file_option
 @crs_option
+@lla_crs_option
 @resolution_option
 @dem_band_option
 @interp_option
@@ -442,7 +465,7 @@ def ortho(
 @export_params_option
 @out_dir_option
 @overwrite_option
-def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
+def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     """
     Orthorectify images with EXIF / XMP tags.
 
@@ -474,7 +497,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     # read interior & exterior params
     try:
         logger.info('Reading camera parameters:')
-        reader = io.ExifReader(src_files, crs=crs)
+        reader = io.ExifReader(src_files, crs=crs, lla_crs=lla_crs)
         int_param_dict = reader.read_int_param()
         ext_param_dict = reader.read_ext_param()
     except ParamFileError as ex:
@@ -504,8 +527,12 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
 @build_ovw_option
 @alpha_option
 @export_params_option
+@click.option(
+    '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path),
+    default=None, show_default='<proj-dir>/orthority', help='Directory in which to place output file(s).'
+)
 @overwrite_option
-def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
+def odm(proj_dir: Path, resolution: Tuple[float, float], out_dir: Path, **kwargs):
     # yapf:disable @formatter:off
     """
     Orthorectify existing OpenDroneMap outputs.
@@ -544,20 +571,15 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
             f"No images found in '{proj_dir.joinpath('images')}'.", param_hint="'-pd' / '--proj-dir'"
         )
 
-    # set crs and resolution from ODM orthophoto or DSM
+    # set crs from ODM orthophoto or DSM
     orthophoto_file = proj_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
     dem_file = proj_dir.joinpath('odm_dem', 'dsm.tif')
-    if orthophoto_file.exists():
-        with rio.open(orthophoto_file, 'r') as ortho_im:
-            crs = ortho_im.crs
-            resolution = resolution or ortho_im.res
-    else:
-        with rio.open(dem_file, 'r') as dem_im:
-            crs = dem_im.crs
-            resolution = resolution or dem_im.res
+    crs_file = orthophoto_file if orthophoto_file.exists() else dem_file
+    with rio.open(crs_file, 'r') as ortho_im:
+        crs = ortho_im.crs
 
-    # create and set output dir
-    out_dir = proj_dir.joinpath('orthority')
+    # set and create output dir
+    out_dir = out_dir or proj_dir.joinpath('orthority')
     out_dir.mkdir(exist_ok=True)
 
     # read internal and external params from OpenSfM reconstruction file
