@@ -23,7 +23,8 @@ def test_odm_image(odm_image_file: Path):
     exif = Exif(odm_image_file)
     assert exif.filename == odm_image_file
     for attr in [
-        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'im_size', 'tag_im_size', 'lla', 'rpy', 'dewarp'
+        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'im_size', 'tag_im_size', 'lla', 'rpy', 'dewarp',
+        'orientation'
     ]:
         assert getattr(exif, attr) is not None
 
@@ -34,6 +35,7 @@ def test_ngi_image(ngi_image_file: Path):
     assert exif.filename == ngi_image_file
     assert exif.im_size is not None
     for attr in [
-        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'tag_im_size', 'lla', 'rpy', 'sensor_size', 'dewarp'
+        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'tag_im_size', 'lla', 'rpy', 'sensor_size', 'dewarp',
+        'orientation'
     ]:
         assert getattr(exif, attr) is None

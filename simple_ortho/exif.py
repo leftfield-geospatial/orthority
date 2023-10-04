@@ -127,6 +127,7 @@ class Exif:
         self._tag_im_size = self._get_tag_im_size(exif_dict)
         self._sensor_size = self._get_sensor_size(exif_dict, self._im_size)
         self._focal_len, self._focal_len_35 = self._get_focal_len(exif_dict)
+        self._orientation = self._get_orientation(exif_dict)
         self._lla = self._get_xmp_lla(xmp_dict) or self._get_lla(exif_dict)
         self._rpy = self._get_xmp_rpy(xmp_dict)
         self._dewarp = self._get_xmp_dewarp(xmp_dict)
@@ -142,13 +143,12 @@ class Exif:
             f'\nFocal length: {self._focal_len}'
             f'\nFocal length (35mm): {self._focal_len_35}'
             f'\nSensor size: {self._sensor_size}'
+            f'\nOrientation: {self._orientation}'
             f'\nLatitude, longitude, altitude: {lla_str}'
             f'\nRoll, pitch, yaw: {rpy_str}'
             f'\nDewarp: {dewarp_str}'
         )  # yapf: disable  # @formatter:on
 
-    # TODO: standardise naming of properties with camera etc parameters (focal / focal_len, im_size / im_size,
-    #  cam_name / camera_name etc)
     # TODO: expose orientation property
     @property
     def filename(self) -> Path:
@@ -194,6 +194,11 @@ class Exif:
     def focal_len_35(self) -> Optional[float]:
         """ 35mm equivalent focal length in mm. """
         return self._focal_len_35
+
+    @property
+    def orientation(self) -> Optional[int]:
+        """ Image orientation code (see https://exiftool.org/TagNames/EXIF.html). """
+        return self._orientation
 
     @property
     def lla(self) -> Optional[Tuple[float, float, float]]:
@@ -281,6 +286,12 @@ class Exif:
         focal_35 = Exif._get_exif_float(exif_dict, 'EXIF_FocalLengthIn35mmFilm')
         focal = Exif._get_exif_float(exif_dict, 'EXIF_FocalLength')
         return focal, focal_35
+
+    @staticmethod
+    def _get_orientation(exif_dict: Dict[str, str]) -> Optional[int]:
+        ori_key = 'EXIF_Orientation'
+        orientation = int(exif_dict[ori_key]) if ori_key in exif_dict else None
+        return orientation
 
     @staticmethod
     def _get_lla(exif_dict: Dict[str, str]) -> Optional[Tuple]:
