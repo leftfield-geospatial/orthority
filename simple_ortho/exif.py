@@ -107,7 +107,7 @@ class Exif:
         """
         filename = Path(filename)
         if not filename.exists():
-            raise FileNotFoundError(f'File not found: {filename}')
+            raise FileNotFoundError(f"File not found: '{filename}'")
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
             namespaces = ds.tag_namespaces()
@@ -119,7 +119,7 @@ class Exif:
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP'].strip('xml:XMP=')
                 xmp_dict = xml_to_flat_dict(xmp_str)
             else:
-                logger.warning(f'{filename.name} contains no XMP metadata')
+                logger.warning(f"'{filename.name}' contains no XMP metadata")
                 xmp_dict = {}
 
         self._filename = filename

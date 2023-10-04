@@ -227,30 +227,30 @@ def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
 
     with pytest.raises(ValueError) as ex:
         camera.world_to_pixel(np.zeros(2))
-    assert '`xyz`' in str(ex)
+    assert "'xyz'" in str(ex)
 
     with pytest.raises(ValueError) as ex:
         camera.world_to_pixel(np.zeros((2, 1)))
-    assert '`xyz`' in str(ex)
+    assert "'xyz'" in str(ex)
 
 
 def test_pixel_to_world_z_error(pinhole_camera: Camera):
     """ Test pixel_to_world_z raises a ValueError with invalid coordinate shapes. """
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
-    assert '`ji`' in str(ex)
+    assert "'ji'" in str(ex)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
-    assert '`ji`' in str(ex)
+    assert "'ji'" in str(ex)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
-    assert '`z`' in str(ex)
+    assert "'z'" in str(ex)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
-    assert '`z`' in str(ex)
+    assert "'z'" in str(ex)
 
 
 def test_intrinsic_equivalence(
@@ -339,7 +339,7 @@ def test_undistort_alpha(
     undistort_ji = np.round(camera.undistort(ji), 3)
 
     def inside_outside(ji: np.array, undistort_ji: np.array, inside=True):
-        """ Test if `undistort_ji` lies inside (`inside`=True) or outside (`inside`=False) `ji`. """
+        """ Test if ``undistort_ji`` lies inside (``inside=True``) or outside (``inside=False``) ``ji``. """
         # setup indexes to extract bottom i, right j, top i, left j edge values
         edge_idxs = [1, 0, 1, 0]
         edge_slices = [slice(0, 3), slice(2, 5), slice(4, 7), slice(6, 9)]

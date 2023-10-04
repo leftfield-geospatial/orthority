@@ -102,7 +102,9 @@ def _read_src_crs(filename: Path) -> Optional[rio.CRS]:
     """ Read CRS from source image file. """
     with suppress_no_georef(), rio.open(filename, 'r') as im:
         if not im.crs:
-            logger.debug(f'No CRS found for source image: {filename.name}')
+            logger.debug(f"No CRS found for source image: '{filename.name}'")
+        else:
+            logger.debug(f"Found source image '{filename.name}' CRS: '{im.crs.to_proj4()}'")
         return im.crs
 
 
@@ -123,7 +125,7 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
                 # read CRS from string
                 crs = rio.CRS.from_string(crs)
         except Exception as ex:
-            raise click.BadParameter(f'{crs}.  {str(ex)}', param=param)
+            raise click.BadParameter(f'{str(ex)}', param=param)
         if crs.is_geographic:
             raise click.BadParameter(f"CRS should be a projected, not geographic system.", param=param)
     return crs
@@ -144,7 +146,7 @@ def _odm_proj_dir_cb(ctx: click.Context, param: click.Parameter, proj_dir: Path)
     for req_path in req_paths:
         req_path = proj_dir.joinpath(req_path)
         if not req_path.exists():
-            raise click.BadParameter(f'Could not find {req_path}.', param=param)
+            raise click.BadParameter(f"Could not find '{req_path}'.", param=param)
     return proj_dir
 
 
@@ -171,20 +173,24 @@ def _ortho(
         ext_param = ext_param_dict.get(src_file.name, ext_param_dict.get(src_file.stem, None))
         if not ext_param:
             raise click.BadParameter(
-                f"Could not find parameters for '{src_file.name}'.", param_hint='--ext-param'
+                f"Could not find parameters for '{src_file.name}'.", param_hint="'-ep' / '--ext-param'"
             )
 
         # get interior params for ext_param
         if ext_param['camera']:
             cam_id = ext_param['camera']
             if cam_id not in int_param_dict:
-                raise click.BadParameter(f"Could not find parameters for camera '{cam_id}'.", param_hint='--int-param')
+                raise click.BadParameter(
+                    f"Could not find parameters for camera '{cam_id}'.", param_hint="'-ip' / '--int-param'"
+                )
             int_param = int_param_dict[cam_id]
         elif len(int_param_dict) == 1:
             cam_id = None
             int_param = list(int_param_dict.values())[0]
         else:
-            raise click.BadParameter(f"'camera' ID for {src_file.name} should be specified.", param_hint='--ext-param')
+            raise click.BadParameter(
+                f"'camera' ID for '{src_file.name}' should be specified.", param_hint="'-ep' / '--ext-param'"
+            )
 
         # get camera if it exists, otherwise create camera, then update with exterior parameters and store
         camera = cameras[cam_id] if cam_id in cameras else create_camera(**int_param, alpha=alpha)
@@ -192,20 +198,18 @@ def _ortho(
         cameras[cam_id] = camera
 
         # create camera and ortho objects
-        # TODO: generalise exterior params / camera so that the cli can just expand the dict and not need to know
-        #  about the internals
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
-            raise click.BadParameter(str(ex), param_hint='--dem_band')
+            raise click.BadParameter(str(ex), param_hint="'-db' / '--dem_band'")
         ortho_file = out_dir.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
-        logger.info(f'Orthorectifying {src_file.name} ({src_i +1 } of {len(src_files)}):')
+        logger.info(f"Orthorectifying '{src_file.name}' ({src_i +1 } of {len(src_files)}):")
         ortho.process(ortho_file, overwrite=overwrite, **kwargs)
 
 
-# TODO: add mosaic, and write param options
+# TODO: add mosaic and lla-crs options
 # Define click options that are common to more than one command
 src_files_arg = click.argument(
     'src_files', nargs=-1, metavar='SOURCE...', type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -343,7 +347,7 @@ def ortho(
     parameters are supported in orthority (.geojson), custom CSV (.csv), and ODM / OpenSfM reconstruction (.json)
     formats.  Note that parameter file extensions are used to distinguish their format.
 
-    If possible, an ortho CRS will be read from other sources, or auto-determined when :option:`--crs <oty-ortho
+    If possible, a world / ortho CRS will be read from other sources, or auto-determined when :option:`--crs <oty-ortho
     --crs>` is not passed.
 
     See the `online docs <?>`_ for more detail on file formats and CRS.
@@ -362,9 +366,9 @@ def ortho(
 
         oty ortho --int-param reconstruction.json --ext-param reconstruction.json --write-params
 
-    Orthorectify images matching `*rgb.tif` using DEM `dem.tif`, and `int_param.yaml` interior &
-    `ext_param.csv` exterior parameter files.  Specify a 1m ortho resolution and `EPSG:32651` CRS.  Write ortho files to
-    the `data` directory using `deflate` compression and a `uint16` data type::
+    Orthorectify images matching '*rgb.tif' using DEM 'dem.tif', and 'int_param.yaml' interior &
+    'ext_param.csv' exterior parameter files.  Specify a 1m ortho resolution and 'EPSG:32651' CRS.  Write ortho files to
+    the 'data' directory using 'deflate' compression and a 'uint16' data type::
 
         oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --res 1 --crs EPSG:32651 --out-dir data --compress deflate --dtype uint16 *rgb.tif
 
@@ -386,9 +390,11 @@ def ortho(
         elif int_param_file.suffix.lower() == '.json':
             int_param_dict = io.read_osfm_int_param(int_param_file)
         else:
-            raise click.BadParameter(f"'{int_param_file.suffix}' file type not supported.", param_hint='--int-param')
+            raise click.BadParameter(
+                f"'{int_param_file.suffix}' file type not supported.", param_hint="'-ip' / '--int-param'"
+            )
     except ParamFileError as ex:
-        raise click.BadParameter(str(ex), param_hint='--int-param')
+        raise click.BadParameter(str(ex), param_hint="'-ip' / '--int-param'")
 
     # read exterior params
     try:
@@ -399,10 +405,12 @@ def ortho(
         elif ext_param_file.suffix.lower() == '.geojson':
             reader = io.OtyReader(ext_param_file, crs=crs)
         else:
-            raise click.BadParameter(f"'{ext_param_file.suffix}' file type not supported.", param_hint='--ext-param')
+            raise click.BadParameter(
+                f"'{ext_param_file.suffix}' file type not supported.", param_hint="'-ep' / '--ext-param'"
+            )
 
     except ParamFileError as ex:
-        raise click.BadParameter(str(ex), param_hint='--ext-param')
+        raise click.BadParameter(str(ex), param_hint="'-ep' / '--ext-param'")
 
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
@@ -450,11 +458,11 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, **kwargs):
     Examples
     ========
 
-    Orthorectify images matching `*rgb.tif` with DEM `dem.tif`::
+    Orthorectify images matching '*rgb.tif' with DEM 'dem.tif'::
 
         oty exif --dem dem.tif *rgb.tif
 
-    Write internal and external parameters for images matching `*rgb.tif` to orthority format files, and exit::
+    Write internal and external parameters for images matching '*rgb.tif' to orthority format files, and exit::
 
         oty exif --write-params *rgb.tif
 
@@ -508,7 +516,7 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
     and can be generated by running ODM with the `--dsm <https://docs.opendronemap.org/arguments/dsm/#dsm>`_ option.
 
     By default, the ortho resolution is read from the ODM orthophoto.  If that does not exist, it is read from the DSM.
-    Ortho images & parameter files are placed in the `<odm project>/orthority` directory.
+    Ortho images & parameter files are placed in the '<odm project>/orthority' directory.
 
     The ``ortho`` sub-command  can be used for more control over options.
     \b
@@ -516,16 +524,16 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
     Examples
     ========
 
-    Orthorectify images in `<odm project>/images` directory using the `<odm project>` camera models and DSM::
+    Orthorectify images in '<odm project>/images' directory using the '<odm project>' camera models and DSM::
 
         oty odm --proj-dir <odm project>
 
-    Write the `<odm project>` interior and exterior parameters to orthority format files, and exit::
+    Write the '<odm project>' interior and exterior parameters to orthority format files, and exit::
 
         oty odm --proj-dir <odm project> --write-params
 
-    Orthorectify images in `<odm project>/images` directory using the `<odm project>` camera models and DSM.  Use an
-    ortho resolution of 0.1m and `lanczos` interpolation to remap source to ortho.
+    Orthorectify images in '<odm project>/images' directory using the '<odm project>' camera models and DSM.  Use an
+    ortho resolution of 0.1m and 'lanczos' interpolation to remap source to ortho.
 
         oty odm --proj-dir <odm project> --res 0.1 --interp lanczos
     """
@@ -534,7 +542,9 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], **kwargs):
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
     src_files = tuple([p for p in proj_dir.joinpath('images').glob('*.*') if p.suffix.lower() in src_exts])
     if len(src_files) == 0:
-        raise click.BadParameter(f'No images found in {proj_dir.joinpath("images")}.', param_hint='--odm-root')
+        raise click.BadParameter(
+            f"No images found in '{proj_dir.joinpath('images')}'.", param_hint="'-pd' / '--proj-dir'"
+        )
 
     # set crs and resolution from ODM orthophoto or DSM
     orthophoto_file = proj_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')

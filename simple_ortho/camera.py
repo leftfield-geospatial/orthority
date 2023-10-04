@@ -78,18 +78,18 @@ class Camera:
         # TODO: incorporate orientation from exif
 
         if len(im_size) != 2:
-            raise ValueError('`im_size` should contain 2 values: (width, height).')
+            raise ValueError("'im_size' should contain 2 values: (width, height).")
         im_size = np.array(im_size)
         if sensor_size is not None and len(sensor_size) != 2:
-            raise ValueError('`sensor_size` should contain 2 values: (width, height).')
+            raise ValueError("'sensor_size' should contain 2 values: (width, height).")
         focal_len = np.array(focal_len)
         if focal_len.size > 2:
-            raise ValueError('`focal_len` should contain at most 2 values.')
+            raise ValueError("'focal_len' should contain at most 2 values.")
 
         # find the xy focal lengths in pixels
         if sensor_size is None:
             logger.warning(
-                '`sensor_size` not specified, assuming square pixels and `focal_len` normalised by sensor width.'
+                "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by sensor width."
             )
             sigma_xy = (focal_len * im_size[0]) * np.ones(2)
         else:
@@ -114,7 +114,7 @@ class Camera:
         if xyz is None or opk is None:
             return None, None
         elif len(xyz) != 3 or len(opk) != 3:
-            raise ValueError('`xyz` and `opk` should contain 3 values.')
+            raise ValueError("'xyz' and 'opk' should contain 3 values.")
 
         # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters
         # -defined
@@ -130,15 +130,15 @@ class Camera:
     def _check_world_coordinates(xyz: np.ndarray):
         """ Utility function to check world coordinate dimensions. """
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
-            raise ValueError(f'`xyz` should be a 3xN 2D array.')
+            raise ValueError(f"'xyz' should be a 3xN 2D array.")
         if xyz.dtype != np.float64:
-            raise ValueError(f'`xyz` should have float64 data type.')
+            raise ValueError(f"'xyz' should have float64 data type.")
 
     @staticmethod
     def _check_pixel_coordinates(ji: np.ndarray):
         """ Utility function to check pixel coordinate dimensions. """
         if not (ji.ndim == 2 and ji.shape[0] == 2):
-            raise ValueError(f'`ji` should be a 2xN 2D array.')
+            raise ValueError(f"'ji' should be a 2xN 2D array.")
 
     def _check_init(self):
         """ Utility function to check if exterior parameters are initialised. """
@@ -161,10 +161,10 @@ class Camera:
     def _get_undistort_intrinsic(self, alpha: float):
         """
         Return a new camera intrinsic matrix for an undistorted image that is the same size as the source image.
-        `alpha` (0-1) controls the portion of the source included in the distorted image.
-        For `alpha`=1, the undistorted image includes all source pixels and some invalid (nodata) areas. For `alpha`=0,
-        the undistorted image includes the largest portion of the source image that allows all undistorted pixels to be
-        valid.
+        ``alpha`` (0-1) controls the portion of the source included in the distorted image.
+        For ``alpha=1``, the undistorted image includes all source pixels and some invalid (nodata) areas. For
+        ``alpha=0``, the undistorted image includes the largest portion of the source image that allows all undistorted
+        pixels to be valid.
         """
         # Adapted from and equivalent to cv2.getOptimalNewCameraMatrix(newImageSize=self._im_size,
         # centerPrincipalPoint=False).
@@ -201,8 +201,8 @@ class Camera:
         return K_undistort
 
     def _get_undistort_maps(self, alpha: float) -> Tuple[Optional[Tuple[np.ndarray, np.ndarray]], np.ndarray]:
-        # TODO: make a design decision if internal methods can have keyword args with default values or should be
-        #  forced to positional args
+        # TODO: make a design decision if internal methods can have keyword args for __init__ args with default values
+        #  or should be forced to positional args
         """" Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted image. """
         return None, self._K
 
@@ -285,7 +285,7 @@ class Camera:
             isinstance(z, np.ndarray) and
             (z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1]))
         ):  # yapf: disable
-            raise ValueError(f'`z` should be a single value or 1-by-N array where `ji` is 2-by-N or 2-by-1.')
+            raise ValueError(f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1.")
 
         # transform pixel coordinates to camera coordinates
         xyz_ = self._pixel_to_camera(ji) if distort else Camera._pixel_to_camera(self, ji)
@@ -447,10 +447,12 @@ class BrownCamera(OpenCVCamera):
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid pixels.  1 results in an
             undistorted image that keeps all source pixels.
         """
-        Camera.__init__(self, im_size, focal_len, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk)
-
+        OpenCVCamera.__init__(
+            self, im_size, focal_len, sensor_size=sensor_size, k1=k1, k2=k2, p1=p1, p2=p2, k3=k3, cx=cx, cy=cy,
+            xyz=xyz, opk=opk, alpha=alpha
+        )
+        # ensure all coefficients are in _dist_param for _camera_to_pixel
         self._dist_param = np.array([k1, k2, p1, p2, k3])
-        self._undistort_maps, self._K_undistort = self._get_undistort_maps(alpha)
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
         # Brown model adapted from the OpenSFM implementation:

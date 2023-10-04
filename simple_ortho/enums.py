@@ -58,7 +58,7 @@ class CameraType(str, Enum):
         """ Convert from ODM / OpenSFM projection type. """
         cam_type = 'brown' if cam_type == 'perspective' else cam_type
         if cam_type not in cls.__members__:
-            raise ValueError(f'Unsupported ODM / OpenSFM camera type: {cam_type}')
+            raise ValueError(f"Unsupported ODM / OpenSFM camera type: '{cam_type}'")
         return cls(cam_type)
 
 
@@ -87,7 +87,7 @@ class Interp(str, Enum):
 
     @classmethod
     def cv_list(cls) -> List:
-        """ A list of OpenCV compatible `Interp` values. """
+        """ A list of OpenCV compatible :class:`~rasterio.enums.Interp` values. """
         _cv_list = []
         for interp in list(cls):
             try:
@@ -104,7 +104,7 @@ class Interp(str, Enum):
             nearest=cv2.INTER_NEAREST,
         )
         if self._name_ not in name_to_cv:
-            raise ValueError(f'OpenCV does not support `{self._name_}` interpolation.')
+            raise ValueError(f"OpenCV does not support '{self._name_}' interpolation.")
         return name_to_cv[self._name_]
 
     def to_rio(self) -> Resampling:

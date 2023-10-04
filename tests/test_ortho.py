@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.DEBUG)
 
 
 def test_init(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str):
-    """ Test Ortho initialisation with specified ortho CRS. """
+    """ Test Ortho initialisation with specified world CRS. """
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
         dem_crs = dem_im.crs
@@ -69,7 +69,7 @@ def test_init_src_crs(rgb_byte_utm34n_src_file: Path, float_utm34n_dem_file: Pat
 def test_init_dem_band(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, dem_band: int
 ):
-    """ Test Ortho initialisation with `dem_band` reads the correct DEM band. """
+    """ Test Ortho initialisation with ``dem_band`` reads the correct DEM band. """
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=dem_band)
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
         dem_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
@@ -81,7 +81,7 @@ def test_init_dem_band(
 def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
-    """ Test Ortho initialisation with incorrect `dem_band` raises an error. """
+    """ Test Ortho initialisation with incorrect ``dem_band`` raises an error. """
     with pytest.raises(errors.DemBandError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
     assert 'dem_band' in str(ex)
@@ -111,7 +111,7 @@ def test_init_dem_coverage_error(
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'bounds' in str(ex)
+    assert 'boundary' in str(ex)
 
 
 def test_init_horizon_fov_error(
@@ -134,7 +134,7 @@ def test_reproject_dem(
     rgb_byte_src_file: Path, float_wgs84_wgs84_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, interp: Interp,
     resolution: Tuple
 ):
-    """ Test DEM is reprojected when it's CRS / resolution is different to the ortho CRS / resolution. """
+    """ Test DEM is reprojected when it's CRS & resolution is different to the world / ortho CRS & ortho resolution. """
     ortho = Ortho(rgb_byte_src_file, float_wgs84_wgs84_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=2)
 
     # find initial dem bounds
@@ -157,7 +157,7 @@ def test_reproject_dem(
 def test_reproject_dem_crs_equal(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
-    """ Test DEM is not reprojected when it's CRS & resolution are the same as the ortho CRS & resolution. """
+    """ Test DEM is not reprojected when it's CRS & resolution are the same as the world CRS & ortho resolution. """
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
 
     with rio.open(float_utm34n_dem_file, 'r') as dem_im:
@@ -259,7 +259,7 @@ def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
 # @formatter:off
 @pytest.mark.parametrize(
     'xyz_offset, opk_offset', [
-        # varying rotations starting at `rotation` fixture value and keeping FOV below horizon
+        # varying rotations starting at ``rotation`` fixture value and keeping FOV below horizon
         ((0, 0, 0), (0, 0, 0)),
         ((0, 0, 0), (-15, 10, 0)),
         ((0, 0, 0), (-30, 20, 0)),
@@ -544,7 +544,7 @@ def test_process_dtype(
     src_file: str, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, dtype: str, tmp_path: Path,
     request: pytest.FixtureRequest,
 ):
-    """ Test the ortho `dtype` is set correctly. """
+    """ Test the ortho ``dtype`` is set correctly. """
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
@@ -568,7 +568,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
 
 @pytest.mark.parametrize('resolution', [(30., 30.), (60., 60.), (60., 30.)])
 def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, tmp_path: Path):
-    """ Test ortho `resolution` is set correctly. """
+    """ Test ortho ``resolution`` is set correctly. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_file, resolution)
     assert ortho_file.exists()
@@ -578,7 +578,7 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
 
 
 @pytest.mark.parametrize(
-    # varying rotations starting at `rotation` fixture value & keeping full DEM coverage
+    # varying rotations starting at ``rotation`` fixture value & keeping full DEM coverage
     'opk_offset', [(0, 0, 0), (-15, 10, 0)],
 )
 def test_process_auto_resolution(
@@ -618,7 +618,7 @@ def test_process_write_mask_per_band(
     src_file: str, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, write_mask: bool,
     per_band: bool, tmp_path: Path, request: pytest.FixtureRequest,
 ):
-    """ Test ``write_mask=True`` writes an internal ortho mask irrespective of the value of `per_band`. """
+    """ Test ``write_mask=True`` writes an internal ortho mask irrespective of the value of ``per_band``. """
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
@@ -649,7 +649,7 @@ def test_process_write_mask_compress(
     'dtype', ['uint8', 'uint16', 'int16', 'float32', 'float64'],
 )
 def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
-    """ Test the ortho `nodata` is set correctly. """
+    """ Test the ortho ``nodata`` is set correctly. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype, compress=Compress.deflate)
 
@@ -661,7 +661,7 @@ def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: P
 
 @pytest.mark.parametrize('interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos], )
 def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_path: Path):
-    """ Test the process `interp` setting by comparing with an ``interp='nearest'`` reference ortho. """
+    """ Test the process ``interp`` setting by comparing with an ``interp='nearest'`` reference ortho. """
     resolution = (10, 10)
 
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')

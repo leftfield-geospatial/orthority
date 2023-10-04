@@ -37,6 +37,8 @@ from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_eq
 # from scipy.ndimage import map_coordinates
 
 logger = logging.getLogger(__name__)
+# TODO: standardise exception messages to use single quotes around string values and var names, and docstrings to use ``
+#  around code (var/fn etc) names and single quotes around string values
 
 
 class Ortho:
@@ -79,9 +81,9 @@ class Ortho:
             Index of the DEM band to use (1-based).
         """
         if not Path(src_filename).exists():
-            raise FileNotFoundError(f'Source image file {src_filename} does not exist')
+            raise FileNotFoundError(f"Source image file '{src_filename}' does not exist")
         if not Path(dem_filename).exists():
-            raise FileNotFoundError(f'DEM image file {dem_filename} does not exist')
+            raise FileNotFoundError(f"DEM image file '{dem_filename}' does not exist")
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
@@ -89,7 +91,7 @@ class Ortho:
 
         # TODO: refactor so that the camera is guaranteed to be the correct one for src_filename (e.g. the camera has a
         #  src_filename property itself, and src_filename is not passed here?  also the separation of crs from camera
-        #  is not ideal, the camera and ortho crs should also be tied together)
+        #  is not ideal, the camera and world crs should also be tied together)
         # TODO: make Ortho a context manager that opens the src file once?
         self._src_filename = Path(src_filename)
         self._camera = camera
@@ -115,7 +117,7 @@ class Ortho:
             try:
                 crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
             except rio.errors.CRSError as ex:
-                raise CrsError(f"Could not interpret 'crs': {crs}. {str(ex)}")
+                raise CrsError(f"Could not interpret 'crs': '{crs}'. {str(ex)}")
         else:
             with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
                 if src_im.crs:
@@ -132,13 +134,13 @@ class Ortho:
         and flag indicating ortho and DEM CRS equality in return values.
 
         The returned DEM array is read to cover the ortho bounds at the z=min(DEM) plane, accounting for worst case
-        vertical datum offset between the DEM and ortho CRS, and within the limits of the DEM image bounds.
+        vertical datum offset between the DEM and world / ortho CRS, and within the limits of the DEM image bounds.
         """
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(dem_filename, 'r') as dem_im:
             # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
             if dem_band <= 0 or dem_band > dem_im.count:
                 raise DemBandError(
-                    f"'dem_band': {dem_band} is invalid for {dem_filename.name} with {dem_im.count} bands"
+                    f"'dem_band': {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} bands"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use elsewhere
             crs_equal = self._crs == dem_im.crs
@@ -166,7 +168,7 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise ValueError(f'Ortho bounds for {self._src_filename.name} lie outside the DEM.')
+                    raise ValueError(f"Ortho boundary for '{self._src_filename.name}' lies outside the DEM.")
                 return expand_window_to_grid(dem_win)
 
             # get a dem window corresponding to ortho world bounds at min possible altitude, read the window from the
@@ -195,7 +197,7 @@ class Ortho:
     def _get_auto_res(self) -> Tuple[float, float]:
         """ Return an ortho resolution that gives approx. as many valid ortho pixels as valid source pixels. """
         def area_poly(coords: np.array) -> float:
-            """ Area of the polygon defined by (x, y) `coords` with (x, y) along 2nd dimension. """
+            """ Area of the polygon defined by (x, y) ``coords`` with (x, y) along 2nd dimension. """
             # uses "shoelace formula" - https://en.wikipedia.org/wiki/Shoelace_formula
             return 0.5 * np.abs(
                 coords[:, 0].dot(np.roll(coords[:, 1], -1)) - np.roll(coords[:, 0], -1).dot(coords[:, 1])
@@ -216,15 +218,17 @@ class Ortho:
 
     def _reproject_dem(self, dem_interp: Interp, resolution: Tuple[float, float]) -> Tuple[np.ndarray, rio.Affine]:
         """
-        Reproject self._dem_array to the ortho CRS and resolution, given reprojection interpolation and resolution
-        parameters. Returns the reprojected DEM array and corresponding transform.
+        Reproject self._dem_array to the world / ortho CRS and ortho resolution, given reprojection interpolation and
+        resolution parameters. Returns the reprojected DEM array and corresponding transform.
         """
-        # return if dem in ortho crs and resolution
+        # TODO: rethink vertical datum and offset - is it geometrically closer to the cartesian assumption if the
+        #  world CRS has ellipsoidal heights?  Would it help converting camera and DEM to ellipsoidal heights?
+        # return if dem in world / ortho crs and ortho resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if self._crs_equal and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
 
-        # reproject dem_array to ortho crs and resolution
+        # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
             self._dem_array, None, src_crs=self._dem_crs, src_transform=self._dem_transform, src_nodata=float('nan'),
             dst_crs=self._crs, dst_resolution=resolution, resampling=dem_interp.to_rio(), dst_nodata=float('nan'),
@@ -233,12 +237,12 @@ class Ortho:
         return dem_array.squeeze(), dem_transform
 
     def _get_src_boundary(self, full_remap: bool = True, num_pts: int = 400) -> np.ndarray:
-        """ Return a pixel coordinate boundary of the source image with `num_pts` points. """
+        """ Return a pixel coordinate boundary of the source image with ``num_pts`` points. """
 
         def im_boundary(im_size: np.array, num_pts: int = 400):
             """
-            Return a rectangular pixel coordinate boundary of `num_pts` ~evenly spaced points for the given image
-            size `im_size`.
+            Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points for the given image
+            size ``im_size``.
             """
             br = im_size - 1
             perim = 2 * br.sum()
@@ -272,6 +276,7 @@ class Ortho:
 
         if not crop and not mask:
             return dem_array, dem_transform
+
         # get polygon of source boundary with 'num_pts' points
         src_ji = self._get_src_boundary(full_remap=full_remap, num_pts=num_pts)
 
@@ -324,11 +329,11 @@ class Ortho:
         dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
         if dem_mask_sum == 0:
-            raise ValueError(f'Ortho boundary for {self._src_filename.name} lies outside the valid DEM area.')
+            raise ValueError(f"Ortho boundary for '{self._src_filename.name}' lies outside the valid DEM area.")
         elif poly_mask.sum() > dem_mask_sum or (
             np.any(np.min(poly_ji, axis=1) < (0, 0)) or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
-            logger.warning(f'Ortho boundary for {self._src_filename.name} is not fully covered by the DEM.')
+            logger.warning(f"Ortho boundary for '{self._src_filename.name}' is not fully covered by the DEM.")
 
         if crop:
             # crop dem_mask & dem_array to poly_xy and find corresponding transform
@@ -395,7 +400,7 @@ class Ortho:
     ):
         """
         Thread safe method to map the source image to an ortho tile, given an open ortho dataset, source image
-        array, DEM array in the ortho CRS and grid, tile window into the ortho dataset, band indexes of the source
+        array, DEM array in the world CRS and grid, tile window into the ortho dataset, band indexes of the source
         array, xy grids for the first ortho tile, and configuration parameters.
         """
         dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
@@ -470,7 +475,7 @@ class Ortho:
     def _undistort(
         self, image: np.ndarray, nodata: Union[float, int] = 0, interp: Union[str, Interp] = Interp.bilinear
     ) -> np.ndarray:
-        """ Undistort an image using `interp` interpolation and setting invalid pixels to `nodata`. """
+        """ Undistort an image using ``interp`` interpolation and setting invalid pixels to ``nodata``. """
         if self._camera._undistort_maps is None:
             return image
 
@@ -574,7 +579,7 @@ class Ortho:
         ortho_filename: str, pathlib.Path
             Path of the ortho image file to create.
         resolution: list of float, optional
-            Ortho image pixel (x, y) size in units of the ortho CRS (usually meters).
+            Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).
         interp: str, simple_ortho.enums.Interp, optional
             Interpolation method to use for remapping the source to ortho image.  See
             :class:`~simple_ortho.enums.Interp` for options.  :attr:`~simple_ortho.enums.Interp.nearest` is
@@ -593,10 +598,10 @@ class Ortho:
             Write an internal mask for the ortho image. This helps remove nodata noise caused by lossy compression.
             If None, the mask will be written when jpeg compression is used.
         dtype: str, optional
-            Ortho image data type (`uint8`, `uint16`, `float32` or `float64`).  If set to None, the source image
+            Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None, the source image
             dtype is used.
         compress: str, Compress, optional
-            Ortho image compression type (`deflate`, `jpeg` or `auto`).  See :class:`~simple_ortho.enums.Compress`_
+            Ortho image compression type ('deflate', 'jpeg' or 'auto').  See :class:`~simple_ortho.enums.Compress`_
             for option details.
         build_ovw: bool, optional
             Build overviews for the ortho image.
@@ -607,7 +612,7 @@ class Ortho:
             ortho_filename = Path(ortho_filename)
             if ortho_filename.exists():
                 if not overwrite:
-                    raise FileExistsError(f'Ortho file: {ortho_filename.name} exists.')
+                    raise FileExistsError(f"Ortho file: '{ortho_filename}' exists.")
                 ortho_filename.unlink()
                 ortho_filename.with_suffix(ortho_filename.suffix + '.aux.xml').unlink(missing_ok=True)
 
@@ -621,7 +626,7 @@ class Ortho:
                 ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=True,
             )
             with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
-                # get dem array covering ortho extents in ortho CRS and resolution
+                # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
                 dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp, full_remap=full_remap)

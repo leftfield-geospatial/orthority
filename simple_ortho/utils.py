@@ -58,7 +58,7 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
     """ Return a distorted image given a camera model and source image. """
 
     if not np.all(np.array(image.shape[::-1]) == camera._im_size):
-        raise ValueError('`image` shape should be the same as the `camera` image size.')
+        raise ValueError("'image' shape should be the same as the 'camera' image size.")
 
     # create (j, i) pixel coords for distorted image
     j_range = np.arange(0, camera._im_size[0])

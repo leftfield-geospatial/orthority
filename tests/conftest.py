@@ -64,7 +64,7 @@ def sinusoidal(shape: Tuple):
 
 
 def ortho_bounds(camera: Camera, dem_min: float = Ortho._egm96_min, include_camera: bool = False) -> Tuple:
-    """ Return ortho bounds for the given `camera` at z=`dem_min`. """
+    """ Return ortho bounds for the given ``camera`` at z=``dem_min``. """
     size = camera._im_size
     ji = np.array([[0, 0], [0, size[1]], [*size], [size[0], 0]]).T
     xyz = camera.pixel_to_world_z(ji, dem_min)
@@ -78,7 +78,7 @@ def create_dem(
     dtype: str = 'float32', include_camera=False,
 ) -> Tuple[np.ndarray, Dict]:
     """
-    Create a 2 band DEM file that covers the ortho bounds of the given `camera`.
+    Create a 2 band DEM file that covers the ortho bounds of the given ``camera``.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
     bounds = np.array(ortho_bounds(camera, include_camera=include_camera))
@@ -106,7 +106,7 @@ def create_dem(
 def create_src(
     filename: Path, size: Tuple, dtype: str = 'uint8', count: int = 3, camera: Camera = None, crs: str = None
 ):
-    """ Create a source checkerboard file with optional CRS where `camera` & `crs` are specified.  """
+    """ Create a source checkerboard file with optional CRS where ``camera`` & ``crs`` are specified.  """
     profile = dict(crs=None, transform=None, dtype=dtype, width=size[0], height=size[1], count=count)
 
     if camera is not None:
@@ -182,7 +182,7 @@ def cxy() -> Tuple[float, float]:
 
 @pytest.fixture(scope='session')
 def interior_args(focal_len, im_size, sensor_size, cxy) -> Dict:
-    """ A dictionary of interior parameters for `Camera.__init__()`. """
+    """ A dictionary of interior parameters for ``Camera.__init__()``. """
     return dict(
         im_size=im_size, focal_len=focal_len / sensor_size[0], sensor_size=(1, sensor_size[1] / sensor_size[0]),
         cx=cxy[0], cy=cxy[1]
@@ -191,55 +191,55 @@ def interior_args(focal_len, im_size, sensor_size, cxy) -> Dict:
 
 @pytest.fixture(scope='session')
 def exterior_args(xyz: Tuple, opk: Tuple) -> Dict:
-    """ A dictionary of exterior parameters for `Camera.__init__()` / `Camera.update()`. """
+    """ A dictionary of exterior parameters for ``Camera.__init__()`` / ``Camera.update()``. """
     return dict(xyz=xyz, opk=opk)
 
 
 @pytest.fixture(scope='session')
 def camera_args(interior_args: Dict, exterior_args: Dict) -> Dict:
-    """ A dictionary of interior and exterior parameters for `Camera.__init__()`. """
+    """ A dictionary of interior and exterior parameters for ``Camera.__init__()``. """
     return dict(**interior_args, **exterior_args)
 
 
 @pytest.fixture(scope='session')
 def brown_dist_param() -> Dict:
-    """ Example `BrownCamera` distortion coefficients. """
+    """ Example ``BrownCamera`` distortion coefficients. """
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1)
 
 
 @pytest.fixture(scope='session')
 def opencv_dist_param() -> Dict:
-    """ Example `OpenCVCamera` distortion coefficients. """
+    """ Example ``OpenCVCamera`` distortion coefficients. """
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1, k4=0.001, k5=0.001, k6=-0.001)
 
 
 @pytest.fixture(scope='session')
 def fisheye_dist_param() -> Dict:
-    """ Example `FisheyeCamera` distortion coefficients. """
+    """ Example ``FisheyeCamera`` distortion coefficients. """
     return dict(k1=-0.25, k2=0.1, k3=0.01, k4=-0.01)
 
 
 @pytest.fixture(scope='session')
 def pinhole_camera(camera_args) -> Camera:
-    """ Example `PinholeCamera` object with near-nadir orientation. """
+    """ Example ``PinholeCamera`` object with near-nadir orientation. """
     return PinholeCamera(**camera_args)
 
 
 @pytest.fixture(scope='session')
 def brown_camera(camera_args, brown_dist_param: Dict) -> Camera:
-    """ Example `BrownCamera` object with near-nadir orientation. """
+    """ Example ``BrownCamera`` object with near-nadir orientation. """
     return BrownCamera(**camera_args, **brown_dist_param)
 
 
 @pytest.fixture(scope='session')
 def opencv_camera(camera_args, opencv_dist_param: Dict) -> Camera:
-    """ Example `OpenCVCamera` object with near-nadir orientation. """
+    """ Example ``OpenCVCamera`` object with near-nadir orientation. """
     return OpenCVCamera(**camera_args, **opencv_dist_param)
 
 
 @pytest.fixture(scope='session')
 def fisheye_camera(camera_args, fisheye_dist_param: Dict) -> Camera:
-    """  Example `FisheyeCamera` object with near-nadir orientation.  """
+    """  Example ``FisheyeCamera`` object with near-nadir orientation.  """
     return FisheyeCamera(**camera_args, **fisheye_dist_param)
 
 
@@ -300,7 +300,7 @@ def wgs84_crs() -> str:
 @pytest.fixture(scope='session')
 def wgs84_wgs84_crs() -> str:
     """ CRS string for WGS84 with WGS84 ellipsoid vertical datum. """
-    return 'EPSG:4326+4326'
+    return 'EPSG:4979'
 
 
 @pytest.fixture(scope='session')
@@ -341,7 +341,7 @@ def float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Pat
 
 @pytest.fixture(scope='session')
 def rgb_byte_utm34n_src_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
-    """ An RGB byte checkerboard image with UTM zone 34N CRS and bounds 100m below `pinhole_camera`. """
+    """ An RGB byte checkerboard image with UTM zone 34N CRS and bounds 100m below ``pinhole_camera``. """
     src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_byte_src.tif')
     create_src(src_filename, pinhole_camera._im_size, dtype='uint8', count=3, camera=pinhole_camera, crs=utm34n_crs)
     return src_filename

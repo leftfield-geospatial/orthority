@@ -146,7 +146,7 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: Dict, tmp_p
 
 
 def test_read_exif_int_param_dewarp(odm_image_file: Path):
-    """ Testing reading EXIF / XMP tag interior parameters from an image with the `DewarpData` XMP tag. """
+    """ Testing reading EXIF / XMP tag interior parameters from an image with the 'DewarpData' XMP tag. """
     int_param_dict = io.read_exif_int_param(odm_image_file)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'brown'
@@ -155,7 +155,7 @@ def test_read_exif_int_param_dewarp(odm_image_file: Path):
 
 
 def test_read_exif_int_param_no_dewarp(exif_image_file: Path):
-    """ Testing reading EXIF / XMP tag interior parameters from an image without the `DewarpData` XMP tag. """
+    """ Testing reading EXIF / XMP tag interior parameters from an image without the 'DewarpData' XMP tag. """
     int_param_dict = io.read_exif_int_param(exif_image_file)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'pinhole'
@@ -332,7 +332,7 @@ def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
 
 
 def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
-    """ Test reading exterior parameters from a CSV file with `fieldnames` argument. """
+    """ Test reading exterior parameters from a CSV file with ``fieldnames`` argument. """
     fieldnames = ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'custom']
     reader = io.CsvReader(odm_lla_rpy_csv_file, fieldnames=fieldnames)
     assert set(reader._fieldnames) == set(fieldnames)
