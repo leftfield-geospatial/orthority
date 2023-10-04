@@ -724,7 +724,7 @@ class OsfmReader(Reader):
     #  the orthorectified image can be reprojected to UTM.
     def __init__(
         self, filename: Union[str, Path], crs: Union[str, rio.CRS] = None,
-        lla_crs: Union[str, rio.CRS] = _default_lla_crs
+        lla_crs: Union[str, rio.CRS] = CRS.from_epsg(4326)
     ):
         """
         Class for reading camera interior and exterior parameters from an OpenSfM 'reconstruction.json' file.
