@@ -507,3 +507,4 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
 
 # TODO: Multi-camera configurations
 # TODO: Add config conversions e.g. ODM / Legacy / CSV internal + external -> oty format -> inputs
+# TODO: test lla_crs

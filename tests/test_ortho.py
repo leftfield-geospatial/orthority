@@ -84,7 +84,7 @@ def test_init_dem_band_error(
     """ Test Ortho initialisation with incorrect ``dem_band`` raises an error. """
     with pytest.raises(errors.DemBandError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
-    assert 'dem_band' in str(ex)
+    assert 'DEM band' in str(ex)
 
 
 def test_init_nocrs_error(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera):
@@ -683,6 +683,7 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         ref_array.mask &= test_array.mask
         cc = np.corrcoef(test_array.flatten(), ref_array.flatten())
         assert cc[0, 1] > 0.9
+        assert cc[0, 1] != 1.
 
 
 @pytest.mark.parametrize('camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'])

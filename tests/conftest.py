@@ -22,6 +22,7 @@ import os
 import yaml
 import numpy as np
 import pytest
+from click.testing import CliRunner
 import rasterio as rio
 from rasterio.transform import from_origin, from_bounds
 from rasterio.warp import transform_bounds, transform
@@ -142,6 +143,12 @@ def oty_to_osfm_int_param(int_param_dict: Dict) -> Dict:
                 osfm_params[to_key] = osfm_params.pop(from_key)
         osfm_dict[cam_id] = osfm_params
     return osfm_dict
+
+
+@pytest.fixture(scope='session')
+def runner():
+    """ click runner for command line execution. """
+    return CliRunner()
 
 
 @pytest.fixture(scope='session')
@@ -518,6 +525,7 @@ def odm_dem_file(odm_proj_dir: Path) -> Path:
 def osfm_reconstruction_file(odm_proj_dir: Path) -> Path:
     """ ODM / OpenSfM reconstruction file. """
     return odm_proj_dir.joinpath('opensfm', 'reconstruction.json')
+# TODO: there is a confusion between odm_* fixtures referring to odm format or odm dataset
 
 
 @pytest.fixture(scope='session')
@@ -538,6 +546,12 @@ def ngi_image_files() -> Tuple[Path, ...]:
 def ngi_image_file() -> Path:
     """ NGI aerial image file. """
     return next(iter(root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')))
+
+
+@pytest.fixture(scope='session')
+def ngi_image_wildcard() -> str:
+    """ Wildcard for NGI aerial image files. """
+    return str(root_path.joinpath('tests', 'data', 'ngi')) + '*RGB.tif'
 
 
 @pytest.fixture(scope='session')
@@ -572,6 +586,7 @@ def ngi_legacy_csv_file() -> Path:
     return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
 
 
+# TODO: create io fixtures dynamically?
 @pytest.fixture(scope='session')
 def ngi_oty_ext_param_file() -> Path:
     """ Orthority format exterior parameter file for NGI test data. """
@@ -600,6 +615,15 @@ def odm_lla_rpy_csv_file() -> Path:
     a header.
     """
     return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
+
+
+@pytest.fixture(scope='session')
+def odm_xyz_opk_csv_file() -> Path:
+    """
+    Exterior parameters for ODM data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
+    a header.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'odm_xyz_opk.csv')
 
 
 # TODO: move fixtures used by a single module to that module
