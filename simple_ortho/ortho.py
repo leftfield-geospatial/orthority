@@ -37,8 +37,6 @@ from simple_ortho.utils import suppress_no_georef, expand_window_to_grid, nan_eq
 # from scipy.ndimage import map_coordinates
 
 logger = logging.getLogger(__name__)
-# TODO: standardise exception messages to use single quotes around string values and var names, and docstrings to use ``
-#  around code (var/fn etc) names and single quotes around string values
 
 
 class Ortho:
@@ -89,10 +87,6 @@ class Ortho:
         if camera._horizon_fov():
             raise ValueError("'camera' has a field of view that includes, or is above, the horizon.")
 
-        # TODO: refactor so that the camera is guaranteed to be the correct one for src_filename (e.g. the camera has a
-        #  src_filename property itself, and src_filename is not passed here?  also the separation of crs from camera
-        #  is not ideal, the camera and world crs should also be tied together)
-        # TODO: make Ortho a context manager that opens the src file once?
         self._src_filename = Path(src_filename)
         self._camera = camera
         self._write_lock = threading.Lock()
@@ -136,11 +130,11 @@ class Ortho:
         The returned DEM array is read to cover the ortho bounds at the z=min(DEM) plane, accounting for worst case
         vertical datum offset between the DEM and world / ortho CRS, and within the limits of the DEM image bounds.
         """
+        # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(dem_filename, 'r') as dem_im:
-            # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
             if dem_band <= 0 or dem_band > dem_im.count:
                 raise DemBandError(
-                    f"'dem_band': {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} bands"
+                    f"DEM band {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use elsewhere
             crs_equal = self._crs == dem_im.crs
@@ -221,8 +215,6 @@ class Ortho:
         Reproject self._dem_array to the world / ortho CRS and ortho resolution, given reprojection interpolation and
         resolution parameters. Returns the reprojected DEM array and corresponding transform.
         """
-        # TODO: rethink vertical datum and offset - is it geometrically closer to the cartesian assumption if the
-        #  world CRS has ellipsoidal heights?  Would it help converting camera and DEM to ellipsoidal heights?
         # return if dem in world / ortho crs and ortho resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if self._crs_equal and np.all(resolution == dem_res):
@@ -267,8 +259,6 @@ class Ortho:
         Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and corresponding
         transform.
         """
-        # TODO: to exclude occluded areas, this should find the first/highest dem intersection, not the last/lowest
-        #  as it currently does.
         # TODO: trace rays in a thread pool?
         def inv_transform(transform: rio.Affine, xy: np.array):
             """ Return the center (j, i) pixel coords for the given transform and world (x, y) coordinates. """
@@ -305,7 +295,6 @@ class Ortho:
 
             # find the dem z values corresponding to the ray (dem_z will be nan outside the dem bounds and for already
             # masked / nan dem pixels)
-            # TODO: deal with boundary issues (round or remap)
             dem_ji = inv_transform(dem_transform, ray_xyz[:2, :]).astype('float32', copy=False)
             dem_z = np.full((dem_ji.shape[1],), dtype=dem_array.dtype, fill_value=float('nan'))
             # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
@@ -449,13 +438,11 @@ class Ortho:
         # mask of invalid ortho pixels
         tile_mask = np.all(nan_equals(tile_array, dtype_nodata), axis=0)
 
-        # remove undistort cv2.remap blurring with nodata at the nodata boundary when full_remap=False...
+        # remove cv2.remap blurring with undistort nodata when full_remap=False...
         if (
             not full_remap and interp != Interp.nearest and not np.isnan(dtype_nodata) and
             self._camera._undistort_maps is not None
         ):
-            # TODO: to avoid these nodata boundary issues entirely, use dtype=float and
-            #  nodata=nan internally, then convert to config dtype and nodata on writing.
             src_res = np.array(self._get_auto_res())
             ortho_res = np.abs((tile_transform.a, tile_transform.e))
             kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
@@ -555,7 +542,6 @@ class Ortho:
                         future.result()
                         bar.update()
 
-    # TODO: change param names write_mask to internal_mask & full_remap to something friendlier
     def process(
         self, ortho_filename: Union[str, Path],
         resolution: Tuple[float, float] = _default_config['resolution'],

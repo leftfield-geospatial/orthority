@@ -24,11 +24,11 @@ class ParamFileError(OrthorityError):
 class CrsError(OrthorityError):
     """ Raised when CRS could not be interpreted. """
 
+
 class CrsMissingError(OrthorityError):
     """ Raised when a required CRS was not specified. """
 
 
-# TODO add dem error, & other known unknown type errors for Camera and Ortho classes
 class DemBandError(OrthorityError):
     """ Raised when the DEM band parameter is out of range. """
 

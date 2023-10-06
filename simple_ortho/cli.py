@@ -171,7 +171,6 @@ def _ortho(
     crs: rio.CRS, dem_band: int, alpha: float, export_params: bool, out_dir: Path, overwrite: bool, **kwargs
 ):
     """ """
-    # TODO: multiple file progress as a master bar, or 'x of N' prefix to individual bars
     if export_params:
         # convert interior / exterior params to oty format files
         logger.info('Writing parameter files...')
@@ -217,7 +216,7 @@ def _ortho(
         try:
             ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
         except DemBandError as ex:
-            raise click.BadParameter(str(ex), param_hint="'-db' / '--dem_band'")
+            raise click.BadParameter(str(ex), param_hint="'-db' / '--dem-band'")
         ortho_file = out_dir.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
@@ -225,7 +224,6 @@ def _ortho(
         ortho.process(ortho_file, overwrite=overwrite, **kwargs)
 
 
-# TODO: add mosaic and lla-crs options
 # Define click options that are common to more than one command
 src_files_arg = click.argument(
     'src_files', nargs=-1, metavar='SOURCE...', type=click.Path(exists=True, dir_okay=False, path_type=Path),
@@ -280,7 +278,6 @@ per_band_option = click.option(
     show_default=True, help='Orthorectify band-by-band (``--per-band``) or all bands at once (``--no-per-band``). '
                             '``--no-per-band`` is faster but uses more memory.'
 )
-# TODO: change name to something friendlier, or exclude entirely
 full_remap_option = click.option(
     '-fr/-nfr', '--full-remap/--no-full-remap', type=click.BOOL, default=Ortho._default_config['full_remap'],
     show_default=True, help='Orthorectify the source image with full camera model (``--full-remap``), or an '
@@ -292,7 +289,6 @@ alpha_option = click.option(
     help='Scaling of the ``--no-full-remap`` undistorted image: 0 results in an undistorted image with all valid '
          'pixels, 1 results in an undistorted image with all source pixels.'
 )
-# TODO: "internal mask"?
 write_mask_option = click.option(
     '-wm/-nwm', '--write-mask/--no-write-mask', type=click.BOOL, default=Ortho._default_config['write_mask'],
     show_default='true for jpeg compression.',
@@ -331,7 +327,6 @@ overwrite_option = click.option(
 @click.version_option(version=__version__, message='%(version)s')
 def cli(verbose, quiet):
     """ Orthorectification toolkit. """
-    # TODO: how can you pass options, but not chain commands afer wildcard arguments
     verbosity = verbose - quiet
     _configure_logging(verbosity)
 
@@ -342,18 +337,18 @@ def cli(verbose, quiet):
 @int_param_file_option
 @ext_param_file_option
 @crs_option
-@lla_crs_option
 @resolution_option
 @dem_band_option
 @interp_option
 @dem_interp_option
 @per_band_option
 @full_remap_option
+@alpha_option
+@lla_crs_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
-@alpha_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -399,13 +394,9 @@ def ortho(
     # yapf:enable @formatter:on
     if not crs and len(src_files) > 0:
         # read crs from the first source image, if it has one
-        # TODO: what if this crs is used, but changes in other source images?
         crs = _read_src_crs(src_files[0])
 
     # read interior params
-    # TODO: create meaningful CLI exceptions
-    # TODO: if --write-params is passed it requires both --int-param & --ext-param but it would be useful to only
-    #  require one
     try:
         if int_param_file.suffix.lower() in ['.yaml', '.yml']:
             int_param_dict = io.read_oty_int_param(int_param_file)
@@ -450,18 +441,18 @@ def ortho(
 @src_files_arg
 @dem_file_option
 @crs_option
-@lla_crs_option
 @resolution_option
 @dem_band_option
 @interp_option
 @dem_interp_option
 @per_band_option
 @full_remap_option
+@alpha_option
+@lla_crs_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
-@alpha_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -489,7 +480,6 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
-    # TODO: allow partial exif spec with --int-param and --ext-param overrides (?)
     if not crs and len(src_files) > 0:
         # get crs from the first source image, if it has one
         crs = _read_src_crs(src_files[0])
@@ -501,7 +491,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
         int_param_dict = reader.read_int_param()
         ext_param_dict = reader.read_ext_param()
     except ParamFileError as ex:
-        raise click.BadParameter(str(ex), param_hint='SOURCE...')  # TODO: match param hint to the help, or don't catch
+        raise click.BadParameter(str(ex), param_hint='SOURCE...')
 
     # get auto UTM crs, if crs not set already
     crs = crs or reader.crs
@@ -511,7 +501,6 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 
 
 @cli.command(cls=RstCommand)
-# TODO: root, project or dataset
 @click.option(
     '-pd', '--proj-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path), required=True,
     default=None,  callback=_odm_proj_dir_cb, help='Path of the ODM project folder to process.'
@@ -521,11 +510,11 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 @dem_interp_option
 @per_band_option
 @full_remap_option
+@alpha_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
-@alpha_option
 @export_params_option
 @click.option(
     '-od', '--out-dir', type=click.Path(exists=True, file_okay=False, writable=True, path_type=Path),
@@ -597,3 +586,5 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], out_dir: Path, **kwargs
 
 if __name__ == '__main__':
     cli()
+
+# TODO: test CLI exceptions are meaningful

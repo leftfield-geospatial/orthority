@@ -149,7 +149,6 @@ class Exif:
             f'\nDewarp: {dewarp_str}'
         )  # yapf: disable  # @formatter:on
 
-    # TODO: expose orientation property
     @property
     def filename(self) -> Path:
         """ Path to source file. """
