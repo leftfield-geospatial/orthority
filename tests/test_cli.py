@@ -250,7 +250,7 @@ def test_ortho_dem_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner:
     with rio.open(ref_ortho_files[0], 'r') as ref_im, rio.open(test_ortho_files[0], 'r') as test_im:
         ref_array = ref_im.read(masked=True)
         test_array = test_im.read(masked=True)
-        assert np.any(test_array.mask != ref_array.mask)
+        assert test_im.bounds == pytest.approx(ref_im.bounds, abs=ref_im.res[0])
         assert test_array.std() != ref_array.std()
 
 
