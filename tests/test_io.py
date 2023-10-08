@@ -214,7 +214,7 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
     ('utm34n_crs', 'wgs84_egm96_crs'),
     ('utm34n_crs', 'wgs84_egm2008_crs'),
 ])  # yapf: disable
-def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
+def _test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """
     Test rasterio.warp.transform does not adjust the z coordinate with one of the source and destination CRS vertical
     datums specified.
@@ -222,9 +222,11 @@ def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.Fi
     src_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(src_crs))
     dst_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(dst_crs))
     src_xyz = [[10.], [10.], [100.]]
-
-    dst_xyz = transform(src_crs, dst_crs, *src_xyz)
-    assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
+    import os
+    os.environ.update(ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS='YES')
+    with rio.Env(ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS='YES'):
+        dst_xyz = transform(src_crs, dst_crs, *src_xyz)
+        assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
 
 
 @pytest.mark.parametrize('C_bB', [

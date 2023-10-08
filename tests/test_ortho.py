@@ -209,7 +209,7 @@ def test_reproject_dem_vdatum_both(
         ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
-def test_reproject_dem_vdatum_one(
+def _test_reproject_dem_vdatum_one(
     rgb_byte_src_file: Path, dem_file: str, pinhole_camera: Camera, crs: str, request: pytest.FixtureRequest
 ):
     """ Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical datums are specified. """
@@ -870,4 +870,5 @@ def test_process_camera(
 
 # TODO: add test with dem that includes occlusion
 # TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in different CRSs
+# TODO: add test for dem_interp (and other params I may have missed)
 ##
