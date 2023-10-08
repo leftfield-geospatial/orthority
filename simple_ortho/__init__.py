@@ -14,13 +14,15 @@
    limitations under the License.
 """
 
-import logging
 import os
 import pathlib
-import sys
 
+# enable on-demand download of proj transformation grids
+os.environ.update(PROJ_NETWORK='ON', PROJ_ONLY_BEST_DEFAULT='ON', ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS='NO')
+
+# path to package root
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
-    root_path = pathlib.Path(os.getcwd())
+    root_path = pathlib.Path.cwd().absolute()
 
