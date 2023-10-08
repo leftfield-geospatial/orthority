@@ -603,10 +603,7 @@ class Ortho:
                 resolution = self._get_auto_res()
                 logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
-            env = rio.Env(
-                GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True,
-                ALLOW_ELLIPSOIDAL_HEIGHT_AS_VERTICAL_CRS=True,
-            )
+            env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
             with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
