@@ -209,7 +209,7 @@ def test_reproject_dem_vdatum_both(
         ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
-def _test_reproject_dem_vdatum_one(
+def test_reproject_dem_vdatum_one(
     rgb_byte_src_file: Path, dem_file: str, pinhole_camera: Camera, crs: str, request: pytest.FixtureRequest
 ):
     """ Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical datums are specified. """
@@ -234,7 +234,9 @@ def _test_reproject_dem_vdatum_one(
     assert test_array.shape == ortho._dem_array.shape
 
     mask = ~np.isnan(test_array) & ~np.isnan(ortho._dem_array)
-    assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
+    if rio.get_proj_version() >= (9, 1, 0):
+        # prior proj versions promote 2D->3D with ellipsoidal height
+        assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
 
 
 @pytest.mark.parametrize('num_pts', [40, 100, 400, 1000, 4000])
@@ -316,8 +318,9 @@ def test_mask_dem(
     assert dem_transform_mask == dem_transform
     assert dem_mask.shape == ortho_mask.shape
     assert dem_mask[ortho_mask].sum() / ortho_mask.sum() > 0.95
-    cc = np.corrcoef(dem_mask.flatten(), ortho_mask.flatten())
-    assert (np.all(dem_mask) and np.all(ortho_mask)) or (cc[0, 1] > 0.9)
+    if not np.all(dem_mask) and np.all(ortho_mask):
+        cc = np.corrcoef(dem_mask.flatten(), ortho_mask.flatten())
+        assert cc[0, 1] > 0.9
 
     if False:
         # debug plotting code
