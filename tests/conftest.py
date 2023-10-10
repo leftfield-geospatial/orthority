@@ -522,8 +522,8 @@ def odm_dem_file(odm_proj_dir: Path) -> Path:
 
 
 @pytest.fixture(scope='session')
-def osfm_reconstruction_file(odm_proj_dir: Path) -> Path:
-    """ ODM / OpenSfM reconstruction file. """
+def odm_reconstruction_file(odm_proj_dir: Path) -> Path:
+    """ ODM reconstruction file. """
     return odm_proj_dir.joinpath('opensfm', 'reconstruction.json')
 # TODO: there is a confusion between odm_* fixtures referring to odm format or odm dataset
 

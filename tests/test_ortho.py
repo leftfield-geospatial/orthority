@@ -922,10 +922,10 @@ def test_process_ngi(
 
 
 def test_process_odm(
-    odm_image_files: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_crs: str, tmp_path: Path
+    odm_image_files: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_crs: str, tmp_path: Path
 ):
     """ Test integration and ortho overlap using ODM drone images. """
-    reader = io.OsfmReader(osfm_reconstruction_file, crs=odm_crs)
+    reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
     int_param_dict = reader.read_int_param()
     ext_param_dict = reader.read_ext_param()
     camera = create_camera(**next(iter(int_param_dict.values())))

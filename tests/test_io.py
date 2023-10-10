@@ -286,7 +286,7 @@ def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_
 
 
 def test_csv_reader_lla_rpy(
-    odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], osfm_reconstruction_file: Path
+    odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], odm_reconstruction_file: Path
 ):
     """ Test reading exterior parameters from an lla_rpy format CSV file with a header. """
     reader = io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs)
@@ -300,7 +300,7 @@ def test_csv_reader_lla_rpy(
     file_keys = [filename.name for filename in odm_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
 
-    with open(osfm_reconstruction_file, 'r') as f:
+    with open(odm_reconstruction_file, 'r') as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
@@ -397,7 +397,7 @@ def test_csv_reader_format(
     dict(delimiter='\t', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
 ])  # yapf: disable
 def test_csv_reader_dialect(
-    odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], osfm_reconstruction_file: Path,
+    odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], odm_reconstruction_file: Path,
     dialect: Dict, tmp_path: Path
 ):
     """ Test reading exterior parameters from CSV files in different dialects. """
@@ -419,15 +419,15 @@ def test_csv_reader_dialect(
     # validate dict
     file_keys = [filename.name for filename in odm_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
-    with open(osfm_reconstruction_file, 'r') as f:
+    with open(odm_reconstruction_file, 'r') as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
 
 
-def test_osfm_reader(osfm_reconstruction_file: Path, odm_crs: str):
+def test_osfm_reader(odm_reconstruction_file: Path, odm_crs: str):
     """ Test OsfmReader reads internal and external parameters successfully. """
-    reader = io.OsfmReader(osfm_reconstruction_file, crs=odm_crs)
+    reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
     int_param_dict = reader.read_int_param()
@@ -440,16 +440,16 @@ def test_osfm_reader(osfm_reconstruction_file: Path, odm_crs: str):
     assert ext_cam_ids.issubset(int_cam_ids)
 
 
-def test_osfm_reader_auto_crs(osfm_reconstruction_file: Path, odm_crs: str):
+def test_osfm_reader_auto_crs(odm_reconstruction_file: Path, odm_crs: str):
     """ Test OsfmReader auto determines a UTM CRS correctly. """
-    reader = io.OsfmReader(osfm_reconstruction_file, crs=None)
+    reader = io.OsfmReader(odm_reconstruction_file, crs=None)
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
 def test_osfm_reader_validity_error(odm_int_param_file: Path):
     """ Test OsfmReader raises an error with an invalid file format. """
     with pytest.raises(ParamFileError) as ex:
-        reader = io.OsfmReader(odm_int_param_file, crs=None)
+        _ = io.OsfmReader(odm_int_param_file, crs=None)
     assert 'valid' in str(ex)
 
 
@@ -493,10 +493,10 @@ def test_oty_reader(ngi_oty_ext_param_file: Path, ngi_crs: str):
     _validate_ext_param_dict(ext_param_dict, cameras=None)
 
 
-def test_oty_reader_validity_error(osfm_reconstruction_file: Path):
+def test_oty_reader_validity_error(odm_reconstruction_file: Path):
     """ Test OtyReader raises an error with an invalid file format. """
     with pytest.raises(ParamFileError) as ex:
-        _ = io.OtyReader(osfm_reconstruction_file, crs=None)
+        _ = io.OtyReader(odm_reconstruction_file, crs=None)
     assert 'valid' in str(ex)
 
 

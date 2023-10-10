@@ -51,12 +51,12 @@ def test_ortho_crs_src(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_
 
 
 def test_ortho_crs_auto(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_lla_rpy_csv_file: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_lla_rpy_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` auto-determines the CRS for LLA-RPY CSV format exterior parameters.  """
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
         f'--out-dir {tmp_path} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -69,13 +69,13 @@ def test_ortho_crs_auto(
 
 
 def test_ortho_crs_cli(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` uses a CRS specified with ``--crs``.  """
     # use odm_xyz_opk_csv_file external params so there is no auto-crs
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
         f'--out-dir {tmp_path} --crs {odm_crs} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -88,7 +88,7 @@ def test_ortho_crs_cli(
 
 
 def test_ortho_crs_prj(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` uses reads the CRS in a CSV exterior parameter .prj file.  """
@@ -100,7 +100,7 @@ def test_ortho_crs_prj(
 
     # create ortho & test
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {csv_file} '
         f'--out-dir {tmp_path} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -113,12 +113,12 @@ def test_ortho_crs_prj(
 
 
 def test_ortho_crs_missing_error(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` raises an error when ``--crs`` is needed but not passed.  """
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
         f'--out-dir {tmp_path} {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -278,7 +278,7 @@ def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
 
 
 def test_ortho_full_remap(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, tmp_path: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, tmp_path: Path,
     runner: CliRunner
 ):
     """ Test ``oty ortho --full-remap`` by comparing ``--full-remap`` and ``--no-full-remap`` orthos.  """
@@ -286,7 +286,7 @@ def test_ortho_full_remap(
     out_dir_full_remap = tmp_path.joinpath('full_remap')
     out_dir_full_remap.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {osfm_reconstruction_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_reconstruction_file} '
         f'--out-dir {out_dir_full_remap} --res 1 --compress deflate --full-remap {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -298,7 +298,7 @@ def test_ortho_full_remap(
     out_dir_no_full_remap = tmp_path.joinpath('no_full_remap')
     out_dir_no_full_remap.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {osfm_reconstruction_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_reconstruction_file} '
         f'--out-dir {out_dir_no_full_remap} --res 1 --compress deflate --no-full-remap {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -320,7 +320,7 @@ def test_ortho_full_remap(
 
 
 def test_ortho_alpha(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, tmp_path: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, tmp_path: Path,
     runner: CliRunner
 ):
     """ Test ``oty ortho --alpha`` by comparing ``--alpha 0`` and ``--alpha 1`` orthos.  """
@@ -328,7 +328,7 @@ def test_ortho_alpha(
     out_dir_alpha_1 = tmp_path.joinpath('alpha_1')
     out_dir_alpha_1.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {osfm_reconstruction_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_reconstruction_file} '
         f'--out-dir {out_dir_alpha_1} --res 1 --compress deflate --no-full-remap --alpha 1 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -340,7 +340,7 @@ def test_ortho_alpha(
     out_dir_alpha_0 = tmp_path.joinpath('alpha_0')
     out_dir_alpha_0.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {osfm_reconstruction_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_reconstruction_file} '
         f'--out-dir {out_dir_alpha_0} --res 1 --compress deflate --no-full-remap --alpha 0 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -371,7 +371,7 @@ def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner
 
 
 def test_ortho_lla_crs(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_lla_rpy_csv_file: Path,
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_lla_rpy_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho --lla-crs`` by comparing orthos created with different ``--lla-crs`` values. """
@@ -379,7 +379,7 @@ def test_ortho_lla_crs(
     out_dir_ellps = tmp_path.joinpath('lla_crs_ellps')
     out_dir_ellps.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
         f'--out-dir {out_dir_ellps} --res 5 --crs {odm_crs}+4326 --lla-crs EPSG:4326+4326 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -391,7 +391,7 @@ def test_ortho_lla_crs(
     out_dir_geoid = tmp_path.joinpath('lla_crs_geoid')
     out_dir_geoid.mkdir()
     cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
         f'--out-dir {out_dir_geoid} --res 5 --crs {odm_crs}+4326 --lla-crs EPSG:4326+3855 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
