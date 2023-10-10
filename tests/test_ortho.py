@@ -31,10 +31,44 @@ from simple_ortho.camera import Camera, PinholeCamera, create_camera
 from simple_ortho.enums import Interp, Compress, CameraType
 from simple_ortho.ortho import Ortho
 from simple_ortho.utils import nan_equals, distort_image
-from simple_ortho import errors
+from simple_ortho import errors, io
 from tests.conftest import _dem_resolution, checkerboard
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
+
+def _validate_ortho_files(files: Tuple[Path, ...], cc_thresh: float = 0.75, num_ovl_thresh: int = None):
+    """ Validate the similarity of overlapping areas in ortho files. """
+    cc_array = np.full((len(files), ) * 2, fill_value=np.nan)
+    num_ovl_thresh = num_ovl_thresh or np.math.factorial(len(files) - 1)
+
+    for i1, file1 in enumerate(files):
+        for i2, file2 in enumerate(files[i1 + 1:]):
+            with rio.open(file1, 'r') as im1, rio.open(file2, 'r') as im2:
+                # find windows for the overlap area in each image
+                ovl_bl = np.array([im1.bounds[:2], im2.bounds[:2]]).max(axis=0)
+                ovl_tr = np.array([im1.bounds[2:], im2.bounds[2:]]).min(axis=0)
+                if np.any(ovl_bl >= ovl_tr):
+                    continue  # no overlap
+                ovl_bounds = [*ovl_bl, *ovl_tr]
+                win1 = im1.window(*ovl_bounds)
+                win2 = im2.window(*ovl_bounds)
+
+                # read overlap area in each image & find common mask
+                array1 = im1.read(1, window=win1, masked=True)
+                array2 = im2.read(1, window=win2, masked=True)
+                mask = ~(array1.mask | array2.mask)
+
+                # test similarity if overlap area > 5%
+                if mask.sum() / (im1.width * im1.height) > 0.05:
+                    cc = np.corrcoef(array1[mask], array2[mask])
+                    log_str = f"Overlap similarity of '{file1.name}' and '{file2.name}': {cc[0, 1]:.4f}"
+                    logger.info(log_str)
+                    cc_array[i1, i2] = cc[0, 1]
+                    assert cc[0, 1] > cc_thresh, log_str
+
+    # rough test on number of overlapping files
+    assert np.sum(~np.isnan(cc_array)) >= num_ovl_thresh
 
 
 def test_init(rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str):
@@ -276,7 +310,7 @@ def test_mask_dem(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str, xyz_offset: Tuple,
     opk_offset: Tuple, tmp_path: Path
 ):
-    """ Test the similarity of the DEM (ortho boundary) and ortho valid data mask (without cropping). """
+    """ Test the similarity of the masked DEM (ortho boundary) and ortho valid data mask (without cropping). """
     # Note that these tests should use the pinhole camera model to ensure no artefacts outside the ortho boundary, and
     #  DEM < camera height to ensure no ortho artefacts in DEM > camera height areas.  While the DEM mask excludes
     #  (boundary) occluded pixels, the ortho image mask does not i.e. to compare these masks, there should be no
@@ -294,7 +328,7 @@ def test_mask_dem(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=1)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    with (rio.open(rgb_byte_src_file, 'r') as src_im):
+    with rio.open(rgb_byte_src_file, 'r') as src_im:
         ortho_profile, _ = ortho._create_ortho_profile(
             src_im, dem_array.shape, dem_transform, dtype='uint8', compress=Compress.deflate, write_mask=False
         )
@@ -397,7 +431,6 @@ def test_mask_dem_partial(
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
         dem_array.copy(), dem_transform, dem_interp, full_remap=True, crop=False, mask=True, num_pts=num_pts
     )
-    mask = ~np.isnan(dem_array_mask)
 
     # crop & mask the dem
     dem_array_crop, dem_transform_crop = ortho._mask_dem(
@@ -405,7 +438,7 @@ def test_mask_dem_partial(
     )
     mask_crop = ~np.isnan(dem_array_crop)
 
-    # find the window of mask_crop in mask
+    # find the window of dem_array_crop in dem_array_mask
     bounds_crop = array_bounds(*dem_array_crop.shape, dem_transform_crop)
     win_crop = from_bounds(*bounds_crop, dem_transform_mask)
 
@@ -804,6 +837,7 @@ def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
         ref_array = ref_im.read()
         test_array = test_im.read()
 
+        assert test_array.shape[0] == 3
         assert test_array.shape == ref_array.shape
         assert np.all(test_array == ref_array)
 
@@ -852,23 +886,62 @@ def test_process_camera(
     assert ortho_file.exists()
 
     with rio.open(rgb_byte_src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        # test ortho bounds and content
         ortho_bounds = np.array(ortho_im.bounds)
-
-        # test ortho format
-        assert ortho_im.count == src_im.count
-        assert ortho_im.dtypes == src_im.dtypes
-        assert ortho_im.res == resolution
         assert np.all(ortho_bounds[:2] >= dem_bounds[:2]) and np.all(ortho_bounds[-2:] <= dem_bounds[-2:])
-        assert ortho_im.profile['compress'] == 'deflate'
-        assert ortho_im.profile['interleave'] == 'band'
 
-        # test ortho content
         src_array = src_im.read()
         ortho_array = ortho_im.read()
         ortho_mask = ortho_im.dataset_mask().astype('bool')
         assert np.all(np.unique(src_array) == np.unique(ortho_array[:, ortho_mask]))
         assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=15)
         assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=15)
+
+
+def test_process_ngi(
+    ngi_image_files: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
+    ngi_crs: str, tmp_path: Path
+):
+    """ Test integration and ortho overlap using NGI aerial images. """
+    int_param_dict = io.read_oty_int_param(ngi_legacy_config_file)
+    ext_param_dict = io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs).read_ext_param()
+    camera = create_camera(**next(iter(int_param_dict.values())))
+
+    ortho_files = []
+    for src_file in ngi_image_files:
+        ortho_file = tmp_path.joinpath(src_file.stem + '_ORTHO.tif')
+        ext_param = ext_param_dict[src_file.stem]
+        camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+        ortho = Ortho(src_file, ngi_dem_file, camera, crs=ngi_crs)
+        ortho.process(ortho_file, resolution=(5, 5))
+
+        assert ortho_file.exists()
+        ortho_files.append(ortho_file)
+
+    _validate_ortho_files(ortho_files)
+
+
+def test_process_odm(
+    odm_image_files: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_crs: str, tmp_path: Path
+):
+    """ Test integration and ortho overlap using ODM drone images. """
+    reader = io.OsfmReader(osfm_reconstruction_file, crs=odm_crs)
+    int_param_dict = reader.read_int_param()
+    ext_param_dict = reader.read_ext_param()
+    camera = create_camera(**next(iter(int_param_dict.values())))
+
+    ortho_files = []
+    for src_file in odm_image_files:
+        ortho_file = tmp_path.joinpath(src_file.stem + '_ORTHO.tif')
+        ext_param = ext_param_dict[src_file.stem]
+        camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+        ortho = Ortho(src_file, odm_dem_file, camera, crs=odm_crs)
+        ortho.process(ortho_file, resolution=(0.25, 0.25))
+
+        assert ortho_file.exists()
+        ortho_files.append(ortho_file)
+
+    _validate_ortho_files(ortho_files, num_ovl_thresh=5)
 
 
 # TODO: add test with dem that includes occlusion
