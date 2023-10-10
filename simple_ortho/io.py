@@ -889,7 +889,7 @@ class OtyReader(Reader):
             json_dict = json.load(f)
 
         schema = dict(
-            type='FeatureCollection', xyz_opk_crs=str, features=[dict(
+            type='FeatureCollection', world_crs=str, features=[dict(
                 type='Feature', properties=dict(filename=str, camera=None, xyz=list, opk=list),
                 geometry=dict(type='Point', coordinates=list)
             )]
@@ -901,7 +901,7 @@ class OtyReader(Reader):
 
         if not crs:
             try:
-                crs = rio.CRS.from_string(json_dict['xyz_opk_crs'])
+                crs = rio.CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
                 raise ParamFileError(f"Could not interpret CRS in '{filename.name}': {str(ex)}")
 
@@ -985,6 +985,6 @@ def write_ext_param(
         feat_dict = dict(type='Feature', properties=props_dict, geometry=geom_dict)
         feat_list.append(feat_dict)
 
-    json_dict = dict(type='FeatureCollection', xyz_opk_crs=crs.to_string(), features=feat_list)
+    json_dict = dict(type='FeatureCollection', world_crs=crs.to_string(), features=feat_list)
     with open(filename, 'w') as f:
         json.dump(json_dict, f, indent=4)
