@@ -24,28 +24,23 @@ import numpy as np
 
 from simple_ortho.cli import cli
 
-logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope='session')
-def legacy_ngi_ortho_cli_str(
+def ortho_legacy_ngi_cli_str(
     ngi_image_file: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
 ) -> str:
+    """ ``oty ortho`` CLI string to orthorectify an NGI image with legacy format interior and exterior params. """
     return (
         f'ortho --dem {ngi_dem_file} --int-param {ngi_legacy_config_file} --ext-param {ngi_legacy_csv_file} '
         f'{ngi_image_file}'
     )
 
 
-def test_ortho_crs_src(
-    ngi_image_file: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
-    tmp_path: Path, runner: CliRunner
-):
+def test_ortho_crs_src(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho`` reads the world / ortho CRS from a projected source image.  """
-    cli_str = (
-        f'ortho --dem {ngi_dem_file} --int-param {ngi_legacy_config_file} --ext-param {ngi_legacy_csv_file} '
-        f'--out-dir {tmp_path} {ngi_image_file}'
-    )
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -59,7 +54,7 @@ def test_ortho_crs_auto(
     odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_lla_rpy_csv_file: Path,
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
-    """ Test ``oty ortho`` auto-determines the CRS for LLA / RPY format exterior parameters.  """
+    """ Test ``oty ortho`` auto-determines the CRS for LLA-RPY CSV format exterior parameters.  """
     cli_str = (
         f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_lla_rpy_csv_file} '
         f'--out-dir {tmp_path} --res 5 {odm_image_file}'
@@ -78,6 +73,7 @@ def test_ortho_crs_cli(
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` uses a CRS specified with ``--crs``.  """
+    # use odm_xyz_opk_csv_file external params so there is no auto-crs
     cli_str = (
         f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
         f'--out-dir {tmp_path} --crs {odm_crs} --res 5 {odm_image_file}'
@@ -130,24 +126,18 @@ def test_ortho_crs_missing_error(
     assert '--crs' in result.stdout
 
 
-def test_ortho_crs_geographic_error(
-    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, osfm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
-    tmp_path: Path, runner: CliRunner
-):
+def test_ortho_crs_geographic_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho`` raises an error when ``--crs`` is geographic.  """
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {osfm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
-        f'--out-dir {tmp_path} --crs EPSG:4326 {odm_image_file}'
-    )
+    cli_str = ortho_legacy_ngi_cli_str + ' --crs EPSG:4326'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--crs' in result.stdout and 'geographic' in result.stdout
 
 
-def test_ortho_resolution_square(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_resolution_square(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --res`` with square resolution.  """
     resolution = (96., 96.)
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res {resolution[0]}'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res {resolution[0]}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -157,10 +147,10 @@ def test_ortho_resolution_square(legacy_ngi_ortho_cli_str: str, tmp_path: Path, 
         assert im.res == resolution
 
 
-def test_ortho_resolution_non_square(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_resolution_non_square(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --res`` with non-square resolution.  """
     resolution = (48., 96.)
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res {resolution[0]} --res {resolution[1]}'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res {resolution[0]} --res {resolution[1]}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -170,29 +160,29 @@ def test_ortho_resolution_non_square(legacy_ngi_ortho_cli_str: str, tmp_path: Pa
         assert im.res == resolution
 
 
-def test_ortho_dem_band(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dem_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dem-band`` with valid band.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 1'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 1'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
 
-def test_ortho_dem_band_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dem_band_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dem-band`` raises an error with an out of range band.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 2'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 2'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--dem-band' in result.stdout
 
 
-def test_ortho_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_interp(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --interp`` by comparing 'nearest' to 'average' interpolation orthos.  """
     # create average interpolation dem
     out_dir_average = tmp_path.joinpath('average')
     out_dir_average.mkdir()
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {out_dir_average} --res 24 --compress deflate --interp average '
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {out_dir_average} --res 24 --compress deflate --interp average '
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ref_ortho_files = [*out_dir_average.glob('*_ORTHO.tif')]
@@ -201,7 +191,7 @@ def test_ortho_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: Cli
     # create nearest interpolation dem
     out_dir_nearest = tmp_path.joinpath('nearest')
     out_dir_nearest.mkdir()
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {out_dir_nearest} --res 24 --compress deflate --interp nearest'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {out_dir_nearest} --res 24 --compress deflate --interp nearest'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     test_ortho_files = [*out_dir_nearest.glob('*_ORTHO.tif')]
@@ -214,20 +204,20 @@ def test_ortho_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: Cli
         assert test_array.std() > ref_array.std()
 
 
-def test_ortho_interp_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --interp`` raises an error with an invalid interpolation value.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --interp other'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --interp other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--interp' in result.stdout
 
 
-def test_ortho_dem_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dem_interp(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dem-interp`` by comparing 'nearest' to 'average' DEM interpolation orthos.  """
     # create average dem interpolation ortho
     out_dir_average = tmp_path.joinpath('average')
     out_dir_average.mkdir()
-    cli_str = legacy_ngi_ortho_cli_str + (
+    cli_str = ortho_legacy_ngi_cli_str + (
         f' --out-dir {out_dir_average} --res 30 --compress deflate --dem-interp average'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -238,7 +228,7 @@ def test_ortho_dem_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner:
     # create nearest dem interpolation ortho
     out_dir_nearest = tmp_path.joinpath('nearest')
     out_dir_nearest.mkdir()
-    cli_str = legacy_ngi_ortho_cli_str + (
+    cli_str = ortho_legacy_ngi_cli_str + (
         f' --out-dir {out_dir_nearest} --res 30 --compress deflate --dem-interp nearest'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -254,18 +244,18 @@ def test_ortho_dem_interp(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner:
         assert test_array.std() != ref_array.std()
 
 
-def test_ortho_dem_interp_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dem_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dem-interp`` raises an error with an invalid interpolation value.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --dem-interp other'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --dem-interp other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--dem-interp' in result.stdout
 
 
-def test_ortho_per_band(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --per-band`` by comparing memory usage between ``--per-band`` and ``--no-per-band``.  """
     # create --per-band ortho
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
     tracemalloc.start()
     result = runner.invoke(cli, cli_str.split())
     _, per_band_peak = tracemalloc.get_traced_memory()
@@ -275,7 +265,7 @@ def test_ortho_per_band(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: C
     assert len(ortho_files) == 1
 
     # create --no-per-band ortho
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24 --no-per-band -o'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --no-per-band -o'
     tracemalloc.start()
     result = runner.invoke(cli, cli_str.split())
     _, no_per_band_peak = tracemalloc.get_traced_memory()
@@ -372,9 +362,9 @@ def test_ortho_alpha(
         assert cc[0, 1] > 0.99
 
 
-def test_ortho_alpha_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --alpha`` raises an error with an invalid alpha value.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --no-full-remap --alpha 2'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --no-full-remap --alpha 2'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--alpha' in result.stdout
@@ -414,17 +404,17 @@ def test_ortho_lla_crs(
         assert ellps_im.bounds != pytest.approx(geoid_im.bounds, abs=geoid_im.res[0])
 
 
-def test_ortho_lla_crs_projected_error(legacy_ngi_ortho_cli_str: str, ngi_crs: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_lla_crs_projected_error(ortho_legacy_ngi_cli_str: str, ngi_crs: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --lla-crs`` raises an error with a projected CRS value.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --lla-crs {ngi_crs}'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --lla-crs {ngi_crs}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--lla-crs' in result.stdout and 'projected' in result.stdout
 
 
-def test_ortho_write_mask(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_write_mask(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --write-mask`` writes an internal mask to the ortho with ``compress=deflate``.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --compress deflate --write-mask --res 24'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --write-mask --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -435,10 +425,10 @@ def test_ortho_write_mask(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner:
         assert all([mf[0] == rio.enums.MaskFlags.per_dataset for mf in im.mask_flag_enums])
 
 
-def test_ortho_dtype(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dtype(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dtype`` creates an ortho with the correct dtype.  """
     dtype = 'float32'
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype {dtype} --res 24'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype {dtype} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -448,18 +438,18 @@ def test_ortho_dtype(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliR
         assert im.profile['dtype'] == dtype
 
 
-def test_ortho_dtype_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_dtype_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dtype`` with an invalid dtype raises an error.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype int32'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype int32'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--dtype' in result.stdout
 
 
 @pytest.mark.parametrize('compress', ['jpeg', 'deflate'])
-def test_ortho_compress(legacy_ngi_ortho_cli_str: str, compress: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_compress(ortho_legacy_ngi_cli_str: str, compress: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --compress`` creates an ortho with the correct compression.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --compress {compress} --res 24'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress {compress} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -469,17 +459,17 @@ def test_ortho_compress(legacy_ngi_ortho_cli_str: str, compress: str, tmp_path: 
         assert im.profile['compress'] == compress
 
 
-def test_ortho_compress_error(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_compress_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --dtype`` with an invalid dtype raises an error.  """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --compress other'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--compress' in result.stdout
 
 
-def test_ortho_build_ovw(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_build_ovw(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --build-ovw`` builds overviews. """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 5 --build-ovw'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 5 --build-ovw'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -489,9 +479,9 @@ def test_ortho_build_ovw(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: 
         assert len(im.overviews(1)) > 0
 
 
-def test_ortho_no_build_ovw(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_ortho_no_build_ovw(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --no-build-ovw`` does not build overviews. """
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 5 --no-build-ovw'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 5 --no-build-ovw'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -501,12 +491,12 @@ def test_ortho_no_build_ovw(legacy_ngi_ortho_cli_str: str, tmp_path: Path, runne
         assert len(im.overviews(1)) == 0
 
 
-def test_ortho_overwrite(legacy_ngi_ortho_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
+def test_ortho_overwrite(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --overwrite`` overwrites and existing ortho. """
     ortho_file = tmp_path.joinpath(ngi_image_file.stem + '_ORTHO.tif')
     ortho_file.touch()
 
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24 --overwrite'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --overwrite'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -514,30 +504,15 @@ def test_ortho_overwrite(legacy_ngi_ortho_cli_str: str, ngi_image_file: Path, tm
     assert ortho_file == ortho_files[0]
 
 
-def test_ortho_overwrite_error(legacy_ngi_ortho_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
+def test_ortho_overwrite_error(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho`` raises an error when the ortho file already exists. """
     ortho_file = tmp_path.joinpath(ngi_image_file.stem + '_ORTHO.tif')
     ortho_file.touch()
 
-    cli_str = legacy_ngi_ortho_cli_str + f' --out-dir {tmp_path} --res 24'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert result.exception is not None and 'exists' in str(result.exception)
-
-
-def test_ortho_legacy_ngi(
-    ngi_image_files: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
-    ngi_crs: str, tmp_path: Path, runner: CliRunner
-):
-    """ """
-    cli_str = (
-        f'ortho --dem {ngi_dem_file} --int-param {ngi_legacy_config_file} --ext-param {ngi_legacy_csv_file} '
-        f'--out-dir {tmp_path} {" ".join([str(fn) for fn in ngi_image_files])}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0
-    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-    assert len(ortho_files) == len(ngi_image_files)
 
 
 # TODO:
