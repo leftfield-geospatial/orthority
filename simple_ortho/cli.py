@@ -236,12 +236,12 @@ dem_file_option = click.option(
 int_param_file_option = click.option(
     '-ip', '--int-param', 'int_param_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True, default=None,
-    help='Path of an internal parameter file.'
+    help='Path of an interior parameter file.'
 )
 ext_param_file_option = click.option(
     '-ep', '--ext-param', 'ext_param_file',
     type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True, default=None,
-    help='Path of an external parameter file.'
+    help='Path of an exterior parameter file.'
 )
 crs_option = click.option(
     '-c', '--crs', type=click.STRING, default=None, show_default='auto', callback=_crs_cb,
@@ -378,7 +378,7 @@ def ortho(
 
         oty ortho --dem dem.tif --int-param reconstruction.json --ext-param reconstruction.json source.tif
 
-    Convert `reconstruction.json` internal and external parameters to orthority format files in the current working
+    Convert `reconstruction.json` interior and exterior parameters to orthority format files in the current working
     directory::
 
         oty ortho --int-param reconstruction.json --ext-param reconstruction.json --write-params
@@ -474,7 +474,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 
         oty exif --dem dem.tif *rgb.tif
 
-    Write internal and external parameters for images matching '*rgb.tif' to orthority format files, and exit::
+    Write interior and exterior parameters for images matching '*rgb.tif' to orthority format files, and exit::
 
         oty exif --write-params *rgb.tif
 
@@ -564,14 +564,14 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], out_dir: Path, **kwargs
     orthophoto_file = proj_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
     dem_file = proj_dir.joinpath('odm_dem', 'dsm.tif')
     crs_file = orthophoto_file if orthophoto_file.exists() else dem_file
-    with rio.open(crs_file, 'r') as ortho_im:
-        crs = ortho_im.crs
+    with rio.open(crs_file, 'r') as im:
+        crs = im.crs
 
     # set and create output dir
     out_dir = out_dir or proj_dir.joinpath('orthority')
     out_dir.mkdir(exist_ok=True)
 
-    # read internal and external params from OpenSfM reconstruction file
+    # read interior and exterior params from OpenSfM reconstruction file
     rec_file = proj_dir.joinpath('opensfm', 'reconstruction.json')
     reader = io.OsfmReader(rec_file, crs=crs)
     int_param_dict = reader.read_int_param()

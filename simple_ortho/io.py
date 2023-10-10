@@ -47,8 +47,9 @@ _optional_schema = {
 _default_lla_crs = CRS.from_epsg(4979)
 """ Default CRS for geographic camera coordinates. """
 
+
 def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
-    """ Read camera internal parameters from an ODM / OpenSfM json dictionary. """
+    """ Read camera interior parameters from an ODM / OpenSfM json dictionary. """
 
     def parse_json_param(json_param: Dict, cam_id: str) -> Dict:
         """ Validate & convert the given json dictionary for a single camera. """
@@ -98,7 +99,7 @@ def _read_osfm_int_param(json_dict: Dict) -> Dict[str, Dict]:
     if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
         json_dict = json_dict[0]['cameras']
 
-    # parse each set of internal parameters
+    # parse each set of interior parameters
     int_param_dict = {}
     for cam_id, json_param in json_dict.items():
         cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
@@ -116,7 +117,7 @@ def _create_exif_cam_id(exif: Exif) -> str:
 
 
 def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
-    """ Read camera internal parameters from an Exif object. """
+    """ Read camera interior parameters from an Exif object. """
     if exif.dewarp:
         if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
             logger.warning(f"Cannot interpret dewarp data for '{exif.filename.name}'.")
@@ -157,7 +158,7 @@ def _read_exif_int_param(exif: Exif) -> Dict[str, Dict]:
 
 
 def _read_exif_ext_param(exif: Exif, crs: Union[str, rio.CRS], lla_crs: Union[str, rio.CRS]) -> Dict:
-    """ Read camera external parameters from an Exif object. """
+    """ Read camera exterior parameters from an Exif object. """
     if not exif.lla:
         raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif.filename.name}'.")
     if not exif.rpy:
@@ -227,7 +228,7 @@ def read_oty_int_param(filename: Union[str, Path]) -> Dict[str, Dict]:
         cam_id = yaml_dict['name'] if 'name' in yaml_dict else 'unknown'
         yaml_dict = {cam_id: yaml_dict}
 
-    # parse each set of internal parameters
+    # parse each set of interior parameters
     int_param_dict = {}
     for cam_id, yaml_param in yaml_dict.items():
         int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
@@ -481,7 +482,7 @@ class CsvReader(Reader):
         dialect: Dialect = None, radians: bool = False,
     ):
         """
-        Class for reading camera external parameters from a CSV file.
+        Class for reading camera exterior parameters from a CSV file.
 
         Reads tabular data from a text CSV file with a row per source image and column fields for the image file
         name, camera position coordinates and orientation angles.  Positions and orientations are converted into
@@ -499,12 +500,12 @@ class CsvReader(Reader):
             'latitude', 'longitude', 'altitude' Camera position in ``lla_crs`` coordinates and units.
             'omega', 'phi', 'kappa'             Camera orientation with units specified by ``radians``.
             'roll', 'pitch', 'yaw'              Camera orientation with units specified by ``radians``.
-            'camera'                            ID of camera internal parameters (optional).
+            'camera'                            ID of camera interior parameters (optional).
             =================================== =======================================================
 
         'filename', one of ('easting', 'northing', 'altitude') or ('latitude', 'longitude', 'altitude'), and one of
         ('omega', 'phi', 'kappa') or ('roll', 'pitch', 'yaw') are required.  'camera' is required for multi-camera set
-        ups to reference corresponding internal parameters, but is otherwise optional.  Other fields included in the
+        ups to reference corresponding interior parameters, but is otherwise optional.  Other fields included in the
         file that are not in the recognised list are ignored.
 
         If there is no file header and ``fieldnames`` is not provided, the file is assumed to be in the legacy
@@ -920,7 +921,7 @@ def write_int_param(
     filename: Union[str, Path], int_param_dict: Dict[str, Dict], overwrite: bool = False
 ):
     """
-    Write internal parameters to an orthority format yaml file.
+    Write interior parameters to an orthority format yaml file.
 
     Parameters
     ----------
@@ -954,7 +955,7 @@ def write_ext_param(
     filename: Union[str, Path], ext_param_dict: Dict[str, Dict], crs: Union[str, rio.CRS], overwrite: bool = False
 ):
     """
-    Write external parameters to an orthority format geojson file.
+    Write exterior parameters to an orthority format geojson file.
 
     Parameters
     ----------

@@ -20,7 +20,7 @@ import pathlib
 # enable on-demand download of proj transformation grids
 os.environ.update(PROJ_NETWORK='ON', PROJ_ONLY_BEST_DEFAULT='ON')
 
-# path to package root
+# path to package root TODO: remove with deprecated simple-ortho CLI
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
