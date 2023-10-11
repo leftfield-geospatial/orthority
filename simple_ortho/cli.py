@@ -624,11 +624,9 @@ def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf
         # check and create ortho_dir if necessary
         if ortho_dir is not None:
             ortho_dir = Path(ortho_dir)
-            if not ortho_dir.is_dir():
-                raise Exception(f'Ortho directory {ortho_dir} is not a valid directory')
             if not ortho_dir.exists():
                 logger.warning(f'Creating ortho directory {ortho_dir}')
-                Path.mkdir(ortho_dir)
+                ortho_dir.mkdir()
 
     # TODO: insert link to docs in all deprecation warnings
     logger.warning(
