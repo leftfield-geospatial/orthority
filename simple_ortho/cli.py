@@ -21,18 +21,15 @@ import click
 import yaml
 import csv
 import argparse
-import datetime
 from typing import Tuple, List, Dict, Union, Optional
 
-from tqdm.auto import tqdm
 import numpy as np
 import rasterio as rio
-from rasterio.errors import CRSError
 from simple_ortho.ortho import Ortho
 from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
 from simple_ortho.utils import suppress_no_georef
-from simple_ortho.errors import  CrsError, ParamFileError, DemBandError, CrsMissingError
+from simple_ortho.errors import ParamFileError, DemBandError, CrsMissingError
 from simple_ortho import io, root_path
 from simple_ortho.version import __version__
 
@@ -124,6 +121,7 @@ def _read_crs(crs: str):
         # read CRS from string
         crs = rio.CRS.from_string(crs)
     return crs
+
 
 def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
     """ click callback to validate and parse the CRS. """
@@ -222,7 +220,7 @@ def _ortho(
         ortho_file = out_dir.joinpath(f'{src_file.stem}_ORTHO.tif')
 
         # orthorectify
-        logger.info(f"Orthorectifying '{src_file.name}' ({src_i +1 } of {len(src_files)}):")
+        logger.info(f"Orthorectifying '{src_file.name}' ({src_i + 1} of {len(src_files)}):")
         ortho.process(ortho_file, overwrite=overwrite, **kwargs)
 
 
@@ -637,7 +635,11 @@ def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf
     try:
         # set logging level
         if verbosity is not None:
-            pkg_logger = logging.getLogger(__package__)
+            pkg_logger = logging.getLogger('simple_ortho')
+            formatter = PlainInfoFormatter()
+            handler = logging.StreamHandler(sys.stderr)
+            handler.setFormatter(formatter)
+            pkg_logger.addHandler(handler)
             pkg_logger.setLevel(10 * verbosity)
             logging.captureWarnings(True)
 
@@ -659,7 +661,7 @@ def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf
             with open(out_config_filename, 'w') as f:
                 yaml.dump(config, stream=f)
             logger.info(f'Wrote config to {out_config_filename}')
-            exit(0)
+            return
 
         # prepare ortho config
         ortho_config = config.get('ortho', {})
@@ -722,13 +724,10 @@ def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf
                 if np.any(im_size != camera._im_size):
                     logger.warning(f'{src_filename.name} size ({im_size}) does not match configuration.')
 
-                # create Ortho  and orthorectify
+                # create Ortho and orthorectify
                 logger.info(f'Orthorectifying {src_filename.name}:')
-                start_ttl = datetime.datetime.now()
                 ortho_im = Ortho(src_filename, dem_file, camera, crs=crs, dem_band=dem_band)
                 ortho_im.process(ortho_filename, **ortho_config)
-                ttl_time = (datetime.datetime.now() - start_ttl)
-                logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
 
     except Exception as ex:
         logger.error('Exception: ' + str(ex))
