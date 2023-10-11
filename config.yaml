@@ -1,44 +1,33 @@
-# simple-ortho configuration
+# Legacy simple-ortho configuration - note this format is deprecated, see the online docs for alternatives
 camera:
-  # Not used
-  name: Integraph DMC
-  # Camera model type (pinhole, brown, fisheye, opencv)
-  type: pinhole
-  # Image [width, height] in pixels
-  im_size: [7680, 13824]
-  # Focal length in same units/scale as `sensor_size` - can be single value or [x, y] pair.
-  focal_len: 120.
-  # Optional sensor [width, height] in same units/scale as `focal_len`.  If omitted, `focal_len` should be normalised
-  # and unitless: `focal_len` = (focal length) / (sensor width).
-  sensor_size: [92.160, 165.888]
-  # Optional distortion coefficients according to camera `type`. See the readme for details.
-  #   brown: k1, k2, p1, p2, k3, cx, cy
-  #   fisheye: k1, k2, k3, k4
-  #   opencv: k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4
-
+  name: Integraph DMC               # Camera ID
+  type: pinhole                     # Camera model type (pinhole, brown, fisheye, opencv)
+  im_size: [ 7680, 13824 ]          # Image [width, height] in pixels
+  focal_len: 120.                   # Focal length
+  sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in same units as the focal length
 
 ortho:
-  # CRS of the ortho image and camera positions as an EPSG, proj4 or WKT string.  Can be omitted if the source image has a CRS.
+  # CRS of world coordinates and ortho image as an EPSG or WKT string.  Can be omitted if the source image has a CRS.
   crs:
-  # Interpolation type for resampling DEM (average, bilinear, cubic, cubic_spline, gauss, lanczos)
+  # Interpolation type for resampling DEM (average, bilinear, cubic, lanczos, nearest).
   dem_interp: cubic
-  # 1-based index of band in DEM raster to use
+  # 1-based index of band in DEM image to use.
   dem_band: 1
-  # Interpolation type for generating ortho-image (nearest, average, bilinear, cubic, lanczos)
-  interp: nearest
-  # Remap the source raster to the ortho per-band (True), or all bands at once (False - recommended)
+  # Interpolation type for generating ortho image (average, bilinear, cubic, lanczos, nearest).
+  interp: cubic
+  # Remap the source image to the ortho per-band (True), or all bands at once (False - recommended).
   per_band: False
-  # Build internal overviews
+  # Build internal overviews.
   build_ovw: True
-  # Overwrite ortho raster if it exists
+  # Overwrite ortho image if it exists.
   overwrite: True
-  # Write an internal mask band (True), can help remove jpeg noise in nodata area (False - recommended)
-  write_mask: False
+  # Write an internal mask band - helps remove jpeg noise in nodata area.  (None = write when jpeg compression is used).
+  write_mask:
   # Remap source to ortho with full camera model (True), or undistorted source to ortho with pinhole model (False).
   full_remap: True
-  # Format of ortho raster - see www.gdal.org/formats_list.html (None = same format as source image)
+  # Data type of ortho image (uint8, uint16, float32, float64)  (None = same type as source image).
   dtype:
-  # Output pixel size [x, y] in m
+  # Output pixel size [x, y] in units of the CRS.
   resolution: [0.5, 0.5]
-  # Compress type (deflate, jpeg, auto)
+  # Compression type (deflate, jpeg, auto).  (auto = jpeg compression for uint8 data type, deflate otherwise).
   compress: auto
