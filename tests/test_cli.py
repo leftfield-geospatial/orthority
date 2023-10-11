@@ -14,6 +14,7 @@
    limitations under the License.
 """
 import logging
+import shutil
 from pathlib import Path
 from typing import List, Dict, Tuple
 import tracemalloc
@@ -22,7 +23,7 @@ from click.testing import CliRunner
 import rasterio as rio
 import numpy as np
 
-from simple_ortho.cli import cli
+from simple_ortho.cli import cli, simple_ortho
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ def test_ortho_crs_cli(
     odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """ Test ``oty ortho`` uses a CRS specified with ``--crs``.  """
-    # use odm_xyz_opk_csv_file external params so there is no auto-crs
+    # use odm_xyz_opk_csv_file exterior params so there is no auto-crs
     cli_str = (
         f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
         f'--out-dir {tmp_path} --crs {odm_crs} --res 5 {odm_image_file}'
@@ -158,6 +159,15 @@ def test_ortho_resolution_non_square(ortho_legacy_ngi_cli_str: str, tmp_path: Pa
 
     with rio.open(ortho_files[0], 'r') as im:
         assert im.res == resolution
+
+
+def test_ortho_resolution_auto(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty ortho`` generates an ortho without the ``--res`` option.  """
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
 
 
 def test_ortho_dem_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -491,6 +501,23 @@ def test_ortho_no_build_ovw(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runne
         assert len(im.overviews(1)) == 0
 
 
+def test_ortho_export_params(
+    ngi_image_file: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_xyz_opk_csv_file: Path,
+    tmp_path: Path, runner: CliRunner
+):
+    """ Test ``oty ortho --export-params`` exports parameter files. """
+    cli_str = (
+        f'ortho --int-param {ngi_legacy_config_file} --ext-param {ngi_xyz_opk_csv_file} --out-dir {tmp_path} '
+        f'--export-params'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+
+    int_param_file = tmp_path.joinpath('int_param.yaml')
+    ext_param_file = tmp_path.joinpath('ext_param.geojson')
+    assert int_param_file.exists() and ext_param_file.exists()
+
+
 def test_ortho_overwrite(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --overwrite`` overwrites and existing ortho. """
     ortho_file = tmp_path.joinpath(ngi_image_file.stem + '_ORTHO.tif')
@@ -513,6 +540,91 @@ def test_ortho_overwrite_error(ortho_legacy_ngi_cli_str: str, ngi_image_file: Pa
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert result.exception is not None and 'exists' in str(result.exception)
+
+
+def test_exif_crs(odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty exif --crs`` creates orthos with the correct CRS. """
+    crs = odm_crs + '+4326'  # differentiate from auto CRS
+    cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res 5 --crs {crs} {odm_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as ortho_im:
+        assert ortho_im.crs == rio.CRS.from_string(crs)
+
+
+def test_exif_crs_auto(odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty exif`` auto determines the CRS. """
+    cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res 5 {odm_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as ortho_im:
+        assert ortho_im.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_exif_option(odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty exif`` passes through a ``--res`` option. """
+    res = 5
+    cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res {res} {odm_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as ortho_im:
+        assert ortho_im.res == (res, res)
+
+
+def test_odm_proj_dir(odm_proj_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner):
+    """  Test ``oty odm`` creates orthos in '<--proj-dir>/orthority' sub-folder. """
+    shutil.copytree(odm_proj_dir, tmp_path, dirs_exist_ok=True)      # copy test data to tmp_path
+    cli_str = f'odm --proj-dir {tmp_path} --res 5 --overwrite'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.joinpath('orthority').glob('*_ORTHO.tif')]
+    src_files = [*tmp_path.joinpath('images').glob('*.tif')]
+    assert len(ortho_files) == len(src_files)
+
+
+def test_odm_out_dir(odm_proj_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner):
+    """  Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder. """
+    cli_str = f'odm --proj-dir {odm_proj_dir} --res 5 --out-dir {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    src_files = [*odm_proj_dir.joinpath('images').glob('*.tif')]
+    assert len(ortho_files) == len(src_files)
+
+
+def test_odm_option(odm_proj_dir: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty odm`` passes through a ``--res`` option. """
+    res = 5
+    cli_str = f'odm --proj-dir {odm_proj_dir} --res {res} --out-dir {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+
+    with rio.open(odm_dem_file, 'r') as dem_im:
+        dem_crs = dem_im.crs
+    for ortho_file in ortho_files:
+        with rio.open(ortho_file, 'r') as ortho_im:
+            assert ortho_im.crs == dem_crs
+            assert ortho_im.res == (res, res)
+
+
+def test_simple_ortho(
+    ngi_image_file: Path, ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path, tmp_path: Path
+):
+    """ Test legacy ``simple-ortho`` CLI with NGI data. """
+    cli_str = f'-od {tmp_path} -rc {ngi_legacy_config_file} {ngi_image_file} {ngi_dem_file} {ngi_legacy_csv_file}'
+    simple_ortho(cli_str.split())
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
 
 
 # TODO:
