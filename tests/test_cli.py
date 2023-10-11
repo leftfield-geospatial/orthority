@@ -18,6 +18,7 @@ import shutil
 from pathlib import Path
 from typing import List, Dict, Tuple
 import tracemalloc
+import yaml
 import pytest
 from click.testing import CliRunner
 import rasterio as rio
@@ -30,13 +31,38 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope='session')
 def ortho_legacy_ngi_cli_str(
-    ngi_image_file: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
+    ngi_image_file: Path, ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path,
 ) -> str:
     """ ``oty ortho`` CLI string to orthorectify an NGI image with legacy format interior and exterior params. """
     return (
         f'ortho --dem {ngi_dem_file} --int-param {ngi_legacy_config_file} --ext-param {ngi_legacy_csv_file} '
         f'{ngi_image_file}'
     )
+
+
+def test_ortho_help(runner: CliRunner):
+    """ Test ``oty ortho --help``.  """
+    result = runner.invoke(cli, 'ortho --help'.split())
+    assert result.exit_code == 0, result.stdout
+    assert len(result.stdout) > 0
+
+
+def test_ortho_int_param_missing_error(
+    ngi_image_file: Path, ngi_dem_file: Path, ngi_oty_ext_param_file: Path, tmp_path: Path, runner: CliRunner
+):
+    cli_str = f'ortho --dem {ngi_dem_file} --ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--int-param' in result.stdout
+
+
+def test_ortho_ext_param_missing_error(
+    ngi_image_file: Path, ngi_dem_file: Path, ngi_oty_int_param_file: Path, tmp_path: Path, runner: CliRunner
+):
+    cli_str = f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--ext-param' in result.stdout
 
 
 def test_ortho_crs_src(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
@@ -78,6 +104,27 @@ def test_ortho_crs_cli(
     cli_str = (
         f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
         f'--out-dir {tmp_path} --crs {odm_crs} --res 5 {odm_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_ortho_crs_file(
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_reconstruction_file: Path, odm_xyz_opk_csv_file: Path,
+    odm_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """ Test ``oty ortho`` uses a text file CRS specified with ``--crs``.  """
+    # use odm_xyz_opk_csv_file exterior params so there is no auto-crs
+    crs_file = tmp_path.joinpath('test_crs.txt')
+    crs_file.write_text(odm_crs)
+    cli_str = (
+        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} --ext-param {odm_xyz_opk_csv_file} '
+        f'--out-dir {tmp_path} --crs {crs_file} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
@@ -501,18 +548,22 @@ def test_ortho_no_build_ovw(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runne
         assert len(im.overviews(1)) == 0
 
 
+@pytest.mark.parametrize('int_param_file, ext_param_file', [
+    ('ngi_oty_int_param_file', 'ngi_oty_ext_param_file'),
+    ('ngi_legacy_config_file', 'ngi_xyz_opk_csv_file'),
+    ('odm_reconstruction_file', 'odm_reconstruction_file'),
+])  # yapf: disable
 def test_ortho_export_params(
-    ngi_image_file: Tuple[Path, ...], ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_xyz_opk_csv_file: Path,
-    tmp_path: Path, runner: CliRunner
+    int_param_file: str, ext_param_file: str, tmp_path: Path, runner: CliRunner, request: pytest.FixtureRequest,
 ):
-    """ Test ``oty ortho --export-params`` exports parameter files. """
-    cli_str = (
-        f'ortho --int-param {ngi_legacy_config_file} --ext-param {ngi_xyz_opk_csv_file} --out-dir {tmp_path} '
-        f'--export-params'
-    )
+    """ Test ``oty ortho --export-params`` exports interior & exterior parameters provided in different formats. """
+    # note this doubles as a test of reading params in different formats
+    int_param_file: Path = request.getfixturevalue(int_param_file)
+    ext_param_file: Path = request.getfixturevalue(ext_param_file)
+    cli_str = f'ortho --int-param {int_param_file} --ext-param {ext_param_file} --out-dir {tmp_path} --export-params'
+
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
-
     int_param_file = tmp_path.joinpath('int_param.yaml')
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
     assert int_param_file.exists() and ext_param_file.exists()
@@ -625,6 +676,21 @@ def test_simple_ortho(
     simple_ortho(cli_str.split())
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
+
+
+def test_simple_ortho_write_conf(
+    ngi_image_file: Path, ngi_dem_file: Path, ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path, tmp_path: Path
+):
+    """ Test legacy ``simple-ortho -wc`` writes a config file. """
+    conf_file = tmp_path.joinpath('test_config.yaml')
+    cli_str = (
+        f'-od {tmp_path} -rc {ngi_legacy_config_file} -wc {conf_file} {ngi_image_file} {ngi_dem_file} '
+        f'{ngi_legacy_csv_file}'
+    )
+    simple_ortho(cli_str.split())
+    assert conf_file.exists()
+    assert yaml.safe_load(conf_file.read_text()) == yaml.safe_load(ngi_legacy_config_file.read_text())
+
 
 
 # TODO:
