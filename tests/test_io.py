@@ -506,21 +506,21 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
-def test_write_ext_param(ngi_oty_ext_param_file: Path, tmp_path: Path):
-    """ Test write_ext_param writes a valid exterior parameter file. """
-    reader = io.OtyReader(ngi_oty_ext_param_file)
-    ext_param_dict = reader.read_ext_param()
+def test_oty_write_ext_param(ngi_crs: str, tmp_path: Path):
+    """ Test write_ext_param writes a valid oty format exterior parameter file. """
+    ref_ext_param_dict = dict(
+        filename1=dict(xyz=(1., 2., 3.), opk=(0.1, 0.2, 0.3), camera=None),
+        filename2=dict(xyz=(4., 5., 6.), opk=(0.4, 0.5, 0.6), camera='camera2')
+    )
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
-    io.write_ext_param(ext_param_file, ext_param_dict, crs=reader.crs)
+    io.write_ext_param(ext_param_file, ref_ext_param_dict, crs=ngi_crs)
+    reader = io.OtyReader(ext_param_file)
+    test_ext_param_dict = reader.read_ext_param()
 
-    with open(ext_param_file, 'r') as test_file, open(ngi_oty_ext_param_file, 'r') as ref_file:
-        test_dict = json.load(test_file)
-        ref_dict = json.load(ref_file)
-    assert test_dict == ref_dict
+    assert test_ext_param_dict == ref_ext_param_dict
+    assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
 # TODO: Multi-camera configurations
 # TODO: Add config conversions e.g. ODM / Legacy / CSV internal + external -> oty format -> inputs
 # TODO: test lla_crs
-# TODO: test write_ext_param
-# TODO: standardise exterior/external interior/internal
