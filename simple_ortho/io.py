@@ -976,6 +976,7 @@ def write_ext_param(
 
     feat_list = []
     lla_crs = _default_lla_crs
+    crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
     for src_file, ext_param in ext_param_dict.items():
         xyz = ext_param['xyz']
         lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])

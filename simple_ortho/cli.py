@@ -20,6 +20,8 @@ import re
 import click
 import yaml
 import csv
+import argparse
+import datetime
 from typing import Tuple, List, Dict, Union, Optional
 
 from tqdm.auto import tqdm
@@ -31,7 +33,7 @@ from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
 from simple_ortho.utils import suppress_no_georef
 from simple_ortho.errors import  CrsError, ParamFileError, DemBandError, CrsMissingError
-from simple_ortho import io
+from simple_ortho import io, root_path
 from simple_ortho.version import __version__
 
 
@@ -582,6 +584,188 @@ def odm(proj_dir: Path, resolution: Tuple[float, float], out_dir: Path, **kwargs
         src_files=src_files, dem_file=dem_file, int_param_dict=int_param_dict, ext_param_dict=ext_param_dict, crs=crs,
         resolution=resolution, dem_band=1, out_dir=out_dir, **kwargs
     )
+
+
+def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf=None, write_conf=None, verbosity=2):
+    """
+    Legacy orthorectification (deprecated).
+
+    Parameters
+    ----------
+    src_im_file : str, pathlib.Path
+                  Source image file(s)
+    dem_file : str, pathlib.Path
+               DEM file covering source image file(s)
+    pos_ori_file : str, pathlib.Path
+                   Position and orientation file for source image file(s)
+    ortho_dir : str, pathlib.Path, optional
+                Output directory
+    read_conf : str, pathlib.Path, optional
+                Read configuration from this file
+    write_conf : str, pathlib.Path, optional
+                Write configuration to this file and exit
+    verbosity : int
+                Logging verbosity 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)
+    """
+    def check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=None):
+        """ Check arguments for errors. """
+        # check files exist
+        for src_im_file_spec in src_im_file:
+            src_im_file_path = Path(src_im_file_spec)
+            if len(list(src_im_file_path.parent.glob(src_im_file_path.name))) == 0:
+                raise Exception(f'Could not find any source image(s) matching {src_im_file_spec}')
+
+        if not Path(dem_file).exists():
+            raise Exception(f'DEM file {dem_file} does not exist')
+
+        if not Path(pos_ori_file).exists():
+            raise Exception(f'Camera position and orientation file {pos_ori_file} does not exist')
+
+        # check and create ortho_dir if necessary
+        if ortho_dir is not None:
+            ortho_dir = Path(ortho_dir)
+            if not ortho_dir.is_dir():
+                raise Exception(f'Ortho directory {ortho_dir} is not a valid directory')
+            if not ortho_dir.exists():
+                logger.warning(f'Creating ortho directory {ortho_dir}')
+                Path.mkdir(ortho_dir)
+
+    # TODO: insert link to docs in all deprecation warnings
+    logger.warning(
+        "This command is deprecated and will be removed in version 0.4.0.  Please switch to 'oty' and its "
+        "sub-commands."
+    )
+
+    try:
+        # set logging level
+        if verbosity is not None:
+            pkg_logger = logging.getLogger(__package__)
+            pkg_logger.setLevel(10 * verbosity)
+            logging.captureWarnings(True)
+
+        # read configuration
+        if read_conf is None:
+            config_filename = root_path.joinpath('config.yaml')
+        else:
+            config_filename = Path(read_conf)
+
+        if not config_filename.exists():
+            raise Exception(f'Config file {config_filename} does not exist')
+
+        with open(config_filename, 'r') as f:
+            config = yaml.safe_load(f)
+
+        # write configuration if requested and exit
+        if write_conf is not None:
+            out_config_filename = Path(write_conf)
+            with open(out_config_filename, 'w') as f:
+                yaml.dump(config, stream=f)
+            logger.info(f'Wrote config to {out_config_filename}')
+            exit(0)
+
+        # prepare ortho config
+        ortho_config = config.get('ortho', {})
+        crs = ortho_config.pop('crs', None)
+        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        for key in ['driver', 'tile_size', 'nodata', 'interleave', 'photometric']:
+            if key in ortho_config:
+                ortho_config.pop(key)
+                logger.warning(f"The '{key}' option is deprecated.")
+        for key in ['interp', 'dem_interp']:
+            if ortho_config.get(key, None) == 'cubic_spline':
+                logger.warning(f"'cubic_spline' interpolation is deprecated, using '{key}'='cubic'.")
+                ortho_config[key] = 'cubic'
+
+        # prepare camera config
+        camera = None
+        camera_config = config['camera']
+        camera_type = CameraType(camera_config.get('type', 'pinhole'))
+        camera_config = {k: v for k, v in camera_config.items() if k not in ['name', 'type']}
+
+        # checks paths etc
+        check_args(src_im_file, dem_file, pos_ori_file, ortho_dir=ortho_dir)
+
+        # read camera position and rotation
+        with open(pos_ori_file, 'r', newline='') as f:
+            reader = csv.DictReader(
+                f, delimiter=' ', fieldnames=['file', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
+            )
+            cam_pos_orid = {
+                row['file']: {k: float(row[k]) for k in reader.fieldnames[1:]}
+                for row in reader
+            }  # yapf: disable
+
+        # loop through image file(s) or wildcard(s), or combinations thereof
+        for src_im_file_spec in src_im_file:
+            src_im_file_path = Path(src_im_file_spec)
+            for src_filename in src_im_file_path.parent.glob(src_im_file_path.name):
+                if src_filename.stem not in cam_pos_orid:
+                    raise Exception(f'Could not find {src_filename.stem} in {pos_ori_file}')
+
+                im_pos_ori = cam_pos_orid[src_filename.stem]
+                opk = np.radians((im_pos_ori['omega'], im_pos_ori['phi'], im_pos_ori['kappa']))
+                xyz = np.array((im_pos_ori['easting'], im_pos_ori['northing'], im_pos_ori['altitude']))
+
+                # set ortho filename
+                ortho_dir = src_filename.parent if not ortho_dir else ortho_dir
+                ortho_filename = Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
+
+                # Get src size
+                with suppress_no_georef(), rio.open(src_filename) as src_im:
+                    im_size = np.float64([src_im.width, src_im.height])
+
+                if not camera:
+                    # create a new camera
+                    camera = create_camera(camera_type, **camera_config, xyz=xyz, opk=opk)
+                else:
+                    # update existing camera
+                    camera.update(xyz, opk)
+
+                if np.any(im_size != camera._im_size):
+                    logger.warning(f'{src_filename.name} size ({im_size}) does not match configuration.')
+
+                # create Ortho  and orthorectify
+                logger.info(f'Orthorectifying {src_filename.name}:')
+                start_ttl = datetime.datetime.now()
+                ortho_im = Ortho(src_filename, dem_file, camera, crs=crs, dem_band=dem_band)
+                ortho_im.process(ortho_filename, **ortho_config)
+                ttl_time = (datetime.datetime.now() - start_ttl)
+                logger.info(f'Completed in {ttl_time.total_seconds():.2f} secs')
+
+    except Exception as ex:
+        logger.error('Exception: ' + str(ex))
+        raise ex
+
+
+def simple_ortho(argv=None):
+    """ Entry point to legacy 'simple-ortho' CLI. """
+
+    def parse_args(argv=None):
+        """ Parse arguments """
+        parser = argparse.ArgumentParser(description='Orthorectify an image with known DEM and camera model.')
+        parser.add_argument(
+            "src_im_file", help="path(s) and or wildcard(s) specifying the source image file(s)", type=str,
+            metavar='src_im_file', nargs='+'
+        )
+        parser.add_argument("dem_file", help="path to the DEM file", type=str)
+        parser.add_argument("pos_ori_file", help="path to the camera position and orientation file", type=str)
+        parser.add_argument(
+            "-od", "--ortho-dir",
+            help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)", type=str
+        )
+        parser.add_argument(
+            "-rc", "--read-conf",
+            help="read custom config from this path (default: use config.yaml in simple-ortho root)", type=str
+        )
+        parser.add_argument("-wc", "--write-conf", help="write default config to this path and exit", type=str)
+        parser.add_argument(
+            "-v", "--verbosity", choices=[1, 2, 3, 4],
+            help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)", type=int
+        )
+        return parser.parse_args(argv)
+
+    args = parse_args(argv)
+    _simple_ortho(**vars(args))
 
 
 if __name__ == '__main__':
