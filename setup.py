@@ -20,11 +20,11 @@ setup(
         'tqdm>=4.6',
     ],
     entry_points={'console_scripts': [
-        'simple-ortho=simple_ortho.command_line:main_entry',
+        'simple-ortho=simple_ortho.cli:simple_ortho',
         'oty=simple_ortho.cli:cli'
     ]},
 
-    scripts=['scripts/batch_recompress.bat']
+    # scripts=['scripts/batch_recompress.bat']
 )
 # TODO: the EPSG:<horiz>+<vert> format is not supported in rio 1.3.3, gdal 3.5.3, proj 9.1.0, but is supported
 #  in rio 1.3.6, gdal 3.6.2, proj 9.1.1.  The exact version where support begins (proj=9.1.1?) should be set in
