@@ -595,7 +595,7 @@ def ngi_oty_ext_param_file() -> Path:
 
 @pytest.fixture(scope='session')
 def exif_image_file() -> Path:
-    """ An ODM image file without the 'DewarpData' XMP tag. """
+    """ An image file with EXIF tags including sensor size, and no XMP tags. """
     return root_path.joinpath('tests', 'data', 'io', '100_0005_0140.tif')
 
 
