@@ -1,6 +1,6 @@
 # Simple orthorectification
 
-![banner](./data/outputs/test_example/readme_banner.webp)
+![banner](docs/readme_banner.webp)
 
 Fast and simple orthorectification of images with known DEM and camera model.  Designed and tested on [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) aerial imagery.  
 
@@ -53,11 +53,11 @@ Argument | Long form | Description
 #### Examples
 Orthorectify a single image with a user provided configuration, writing to a specified folder.
 ```shell
-simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example/ ./data/inputs/test_example/3324c_2015_1004_06_0253_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs/ ./tests/data/ngi/3324c_2015_1004_06_0253_RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
 ```
 Orthorectify images matching a wildcard, with a user provided configuration, writing to a specified folder.
 ```shell
-simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*_RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs ./tests/data/ngi/*_RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
 ```
 
 ### Camera position and orientation
@@ -120,16 +120,16 @@ Default configuration settings, not passed explicitly on the command line, are r
 ## Example Application
 Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple-ortho.  No radiometric (colour) adjustments have been applied, this can be addressed with [`homonim`](https://github.com/leftfield-geospatial/homonim). 
 
-![example](./data/outputs/test_example/readme_eg.webp)
+![example](docs/readme_eg.webp)
 
-Coarse resolution versions of these images, together with supporting data, are included in the [data/inputs/test_example](data/inputs/test_example) directory.  You can orthorectify this data with the following command line (from the simple-ortho directory):
+Coarse resolution versions of these images, together with supporting data, are included in the [tests/data/ngi](tests/data/ngi) directory.  You can orthorectify this data with the following command line (from the simple-ortho directory):
 ```shell
-simple-ortho -v 2 -rc ./data/inputs/test_example/config.yaml -od ./data/outputs/test_example ./data/inputs/test_example/*RGB.tif ./data/inputs/test_example/dem.tif ./data/inputs/test_example/camera_pos_ori.txt
+simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs ./tests/data/ngi/*RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
 ```
 
 ## Known limitations
 
-The `conda` `gdal` package does not support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these images.  
+The `conda-forge` `rasterio` package does not currently support 12bit jpeg compression (the format sometimes used by NGI).  Any tiff compressed in this way would need to be converted using a tool capable of reading these images.  
 
 ## License
 This project is licensed under the terms of the [Apache-2.0 License](LICENSE).
