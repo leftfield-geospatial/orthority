@@ -40,6 +40,14 @@ def ortho_legacy_ngi_cli_str(
     )
 
 
+def test_oty_verbosity(ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty -v ortho`` generates debug logs. """
+    cli_str = f'-v {ortho_legacy_ngi_cli_str} --res 50 --out-dir {tmp_path}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert 'DEBUG:' in result.stdout
+
+
 def test_ortho_help(runner: CliRunner):
     """ Test ``oty ortho --help``.  """
     result = runner.invoke(cli, 'ortho --help'.split())
@@ -311,27 +319,28 @@ def test_ortho_dem_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, r
 
 def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """ Test ``oty ortho --per-band`` by comparing memory usage between ``--per-band`` and ``--no-per-band``.  """
-    # create --per-band ortho
-    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
     tracemalloc.start()
-    result = runner.invoke(cli, cli_str.split())
-    _, per_band_peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    assert result.exit_code == 0, result.stdout
-    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-    assert len(ortho_files) == 1
+    try:
+        # create --per-band ortho
+        cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
+        result = runner.invoke(cli, cli_str.split())
+        _, per_band_peak = tracemalloc.get_traced_memory()
+        tracemalloc.reset_peak()
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create --no-per-band ortho
-    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --no-per-band -o'
-    tracemalloc.start()
-    result = runner.invoke(cli, cli_str.split())
-    _, no_per_band_peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
-    assert result.exit_code == 0, result.stdout
-    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-    assert len(ortho_files) == 1
+        # create --no-per-band ortho
+        cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --no-per-band -o'
+        result = runner.invoke(cli, cli_str.split())
+        _, no_per_band_peak = tracemalloc.get_traced_memory()
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    assert no_per_band_peak > per_band_peak
+        assert no_per_band_peak > per_band_peak
+    finally:
+        tracemalloc.stop()
 
 
 def test_ortho_full_remap(
