@@ -220,7 +220,7 @@ def create_io_test_data():
         writer.writerow(['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa', 'camera'])
         ext_param_dict = osfm_reader.read_ext_param()
         for filename, ext_param in ext_param_dict.items():
-            writer.writerow([filename, *ext_param['xyz'], *ext_param['opk'], cam_id])
+            writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk']), cam_id])
 
     # create xyz_opk csv file for ngi data
     src_csv_file = ngi_test_root.joinpath('camera_pos_ori.txt')
