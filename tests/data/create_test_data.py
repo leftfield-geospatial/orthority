@@ -251,25 +251,6 @@ def create_io_test_data():
         ngi_crs = im.crs
     io.write_ext_param(io_root.joinpath('ngi_ext_param.geojson'), ext_param_dict, crs=ngi_crs, overwrite=True)
 
-    # create an image with exif sensor size tags and w/o xmp tags
-    src_im_file = odm_src_root.joinpath('images', '100_0005_0140.jpg')
-    dst_im_file = io_root.joinpath(src_im_file.name[:-4] + '.tif')
-    if dst_im_file.exists():
-        dst_im_file.unlink()
-    with rio.open(src_im_file, 'r') as src_im:
-        dst_profile = src_im.profile.copy()
-        dst_shape = (int(src_im.height / 16), int(src_im.width / 16))
-        dst_profile.update(width=dst_shape[1], height=dst_shape[0])
-        with rio.open(dst_im_file, 'w', **dst_profile) as dst_im:
-            dst_tags = src_im.tags()
-            dst_tags.update(
-                EXIF_FocalPlaneResolutionUnit='4',
-                EXIF_FocalPlaneXResolution=f'({dst_shape[1] / 13.2:.4f})',
-                EXIF_FocalPlaneYResolution=f'({dst_shape[0] / 8.8:.4f})',
-            )
-            dst_im.update_tags(**dst_tags)
-            dst_im.write(src_im.read(out_shape=dst_shape))
-
 
 if __name__ == '__main__':
     create_odm_test_data()
