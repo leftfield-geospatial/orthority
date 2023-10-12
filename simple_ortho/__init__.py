@@ -17,7 +17,7 @@
 import os
 import pathlib
 
-# enable on-demand download of proj transformation grids
+# enable on-demand download and caching of proj transformation grids
 os.environ.update(PROJ_NETWORK='ON', PROJ_ONLY_BEST_DEFAULT='ON')
 
 # path to package root TODO: remove with deprecated simple-ortho CLI

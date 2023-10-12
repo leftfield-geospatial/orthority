@@ -145,8 +145,8 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: Dict, tmp_p
     assert 'projection type' in str(ex)
 
 
-def test_read_exif_int_param_dewarp(odm_image_file: Path):
-    """ Testing reading EXIF / XMP tag interior parameters from an image with the 'DewarpData' XMP tag. """
+def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_file: Path):
+    """ Test reading EXIF / XMP tag interior parameters from an image with the 'DewarpData' XMP tag. """
     int_param_dict = io.read_exif_int_param(odm_image_file)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'brown'
@@ -154,12 +154,40 @@ def test_read_exif_int_param_dewarp(odm_image_file: Path):
     _validate_int_param_dict(int_param_dict)
 
 
-def test_read_exif_int_param_no_dewarp(exif_image_file: Path):
-    """ Testing reading EXIF / XMP tag interior parameters from an image without the 'DewarpData' XMP tag. """
+def test_read_exif_int_param_no_dewarp(xmp_no_dewarp_image_file: Path):
+    """ Test reading EXIF / XMP tag interior parameters from an image without the 'DewarpData' XMP tag. """
+    int_param_dict = io.read_exif_int_param(xmp_no_dewarp_image_file)
+    int_params = next(iter(int_param_dict.values()))
+    assert int_params.get('cam_type', None) == 'pinhole'
+    _validate_int_param_dict(int_param_dict)
+
+
+def test_read_exif_int_param_no_xmp(exif_image_file: Path):
+    """ Test reading EXIF interior parameters from an image with sensor size tags and no XMP tags. """
     int_param_dict = io.read_exif_int_param(exif_image_file)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'pinhole'
     _validate_int_param_dict(int_param_dict)
+
+
+@pytest.mark.parametrize('image_file', ['odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file'])
+def test_read_exif_int_param_values(image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest):
+    """
+    Test EXIF interior parameter values against those from OsfmReader for images with different tag combinations.
+    """
+    # read EXIF and OpenSfM interior parameters
+    image_file: Path = request.getfixturevalue(image_file)
+    ref_int_param_dict = io.read_osfm_int_param(odm_reconstruction_file)
+    ref_int_params = next(iter(ref_int_param_dict.values()))
+    test_int_param_dict = io.read_exif_int_param(image_file)
+    test_int_params = next(iter(test_int_param_dict.values()))
+
+    # normalise EXIF interior parameters and compare to OpenSfM
+    test_sensor_size = np.array(test_int_params['sensor_size']) / max(test_int_params['sensor_size'])
+    test_focal_len = np.array(test_int_params['focal_len']) / max(test_int_params['sensor_size'])
+    test_focal_len = test_focal_len if np.isscalar(test_focal_len) else test_focal_len[0]
+    assert test_sensor_size == pytest.approx(ref_int_params['sensor_size'], abs=0.01)
+    assert test_focal_len == pytest.approx(ref_int_params['focal_len'], abs=0.01)
 
 
 def test_read_exif_int_param_error(ngi_image_file: Path):
@@ -466,6 +494,19 @@ def test_exif_reader(odm_image_files: Tuple[Path, ...], odm_crs: str):
     _validate_int_param_dict(int_param_dict)
     _validate_ext_param_dict(ext_param_dict, cameras=int_cam_ids)
     assert ext_cam_ids.issubset(int_cam_ids)
+
+
+def test_exif_reader_ext_values(odm_image_files: Tuple[Path, ...], odm_crs: str, odm_reconstruction_file):
+    """ Test exterior parameter values from ExifReader against those from OsfmReader. """
+    ref_reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
+    ref_ext_param_dict = ref_reader.read_ext_param()
+    test_reader = io.ExifReader(odm_image_files, crs=odm_crs)
+    test_ext_param_dict = test_reader.read_ext_param()
+
+    for filename, test_ext_param in test_ext_param_dict.items():
+        ref_ext_param = ref_ext_param_dict[Path(filename).stem]
+        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=0.1)
+        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=0.1)
 
 
 def test_exif_reader_auto_crs(odm_image_files: Tuple[Path, ...], odm_crs: str):
