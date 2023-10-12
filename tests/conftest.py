@@ -526,7 +526,6 @@ def odm_dem_file(odm_proj_dir: Path) -> Path:
 def odm_reconstruction_file(odm_proj_dir: Path) -> Path:
     """ ODM reconstruction file. """
     return odm_proj_dir.joinpath('opensfm', 'reconstruction.json')
-# TODO: there is a confusion between odm_* fixtures referring to odm format or odm dataset
 
 
 @pytest.fixture(scope='session')
@@ -587,7 +586,6 @@ def ngi_legacy_csv_file() -> Path:
     return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
 
 
-# TODO: create io fixtures dynamically?
 @pytest.fixture(scope='session')
 def ngi_oty_ext_param_file() -> Path:
     """ Orthority format exterior parameter file for NGI test data. """
@@ -607,6 +605,20 @@ def exif_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFacto
                 EXIF_FocalPlaneXResolution=f'({dst_profile["width"] / 13.2:.4f})',
                 EXIF_FocalPlaneYResolution=f'({dst_profile["height"] / 8.8:.4f})',
             )
+            dst_im.update_tags(**dst_tags)
+            dst_im.write(src_im.read())
+    return dst_filename
+
+
+@pytest.fixture(scope='session')
+def exif_no_focal_image_file(exif_image_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """ An image file with EXIF tags including sensor size, but without focal length and XMP tags. """
+    dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
+    with rio.open(exif_image_file, 'r') as src_im:
+        dst_profile = src_im.profile.copy()
+        with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
+            dst_tags = src_im.tags()
+            dst_tags.pop('EXIF_FocalLength')
             dst_im.update_tags(**dst_tags)
             dst_im.write(src_im.read())
     return dst_filename

@@ -170,7 +170,9 @@ def test_read_exif_int_param_no_xmp(exif_image_file: Path):
     _validate_int_param_dict(int_param_dict)
 
 
-@pytest.mark.parametrize('image_file', ['odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file'])
+@pytest.mark.parametrize('image_file', [
+    'odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file', 'exif_no_focal_image_file'
+])  # yapf: disable
 def test_read_exif_int_param_values(image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest):
     """
     Test EXIF interior parameter values against those from OsfmReader for images with different tag combinations.
@@ -300,7 +302,7 @@ def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_fi
 
 
 def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: Tuple[Path, ...]):
-    """ Test reading exterior parameters from an xyz_opk format CSV file with a header. """
+    """ Test reading exterior parameters from an XYZ-OPK format CSV file with a header. """
     reader = io.CsvReader(ngi_xyz_opk_csv_file, crs=ngi_crs)
     assert reader._fieldnames == io.CsvReader._legacy_fieldnames
     assert reader._format is CsvFormat.xyz_opk
@@ -313,10 +315,23 @@ def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_
     _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
+def test_csv_reader_xyz_opk_values(odm_xyz_opk_csv_file: Path, odm_crs: str, odm_reconstruction_file: Path):
+    """ Test exterior parameter values from CsvReader against those from OsfmReader for an XYZ-OPK CSV file. """
+    ref_reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
+    ref_ext_param_dict = ref_reader.read_ext_param()
+    test_reader = io.CsvReader(odm_xyz_opk_csv_file, crs=odm_crs)
+    test_ext_param_dict = test_reader.read_ext_param()
+
+    for filename, test_ext_param in test_ext_param_dict.items():
+        ref_ext_param = ref_ext_param_dict[Path(filename).stem]
+        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=1e-6)
+        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=1e-6)
+
+
 def test_csv_reader_lla_rpy(
     odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], odm_reconstruction_file: Path
 ):
-    """ Test reading exterior parameters from an lla_rpy format CSV file with a header. """
+    """ Test reading exterior parameters from an LLA-RPY format CSV file with a header. """
     reader = io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs)
     assert set(reader._fieldnames) == {
         'filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'other'
@@ -334,6 +349,19 @@ def test_csv_reader_lla_rpy(
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
 
 
+def test_csv_reader_lla_rpy_values(odm_lla_rpy_csv_file: Path, odm_crs: str, odm_reconstruction_file: Path):
+    """ Test exterior parameter values from CsvReader against those from OsfmReader for an LLA-RPY format CSV file. """
+    ref_reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
+    ref_ext_param_dict = ref_reader.read_ext_param()
+    test_reader = io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs)
+    test_ext_param_dict = test_reader.read_ext_param()
+
+    for filename, test_ext_param in test_ext_param_dict.items():
+        ref_ext_param = ref_ext_param_dict[Path(filename).stem]
+        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=0.1)
+        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=0.1)
+
+
 def test_csv_reader_xyz_opk_prj_crs(ngi_xyz_opk_csv_file: Path):
     """ Test CsvReader initialised with a xyz_* format CSV file and no CRS, reads the CRS from a .prj file. """
     reader = io.CsvReader(ngi_xyz_opk_csv_file, crs=None)
@@ -343,7 +371,7 @@ def test_csv_reader_xyz_opk_prj_crs(ngi_xyz_opk_csv_file: Path):
 
 
 def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
-    """ Test CsvReader initialised with a lla_rpy format CSV file and no CRS generates an auto UTM CRS. """
+    """ Test CsvReader initialised with a LLA-RPY format CSV file and no CRS generates an auto UTM CRS. """
     reader = io.CsvReader(odm_lla_rpy_csv_file, crs=None)
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
@@ -353,10 +381,9 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
     ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
 ])  # yapf: disable
 def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
-    """ Test that CsvReader initialised with a xyz_rpy or lla_opk format file and no CRS raises an error. """
-    fieldnames = ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw']
+    """ Test that CsvReader initialised with a XYZ-RPY or LLA-OPK format file and no CRS raises an error. """
     with pytest.raises(CrsMissingError) as ex:
-        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
+        _ = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
     assert 'crs' in str(ex).lower()
 
 
@@ -374,7 +401,7 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
     fieldnames = io.CsvReader._legacy_fieldnames.copy()
     fieldnames.remove(missing_field)
     with pytest.raises(ParamFileError) as ex:
-        reader = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
+        _ = io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
     assert missing_field in str(ex)
 
 
