@@ -96,6 +96,7 @@ def profiler():
         logger.debug(f'Processing times:')
         proc_stats.print_stats(20)
         current, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
         logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
     else:
         yield
