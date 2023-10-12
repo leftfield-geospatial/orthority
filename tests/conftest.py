@@ -20,6 +20,7 @@ from collections import namedtuple
 import json
 import os
 import yaml
+import re
 import numpy as np
 import pytest
 from click.testing import CliRunner
@@ -323,44 +324,44 @@ def wgs84_egm2008_crs() -> str:
 
 
 @pytest.fixture(scope='session')
-def rgb_byte_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
+def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
     """ An RGB byte checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_byte_src.tif')
+    src_filename = tmp_path_factory.mktemp('data').joinpath('rgb_byte_src.tif')
     create_src(src_filename, im_size, dtype='uint8', count=3)
     return src_filename
 
 
 @pytest.fixture(scope='session')
-def rgb_float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
+def rgb_float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
     """ An RGB float32 checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_float_src.tif')
+    src_filename = tmp_path_factory.mktemp('data').joinpath('rgb_float_src.tif')
     create_src(src_filename, im_size, dtype='float32', count=3)
     return src_filename
 
 
 @pytest.fixture(scope='session')
-def float_src_file(tmpdir_factory: pytest.TempdirFactory, im_size: Tuple) -> Path:
+def float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
     """ A single band float64 checkerboard image with no CRS. """
-    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_src.tif')
+    src_filename = tmp_path_factory.mktemp('data').joinpath('float_src.tif')
     create_src(src_filename, im_size, dtype='float32', count=1)
     return src_filename
 
 
 @pytest.fixture(scope='session')
-def rgb_byte_utm34n_src_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
+def rgb_byte_utm34n_src_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs) -> Path:
     """ An RGB byte checkerboard image with UTM zone 34N CRS and bounds 100m below ``pinhole_camera``. """
-    src_filename = Path(tmpdir_factory.mktemp('data')).joinpath('rgb_byte_src.tif')
+    src_filename = tmp_path_factory.mktemp('data').joinpath('rgb_byte_src.tif')
     create_src(src_filename, pinhole_camera._im_size, dtype='uint8', count=3, camera=pinhole_camera, crs=utm34n_crs)
     return src_filename
 
 
 @pytest.fixture(scope='session')
-def float_utm34n_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
+def float_utm34n_dem_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs) -> Path:
     """
     A 2 band float DEM file in UTM zone 34N with no vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_dem.tif')
     array, profile = create_dem(pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
     with rio.open(filename, 'w', **profile) as im:
         im.write(array)
@@ -368,12 +369,12 @@ def float_utm34n_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera,
 
 
 @pytest.fixture(scope='session')
-def float_utm34n_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_wgs84_crs) -> Path:
+def float_utm34n_wgs84_dem_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_wgs84_crs) -> Path:
     """
     A 2 band float DEM file in UTM zone 34N with WGS84 ellipsoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_wgs84_dem.tif')
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_wgs84_dem.tif')
     array, profile = create_dem(pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32')
     with rio.open(filename, 'w', **profile) as im:
         im.write(array)
@@ -381,12 +382,12 @@ def float_utm34n_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
 
 
 @pytest.fixture(scope='session')
-def float_utm34n_egm96_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_egm96_crs) -> Path:
+def float_utm34n_egm96_dem_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_egm96_crs) -> Path:
     """
     A 2 band float DEM file in UTM zone 34N with EGM96 geoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_egm96_dem.tif')
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_egm96_dem.tif')
     array, profile = create_dem(pinhole_camera, utm34n_egm96_crs, resolution=_dem_resolution, dtype='float32')
     with rio.open(filename, 'w', **profile) as im:
         im.write(array)
@@ -394,12 +395,12 @@ def float_utm34n_egm96_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_c
 
 
 @pytest.fixture(scope='session')
-def float_wgs84_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_wgs84_crs) -> Path:
+def float_wgs84_wgs84_dem_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_wgs84_crs) -> Path:
     """
     A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical datum.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_wgs84_wgs84_dem.tif')
+    filename = tmp_path_factory.mktemp('data').joinpath('float_wgs84_wgs84_dem.tif')
     array, profile = create_dem(
         pinhole_camera, utm34n_wgs84_crs, resolution=_dem_resolution, dtype='float32',
         dem_crs='EPSG:4326+4326'
@@ -410,12 +411,12 @@ def float_wgs84_wgs84_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_ca
 
 
 @pytest.fixture(scope='session')
-def float_utm34n_partial_dem_file(tmpdir_factory: pytest.TempdirFactory, pinhole_camera, utm34n_crs) -> Path:
+def float_utm34n_partial_dem_file(tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs) -> Path:
     """
     A 2 band float DEM file in UTM zone 34N with no vertical datum.  Pixels above the diagonal are nodata.
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('float_utm34n_dem.tif')
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_dem.tif')
     array, profile = create_dem(pinhole_camera, utm34n_crs, resolution=_dem_resolution, dtype='float32')
     mask = np.fliplr(np.tril(np.ones(array.shape, dtype='bool'), k=1))
     array[mask] = profile['nodata']
@@ -468,18 +469,18 @@ def mult_int_param_dict(
 
 
 @pytest.fixture(scope='session')
-def oty_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict,) -> Path:
+def oty_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict,) -> Path:
     """ An interior parameter file in orthority yaml format. """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('oty_int_param_file.yaml')
+    filename = tmp_path_factory.mktemp('data').joinpath('oty_int_param_file.yaml')
     with open(filename, 'w') as f:
         yaml.dump(mult_int_param_dict, f)
     return filename
 
 
 @pytest.fixture(scope='session')
-def odm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict) -> Path:
+def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
     """ An interior parameter file in ODM cameras.json format. """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('odm_int_param_file.json')
+    filename = tmp_path_factory.mktemp('data').joinpath('odm_int_param_file.json')
     int_param = oty_to_osfm_int_param(mult_int_param_dict)
     with open(filename, 'w') as f:
         json.dump(int_param, f)
@@ -487,9 +488,9 @@ def odm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dic
 
 
 @pytest.fixture(scope='session')
-def osfm_int_param_file(tmpdir_factory: pytest.TempdirFactory, mult_int_param_dict: Dict) -> Path:
+def osfm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
     """ An interior parameter file in OpenSfM reconstruction.json format. """
-    filename = Path(tmpdir_factory.mktemp('data')).joinpath('osfm_int_param_file.json')
+    filename = tmp_path_factory.mktemp('data').joinpath('osfm_int_param_file.json')
     int_param = oty_to_osfm_int_param(mult_int_param_dict)
     int_param = [dict(cameras=int_param)]
     with open(filename, 'w') as f:
@@ -594,9 +595,41 @@ def ngi_oty_ext_param_file() -> Path:
 
 
 @pytest.fixture(scope='session')
-def exif_image_file() -> Path:
+def exif_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """ An image file with EXIF tags including sensor size, and no XMP tags. """
-    return root_path.joinpath('tests', 'data', 'io', '100_0005_0140.tif')
+    dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
+    with rio.open(odm_image_file, 'r') as src_im:
+        dst_profile = src_im.profile.copy()
+        with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
+            dst_tags = src_im.tags()
+            dst_tags.update(
+                EXIF_FocalPlaneResolutionUnit='4',
+                EXIF_FocalPlaneXResolution=f'({dst_profile["width"] / 13.2:.4f})',
+                EXIF_FocalPlaneYResolution=f'({dst_profile["height"] / 8.8:.4f})',
+            )
+            dst_im.update_tags(**dst_tags)
+            dst_im.write(src_im.read())
+    return dst_filename
+
+
+@pytest.fixture(scope='session')
+def xmp_no_dewarp_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """ An image file with EXIF & XMP tags, excluding EXIF sensor size and XMP DewarpData tags. """
+    dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
+    with rio.open(odm_image_file, 'r') as src_im:
+        dst_profile = src_im.profile.copy()
+        with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
+            dst_im.update_tags(**src_im.tags())
+            for namespace in src_im.tag_namespaces():
+                # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namspace/ tag name,
+                # where 'xml:XMP=' gets prefixed to the value
+                ns_dict = src_im.tags(ns=namespace)
+                if namespace == 'xml:XMP':
+                    ns_dict[namespace] = re.sub(r'[ ]*?drone-dji:DewarpData(.*?)"\n', '', ns_dict[namespace])
+                dst_im.update_tags(ns=namespace, **ns_dict)
+            dst_im.write(src_im.read())
+    return dst_filename
+
 
 
 @pytest.fixture(scope='session')
