@@ -645,6 +645,47 @@ def test_exif_option(odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp
         assert ortho_im.res == (res, res)
 
 
+def test_exif_lla_crs(
+    odm_image_file: Tuple[Path, ...], odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """ Test ``oty exif --lla-crs`` by comparing orthos created with different ``--lla-crs`` values. """
+    # create an ortho with ellipsoidal height --lla-crs
+    out_dir_ellps = tmp_path.joinpath('lla_crs_ellps')
+    out_dir_ellps.mkdir()
+    cli_str = (
+        f'exif --dem {odm_dem_file} --out-dir {out_dir_ellps} --res 5 --crs {odm_crs}+4326 --lla-crs EPSG:4326+4326'
+        f' {odm_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ellps_ortho_files = [*out_dir_ellps.glob('*_ORTHO.tif')]
+    assert len(ellps_ortho_files) == 1
+
+    # create an ortho with geoidal height --lla-crs
+    out_dir_geoid = tmp_path.joinpath('lla_crs_geoid')
+    out_dir_geoid.mkdir()
+    cli_str = (
+        f'exif --dem {odm_dem_file} --out-dir {out_dir_geoid} --res 5 --crs {odm_crs}+4326 --lla-crs EPSG:4326+3855'
+        f' {odm_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    geoid_ortho_files = [*out_dir_geoid.glob('*_ORTHO.tif')]
+    assert len(geoid_ortho_files) == 1
+
+    # compare
+    with rio.open(ellps_ortho_files[0], 'r') as ellps_im, rio.open(geoid_ortho_files[0], 'r') as geoid_im:
+        assert ellps_im.bounds != pytest.approx(geoid_im.bounds, abs=geoid_im.res[0])
+
+
+def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
+    """ Test ``oty exif`` raises an error with a non-EXIF source image. """
+    cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'SOURCE' in result.stdout
+
+
 def test_odm_proj_dir(odm_proj_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner):
     """  Test ``oty odm`` creates orthos in '<--proj-dir>/orthority' sub-folder. """
     shutil.copytree(odm_proj_dir, tmp_path, dirs_exist_ok=True)      # copy test data to tmp_path
@@ -774,37 +815,3 @@ def test_mult_camera_no_camera_error(
             tmp_path, False
         )
     assert rgb_byte_src_file.name in str(ex)
-
-
-
-# TODO:
-#  ortho
-#  - output format params go through to output file: --write-mask, --dtype, --compress, --no-build-ovw, --res, --crs?
-#  - dtype, compress, (crs) errors
-#  - crs
-#    - read from src, .prj, cli, or auto-det for rpy lla
-#    - missing error
-#    - geographic error
-#  - algorithm params:
-#    - dem_band: error if out of range
-#    - interp: all options work & compared to nearest is smoother
-#    - dem_interp: all options work, unknown gives meaningful error
-#    - per-band & no-per-band results are identical
-#    - full-remap: similar, but not identical to no-full-remap (odm data)
-#    - alpha: 0 ortho is smaller than 1, but overlapping regions are identical (compress=deflate & odm data)
-#  - int / ext params:
-#    - test all formats are supported (csv, osfm, oty)
-#    - test export-params generates files
-#    - errors?
-#  - ortho integrity i.e. overlap & basic content test
-#  exif
-#  - export-params
-#  - ortho integrity i.e. overlap & basic content test
-#  - error with non exif
-#  - lla-crs
-#    - error with projected
-#    - orthos with different vert datums are different
-#  odm
-#  - ortho integrity
-#  - out_dir
-#  - resolution
