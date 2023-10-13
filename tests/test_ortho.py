@@ -243,6 +243,7 @@ def test_reproject_dem_vdatum_both(
         ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
     ],
 )  # yapf: disable  # @formatter:on
+@pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
 def test_reproject_dem_vdatum_one(
     rgb_byte_src_file: Path, dem_file: str, pinhole_camera: Camera, crs: str, request: pytest.FixtureRequest
 ):
@@ -268,9 +269,8 @@ def test_reproject_dem_vdatum_one(
     assert test_array.shape == ortho._dem_array.shape
 
     mask = ~np.isnan(test_array) & ~np.isnan(ortho._dem_array)
-    if rio.get_proj_version() >= (9, 1, 0):
-        # prior proj versions promote 2D->3D with ellipsoidal height
-        assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
+    # prior proj versions promote 2D->3D with ellipsoidal height
+    assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
 
 
 @pytest.mark.parametrize('num_pts', [40, 100, 400, 1000, 4000])
