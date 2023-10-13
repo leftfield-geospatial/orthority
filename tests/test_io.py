@@ -605,13 +605,6 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
-# TODO: test lla_crs
-#  - should be somewhat covered by test_rio_transform, perhaps we could add some geographic CRSs to fixtures
-#  - could test CSV with e.g. lla-rpy file & crs & lla_crs with different vert datums, then check read xyz height is
-#  different to lla height
-#  - this should mainly just test that lla_crs is set & used internally in the class.  when it is used, we should assume
-#  rio transform works.
 # TODO: radians in CSV
 #  - perhaps add second fixture that rewrites e.g. ngi_xyz_opk.csv in radians (perhaps a parameterised fixture),
 #  then a test that reads both radians and degrees files and compares results.  could do same for odm_lla_rpy.csv.
-# TODO: combine test_oty_write_ext_param & test_oty_read_ext_param, perhaps with a new ext_param_dict fixture

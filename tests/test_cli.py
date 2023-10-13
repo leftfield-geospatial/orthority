@@ -755,7 +755,7 @@ def test_mult_camera(
     src_files = []
     for src_file_key in mult_ext_param_dict.keys():
         src_file = tmp_path.joinpath(src_file_key).with_suffix(rgb_byte_src_file.suffix)
-        src_file.hardlink_to(rgb_byte_src_file)
+        shutil.copy(rgb_byte_src_file, src_file)
         src_files.append(src_file)
 
     _ortho(
