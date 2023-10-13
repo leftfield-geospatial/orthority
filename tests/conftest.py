@@ -469,6 +469,15 @@ def mult_int_param_dict(
 
 
 @pytest.fixture(scope='session')
+def mult_ext_param_dict(xyz: Tuple, opk: Tuple, rgb_byte_src_file: Path, mult_int_param_dict: Dict):
+    """ An exterior parameter dictionary referencing multiple cameras. """
+    ext_param_dict = {}
+    for i, cam_id in enumerate(mult_int_param_dict.keys()):
+        ext_param_dict[f'src_image_{i}'] = dict(xyz=xyz, opk=opk, camera=cam_id)
+    return ext_param_dict
+
+
+@pytest.fixture(scope='session')
 def oty_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict,) -> Path:
     """ An interior parameter file in orthority yaml format. """
     filename = tmp_path_factory.mktemp('data').joinpath('oty_int_param_file.yaml')

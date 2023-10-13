@@ -20,11 +20,14 @@ from typing import List, Dict, Tuple
 import tracemalloc
 import yaml
 import pytest
+import click
 from click.testing import CliRunner
 import rasterio as rio
 import numpy as np
 
-from simple_ortho.cli import cli, simple_ortho
+
+from simple_ortho.cli import cli, simple_ortho, _ortho
+from simple_ortho.errors import ParamFileError
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +61,7 @@ def test_ortho_help(runner: CliRunner):
 def test_ortho_int_param_missing_error(
     ngi_image_file: Path, ngi_dem_file: Path, ngi_oty_ext_param_file: Path, tmp_path: Path, runner: CliRunner
 ):
+    """ Test ``oty ortho`` without ``--int-param`` raises an error .  """
     cli_str = f'ortho --dem {ngi_dem_file} --ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
@@ -67,6 +71,7 @@ def test_ortho_int_param_missing_error(
 def test_ortho_ext_param_missing_error(
     ngi_image_file: Path, ngi_dem_file: Path, ngi_oty_int_param_file: Path, tmp_path: Path, runner: CliRunner
 ):
+    """ Test ``oty ortho`` without ``--ext-param`` raises an error .  """
     cli_str = f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
@@ -699,6 +704,76 @@ def test_simple_ortho_write_conf(
     simple_ortho(cli_str.split())
     assert conf_file.exists()
     assert yaml.safe_load(conf_file.read_text()) == yaml.safe_load(ngi_legacy_config_file.read_text())
+
+
+def test_mult_camera(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, mult_int_param_dict: Dict, mult_ext_param_dict: dict,
+    utm34n_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """ Test the _ortho backend with multiple camera ID interior & exterior parameters. """
+    src_files = []
+    for src_file_key in mult_ext_param_dict.keys():
+        src_file = tmp_path.joinpath(src_file_key).with_suffix(rgb_byte_src_file.suffix)
+        src_file.hardlink_to(rgb_byte_src_file)
+        src_files.append(src_file)
+
+    _ortho(
+        src_files, float_utm34n_dem_file, mult_int_param_dict, mult_ext_param_dict, utm34n_crs, 1, 1, False,
+        tmp_path, False
+    )
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == len(src_files)
+
+
+def test_single_no_camera(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_int_param_dict: Dict, xyz: Tuple, opk: Tuple,
+    utm34n_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """
+    Test the _ortho backend with an exterior parameter camera ID of None and a single set of interior parameters.
+    """
+    ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
+    _ortho(
+        (rgb_byte_src_file, ), float_utm34n_dem_file, pinhole_int_param_dict, ext_param_dict, utm34n_crs, 1, 1, False,
+        tmp_path, False
+    )
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+
+def test_mult_camera_unknown_camera_error(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, mult_int_param_dict: Dict, xyz: Tuple, opk: Tuple,
+    utm34n_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """
+    Test the _ortho backend raises an error when there are no interior parameters for the exterior parameter
+    camera ID.
+    """
+    camera = 'other'
+    ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=camera)}
+    with pytest.raises(click.BadParameter) as ex:
+        _ortho(
+            (rgb_byte_src_file, ), float_utm34n_dem_file, mult_int_param_dict, ext_param_dict, utm34n_crs, 1, 1, False,
+            tmp_path, False
+        )
+    assert camera in str(ex)
+
+
+def test_mult_camera_no_camera_error(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, mult_int_param_dict: Dict, xyz: Tuple, opk: Tuple,
+    utm34n_crs: str, tmp_path: Path, runner: CliRunner
+):
+    """
+    Test the _ortho backend raises an error when the exterior parameter camera ID is None and there are multiple sets
+    of interior parameters.
+    """
+    ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
+    with pytest.raises(click.BadParameter) as ex:
+        _ortho(
+            (rgb_byte_src_file, ), float_utm34n_dem_file, mult_int_param_dict, ext_param_dict, utm34n_crs, 1, 1, False,
+            tmp_path, False
+        )
+    assert rgb_byte_src_file.name in str(ex)
 
 
 
