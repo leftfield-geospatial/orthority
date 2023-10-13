@@ -719,7 +719,7 @@ class CsvReader(Reader):
 
 
 class OsfmReader(Reader):
-    # TODO: OSFM reconstruction is in a topocentric system, so the transfer of 3D cartesian positions & rotations into a
+    # TODO: OSfM reconstruction is in a topocentric system, so the transfer of 3D cartesian positions & rotations into a
     #  2D+1D UTM CRS is an approximation, with similar issues to the Pix4D RPY->OPK conversion.  Ideally the
     #  orthorectification should also happen in this topocentric system, with the DEM being transformed into it. Then
     #  the orthorectified image can be reprojected to UTM.
@@ -938,6 +938,7 @@ def write_int_param(
             raise FileExistsError(f"Interior parameter file exists: '{filename}'.")
         filename.unlink()
 
+    # TODO: just use cam_type in oty format?
     # convert 'cam_type' key to 'type' & make the converted item the first in the dict
     yaml_dict = {}
     for cam_id, int_param in int_param_dict.items():

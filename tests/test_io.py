@@ -184,7 +184,7 @@ def test_read_exif_int_param_values(image_file: str, odm_reconstruction_file: Pa
     test_int_param_dict = io.read_exif_int_param(image_file)
     test_int_params = next(iter(test_int_param_dict.values()))
 
-    # normalise EXIF interior parameters and compare to OpenSfM
+    # normalise EXIF interior parameters and compare to OpenSfM values
     test_sensor_size = np.array(test_int_params['sensor_size']) / max(test_int_params['sensor_size'])
     test_focal_len = np.array(test_int_params['focal_len']) / max(test_int_params['sensor_size'])
     test_focal_len = test_focal_len if np.isscalar(test_focal_len) else test_focal_len[0]
@@ -244,6 +244,7 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
     ('utm34n_crs', 'wgs84_egm96_crs'),
     ('utm34n_crs', 'wgs84_egm2008_crs'),
 ])  # yapf: disable
+@pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
 def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """
     Test rasterio.warp.transform does not adjust the z coordinate with one of the source and destination CRS vertical
@@ -253,9 +254,8 @@ def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.Fi
     dst_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(dst_crs))
     src_xyz = [[10.], [10.], [100.]]
     dst_xyz = transform(src_crs, dst_crs, *src_xyz)
-    if rio.get_proj_version() >= (9, 1, 1):
-        # prior proj versions promote 2D->3D with ellipsoidal height
-        assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
+    # prior proj versions promote 2D->3D with ellipsoidal height
+    assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
 
 
 @pytest.mark.parametrize('C_bB', [
@@ -387,6 +387,21 @@ def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
     assert 'crs' in str(ex).lower()
 
 
+def test_csv_reader_lla_rpy_lla_crs(odm_lla_rpy_csv_file, odm_crs: str, wgs84_egm2008_crs: str):
+    """ Test that CsvReader exterior parameters for a LLA-RPY format file are affected by lla_crs as expected. """
+    ref_reader = io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs + '+4326')
+    test_reader = io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs + '+4326', lla_crs=wgs84_egm2008_crs)
+    assert test_reader._lla_crs == rio.CRS.from_string(wgs84_egm2008_crs)
+
+    ref_ext_param_dict = ref_reader.read_ext_param()
+    test_ext_param_dict = test_reader.read_ext_param()
+    for ref_ext_params, test_ext_params in zip(ref_ext_param_dict.values(), test_ext_param_dict.values()):
+        # test z offset changes and rotation stays same
+        assert test_ext_params['xyz'][:2] == pytest.approx(ref_ext_params['xyz'][:2], abs=1e-6)
+        assert test_ext_params['xyz'][2] != pytest.approx(ref_ext_params['xyz'][2], abs=1)
+        assert test_ext_params['opk'] == pytest.approx(ref_ext_params['opk'], abs=1e-4)
+
+
 def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
     """ Test reading exterior parameters from a CSV file with ``fieldnames`` argument. """
     fieldnames = ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera', 'custom']
@@ -397,7 +412,7 @@ def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
 
 @pytest.mark.parametrize('missing_field', io.CsvReader._legacy_fieldnames)
 def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_field):
-    """ Test that CsvReader intialised with a missing fieldname raises an error. """
+    """ Test that CsvReader initialised with a missing fieldname raises an error. """
     fieldnames = io.CsvReader._legacy_fieldnames.copy()
     fieldnames.remove(missing_field)
     with pytest.raises(ParamFileError) as ex:
@@ -501,10 +516,10 @@ def test_osfm_reader_auto_crs(odm_reconstruction_file: Path, odm_crs: str):
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
-def test_osfm_reader_validity_error(odm_int_param_file: Path):
+def test_osfm_reader_validity_error(ngi_oty_ext_param_file: Path):
     """ Test OsfmReader raises an error with an invalid file format. """
     with pytest.raises(ParamFileError) as ex:
-        _ = io.OsfmReader(odm_int_param_file, crs=None)
+        _ = io.OsfmReader(ngi_oty_ext_param_file, crs=None)
     assert 'valid' in str(ex)
 
 
@@ -542,6 +557,21 @@ def test_exif_reader_auto_crs(odm_image_files: Tuple[Path, ...], odm_crs: str):
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
+def test_exif_reader_lla_crs(odm_image_files: Tuple[Path, ...], odm_crs: str, wgs84_egm2008_crs: str):
+    """ Test ExifReader exterior parameters are affected by lla_crs as expected. """
+    ref_reader = io.ExifReader(odm_image_files, crs=odm_crs)
+    test_reader = io.ExifReader(odm_image_files, crs=odm_crs + '+4326', lla_crs=wgs84_egm2008_crs)
+    assert test_reader._lla_crs == rio.CRS.from_string(wgs84_egm2008_crs)
+
+    ref_ext_param_dict = ref_reader.read_ext_param()
+    test_ext_param_dict = test_reader.read_ext_param()
+    for ref_ext_params, test_ext_params in zip(ref_ext_param_dict.values(), test_ext_param_dict.values()):
+        # test z offset changes and rotation stays same
+        assert test_ext_params['xyz'][:2] == pytest.approx(ref_ext_params['xyz'][:2], abs=1e-6)
+        assert test_ext_params['xyz'][2] != pytest.approx(ref_ext_params['xyz'][2], abs=1)
+        assert test_ext_params['opk'] == pytest.approx(ref_ext_params['opk'], abs=1e-4)
+
+
 def test_exif_reader_empty():
     """ Test ExifReader with empty list of of files. """
     reader = io.ExifReader([], crs=None)
@@ -550,15 +580,16 @@ def test_exif_reader_empty():
     assert reader.read_ext_param() == {}
 
 
-def test_oty_reader(ngi_oty_ext_param_file: Path, ngi_crs: str):
-    """ Test OtyReader reads exterior parameters successfully. """
-    reader = io.OtyReader(ngi_oty_ext_param_file, crs=ngi_crs)
-    assert reader.crs == rio.CRS.from_string(ngi_crs)
+def test_oty_rw_ext_param(mult_ext_param_dict: Dict, utm34n_crs: str, tmp_path: Path):
+    """ Test exterior parameter read / write from / to orthority geojson format. """
+    ext_param_file = tmp_path.joinpath('ext_param.geojson')
+    io.write_ext_param(ext_param_file, mult_ext_param_dict, crs=utm34n_crs)
+    assert ext_param_file.exists()
 
-    ext_param_dict = reader.read_ext_param()
-    ext_cam_ids = set([ext_param['camera'] for ext_param in ext_param_dict.values()])
-    assert len(ext_cam_ids) == 1 and isinstance(list(ext_cam_ids)[0], str) and len(list(ext_cam_ids)[0]) > 0
-    _validate_ext_param_dict(ext_param_dict, cameras=None)
+    reader = io.OtyReader(ext_param_file)
+    test_ext_param_dict = reader.read_ext_param()
+    assert test_ext_param_dict == mult_ext_param_dict
+    assert reader.crs == rio.CRS.from_string(utm34n_crs)
 
 
 def test_oty_reader_validity_error(odm_reconstruction_file: Path):
@@ -574,21 +605,13 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
-def test_oty_write_ext_param(ngi_crs: str, tmp_path: Path):
-    """ Test write_ext_param writes a valid oty format exterior parameter file. """
-    ref_ext_param_dict = dict(
-        filename1=dict(xyz=(1., 2., 3.), opk=(0.1, 0.2, 0.3), camera=None),
-        filename2=dict(xyz=(4., 5., 6.), opk=(0.4, 0.5, 0.6), camera='camera2')
-    )
-    ext_param_file = tmp_path.joinpath('ext_param.geojson')
-    io.write_ext_param(ext_param_file, ref_ext_param_dict, crs=ngi_crs)
-    reader = io.OtyReader(ext_param_file)
-    test_ext_param_dict = reader.read_ext_param()
-
-    assert test_ext_param_dict == ref_ext_param_dict
-    assert reader.crs == rio.CRS.from_string(ngi_crs)
-
-
-# TODO: Multi-camera configurations
-# TODO: Add config conversions e.g. ODM / Legacy / CSV internal + external -> oty format -> inputs
 # TODO: test lla_crs
+#  - should be somewhat covered by test_rio_transform, perhaps we could add some geographic CRSs to fixtures
+#  - could test CSV with e.g. lla-rpy file & crs & lla_crs with different vert datums, then check read xyz height is
+#  different to lla height
+#  - this should mainly just test that lla_crs is set & used internally in the class.  when it is used, we should assume
+#  rio transform works.
+# TODO: radians in CSV
+#  - perhaps add second fixture that rewrites e.g. ngi_xyz_opk.csv in radians (perhaps a parameterised fixture),
+#  then a test that reads both radians and degrees files and compares results.  could do same for odm_lla_rpy.csv.
+# TODO: combine test_oty_write_ext_param & test_oty_read_ext_param, perhaps with a new ext_param_dict fixture
