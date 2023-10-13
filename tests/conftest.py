@@ -13,6 +13,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import csv
 from pathlib import Path
 from typing import Dict, Tuple
 from collections import namedtuple
@@ -437,77 +438,6 @@ def rgb_pinhole_utm34n_ortho(
 
 
 @pytest.fixture(scope='session')
-def pinhole_int_param_dict(interior_args: Dict) -> Dict:
-    """ A pinhole camera interior parameter dictionary. """
-    return {'pinhole test camera': dict(cam_type=CameraType.pinhole, **interior_args)}
-
-
-@pytest.fixture(scope='session')
-def opencv_int_param_dict(interior_args: Dict, opencv_dist_param: Dict) -> Dict:
-    """ An opencv camera interior parameter dictionary. """
-    return {'cv test camera': dict(cam_type=CameraType.opencv, **interior_args, **opencv_dist_param)}
-
-
-@pytest.fixture(scope='session')
-def brown_int_param_dict(interior_args: Dict, brown_dist_param: Dict) -> Dict:
-    """ A brown camera interior parameter dictionary. """
-    return {'brown test camera': dict(cam_type=CameraType.brown, **interior_args, **brown_dist_param)}
-
-
-@pytest.fixture(scope='session')
-def fisheye_int_param_dict(interior_args: Dict, fisheye_dist_param: Dict) -> Dict:
-    """ A fisheye camera interior parameter dictionary. """
-    return {'fisheye test camera': dict(cam_type=CameraType.opencv, **interior_args, **fisheye_dist_param)}
-
-
-@pytest.fixture(scope='session')
-def mult_int_param_dict(
-    pinhole_int_param_dict: Dict, brown_int_param_dict: Dict, opencv_int_param_dict: Dict, fisheye_int_param_dict: Dict
-) -> Dict:
-    """ An interior parameter dictionary consisting of multiple cameras. """
-    return dict(**pinhole_int_param_dict, **brown_int_param_dict, **opencv_int_param_dict, **fisheye_int_param_dict)
-
-
-@pytest.fixture(scope='session')
-def mult_ext_param_dict(xyz: Tuple, opk: Tuple, rgb_byte_src_file: Path, mult_int_param_dict: Dict):
-    """ An exterior parameter dictionary referencing multiple cameras. """
-    ext_param_dict = {}
-    for i, cam_id in enumerate(mult_int_param_dict.keys()):
-        ext_param_dict[f'src_image_{i}'] = dict(xyz=xyz, opk=opk, camera=cam_id)
-    return ext_param_dict
-
-
-@pytest.fixture(scope='session')
-def oty_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict,) -> Path:
-    """ An interior parameter file in orthority yaml format. """
-    filename = tmp_path_factory.mktemp('data').joinpath('oty_int_param_file.yaml')
-    with open(filename, 'w') as f:
-        yaml.dump(mult_int_param_dict, f)
-    return filename
-
-
-@pytest.fixture(scope='session')
-def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
-    """ An interior parameter file in ODM cameras.json format. """
-    filename = tmp_path_factory.mktemp('data').joinpath('odm_int_param_file.json')
-    int_param = oty_to_osfm_int_param(mult_int_param_dict)
-    with open(filename, 'w') as f:
-        json.dump(int_param, f)
-    return filename
-
-
-@pytest.fixture(scope='session')
-def osfm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
-    """ An interior parameter file in OpenSfM reconstruction.json format. """
-    filename = tmp_path_factory.mktemp('data').joinpath('osfm_int_param_file.json')
-    int_param = oty_to_osfm_int_param(mult_int_param_dict)
-    int_param = [dict(cameras=int_param)]
-    with open(filename, 'w') as f:
-        json.dump(int_param, f)
-    return filename
-
-
-@pytest.fixture(scope='session')
 def odm_proj_dir() -> Path:
     """ ODM project directory. """
     return root_path.joinpath('tests', 'data', 'odm')
@@ -602,6 +532,95 @@ def ngi_oty_ext_param_file() -> Path:
 
 
 @pytest.fixture(scope='session')
+def ngi_xyz_opk_csv_file() -> Path:
+    """
+    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
+    a header and .proj file.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'ngi_xyz_opk.csv')
+
+
+@pytest.fixture(scope='session')
+def odm_lla_rpy_csv_file() -> Path:
+    """
+    Exterior parameters for ODM data in (latitude, longitude, altitude), (roll, pitch, yaw) CSV format. Includes
+    a header.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
+
+
+@pytest.fixture(scope='session')
+def odm_xyz_opk_csv_file() -> Path:
+    """
+    Exterior parameters for ODM data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
+    a header.
+    """
+    return root_path.joinpath('tests', 'data', 'io', 'odm_xyz_opk.csv')
+
+
+@pytest.fixture(scope='session')
+def pinhole_int_param_dict(interior_args: Dict) -> Dict:
+    """ A pinhole camera interior parameter dictionary. """
+    return {'pinhole test camera': dict(cam_type=CameraType.pinhole, **interior_args)}
+
+
+@pytest.fixture(scope='session')
+def opencv_int_param_dict(interior_args: Dict, opencv_dist_param: Dict) -> Dict:
+    """ An opencv camera interior parameter dictionary. """
+    return {'cv test camera': dict(cam_type=CameraType.opencv, **interior_args, **opencv_dist_param)}
+
+
+@pytest.fixture(scope='session')
+def brown_int_param_dict(interior_args: Dict, brown_dist_param: Dict) -> Dict:
+    """ A brown camera interior parameter dictionary. """
+    return {'brown test camera': dict(cam_type=CameraType.brown, **interior_args, **brown_dist_param)}
+
+
+@pytest.fixture(scope='session')
+def fisheye_int_param_dict(interior_args: Dict, fisheye_dist_param: Dict) -> Dict:
+    """ A fisheye camera interior parameter dictionary. """
+    return {'fisheye test camera': dict(cam_type=CameraType.opencv, **interior_args, **fisheye_dist_param)}
+
+
+@pytest.fixture(scope='session')
+def mult_int_param_dict(
+    pinhole_int_param_dict: Dict, brown_int_param_dict: Dict, opencv_int_param_dict: Dict, fisheye_int_param_dict: Dict
+) -> Dict:
+    """ An interior parameter dictionary consisting of multiple cameras. """
+    return dict(**pinhole_int_param_dict, **brown_int_param_dict, **opencv_int_param_dict, **fisheye_int_param_dict)
+
+
+@pytest.fixture(scope='session')
+def mult_ext_param_dict(xyz: Tuple, opk: Tuple, rgb_byte_src_file: Path, mult_int_param_dict: Dict):
+    """ An exterior parameter dictionary referencing multiple cameras. """
+    ext_param_dict = {}
+    for i, cam_id in enumerate(mult_int_param_dict.keys()):
+        ext_param_dict[f'src_image_{i}'] = dict(xyz=xyz, opk=opk, camera=cam_id)
+    return ext_param_dict
+
+
+@pytest.fixture(scope='session')
+def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
+    """ An interior parameter file in ODM cameras.json format. """
+    filename = tmp_path_factory.mktemp('data').joinpath('odm_int_param_file.json')
+    int_param = oty_to_osfm_int_param(mult_int_param_dict)
+    with open(filename, 'w') as f:
+        json.dump(int_param, f)
+    return filename
+
+
+@pytest.fixture(scope='session')
+def osfm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
+    """ An interior parameter file in OpenSfM reconstruction.json format. """
+    filename = tmp_path_factory.mktemp('data').joinpath('osfm_int_param_file.json')
+    int_param = oty_to_osfm_int_param(mult_int_param_dict)
+    int_param = [dict(cameras=int_param)]
+    with open(filename, 'w') as f:
+        json.dump(int_param, f)
+    return filename
+
+
+@pytest.fixture(scope='session')
 def exif_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """ An image file with EXIF tags including sensor size, and no XMP tags. """
     dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
@@ -651,33 +670,5 @@ def xmp_no_dewarp_image_file(odm_image_file: Path, tmp_path_factory: pytest.Temp
             dst_im.write(src_im.read())
     return dst_filename
 
-
-
-@pytest.fixture(scope='session')
-def ngi_xyz_opk_csv_file() -> Path:
-    """
-    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
-    a header and .proj file.
-    """
-    return root_path.joinpath('tests', 'data', 'io', 'ngi_xyz_opk.csv')
-
-
-@pytest.fixture(scope='session')
-def odm_lla_rpy_csv_file() -> Path:
-    """
-    Exterior parameters for ODM data in (latitude, longitude, altitude), (roll, pitch, yaw) CSV format. Includes
-    a header.
-    """
-    return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
-
-
-@pytest.fixture(scope='session')
-def odm_xyz_opk_csv_file() -> Path:
-    """
-    Exterior parameters for ODM data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
-    a header.
-    """
-    return root_path.joinpath('tests', 'data', 'io', 'odm_xyz_opk.csv')
-
-
 # TODO: move fixtures used by a single module to that module
+
