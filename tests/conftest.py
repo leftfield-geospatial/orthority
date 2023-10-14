@@ -333,14 +333,6 @@ def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) 
 
 
 @pytest.fixture(scope='session')
-def rgb_float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
-    """ An RGB float32 checkerboard image with no CRS. """
-    src_filename = tmp_path_factory.mktemp('data').joinpath('rgb_float_src.tif')
-    create_src(src_filename, im_size, dtype='float32', count=3)
-    return src_filename
-
-
-@pytest.fixture(scope='session')
 def float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
     """ A single band float64 checkerboard image with no CRS. """
     src_filename = tmp_path_factory.mktemp('data').joinpath('float_src.tif')
@@ -485,12 +477,6 @@ def ngi_image_files() -> Tuple[Path, ...]:
 def ngi_image_file() -> Path:
     """ NGI aerial image file. """
     return next(iter(root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')))
-
-
-@pytest.fixture(scope='session')
-def ngi_image_wildcard() -> str:
-    """ Wildcard for NGI aerial image files. """
-    return str(root_path.joinpath('tests', 'data', 'ngi')) + '*RGB.tif'
 
 
 @pytest.fixture(scope='session')
@@ -687,6 +673,4 @@ def xmp_no_dewarp_image_file(odm_image_file: Path, tmp_path_factory: pytest.Temp
                 dst_im.update_tags(ns=namespace, **ns_dict)
             dst_im.write(src_im.read())
     return dst_filename
-
-# TODO: move fixtures used by a single module to that module
 
