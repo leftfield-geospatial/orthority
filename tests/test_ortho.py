@@ -582,6 +582,30 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert cc[0, 1] != 1.
 
 
+@pytest.mark.parametrize('dem_interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos], )
+def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp, tmp_path: Path):
+    """ Test the process ``dem_interp`` setting by comparing with an ``dem_interp='nearest'`` reference ortho. """
+    resolution = _dem_resolution
+
+    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_ref_file, resolution, dem_interp=Interp.nearest, compress=Compress.deflate)
+
+    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_test_file, resolution, dem_interp=dem_interp, compress=Compress.deflate)
+
+    assert ortho_ref_file.exists() and ortho_test_file.exists()
+    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+        ref_array = ref_im.read(masked=True)
+        test_win = test_im.window(*ref_im.bounds)
+        test_array = test_im.read(masked=True, window=test_win)
+        assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.05)
+        test_array.mask &= ref_array.mask
+        ref_array.mask &= test_array.mask
+        cc = np.corrcoef(test_array.flatten(), ref_array.flatten())
+        assert cc[0, 1] > 0.9
+        assert cc[0, 1] != 1.
+
+
 def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
     """ Test ortho equivalence for ``per_band=True/False``. """
     resolution = (5, 5)
@@ -609,7 +633,7 @@ def test_process_full_remap(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera: str, utm34n_crs, tmp_path: Path,
     request: pytest.FixtureRequest
 ):
-    """ Test ortho equivalence for ``full_remap=True/False`` with ``alpha=1``. """
+    """ Test ortho similarity for ``full_remap=True/False`` with ``alpha=1``. """
     camera: Camera = request.getfixturevalue(camera)
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
     resolution = (3, 3)
@@ -721,7 +745,7 @@ def test_process_write_mask_per_band(
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_file, (30, 30), write_mask=write_mask, per_band=per_band)
+    ortho.process(ortho_file, _dem_resolution, write_mask=write_mask, per_band=per_band)
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
@@ -735,7 +759,7 @@ def test_process_write_mask_compress(
 ):
     """ Test ``write_mask=None`` writes an internal ortho mask when jpeg compression is used. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), write_mask=None, compress=compress)
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, write_mask=None, compress=compress)
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
@@ -764,7 +788,7 @@ def test_process_dtype(
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_file, (30, 30), dtype=dtype)
+    ortho.process(ortho_file, _dem_resolution, dtype=dtype)
 
     assert ortho_file.exists()
     with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
@@ -778,7 +802,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
     with pytest.raises(ValueError) as ex:
-        rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype)
+        rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype)
     assert dtype in str(ex)
 
 
@@ -789,7 +813,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
 def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
     """ Test the ortho ``nodata`` is set correctly. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), dtype=dtype, compress=Compress.deflate)
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype, compress=Compress.deflate)
 
     assert ortho_file.exists()
     with rio.open(ortho_file, 'r') as ortho_im:
@@ -815,7 +839,7 @@ def test_process_compress(
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_file, (30, 30), compress=compress)
+    ortho.process(ortho_file, _dem_resolution, compress=compress)
 
     assert ortho_file.exists()
     with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
@@ -842,22 +866,26 @@ def test_process_compress_jpeg_error(
     assert 'uint8' in str(ex)
 
 
-def test_process_overview(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """ Test the existence of overview(s) on a big enough ortho. """
+@pytest.mark.parametrize('build_ovw', [True, False])
+def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
+    """ Test overview(s) are created according to the ``build_ovw`` value. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.25, 0.25))
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.25, 0.25), build_ovw=build_ovw)
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
         assert min(ortho_im.shape) >= 512
-        assert len(ortho_im.overviews(1)) > 0
+        if build_ovw:
+            assert len(ortho_im.overviews(1)) > 0
+        else:
+            assert len(ortho_im.overviews(1)) == 0
 
 
 def test_process_overwrite(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
     """ Test overwriting an existing file with ``overwrite=True``. """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     ortho_file.touch()
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), overwrite=True)
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, overwrite=True)
     assert ortho_file.exists()
 
 
@@ -866,7 +894,7 @@ def test_process_overwrite_error(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     ortho_file.touch()
     with pytest.raises(FileExistsError) as ex:
-        rgb_pinhole_utm34n_ortho.process(ortho_file, (30, 30), overwrite=False)
+        rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, overwrite=False)
     assert ortho_file.name in str(ex)
 
 
@@ -946,5 +974,4 @@ def test_process_odm(
 
 # TODO: add test with dem that includes occlusion
 # TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in different CRSs
-# TODO: add test for dem_interp (and other params I may have missed)
 ##
