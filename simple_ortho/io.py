@@ -938,7 +938,6 @@ def write_int_param(
             raise FileExistsError(f"Interior parameter file exists: '{filename}'.")
         filename.unlink()
 
-    # TODO: just use cam_type in oty format?
     # convert 'cam_type' key to 'type' & make the converted item the first in the dict
     yaml_dict = {}
     for cam_id, int_param in int_param_dict.items():

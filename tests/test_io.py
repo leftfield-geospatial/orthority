@@ -608,8 +608,3 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     """ Test OtyReader reads the crs correctly. """
     reader = io.OtyReader(ngi_oty_ext_param_file, crs=None)
     assert reader.crs == rio.CRS.from_string(ngi_crs)
-
-
-# TODO: radians in CSV
-#  - perhaps add second fixture that rewrites e.g. ngi_xyz_opk.csv in radians (perhaps a parameterised fixture),
-#  then a test that reads both radians and degrees files and compares results.  could do same for odm_lla_rpy.csv.

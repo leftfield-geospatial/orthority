@@ -259,7 +259,6 @@ class Ortho:
         Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and corresponding
         transform.
         """
-        # TODO: trace rays in a thread pool?
         def inv_transform(transform: rio.Affine, xy: np.array):
             """ Return the center (j, i) pixel coords for the given transform and world (x, y) coordinates. """
             return np.array(~(transform * rio.Affine.translation(0.5, 0.5)) * xy)

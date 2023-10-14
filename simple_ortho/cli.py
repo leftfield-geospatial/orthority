@@ -769,3 +769,4 @@ if __name__ == '__main__':
     cli()
 
 # TODO: test CLI exceptions are meaningful
+# TODO: add radians option for CSV files
