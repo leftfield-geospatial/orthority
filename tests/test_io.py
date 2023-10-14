@@ -154,17 +154,11 @@ def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_fil
     _validate_int_param_dict(int_param_dict)
 
 
-def test_read_exif_int_param_no_dewarp(xmp_no_dewarp_image_file: Path):
+@pytest.mark.parametrize('filename', ['exif_image_file', 'exif_no_focal_image_file', 'xmp_no_dewarp_image_file'])
+def test_read_exif_int_param_no_dewarp(filename: str, request: pytest.FixtureRequest):
     """ Test reading EXIF / XMP tag interior parameters from an image without the 'DewarpData' XMP tag. """
-    int_param_dict = io.read_exif_int_param(xmp_no_dewarp_image_file)
-    int_params = next(iter(int_param_dict.values()))
-    assert int_params.get('cam_type', None) == 'pinhole'
-    _validate_int_param_dict(int_param_dict)
-
-
-def test_read_exif_int_param_no_xmp(exif_image_file: Path):
-    """ Test reading EXIF interior parameters from an image with sensor size tags and no XMP tags. """
-    int_param_dict = io.read_exif_int_param(exif_image_file)
+    filename: Path = request.getfixturevalue(filename)
+    int_param_dict = io.read_exif_int_param(filename)
     int_params = next(iter(int_param_dict.values()))
     assert int_params.get('cam_type', None) == 'pinhole'
     _validate_int_param_dict(int_param_dict)
@@ -175,7 +169,8 @@ def test_read_exif_int_param_no_xmp(exif_image_file: Path):
 ])  # yapf: disable
 def test_read_exif_int_param_values(image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest):
     """
-    Test EXIF interior parameter values against those from OsfmReader for images with different tag combinations.
+    Test EXIF focal length and sensor size interior parameter values against those from OsfmReader for images with
+    different tag combinations.
     """
     # read EXIF and OpenSfM interior parameters
     image_file: Path = request.getfixturevalue(image_file)
@@ -326,6 +321,16 @@ def test_csv_reader_xyz_opk_values(odm_xyz_opk_csv_file: Path, odm_crs: str, odm
         ref_ext_param = ref_ext_param_dict[Path(filename).stem]
         assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=1e-6)
         assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=1e-6)
+
+
+def test_csv_reader_xyz_opk_radians(ngi_xyz_opk_csv_file: Path, ngi_xyz_opk_radians_csv_file: Path, ngi_crs: str):
+    """
+    Test CsvReader(..., radians=True) by comparing exterior parameters from files with angles in degrees and
+    radians.
+    """
+    deg_reader = io.CsvReader(ngi_xyz_opk_csv_file, crs=ngi_crs)
+    rad_reader = io.CsvReader(ngi_xyz_opk_radians_csv_file, crs=ngi_crs, radians=True)
+    assert deg_reader.read_ext_param() == rad_reader.read_ext_param()
 
 
 def test_csv_reader_lla_rpy(

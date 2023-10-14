@@ -541,6 +541,24 @@ def ngi_xyz_opk_csv_file() -> Path:
 
 
 @pytest.fixture(scope='session')
+def ngi_xyz_opk_radians_csv_file(ngi_xyz_opk_csv_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """
+    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV format. Includes
+    a header and .proj file.  Angles in radians.
+    """
+    filename = tmp_path_factory.mktemp('data').joinpath('ngi_xyz_opk_radians.csv')
+    dialect = dict(delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
+    with open(ngi_xyz_opk_csv_file, 'r', newline=None) as rf, open(filename, 'w', newline='') as wf:
+        reader = csv.reader(rf, **dialect)
+        writer = csv.writer(wf, **dialect)
+        writer.writerow(next(iter(reader)))  # write header
+        for row in reader:
+            row[4:7] = np.radians(np.float64(row[4:7])).tolist()
+            writer.writerow(row)
+    return filename
+
+
+@pytest.fixture(scope='session')
 def odm_lla_rpy_csv_file() -> Path:
     """
     Exterior parameters for ODM data in (latitude, longitude, altitude), (roll, pitch, yaw) CSV format. Includes
