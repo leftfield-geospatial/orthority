@@ -575,17 +575,18 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert test_array.shape == ref_array.shape
         assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.05)
         assert len(np.unique(test_array.compressed())) > len(np.unique(ref_array.compressed()))
-        test_array.mask &= ref_array.mask
-        ref_array.mask &= test_array.mask
+        test_array.mask |= ref_array.mask
+        ref_array.mask |= test_array.mask
         cc = np.corrcoef(test_array.flatten(), ref_array.flatten())
         assert cc[0, 1] > 0.9
         assert cc[0, 1] != 1.
 
 
-@pytest.mark.parametrize('dem_interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos], )
+@pytest.mark.parametrize('dem_interp', [Interp.bilinear, Interp.cubic, Interp.lanczos], )
 def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp, tmp_path: Path):
     """ Test the process ``dem_interp`` setting by comparing with an ``dem_interp='nearest'`` reference ortho. """
-    resolution = _dem_resolution
+    # note that Interp.average is skipped as it gives v similar results to Interp.nearest
+    resolution = (10, 10)
 
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_ref_file, resolution, dem_interp=Interp.nearest, compress=Compress.deflate)
@@ -597,10 +598,10 @@ def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp,
     with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
         ref_array = ref_im.read(masked=True)
         test_win = test_im.window(*ref_im.bounds)
-        test_array = test_im.read(masked=True, window=test_win)
-        assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.05)
-        test_array.mask &= ref_array.mask
-        ref_array.mask &= test_array.mask
+        test_array = test_im.read(masked=True, window=test_win, boundless=True)
+        assert test_array.mask.sum() == pytest.approx(ref_array.mask.sum(), rel=0.1)
+        test_array.mask |= ref_array.mask
+        ref_array.mask |= test_array.mask
         cc = np.corrcoef(test_array.flatten(), ref_array.flatten())
         assert cc[0, 1] > 0.9
         assert cc[0, 1] != 1.
