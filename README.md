@@ -53,13 +53,13 @@ simple-ortho -v 2 -rc config.yaml -od ../outputs *_RGB.tif dem.tif camera_pos_or
 
 Camera position and orientation for an image is specified in a space-separated text file.  Each row specifies the camera position and orientation for an image as follows:    
 ```
-<Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
+<Image file stem> <Easting> <Northing> <Altitude> <Omega> <Phi> <Kappa> 
 ```
 Where `<Image file stem>` is the source file name without extension.  
 
 For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
-**Note** that the coordinate reference system (CRS) of the camera positions should be a projected, and not geographic CRS.  If the source image(s) aren't projected in this CRS, it should be specified in [``config.yaml``](#configuration-file).  
+**Note** that the coordinate reference system (CRS) of the camera positions should be a projected, and not geographic CRS.  If the source image(s) aren't projected in this CRS, it should be specified in [``config.yaml``](#configuration-file).  Camera (easting, northing, altitude) positions should be given in the units of this CRS (usually meters), and (omega, phi, kappa) orientations in degrees.   
 
 Example file:
 ```
