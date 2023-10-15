@@ -15,10 +15,20 @@ setup(
     install_requires=[
         'rasterio>=1.2',
         # 'opencv>=4.5',     # pip does not see the conda installed opencv, so commented out for now
-        'pandas>=1.2',
         'pyyaml>=5.4',
-        'shapely>=1.7'
+        'click>=8',
+        'tqdm>=4.6',
     ],
-    entry_points={'console_scripts': ['simple-ortho=simple_ortho.command_line:main_entry']},
-    scripts=['scripts/batch_recompress.bat']
+    entry_points={'console_scripts': [
+        'simple-ortho=simple_ortho.cli:simple_ortho',
+        'oty=simple_ortho.cli:cli'
+    ]},
+
+    # scripts=['scripts/batch_recompress.bat']
 )
+# TODO: the EPSG:<horiz>+<vert> format is not supported in rio 1.3.3, gdal 3.5.3, proj 9.1.0, but is supported
+#  in rio 1.3.6, gdal 3.6.2, proj 9.1.1.  The exact version where support begins (proj=9.1.1?) should be set in
+#  setup.py (note that pyproj seems to support the EPSG:<>+<> format with PROJ<9.1.1 so something is exactly right
+#  with thre prev statement).  Then the multithreaded overview building bug should be fixed in gdal 3.8.  Also note
+#  that proj<9.1.0 auto promotes 2d CRSs to 3d.
+# TODO: change license (?)

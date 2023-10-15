@@ -1,0 +1,106 @@
+{
+    "type": "FeatureCollection",
+    "world_crs": "PROJCS[\"unnamed\",GEOGCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563,AUTHORITY[\"EPSG\",\"7030\"]],AUTHORITY[\"EPSG\",\"6326\"]],PRIMEM[\"Greenwich\",0],UNIT[\"degree\",0.0174532925199433,AUTHORITY[\"EPSG\",\"9122\"]],AUTHORITY[\"EPSG\",\"4326\"]],PROJECTION[\"Transverse_Mercator\"],PARAMETER[\"latitude_of_origin\",0],PARAMETER[\"central_meridian\",25],PARAMETER[\"scale_factor\",1],PARAMETER[\"false_easting\",0],PARAMETER[\"false_northing\",0],UNIT[\"metre\",1,AUTHORITY[\"EPSG\",\"9001\"]],AXIS[\"Easting\",EAST],AXIS[\"Northing\",NORTH]]",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "3324c_2015_1004_05_0182_RGB",
+                "camera": "Integraph DMC",
+                "xyz": [
+                    -55094.50448,
+                    -3727407.03748,
+                    5258.30793
+                ],
+                "opk": [
+                    -0.006094969000644519,
+                    0.005209528564522755,
+                    -3.1256525964379143
+                ]
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.40592063505657,
+                    -33.67171873315029,
+                    5258.30793
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "3324c_2015_1004_05_0184_RGB",
+                "camera": "Integraph DMC",
+                "xyz": [
+                    -57710.43528,
+                    -3727433.89302,
+                    5256.76479
+                ],
+                "opk": [
+                    0.004708217643472423,
+                    -0.004920728933195253,
+                    -3.1246260112251836
+                ]
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.377712952251677,
+                    -33.67182204516702,
+                    5256.76479
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "3324c_2015_1004_06_0251_RGB",
+                "camera": "Integraph DMC",
+                "xyz": [
+                    -57682.68023,
+                    -3731579.57171,
+                    5229.21311
+                ],
+                "opk": [
+                    -0.009012618457910918,
+                    0.0039670286700279915,
+                    0.011693828161409648
+                ]
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.37774291663962,
+                    -33.709197810546364,
+                    5229.21311
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "filename": "3324c_2015_1004_06_0253_RGB",
+                "camera": "Integraph DMC",
+                "xyz": [
+                    -55081.7728,
+                    -3731564.36162,
+                    5243.46618
+                ],
+                "opk": [
+                    0.016051496424619012,
+                    -0.007235751106333051,
+                    0.012578256306565254
+                ]
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.405800032948147,
+                    -33.709198834017435,
+                    5243.46618
+                ]
+            }
+        }
+    ]
+}

@@ -14,15 +14,15 @@
    limitations under the License.
 """
 
-import logging
 import os
 import pathlib
-import sys
 
-logging.basicConfig(stream=sys.stdout, format='%(message)s')
+# enable on-demand download and caching of proj transformation grids
+os.environ.update(PROJ_NETWORK='ON')
 
+# path to package root TODO: remove with deprecated simple-ortho CLI
 if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
-    root_path = pathlib.Path(os.getcwd())
+    root_path = pathlib.Path.cwd().absolute()
 

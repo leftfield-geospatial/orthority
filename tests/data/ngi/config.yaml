@@ -2,11 +2,11 @@
 camera:
   name: Integraph DMC               # Camera ID.
   type: pinhole                     # Camera model type (pinhole, brown, fisheye, opencv).
-  im_size: [ 7680, 13824 ]          # Image [width, height] in pixels.
+  im_size: [640, 1152]              # Image [width, height] in pixels.
   focal_len: 120.                   # Focal length.
   sensor_size: [ 92.160, 165.888 ]  # Sensor/CCD [width, height] dimensions in same units as the focal length.
-  cx: 0.                            # Principal point x offset in normalised units.
-  cy: 0.                            # Principal point y offset in normalised units.
+  cx: 0.                            # Principal point x offset in normalised image coordinates.
+  cy: 0.                            # Principal point y offset in normalised image coordinates.
 
 ortho:
   # CRS of world coordinates and ortho image as an EPSG or WKT string.  Can be omitted if the source image has a CRS.
@@ -28,8 +28,8 @@ ortho:
   # Remap source to ortho with full camera model (True), or undistorted source to ortho with pinhole model (False).
   full_remap: True
   # Data type of ortho image (uint8, uint16, float32, float64)  (None = same type as source image).
-  dtype:
+  dtype: uint8
   # Ortho pixel size [x, y] in units of the CRS.
-  resolution: [0.5, 0.5]
+  resolution: [5., 5.]
   # Compression type (deflate, jpeg, auto).  (auto = jpeg compression for uint8 data type, deflate otherwise).
   compress: auto
