@@ -626,11 +626,11 @@ def _simple_ortho(src_im_file, dem_file, pos_ori_file, ortho_dir=None, read_conf
                 logger.warning(f'Creating ortho directory {ortho_dir}')
                 ortho_dir.mkdir()
 
-    # TODO: insert link to docs in all deprecation warnings
-    logger.warning(
-        "This command is deprecated and will be removed in version 0.4.0.  Please switch to 'oty' and its "
-        "sub-commands."
-    )
+    # TODO: add deprecation warning with link to docs
+    # logger.warning(
+    #     "This command is deprecated and will be removed in version 0.4.0.  Please switch to 'oty' and its "
+    #     "sub-commands."
+    # )
 
     try:
         # set logging level

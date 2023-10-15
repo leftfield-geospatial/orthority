@@ -55,7 +55,7 @@ Camera position and orientation for an image is specified in a space-separated t
 ```
 <Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
 ```
-Where `<Image file stem>` is the source file name with or without extension.  
+Where `<Image file stem>` is the source file name without extension.  
 
 For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
