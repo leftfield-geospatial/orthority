@@ -585,9 +585,8 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
 @pytest.mark.parametrize('dem_interp', [Interp.bilinear, Interp.cubic, Interp.lanczos], )
 def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp, tmp_path: Path):
     """ Test the process ``dem_interp`` setting by comparing with an ``dem_interp='nearest'`` reference ortho. """
-    # note that Interp.average is skipped as it gives v similar results to Interp.nearest
+    # note that Interp.average is skipped as it gives similar upsampling results to Interp.nearest
     resolution = (10, 10)
-
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_ref_file, resolution, dem_interp=Interp.nearest, compress=Compress.deflate)
 

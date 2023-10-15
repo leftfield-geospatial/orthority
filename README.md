@@ -15,7 +15,8 @@ conda install -c conda-forge rasterio opencv pyyaml click tqdm
 2) Clone the git repository and link into the conda environment:
 ``` shell
 git clone https://github.com/leftfield-geospatial/simple-ortho.git
-pip install -e simple-ortho
+cd simple-ortho
+pip install -e .
 ```
 
 ## Usage
@@ -42,14 +43,10 @@ Argument | Long form | Description
 `-wc` `<config_path>` | `--write_conf` `<config_path>` | Write current configuration to  `<config_path>` and exit.
 `-v` `{1,2,3,4}` | `--verbosity {1,2,3,4}` | Set the logging level (lower means more logging).  1=debug, 2=info, 3=warning, 4=error (default: 2).
 
-#### Examples
-Orthorectify a single image with a user provided configuration, writing to a specified folder.
-```shell
-simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs/ ./tests/data/ngi/3324c_2015_1004_06_0253_RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
-```
+#### Example
 Orthorectify images matching a wildcard, with a user provided configuration, writing to a specified folder.
 ```shell
-simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs ./tests/data/ngi/*_RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
+simple-ortho -v 2 -rc config.yaml -od ../outputs *_RGB.tif dem.tif camera_pos_ori.txt
 ```
 
 ### Camera position and orientation
@@ -58,11 +55,11 @@ Camera position and orientation for an image is specified in a space-separated t
 ```
 <Image file stem> <Easting (m)> <Northing (m)> <Altitude (m)> <Omega (deg)> <Phi (deg)> <Kappa (deg)> 
 ```
-Where `<Image file stem>` is the source file name excluding extension.  
+Where `<Image file stem>` is the source file name with or without extension.  
 
 For [`simple-ortho`](#simple-ortho), there should be a row with an `<Image file stem>` corresponding to each image specified by `src_im_file` argument(s).
 
-**Note** that the coordinate reference system (CRS) of camera positions should be a projected, and not geographic CRS.  If the source image(s) aren't projected in this CRS, it should be specified in [``config.yaml``](#configuration-file).  
+**Note** that the coordinate reference system (CRS) of the camera positions should be a projected, and not geographic CRS.  If the source image(s) aren't projected in this CRS, it should be specified in [``config.yaml``](#configuration-file).  
 
 Example file:
 ```
@@ -75,7 +72,7 @@ Example file:
 
 ### Camera type
 
-`simple-ortho` implements common lens distortion models, selectable via the camera type.  The *camera* section of the [configuration file](#configuration-file) contains the camera type and distortion parameter specification.  `simple-ortho` distortion models are compatible with [OpenDroneMap (ODM)](https://opendronemap.org/) / [OpenSfM](https://github.com/mapillary/OpenSfM) and [OpenCV](https://opencv.org/) distortion parameter estimates.  ODM writes parameter values to the *&lt;ODM dataset path&gt;/cameras.json* file, and OpenSfM to the *&lt;OpenSfM dataset path&gt;/reconstruction.json* file.  Any parameters not specified will default to zero.  The following camera types and distortion parameters are supported.
+`simple-ortho` implements common lens distortion models.  The *camera* section of the [configuration file](#configuration-file) contains the camera type and distortion parameter specification.  `simple-ortho` distortion models are compatible with [OpenDroneMap (ODM)](https://opendronemap.org/) / [OpenSfM](https://github.com/mapillary/OpenSfM) and [OpenCV](https://opencv.org/) distortion parameter estimates.  ODM writes parameter values to the *&lt;ODM dataset path&gt;/cameras.json* file, and OpenSfM to the *&lt;OpenSfM dataset path&gt;/reconstruction.json* file.  Any parameters not specified will default to zero.  The following camera types and distortion parameters are supported.
 
 | Type      | Parameters                                                                          | Description
 |-----------|-------------------------------------------------------------------------------------|------------
@@ -86,7 +83,7 @@ Example file:
 
 ### Configuration file
 
-Default configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into *camera* and *ortho* sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below and commented in [config.yaml](config.yaml).  
+Configuration settings, not passed explicitly on the command line, are read from [config.yaml](config.yaml).  Users can make their own configuration files and pass them to [`simple-ortho`](#simple-ortho) with the `-rc <config_path>` argument.   The configuration file is separated into *camera* and *ortho* sections, with settings for the camera model and orthorectification respectively.  Parameters in each section are described below and commented in [config.yaml](config.yaml).  
 
 | Section  | Parameter       | Description
 |----------|-----------------|------------
@@ -97,8 +94,8 @@ Default configuration settings, not passed explicitly on the command line, are r
 |          | `im_size`       | Image `[width, height]` dimensions in pixels.
 |          | `cx`, `cy`      | Principal point offsets in [normalised image coordinates](https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates). Values default to zero if not specified.    
 |          | `k1`, `k2`, ... | Optional distortion coefficients for the `brown`, `fisheye` and `opencv`  [camera types](#camera-type).  Values default to zero if not specified.
-| `ortho`  | `crs`           | CRS of the camera positions and ortho image as an EPSG, proj4 or WKT string.  Should be a projected, and not geographic CRS.  Can be omitted if the source image is projected in this CRS.
-|          | `dem_interp`    | Interpolation type for resampling the DEM (`average`, `bilinear`, `cubic`, `lanczos`, `nearest`).  `cubic` is recommended where the DEM resolution is coarser than the ortho image.
+| `ortho`  | `crs`           | CRS of the camera positions and ortho image as an EPSG, proj4 or WKT string.  Should be a projected, and not geographic CRS.  Can be omitted if the source image(s) are projected in this CRS.
+|          | `dem_interp`    | Interpolation type for resampling the DEM (`average`, `bilinear`, `cubic`, `lanczos`, `nearest`).  `cubic` or `lanczos` are recommended where the DEM resolution is coarser than the ortho image.
 |          | `dem_band`      | Index of band in DEM image to use (1-based).
 |          | `interp`        | Interpolation type for remapping source to ortho image (`average`, `bilinear`, `cubic`, `lanczos`, `nearest`).  
 |          | `per_band`      | Remap source to ortho image band-by-band (`True`), or all at once (`False`).  `per_band=False` is faster, but requires more memory.  (`True`, `False`).

@@ -1,4 +1,4 @@
-# Legacy simple-ortho configuration - note this format is deprecated, see the online docs for alternatives
+# Legacy simple-ortho configuration
 camera:
   name: Integraph DMC               # Camera ID.
   type: pinhole                     # Camera model type (pinhole, brown, fisheye, opencv).
