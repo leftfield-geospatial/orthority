@@ -1,3 +1,6 @@
+[![Tests](https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml/badge.svg)](https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml) 
+[![codecov](https://codecov.io/gh/leftfield-geospatial/simple-ortho/graph/badge.svg?token=YPZAQS4S15)](https://codecov.io/gh/leftfield-geospatial/simple-ortho)
+
 # Simple orthorectification
 
 ![banner](docs/readme_banner.webp)
