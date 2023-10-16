@@ -31,6 +31,7 @@ Orthorectify image(s).
 `simple-ortho [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
 
 #### Required arguments
+
 Argument  | Description
 ----------|--------------
 `src_im_file` | One or more path(s) and or wildcard(s) specifying the source unrectified image file(s).
@@ -38,6 +39,7 @@ Argument  | Description
 `pos_ori_file` | Path to a text file specifying the camera position and orientation for  all image(s) specified by `src_im_file`.  See [camera position and orientation section](#camera-position-and-orientation) for more detail. 
 
 #### Optional arguments
+
 Argument | Long form | Description
 ---------|-----------|------------
 `-h` | `--help` | Print help and exit.
