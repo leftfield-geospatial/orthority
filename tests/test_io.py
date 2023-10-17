@@ -40,11 +40,12 @@ def _validate_int_param_dict(int_param_dict: Dict):
         assert set(int_params.keys()).issuperset(req_keys)
         cam_type = CameraType(int_params['cam_type'])
         assert len(int_params['im_size']) == 2 and all([isinstance(dim, int) for dim in int_params['im_size']])
-        assert len(int_params['sensor_size']) == 2 and all(
-            [isinstance(dim, float) for dim in int_params['sensor_size']]
+        assert (
+            len(int_params['sensor_size']) == 2 and all([isinstance(dim, float) for dim in int_params['sensor_size']])
         )
-        assert isinstance(int_params['focal_len'], float) or (
-            len(int_params['focal_len']) == 2 and all([isinstance(f, float) for f in int_params['focal_len']])
+        assert (
+            isinstance(int_params['focal_len'], float) or 
+            (len(int_params['focal_len']) == 2 and all([isinstance(f, float) for f in int_params['focal_len']]))
         )
         optional_keys = set(int_params.keys()).difference(req_keys)
         assert set(optional_keys).issubset(io._optional_schema[cam_type])
@@ -166,7 +167,7 @@ def test_read_exif_int_param_no_dewarp(filename: str, request: pytest.FixtureReq
 
 @pytest.mark.parametrize('image_file', [
     'odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file', 'exif_no_focal_image_file'
-])  # yapf: disable
+])  
 def test_read_exif_int_param_values(image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest):
     """
     Test EXIF focal length and sensor size interior parameter values against those from OsfmReader for images with
@@ -212,7 +213,7 @@ def test_aa_to_opk(xyz: Tuple, opk: Tuple):
     ('wgs84_wgs84_crs', 'webmerc_egm96_crs'),
     ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
     ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
-])  # yapf: disable
+])  
 def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """
     Test rasterio.warp.transform adjusts the z coordinate with source and destination CRS vertical datums specified.
@@ -238,7 +239,7 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
     ('utm34n_crs', 'wgs84_wgs84_crs'),
     ('utm34n_crs', 'wgs84_egm96_crs'),
     ('utm34n_crs', 'wgs84_egm2008_crs'),
-])  # yapf: disable
+])  
 @pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
 def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """
@@ -384,7 +385,7 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
 @pytest.mark.parametrize('fieldnames', [
     ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw'],
     ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
-])  # yapf: disable
+])  
 def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: List):
     """ Test that CsvReader initialised with a XYZ-RPY or LLA-OPK format file and no CRS raises an error. """
     with pytest.raises(CrsMissingError) as ex:
@@ -442,7 +443,7 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
         'odm_lla_rpy_csv_file', 'odm_crs', ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw'],
         CsvFormat.lla_rpy
     ),
-])  # yapf: disable
+])  
 def test_csv_reader_format(
     filename: str, crs: str, fieldnames: List, exp_format:CsvFormat, request: pytest.FixtureRequest
 ):
@@ -470,7 +471,7 @@ def test_csv_reader_format(
     dict(delimiter=';', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
     dict(delimiter=':', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
     dict(delimiter='\t', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
-])  # yapf: disable
+])  
 def test_csv_reader_dialect(
     odm_lla_rpy_csv_file: Path, odm_crs: str, odm_image_files: Tuple[Path, ...], odm_reconstruction_file: Path,
     dialect: Dict, tmp_path: Path
