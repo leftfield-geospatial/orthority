@@ -13,26 +13,26 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import argparse
+import csv
 import logging
+import re
 import sys
 from pathlib import Path
-import re
-import click
-import yaml
-import csv
-import argparse
-from typing import Tuple, List, Dict, Union, Optional
+from typing import Tuple, Dict, Optional
 
+import click
 import numpy as np
 import rasterio as rio
-from simple_ortho.ortho import Ortho
+import yaml
+
+from simple_ortho import io, root_path
 from simple_ortho.camera import create_camera
 from simple_ortho.enums import Compress, Interp, CameraType
-from simple_ortho.utils import suppress_no_georef
 from simple_ortho.errors import ParamFileError, DemBandError, CrsMissingError
-from simple_ortho import io, root_path
+from simple_ortho.ortho import Ortho
+from simple_ortho.utils import suppress_no_georef
 from simple_ortho.version import __version__
-
 
 logger = logging.getLogger(__name__)
 
@@ -770,3 +770,5 @@ if __name__ == '__main__':
 
 # TODO: test CLI exceptions are meaningful
 # TODO: add radians option for CSV files
+# TODO: consider typing with PathLike, ArrayLike and Iterable, rather than Union[] etc
+# TODO: a lot of args are spec'd as Tuples, is this correct or would List, or Iterable be more appropriate?
