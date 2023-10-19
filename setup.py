@@ -31,4 +31,6 @@ setup(
 #  setup.py (note that pyproj seems to support the EPSG:<>+<> format with PROJ<9.1.1 so something is exactly right
 #  with thre prev statement).  Then the multithreaded overview building bug should be fixed in gdal 3.8.  Also note
 #  that proj<9.1.0 auto promotes 2d CRSs to 3d.
+# TODO: also, now that conda-forge rasterio supports 12 bit jpeg, change the readme warning reflect relevant version
+#  / package, or remove entirely, if this version is pinned.
 # TODO: change license (?)
