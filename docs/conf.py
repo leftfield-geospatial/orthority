@@ -6,8 +6,9 @@
 # -- Path information -----------------------------------------------------
 import os
 import sys
+
 sys.path.insert(0, os.path.abspath('..'))
-from simple_ortho.version import __version__
+from orthority.version import __version__
 
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
@@ -28,7 +29,6 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
 
 
 # -- Options for HTML output -------------------------------------------------

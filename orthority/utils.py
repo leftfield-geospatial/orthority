@@ -27,7 +27,7 @@ import rasterio as rio
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
 
-from simple_ortho.enums import Interp
+from orthority.enums import Interp
 
 logger = logging.getLogger(__name__)
 

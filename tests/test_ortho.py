@@ -27,11 +27,11 @@ from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
-from simple_ortho import errors, io
-from simple_ortho.camera import Camera, create_camera, PinholeCamera
-from simple_ortho.enums import CameraType, Compress, Interp
-from simple_ortho.ortho import Ortho
-from simple_ortho.utils import distort_image, nan_equals
+from orthority import errors, io
+from orthority.camera import Camera, create_camera, PinholeCamera
+from orthority.enums import CameraType, Compress, Interp
+from orthority.ortho import Ortho
+from orthority.utils import distort_image, nan_equals
 from tests.conftest import _dem_resolution, checkerboard
 
 logger = logging.getLogger(__name__)

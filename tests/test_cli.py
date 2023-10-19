@@ -26,7 +26,7 @@ import rasterio as rio
 import yaml
 from click.testing import CliRunner
 
-from simple_ortho.cli import _ortho, cli, simple_ortho
+from orthority.cli import _ortho, cli, simple_ortho
 
 logger = logging.getLogger(__name__)
 

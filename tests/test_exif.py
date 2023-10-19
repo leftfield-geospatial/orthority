@@ -15,7 +15,7 @@
 """
 from pathlib import Path
 
-from simple_ortho.exif import Exif
+from orthority.exif import Exif
 
 
 def test_odm_image(odm_image_file: Path):

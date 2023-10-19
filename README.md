@@ -8,7 +8,7 @@
 Fast and simple orthorectification of images with known DEM and camera model.  Designed and tested on [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) aerial imagery.  
 
 ## Installation
-Using `conda` is the simplest way to resolve `simple-ortho` binary dependencies.  The [Minconda](https://docs.conda.io/en/latest/miniconda.html) installation includes a minimal `conda`.
+Using `conda` is the simplest way to resolve `orthority` binary dependencies.  The [Minconda](https://docs.conda.io/en/latest/miniconda.html) installation includes a minimal `conda`.
 1) Create a conda environment and install dependencies:
 ```shell
 conda create -n <environment name> python=3.10 -c conda-forge 
@@ -23,9 +23,9 @@ pip install -e .
 ```
 
 ## Usage
-`simple-ortho` functionality can be accessed from the `conda` command line.
+`orthority` functionality can be accessed from the `conda` command line.
 
-### [simple-ortho](simple_ortho/command_line.py)
+### [simple-ortho](orthority/cli.py)
 Orthorectify image(s). 
 
 `simple-ortho [-h] [-od <ortho_dir>] [-rc <config_path>] [-wc <config_path>] [-v {1,2,3,4}] src_im_file [src_im_file ...] dem_file pos_ori_file`
@@ -77,7 +77,7 @@ Example file:
 
 ### Camera type
 
-`simple-ortho` implements common lens distortion models.  The *camera* section of the [configuration file](#configuration-file) contains the camera type and distortion parameter specification.  `simple-ortho` distortion models are compatible with [OpenDroneMap (ODM)](https://opendronemap.org/) / [OpenSfM](https://github.com/mapillary/OpenSfM) and [OpenCV](https://opencv.org/) distortion parameter estimates.  ODM writes parameter values to the *&lt;ODM dataset path&gt;/cameras.json* file, and OpenSfM to the *&lt;OpenSfM dataset path&gt;/reconstruction.json* file.  Any parameters not specified will default to zero.  The following camera types and distortion parameters are supported.
+`orthority` implements common lens distortion models.  The *camera* section of the [configuration file](#configuration-file) contains the camera type and distortion parameter specification.  `orthority` distortion models are compatible with [OpenDroneMap (ODM)](https://opendronemap.org/) / [OpenSfM](https://github.com/mapillary/OpenSfM) and [OpenCV](https://opencv.org/) distortion parameter estimates.  ODM writes parameter values to the *&lt;ODM dataset path&gt;/cameras.json* file, and OpenSfM to the *&lt;OpenSfM dataset path&gt;/reconstruction.json* file.  Any parameters not specified will default to zero.  The following camera types and distortion parameters are supported.
 
 | Type      | Parameters                                                                          | Description
 |-----------|-------------------------------------------------------------------------------------|------------
@@ -113,11 +113,11 @@ Configuration settings, not passed explicitly on the command line, are read from
 |          | `compress`      | Ortho image compression type (`deflate`, `jpeg`, or `auto`).  `auto` uses jpeg compression for uint8 `dtype`, deflate otherwise.
 
 ## Example Application
-Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with simple-ortho.  No radiometric (colour) adjustments have been applied, this can be addressed with [`homonim`](https://github.com/leftfield-geospatial/homonim).  
+Four [NGI](http://www.ngi.gov.za/index.php/what-we-do/aerial-photography-and-imagery) images before and after orthorectification with `simple-ortho`.  No radiometric (colour) adjustments have been applied, this can be addressed with [`homonim`](https://github.com/leftfield-geospatial/homonim).  
 
 ![example](docs/readme_eg.webp)
 
-Coarse resolution versions of these images, together with supporting data, are included in the [tests/data/ngi](tests/data/ngi) directory.  You can orthorectify this data with the following command line (from the simple-ortho directory):
+Coarse resolution versions of these images, together with supporting data, are included in the [tests/data/ngi](tests/data/ngi) directory.  You can orthorectify this data with the following command line (from the orthority directory):
 ```shell
 simple-ortho -v 2 -rc ./tests/data/ngi/config.yaml -od ./tests/data/outputs ./tests/data/ngi/*RGB.tif ./tests/data/ngi/dem.tif ./tests/data/ngi/camera_pos_ori.txt
 ```

@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 # To install local development version use:
 #    pip install -e .
 setup(
-    name='simple-ortho',
+    name='orthority',
     version='0.2.0',
     description='Orthorectification with known camera model and DEM',
     author='Dugal Harris',
@@ -19,11 +19,9 @@ setup(
         'click>=8',
         'tqdm>=4.6',
     ],
-    entry_points={'console_scripts': [
-        'simple-ortho=simple_ortho.cli:simple_ortho',
-        'oty=simple_ortho.cli:cli'
-    ]},
-
+    entry_points={
+        'console_scripts': ['simple-ortho=orthority.cli:orthority', 'oty=orthority.cli:cli']
+    },
     # scripts=['scripts/batch_recompress.bat']
 )
 # TODO: the EPSG:<horiz>+<vert> format is not supported in rio 1.3.3, gdal 3.5.3, proj 9.1.0, but is supported

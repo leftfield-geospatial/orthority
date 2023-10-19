@@ -28,10 +28,10 @@ from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
 from tqdm.auto import tqdm
 
-from simple_ortho.camera import Camera
-from simple_ortho.enums import Compress, Interp
-from simple_ortho.errors import CrsError, CrsMissingError, DemBandError
-from simple_ortho.utils import expand_window_to_grid, nan_equals, profiler, suppress_no_georef
+from orthority.camera import Camera
+from orthority.enums import Compress, Interp
+from orthority.errors import CrsError, CrsMissingError, DemBandError
+from orthority.utils import expand_window_to_grid, nan_equals, profiler, suppress_no_georef
 
 # from scipy.ndimage import map_coordinates
 
@@ -87,7 +87,7 @@ class Ortho:
         dem_filename: str, pathlib.Path
             Path/URL to a DEM image covering the source image.
         camera: Camera
-            Source image camera model (see :meth:`~simple_ortho.camera.create_camera`).
+            Source image camera model (see :meth:`~orthority.camera.create_camera`).
         crs: str, rasterio.CRS, optional
             CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT
             string.  It should be a projected, not geographic CRS.  Can be omitted if the source
@@ -710,15 +710,15 @@ class Ortho:
             Path of the ortho image file to create.
         resolution: list of float, optional
             Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).
-        interp: str, simple_ortho.enums.Interp, optional
+        interp: str, orthority.enums.Interp, optional
             Interpolation method to use for remapping the source to ortho image.  See
-            :class:`~simple_ortho.enums.Interp` for options.
-            :attr:`~simple_ortho.enums.Interp.nearest` is recommended when the ortho and source
+            :class:`~orthority.enums.Interp` for options.
+            :attr:`~orthority.enums.Interp.nearest` is recommended when the ortho and source
             image resolutions are similar.
-        dem_interp: str, simple_ortho.enums.Interp, optional
+        dem_interp: str, orthority.enums.Interp, optional
             Interpolation method for reprojecting the DEM.  See
-            :class:`~simple_ortho.enums.Interp` for options.
-            :attr:`~simple_ortho.enums.Interp.cubic` is recommended when the DEM has a coarser
+            :class:`~orthority.enums.Interp` for options.
+            :attr:`~orthority.enums.Interp.cubic` is recommended when the DEM has a coarser
             resolution than the ortho.
         per_band: bool, optional
             Remap the source to the ortho image band-by-band (True), or all bands at once (False).
@@ -735,7 +735,7 @@ class Ortho:
             source image dtype is used.
         compress: str, Compress, optional
             Ortho image compression type ('deflate', 'jpeg' or 'auto').  See
-            :class:`~simple_ortho.enums.Compress`_ for option details.
+            :class:`~orthority.enums.Compress`_ for option details.
         build_ovw: bool, optional
             Build overviews for the ortho image.
         overwrite: bool, optional

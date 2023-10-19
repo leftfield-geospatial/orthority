@@ -27,9 +27,9 @@ from click.testing import CliRunner
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
 
-from simple_ortho.camera import BrownCamera, Camera, FisheyeCamera, OpenCVCamera, PinholeCamera
-from simple_ortho.enums import CameraType
-from simple_ortho.ortho import Ortho
+from orthority.camera import BrownCamera, Camera, FisheyeCamera, OpenCVCamera, PinholeCamera
+from orthority.enums import CameraType
+from orthority.ortho import Ortho
 
 _dem_resolution = (30.0, 30.0)
 """Default DEM resolution (m)."""

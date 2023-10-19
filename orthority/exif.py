@@ -25,7 +25,7 @@ from xml.etree import cElementTree as ET
 import numpy as np
 import rasterio as rio
 
-from simple_ortho.utils import suppress_no_georef
+from orthority.utils import suppress_no_georef
 
 logger = logging.getLogger(__name__)
 

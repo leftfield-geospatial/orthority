@@ -24,10 +24,10 @@ import pytest
 import rasterio as rio
 from rasterio.warp import transform
 
-from simple_ortho import io
-from simple_ortho.camera import Camera
-from simple_ortho.enums import CameraType, CsvFormat, Interp
-from simple_ortho.errors import CrsMissingError, ParamFileError
+from orthority import io
+from orthority.camera import Camera
+from orthority.enums import CameraType, CsvFormat, Interp
+from orthority.errors import CrsMissingError, ParamFileError
 from tests.conftest import oty_to_osfm_int_param
 
 

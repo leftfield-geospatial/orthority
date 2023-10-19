@@ -20,9 +20,9 @@ from typing import Optional, Tuple, Union
 import cv2
 import numpy as np
 
-from simple_ortho.enums import CameraType
-from simple_ortho.errors import CameraInitError
-from simple_ortho.io import _opk_to_rotation
+from orthority.enums import CameraType
+from orthority.errors import CameraInitError
+from orthority.io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
 

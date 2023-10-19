@@ -18,7 +18,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pytest
 
-from simple_ortho.camera import (
+from orthority.camera import (
     BrownCamera,
     Camera,
     create_camera,
@@ -26,8 +26,8 @@ from simple_ortho.camera import (
     OpenCVCamera,
     PinholeCamera,
 )
-from simple_ortho.enums import CameraType
-from simple_ortho.errors import CameraInitError
+from orthority.enums import CameraType
+from orthority.errors import CameraInitError
 
 
 @pytest.mark.parametrize(

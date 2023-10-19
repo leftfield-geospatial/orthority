@@ -26,13 +26,13 @@ import numpy as np
 import rasterio as rio
 import yaml
 
-from simple_ortho import io, root_path
-from simple_ortho.camera import create_camera
-from simple_ortho.enums import CameraType, Compress, Interp
-from simple_ortho.errors import CrsMissingError, DemBandError, ParamFileError
-from simple_ortho.ortho import Ortho
-from simple_ortho.utils import suppress_no_georef
-from simple_ortho.version import __version__
+from orthority import io, root_path
+from orthority.camera import create_camera
+from orthority.enums import CameraType, Compress, Interp
+from orthority.errors import CrsMissingError, DemBandError, ParamFileError
+from orthority.ortho import Ortho
+from orthority.utils import suppress_no_georef
+from orthority.version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ def _configure_logging(verbosity: int):
     log_level = max(10, 20 - 10 * verbosity)
 
     # apply config to package logger, rather than root logger
-    pkg_logger = logging.getLogger('simple_ortho')
+    pkg_logger = logging.getLogger('orthority')
     formatter = PlainInfoFormatter()
     handler = logging.StreamHandler(sys.stderr)
     handler.setFormatter(formatter)
@@ -809,7 +809,7 @@ def _simple_ortho(
     try:
         # set logging level
         if verbosity is not None:
-            pkg_logger = logging.getLogger('simple_ortho')
+            pkg_logger = logging.getLogger('orthority')
             formatter = PlainInfoFormatter()
             handler = logging.StreamHandler(sys.stderr)
             handler.setFormatter(formatter)

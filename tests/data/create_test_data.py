@@ -12,9 +12,9 @@ import rasterio as rio
 from rasterio.enums import Resampling
 from rasterio.warp import reproject
 
-from simple_ortho import io
-from simple_ortho.exif import Exif
-from simple_ortho.utils import expand_window_to_grid
+from orthority import io
+from orthority.exif import Exif
+from orthority.utils import expand_window_to_grid
 
 ngi_src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
 ngi_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')

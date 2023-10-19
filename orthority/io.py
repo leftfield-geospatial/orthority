@@ -29,10 +29,10 @@ from rasterio.errors import CRSError as RioCrsError
 from rasterio.warp import transform
 from tqdm.auto import tqdm
 
-from simple_ortho.enums import CameraType, CsvFormat
-from simple_ortho.errors import CrsError, CrsMissingError, ParamFileError
-from simple_ortho.exif import Exif
-from simple_ortho.utils import utm_crs_from_latlon, validate_collection
+from orthority.enums import CameraType, CsvFormat
+from orthority.errors import CrsError, CrsMissingError, ParamFileError
+from orthority.exif import Exif
+from orthority.utils import utm_crs_from_latlon, validate_collection
 
 logger = logging.getLogger(__name__)
 
@@ -537,7 +537,7 @@ class CsvReader(Reader):
 
         Reads tabular data from a text CSV file with a row per source image and column fields for
         the image file name, camera position coordinates and orientation angles.  Positions and
-        orientations are converted into :class:`~simple_ortho.camera.Camera` compatible values.
+        orientations are converted into :class:`~orthority.camera.Camera` compatible values.
 
         Fields can be identified with a first line file header or by passing the ``fieldnames``
         argument. Recognised names and corresponding descriptions for the header and
