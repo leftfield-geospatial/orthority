@@ -20,7 +20,7 @@ setup(
         'tqdm>=4.6',
     ],
     entry_points={
-        'console_scripts': ['simple-ortho=orthority.cli:orthority', 'oty=orthority.cli:cli']
+        'console_scripts': ['simple-ortho=orthority.cli:simple_ortho', 'oty=orthority.cli:cli']
     },
     # scripts=['scripts/batch_recompress.bat']
 )
