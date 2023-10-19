@@ -13,25 +13,27 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+
+
 class OrthorityError(Exception):
-    """ Base exception class. """
+    """Base exception class."""
 
 
 class ParamFileError(OrthorityError):
-    """ Raised when the formatting of an interior or exterior parameter file is not supported. """
+    """Raised when the formatting of an interior or exterior parameter file is not supported."""
 
 
 class CrsError(OrthorityError):
-    """ Raised when CRS could not be interpreted. """
+    """Raised when CRS could not be interpreted."""
 
 
 class CrsMissingError(OrthorityError):
-    """ Raised when a required CRS was not specified. """
+    """Raised when a required CRS was not specified."""
 
 
 class DemBandError(OrthorityError):
-    """ Raised when the DEM band parameter is out of range. """
+    """Raised when the DEM band parameter is out of range."""
 
 
 class CameraInitError(OrthorityError):
-    """ Raised when a camera has no exterior parameters. """
+    """Raised when a camera has no exterior parameters."""

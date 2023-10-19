@@ -14,17 +14,18 @@
    limitations under the License.
 """
 import cProfile
+import logging
 import pstats
 import tracemalloc
 import warnings
-import logging
 from contextlib import contextmanager
-from typing import Tuple, Union, Iterable
+from typing import Iterable, Tuple, Union
+
+import cv2
 import numpy as np
 import rasterio as rio
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
-import cv2
 
 from simple_ortho.enums import Interp
 
@@ -33,29 +34,31 @@ logger = logging.getLogger(__name__)
 
 @contextmanager
 def suppress_no_georef():
-    """ Context manager to suppress rasterio's NotGeoreferencedWarning. """
+    """Context manager to suppress rasterio's NotGeoreferencedWarning."""
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=NotGeoreferencedWarning)
         yield
 
 
 def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
-    """ Expand rasterio window extents to the nearest whole numbers. """
+    """Expand rasterio window extents to the nearest whole numbers."""
     col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
     row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
     width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
     height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
-    exp_win = Window(col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int'))
+    exp_win = Window(
+        col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int')
+    )
     return exp_win
 
 
 def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
-    """ Compare two numpy objects a & b, returning true where elements of both a & b are nan. """
+    """Compare two numpy objects a & b, returning true where elements of both a & b are nan."""
     return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
 def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
-    """ Return a distorted image given a camera model and source image. """
+    """Return a distorted image given a camera model and source image."""
 
     if not np.all(np.array(image.shape[::-1]) == camera._im_size):
         raise ValueError("'image' shape should be the same as the 'camera' image size.")
@@ -73,15 +76,19 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
     # remap the distorted image from the source image
     dist_image = np.full_like(image, fill_value=nodata)
     cv2.remap(
-        image, undist_ji[0].reshape(image.shape), undist_ji[1].reshape(image.shape), interp.to_cv(), dst=dist_image,
-        borderMode=cv2.BORDER_TRANSPARENT
+        image,
+        undist_ji[0].reshape(image.shape),
+        undist_ji[1].reshape(image.shape),
+        interp.to_cv(),
+        dst=dist_image,
+        borderMode=cv2.BORDER_TRANSPARENT,
     )
     return dist_image
 
 
 @contextmanager
 def profiler():
-    """ Context manager for profiling in DEBUG log level. """
+    """Context manager for profiling in DEBUG log level."""
     if logger.getEffectiveLevel() <= logging.DEBUG:
         proc_profile = cProfile.Profile()
         tracemalloc.start()
@@ -90,21 +97,24 @@ def profiler():
         yield
 
         proc_profile.disable()
-        # tottime is the total time spent in the function alone. cumtime is the total time spent in the function
-        # plus all functions that this function called
+        # tottime is the total time spent in the function alone. cumtime is the total time spent
+        # in the function plus all functions that this function called
         proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
         logger.debug(f'Processing times:')
         proc_stats.print_stats(20)
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
-        logger.debug(f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB")
+        logger.debug(
+            f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB"
+        )
     else:
         yield
 
 
-def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
-    """ Return a 2D rasterio UTM CRS for the given (lat, lon) coordinates in degrees. """
-    # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
+def utm_crs_from_latlon(lat: float, lon: float) -> rio.CRS:
+    """Return a 2D rasterio UTM CRS for the given (lat, lon) coordinates in degrees."""
+    # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone
+    # -based-on-grid-intersection
     zone = int(np.floor((lon + 180) / 6) % 60) + 1
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return rio.CRS.from_epsg(epsg)
@@ -112,11 +122,14 @@ def utm_crs_from_latlon(lat:float, lon: float) -> rio.CRS:
 
 def validate_collection(template: Iterable, coll: Iterable) -> bool:
     """
-    Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples of types, and
-    values (``template``).  All items in a ``coll`` list are validated against the first item in the corresponding
+    Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples
+    of types, and values (``template``).
+
+    All items in a ``coll`` list are validated against the first item in the corresponding
     ``template`` list.
     """
-    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
+    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or
+    # -schema-of-dictionary-in-python
     if isinstance(template, dict) and isinstance(coll, dict):
         # struct is a dict of types or other dicts
         for k in template:

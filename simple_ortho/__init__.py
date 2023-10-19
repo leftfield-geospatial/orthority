@@ -25,4 +25,3 @@ if '__file__' in globals():
     root_path = pathlib.Path(__file__).absolute().parents[1]
 else:
     root_path = pathlib.Path.cwd().absolute()
-

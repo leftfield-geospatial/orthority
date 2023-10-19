@@ -19,23 +19,40 @@ from simple_ortho.exif import Exif
 
 
 def test_odm_image(odm_image_file: Path):
-    """ Test reading an image with valid EXIF & XMP tags. """
+    """Test reading an image with valid EXIF & XMP tags."""
     exif = Exif(odm_image_file)
     assert exif.filename == odm_image_file
     for attr in [
-        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'im_size', 'tag_im_size', 'lla', 'rpy', 'dewarp',
-        'orientation'
+        'make',
+        'model',
+        'serial',
+        'focal_len',
+        'focal_len_35',
+        'im_size',
+        'tag_im_size',
+        'lla',
+        'rpy',
+        'dewarp',
+        'orientation',
     ]:
         assert getattr(exif, attr) is not None
 
 
 def test_exif_image(exif_image_file: Path):
-    """ Test reading an image with EXIF tags including sensor size, and no XMP tags. """
+    """Test reading an image with EXIF tags including sensor size, and no XMP tags."""
     exif = Exif(exif_image_file)
     assert exif.filename == exif_image_file
     for attr in [
-        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'im_size', 'tag_im_size', 'sensor_size', 'lla',
-        'orientation'
+        'make',
+        'model',
+        'serial',
+        'focal_len',
+        'focal_len_35',
+        'im_size',
+        'tag_im_size',
+        'sensor_size',
+        'lla',
+        'orientation',
     ]:
         assert getattr(exif, attr) is not None
 
@@ -43,12 +60,21 @@ def test_exif_image(exif_image_file: Path):
 
 
 def test_ngi_image(ngi_image_file: Path):
-    """ Test reading an image with no EXIF / XMP tags. """
+    """Test reading an image with no EXIF / XMP tags."""
     exif = Exif(ngi_image_file)
     assert exif.filename == ngi_image_file
     assert exif.im_size is not None
     for attr in [
-        'make', 'model', 'serial', 'focal_len', 'focal_len_35', 'tag_im_size', 'lla', 'rpy', 'sensor_size', 'dewarp',
-        'orientation'
+        'make',
+        'model',
+        'serial',
+        'focal_len',
+        'focal_len_35',
+        'tag_im_size',
+        'lla',
+        'rpy',
+        'sensor_size',
+        'dewarp',
+        'orientation',
     ]:
         assert getattr(exif, attr) is None
