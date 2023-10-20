@@ -12,6 +12,7 @@ dependencies = [
 ]
 authors = [{name = 'Leftfield Geospatial'}]
 license = {text = 'Apache-2.0'}
+keywords = ['orthorectify', 'georeference', 'drone', 'aerial', 'exif']
 classifiers = [
     'Programming Language :: Python :: 3',
     'License :: OSI Approved :: Apache Software License',
@@ -32,7 +33,7 @@ Changelog = 'https://github.com/leftfield-geospatial/simple-ortho/releases'
 Issues = 'https://github.com/leftfield-geospatial/simple-ortho/issues'
 
 [build-system]
-requires = ['setuptools', 'setuptools-scm']
+requires = ['setuptools']
 build-backend = 'setuptools.build_meta'
 
 [tool.setuptools]
