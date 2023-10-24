@@ -228,8 +228,8 @@ def _ortho(
             )
 
         # get interior params for ext_param
-        if ext_param['camera']:
-            cam_id = ext_param['camera']
+        cam_id = ext_param.pop('camera')
+        if cam_id:
             if cam_id not in int_param_dict:
                 raise click.BadParameter(
                     f"Could not find parameters for camera '{cam_id}'.",
@@ -237,7 +237,6 @@ def _ortho(
                 )
             int_param = int_param_dict[cam_id]
         elif len(int_param_dict) == 1:
-            cam_id = None
             int_param = list(int_param_dict.values())[0]
         else:
             raise click.BadParameter(
@@ -245,14 +244,14 @@ def _ortho(
                 param_hint="'-ep' / '--ext-param'",
             )
 
-        # get/create camera and update exterior parameters
-        camera = cameras[cam_id] if cam_id in cameras else create_camera(**int_param, alpha=alpha)
-        camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
-        cameras[cam_id] = camera
+        # create camera on first use and update exterior parameters
+        if cam_id not in cameras:
+            cameras[cam_id] = create_camera(**int_param, alpha=alpha)
+        cameras[cam_id].update(xyz=ext_param['xyz'], opk=ext_param['opk'])
 
         # create ortho object & filename
         try:
-            ortho = Ortho(src_file, dem_file, camera, crs, dem_band=dem_band)
+            ortho = Ortho(src_file, dem_file, cameras[cam_id], crs, dem_band=dem_band)
         except DemBandError as ex:
             raise click.BadParameter(str(ex), param_hint="'-db' / '--dem-band'")
         ortho_file = out_dir.joinpath(f'{src_file.stem}_ORTHO.tif')
