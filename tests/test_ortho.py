@@ -1186,5 +1186,8 @@ def test_process_odm(
 
 
 # TODO: add test with dem that includes occlusion
-# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in different CRSs
+# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in
+#  different CRSs
+# TODO: add a test with nadir pinhole camera and test for proper pixel alignment and similarity
+#  with source (as far as possible make the ortho identical to the source)
 ##

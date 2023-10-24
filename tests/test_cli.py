@@ -13,6 +13,7 @@
    See the License for the specific language governing permissions and
    limitations under the License.
 """
+import copy
 import logging
 import shutil
 import tracemalloc
@@ -916,7 +917,7 @@ def test_mult_camera(
         src_files=src_files,
         dem_file=float_utm34n_dem_file,
         int_param_dict=mult_int_param_dict,
-        ext_param_dict=mult_ext_param_dict,
+        ext_param_dict=copy.deepcopy(mult_ext_param_dict),
         crs=utm34n_crs,
         dem_band=1,
         alpha=1.0,

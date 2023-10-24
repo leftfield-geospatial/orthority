@@ -687,7 +687,7 @@ def mult_int_param_dict(
 
 
 @pytest.fixture(scope='session')
-def mult_ext_param_dict(xyz: Tuple, opk: Tuple, rgb_byte_src_file: Path, mult_int_param_dict: Dict):
+def mult_ext_param_dict(xyz: Tuple, opk: Tuple, mult_int_param_dict: Dict):
     """An exterior parameter dictionary referencing multiple cameras."""
     ext_param_dict = {}
     for i, cam_id in enumerate(mult_int_param_dict.keys()):
