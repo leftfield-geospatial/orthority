@@ -126,6 +126,20 @@ def test_init_dem_band(
     assert np.all(ortho._dem_array == dem_array)
 
 
+def test_init_file_error(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
+):
+    """Test Ortho initialisation with non existent source / DEM file raises an error."""
+    filename = 'unknown.tif'
+    with pytest.raises(rio.errors.RasterioIOError) as ex:
+        _ = Ortho(filename, float_utm34n_dem_file, pinhole_camera, crs=None)
+    assert filename in str(ex)
+
+    with pytest.raises(rio.errors.RasterioIOError) as ex:
+        _ = Ortho(rgb_byte_src_file, filename, pinhole_camera, crs=utm34n_crs)
+    assert filename in str(ex)
+
+
 def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
@@ -1183,6 +1197,17 @@ def test_process_odm(
         ortho_files.append(ortho_file)
 
     _validate_ortho_files(ortho_files, num_ovl_thresh=5)
+
+
+def test_process_file_error(
+    float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, tmp_path: Path
+):
+    """Test process with non existent source file raises an error."""
+    src_file = 'unknown.tif'
+    ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
+    with pytest.raises(rio.errors.RasterioIOError) as ex:
+        ortho.process(tmp_path.joinpath('test_ortho.tif'), (5, 5))
+    assert src_file in str(ex)
 
 
 # TODO: add test with dem that includes occlusion
