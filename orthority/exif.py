@@ -108,8 +108,6 @@ class Exif:
             Path to the image file.
         """
         filename = Path(filename)
-        if not filename.exists():
-            raise FileNotFoundError(f"File not found: '{filename}'")
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:
             namespaces = ds.tag_namespaces()

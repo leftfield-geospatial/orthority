@@ -95,10 +95,6 @@ class Ortho:
         dem_band: int, optional
             Index of the DEM band to use (1-based).
         """
-        if not Path(src_filename).exists():
-            raise FileNotFoundError(f"Source image file '{src_filename}' does not exist")
-        if not Path(dem_filename).exists():
-            raise FileNotFoundError(f"DEM image file '{dem_filename}' does not exist")
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
@@ -763,6 +759,8 @@ class Ortho:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
+                # TODO: don't mask dem if pinhole camera, or make dem masking an option which
+                #  defaults to not masking with pinhole camera.
                 dem_array, dem_transform = self._mask_dem(
                     dem_array, dem_transform, dem_interp, full_remap=full_remap
                 )

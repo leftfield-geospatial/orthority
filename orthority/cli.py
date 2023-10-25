@@ -247,7 +247,7 @@ def _ortho(
         # create camera on first use and update exterior parameters
         if cam_id not in cameras:
             cameras[cam_id] = create_camera(**int_param, alpha=alpha)
-        cameras[cam_id].update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+        cameras[cam_id].update(**ext_param)
 
         # create ortho object & filename
         try:
@@ -266,14 +266,14 @@ src_files_arg = click.argument(
     'src_files',
     nargs=-1,
     metavar='SOURCE...',
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(dir_okay=False, path_type=Path),
     # help='Path/URL of source image(s) to be orthorectified..'
 )
 dem_file_option = click.option(
     '-d',
     '--dem',
     'dem_file',
-    type=click.Path(exists=True, dir_okay=False, readable=True, path_type=Path),
+    type=click.Path(dir_okay=False, readable=True, path_type=Path),
     default=None,
     help='Path/URL of a DEM image covering the source image(s). [required]',
 )
