@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class Camera:
     _default_alpha: float = 1.0
 
+    # TODO: make externally used params properties or public methods
     def __init__(
         self,
         im_size: Union[Tuple[int, int], np.ndarray],
@@ -64,7 +65,7 @@ class Camera:
         opk: tuple of float, ndarray, optional
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
             world coordinates.
-        alpha: float
+        alpha: float, optional
             Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
             pixels.  1 results in an undistorted image that keeps all source pixels.  Not used for
             the pinhole camera model.
@@ -163,6 +164,7 @@ class Camera:
         """Return True if this camera's field of view includes, or is above, the horizon; otherwise
         False.
         """
+        # TODO: this can be called from Ortho without the camera having been initialised
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
         src_ji = np.array(
@@ -262,10 +264,10 @@ class Camera:
 
         Parameters
         ----------
-        xyz : ndarray
+        xyz: ndarray
             3D world (x=easting, y=northing, z=altitude) coordinates to transform, as a 3-by-N
             array with (x, y, z) along the first dimension.
-        distort : bool (optional)
+        distort: bool, optional
             Whether to include the distortion model.
 
         Returns
@@ -298,7 +300,7 @@ class Camera:
         z: float, ndarray
             Z altitude(s) to project to, as a single value, or 1-by-N array where ``ji`` is 2-by-N
             or 2-by-1.
-        distort : bool (optional)
+        distort: bool, optional
             Whether to include the distortion model.
 
         Returns
