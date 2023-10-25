@@ -536,19 +536,37 @@ def odm_crs(odm_dem_file) -> str:
 @pytest.fixture(scope='session')
 def ngi_image_files() -> Tuple[Path, ...]:
     """NGI image files."""
-    return tuple([fn for fn in root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')])
+    return tuple([fn for fn in root_path.joinpath('tests/data/ngi').glob('*RGB.tif')])
 
 
 @pytest.fixture(scope='session')
 def ngi_image_file() -> Path:
     """NGI aerial image file."""
-    return next(iter(root_path.joinpath('tests', 'data', 'ngi').glob('*RGB.tif')))
+    return next(iter(root_path.joinpath('tests/data/ngi').glob('*RGB.tif')))
+
+
+@pytest.fixture(scope='session')
+def ngi_image_url(ngi_image_file: Path) -> str:
+    """NGI aerial image URL."""
+    return (
+        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/tests/data/ngi/'
+        + ngi_image_file.name
+    )
 
 
 @pytest.fixture(scope='session')
 def ngi_dem_file() -> Path:
     """NGI DEM file."""
-    return root_path.joinpath('tests', 'data', 'ngi', 'dem.tif')
+    return root_path.joinpath('tests/data/ngi/dem.tif')
+
+
+@pytest.fixture(scope='session')
+def ngi_dem_url(ngi_dem_file: Path) -> str:
+    """NGI DEM URL."""
+    return (
+        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/tests/data/ngi/'
+        + ngi_dem_file.name
+    )
 
 
 @pytest.fixture(scope='session')
@@ -562,25 +580,25 @@ def ngi_crs(ngi_image_file) -> str:
 @pytest.fixture(scope='session')
 def ngi_legacy_config_file() -> Path:
     """Legacy format configuration file for NGI test data."""
-    return root_path.joinpath('tests', 'data', 'ngi', 'config.yaml')
+    return root_path.joinpath('tests/data/ngi/config.yaml')
 
 
 @pytest.fixture(scope='session')
 def ngi_oty_int_param_file() -> Path:
     """Orthority format interior parameter file for NGI test data."""
-    return root_path.joinpath('tests', 'data', 'io', 'ngi_int_param.yaml')
+    return root_path.joinpath('tests/data/io/ngi_int_param.yaml')
 
 
 @pytest.fixture(scope='session')
 def ngi_legacy_csv_file() -> Path:
     """Legacy format exterior parameter CSV file for NGI test data."""
-    return root_path.joinpath('tests', 'data', 'ngi', 'camera_pos_ori.txt')
+    return root_path.joinpath('tests/data/ngi/camera_pos_ori.txt')
 
 
 @pytest.fixture(scope='session')
 def ngi_oty_ext_param_file() -> Path:
     """Orthority format exterior parameter file for NGI test data."""
-    return root_path.joinpath('tests', 'data', 'io', 'ngi_ext_param.geojson')
+    return root_path.joinpath('tests/data/io/ngi_ext_param.geojson')
 
 
 @pytest.fixture(scope='session')
@@ -591,7 +609,7 @@ def ngi_xyz_opk_csv_file() -> Path:
 
     Includes a header and .proj file.
     """
-    return root_path.joinpath('tests', 'data', 'io', 'ngi_xyz_opk.csv')
+    return root_path.joinpath('tests/data/io/ngi_xyz_opk.csv')
 
 
 @pytest.fixture(scope='session')
@@ -624,7 +642,7 @@ def odm_lla_rpy_csv_file() -> Path:
 
     Includes a header.
     """
-    return root_path.joinpath('tests', 'data', 'io', 'odm_lla_rpy.csv')
+    return root_path.joinpath('tests/data/io/odm_lla_rpy.csv')
 
 
 @pytest.fixture(scope='session')
@@ -635,7 +653,7 @@ def odm_xyz_opk_csv_file() -> Path:
 
     Includes a header.
     """
-    return root_path.joinpath('tests', 'data', 'io', 'odm_xyz_opk.csv')
+    return root_path.joinpath('tests/data/io/odm_xyz_opk.csv')
 
 
 @pytest.fixture(scope='session')

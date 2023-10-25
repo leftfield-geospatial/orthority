@@ -724,6 +724,25 @@ def test_ortho_overwrite_error(
     assert result.exception is not None and 'exists' in str(result.exception)
 
 
+def test_ortho_urls(
+    ngi_image_url: str,
+    ngi_dem_url: str,
+    ngi_legacy_config_file: Path,
+    ngi_legacy_csv_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with source and DEM URLs."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_url} --int-param {ngi_legacy_config_file} '
+        f'--ext-param {ngi_legacy_csv_file} --out-dir {tmp_path} {ngi_image_url}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+
 def test_exif_crs(
     odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
