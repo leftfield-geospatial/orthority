@@ -1,18 +1,19 @@
-"""
-   Copyright 2021 Dugal Harris - dugalh@gmail.com
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-"""
+# Copyright The Orthority Contributors.
+#
+# This file is part of Orthority.
+#
+# Orthority is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Orthority is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
 from typing import Optional, Tuple, Union
@@ -523,9 +524,8 @@ class BrownCamera(OpenCVCamera):
         self._dist_param = np.array([k1, k2, p1, p2, k3])
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
-        # Brown model adapted from the OpenSFM implementation:
-        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281
-        # /opensfm/src/bundle.h#LL299C25-L299C25.
+        # Brown model adapted from OpenSfM:
+        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25.
         # Works out faster than the opencv equivalent in OpenCVCamera.world_to_pixel().
         k1, k2, p1, p2, k3 = self._dist_param
         x2, y2 = np.square(xyz_[:2, :])
@@ -621,9 +621,8 @@ class FisheyeCamera(Camera):
         return undistort_maps, K_undistort
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
-        # Fisheye distortion adapted from the OpenSFM implementation:
-        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281
-        # /opensfm/src/bundle.h #L365.
+        # Fisheye distortion adapted from OpenSfM:
+        # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#L365.
         # and OpenCV docs: https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html.
         # Works out faster than the opencv equivalent:
         #   x_cv = np.expand_dims((x - self._T).T, axis=0)

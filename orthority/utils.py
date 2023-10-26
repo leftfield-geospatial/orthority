@@ -1,18 +1,20 @@
-"""
-   Copyright 2023 Dugal Harris - dugalh@gmail.com
+# Copyright The Orthority Contributors.
+#
+# This file is part of Orthority.
+#
+# Orthority is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Orthority is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
-"""
 import cProfile
 import logging
 import pstats
@@ -113,8 +115,7 @@ def profiler():
 
 def utm_crs_from_latlon(lat: float, lon: float) -> rio.CRS:
     """Return a 2D rasterio UTM CRS for the given (lat, lon) coordinates in degrees."""
-    # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone
-    # -based-on-grid-intersection
+    # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
     zone = int(np.floor((lon + 180) / 6) % 60) + 1
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
     return rio.CRS.from_epsg(epsg)
@@ -128,8 +129,7 @@ def validate_collection(template: Iterable, coll: Iterable) -> bool:
     All items in a ``coll`` list are validated against the first item in the corresponding
     ``template`` list.
     """
-    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or
-    # -schema-of-dictionary-in-python
+    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
     if isinstance(template, dict) and isinstance(coll, dict):
         # struct is a dict of types or other dicts
         for k in template:
