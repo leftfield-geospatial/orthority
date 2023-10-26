@@ -35,4 +35,4 @@ jobs:
         mamba list
     - name: Run unit tests
       run: |
-        python -m pytest --cov=simple_ortho --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
+        python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
