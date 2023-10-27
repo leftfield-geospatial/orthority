@@ -838,12 +838,12 @@ def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
     assert 'SOURCE' in result.stdout
 
 
-def test_odm_proj_dir(
-    odm_proj_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
+def test_odm_dataset_dir(
+    odm_dataset_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
 ):
-    """Test ``oty odm`` creates orthos in '<--proj-dir>/orthority' sub-folder."""
-    shutil.copytree(odm_proj_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
-    cli_str = f'odm --proj-dir {tmp_path} --res 5 --overwrite'
+    """Test ``oty odm`` creates orthos in '<--dataset-dir>/orthority' sub-folder."""
+    shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
+    cli_str = f'odm --dataset-dir {tmp_path} --res 5 --overwrite'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.joinpath('orthority').glob('*_ORTHO.tif')]
@@ -852,23 +852,23 @@ def test_odm_proj_dir(
 
 
 def test_odm_out_dir(
-    odm_proj_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder."""
-    cli_str = f'odm --proj-dir {odm_proj_dir} --res 5 --out-dir {tmp_path}'
+    cli_str = f'odm --dataset-dir {odm_dataset_dir} --res 5 --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-    src_files = [*odm_proj_dir.joinpath('images').glob('*.tif')]
+    src_files = [*odm_dataset_dir.joinpath('images').glob('*.tif')]
     assert len(ortho_files) == len(src_files)
 
 
 def test_odm_option(
-    odm_proj_dir: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm`` passes through a ``--res`` option."""
     res = 5
-    cli_str = f'odm --proj-dir {odm_proj_dir} --res {res} --out-dir {tmp_path}'
+    cli_str = f'odm --dataset-dir {odm_dataset_dir} --res {res} --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]

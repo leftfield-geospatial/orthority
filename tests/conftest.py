@@ -497,33 +497,33 @@ def rgb_pinhole_utm34n_ortho(
 
 
 @pytest.fixture(scope='session')
-def odm_proj_dir() -> Path:
-    """ODM project directory."""
+def odm_dataset_dir() -> Path:
+    """ODM dataset directory."""
     return root_path.joinpath('tests', 'data', 'odm')
 
 
 @pytest.fixture(scope='session')
-def odm_image_files(odm_proj_dir: Path) -> Tuple[Path, ...]:
+def odm_image_files(odm_dataset_dir: Path) -> Tuple[Path, ...]:
     """ODM drone image files."""
-    return tuple([fn for fn in odm_proj_dir.joinpath('images').glob('*.tif')])
+    return tuple([fn for fn in odm_dataset_dir.joinpath('images').glob('*.tif')])
 
 
 @pytest.fixture(scope='session')
-def odm_image_file(odm_proj_dir: Path) -> Path:
+def odm_image_file(odm_dataset_dir: Path) -> Path:
     """ODM drone image file."""
-    return next(iter(odm_proj_dir.joinpath('images').glob('*.tif')))
+    return next(iter(odm_dataset_dir.joinpath('images').glob('*.tif')))
 
 
 @pytest.fixture(scope='session')
-def odm_dem_file(odm_proj_dir: Path) -> Path:
+def odm_dem_file(odm_dataset_dir: Path) -> Path:
     """ODM DEM file."""
-    return odm_proj_dir.joinpath('odm_dem', 'dsm.tif')
+    return odm_dataset_dir.joinpath('odm_dem', 'dsm.tif')
 
 
 @pytest.fixture(scope='session')
-def odm_reconstruction_file(odm_proj_dir: Path) -> Path:
+def odm_reconstruction_file(odm_dataset_dir: Path) -> Path:
     """ODM reconstruction file."""
-    return odm_proj_dir.joinpath('opensfm', 'reconstruction.json')
+    return odm_dataset_dir.joinpath('opensfm', 'reconstruction.json')
 
 
 @pytest.fixture(scope='session')
