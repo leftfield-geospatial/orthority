@@ -1,12 +1,12 @@
-|Tests| |codecov| |License: MPL v2|
+|Tests| |codecov| |License: AGPL v3|
 
-orthority
+Orthority
 =========
 
 .. image:: https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/docs/readme_banner.webp
    :alt: banner
 
-``orthority`` provides a command line interface and Python API for orthorectifying drone and aerial
+Orthority provides a command line interface and Python API for orthorectifying drone and aerial
 imagery, given a camera model and DEM. It supports common lens distortion types. Camera parameters
 can be read from various file formats, or image EXIF / XMP tags.
 
@@ -33,11 +33,11 @@ Quick start
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
-``orthority`` command line functionality is accessed with the ``oty`` command, and its sub-commands:
+Orthority command line functionality is accessed with the ``oty`` command, and its sub-commands:
 
--  ``ortho``: Orthorectify with interior and exterior parameter file(s).
--  ``exif``: Orthorectify using EXIF / XMP tags.
--  ``odm``: Orthorectify OpenDroneMap outputs.
+-  ``ortho``: Orthorectify with camera model(s) defined by interior and exterior parameter files.
+-  ``exif``: Orthorectify with camera model(s) defined by image EXIF / XMP tags.
+-  ``odm``: Orthorectify with OpenDroneMap camera models and DSM.
 
 Get help on ``oty`` with:
 
@@ -56,37 +56,38 @@ Options for the orthorectification algorithm and ortho image format are common t
 Examples
 ^^^^^^^^
 
-Orthorectify *source.tif* using DEM *dem.tif*, and camera model defined by interior parameters in
-*int_param.yaml* and exterior parameters in *ext_param.geojson*:
+Orthorectify *source.tif* with the DEM in *dem.tif*, and camera model defined by *int_param.yaml*
+and *ext_param.geojson* interior and exterior parameters:
 
 .. code:: shell
 
    oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.geojson source.tif
 
-Orthorectify *source.tif* using DEM *dem.tif*, and camera model defined by *source.tif* EXIF / XMP
-tags:
+Orthorectify *source.tif* with the DEM in *dem.tif*, and camera model defined by *source.tif* EXIF /
+XMP tags:
 
 .. code:: shell
 
    oty exif --dem dem.tif source.tif
 
-As above, but use *bilinear* interpolation, a resolution of 0.5 m, and *deflate* compression to
-create the ortho image:
+As above, but the create the ortho image with *bilinear* interpolation, a 0.5 m pixel size and
+*deflate* compression:
 
 .. code:: shell
 
    oty exif --dem dem.tif --interp bilinear --res 0.5 --compress deflate source.tif
 
-Orthorectify the OpenDroneMap data set in *odm_root*, placing ortho images in *odm_root/orthority*:
+Orthorectify images in the OpenDroneMap dataset *odm_data*, with the dataset DSM and camera models.
+Ortho images are placed in *odm_data/orthority*.
 
 .. code:: shell
 
-   oty odm --proj-dir odm_root --out-dir odm_root/orthority
+   oty odm --dataset-dir odm_data --out-dir odm_data/orthority
 
 API
 ~~~
 
-Orthorectify a drone image using its EXIF / XMP tags to form the camera model:
+Orthorectify an image with the camera model defined by its EXIF / XMP tags:
 
 .. code:: python
 
@@ -108,36 +109,50 @@ Orthorectify a drone image using its EXIF / XMP tags to form the camera model:
    int_param_dict = reader.read_int_param()
    ext_param_dict = reader.read_ext_param()
 
-   # extract exterior parameters for src_file, and interior parameters for src_file's
-   # camera
+   # extract exterior parameters for src_file, and interior parameters for
+   # src_file's camera
    ext_params = ext_param_dict[Path(src_file).name]
    int_params = int_param_dict[ext_params.pop('camera')]
 
    # create camera from interior & exterior parameters
    camera = oty.create_camera(**int_params, **ext_params)
 
-   # orthorectify src_file with dem_file, camera & exterior parameter ('world') CRS
-   ortho_file = 'ortho.tif'
+   # orthorectify src_file with dem_file, the created camera & exterior parameter
+   # ('world') CRS
    ortho = oty.Ortho(src_file, dem_file, camera, crs=reader.crs)
-   ortho.process(ortho_file)
+   ortho.process('ortho.tif')
 
 Documentation
 -------------
 
-There is usage and reference documentation at
-`orthority.readthedocs.io <https://orthority.readthedocs.io/>`__.
+See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage and reference
+documentation.
 
-License
--------
+Contributing
+------------
 
-``orthority`` is licensed under the `Mozilla Public License 2.0 <LICENSE>`__.
+Contributions are welcome! There is a guide for developers in the `documentation
+<https://orthority.readthedocs.io/contributing>`__. Please report bugs and make
+feature requests with the `github issue tracker
+<https://github.com/leftfield-geospatial/simple-ortho/issues>`__.
+
+Licensing
+---------
+
+Orthority is licensed under the `AGPLv3 <LICENSE>`__.
+
+Portions of the `AGPLv3 <https://github.com/OpenDroneMap/ODM/blob/master/LICENSE>`__ licensed
+`OpenDroneMap software <https://github.com/OpenDroneMap/ODM>`__, and
+`BSD-style <https://github.com/mapillary/OpenSfM/blob/main/LICENSE>`__ licensed `OpenSfM
+library <https://github.com/mapillary/OpenSfM>`__ have been adapted and included in the Orthority
+package.
 
 Acknowledgements
 ----------------
 
 Special thanks to `Yu-Huang
 Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__
-& `OpenDroneMap <https://opendronemap.org/>`__, `National Geo-spatial
+& the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial
 Information <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and
 the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and
 aero-triangulation data that form part of the package test data.
@@ -146,5 +161,5 @@ aero-triangulation data that form part of the package test data.
    :target: https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml
 .. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/simple-ortho/branch/main/graph/badge.svg?token=YPZAQS4S15
    :target: https://codecov.io/gh/leftfield-geospatial/simple-ortho
-.. |License: MPL v2| image:: https://img.shields.io/badge/License-MPL_v2-blue.svg
-   :target: https://www.mozilla.org/en-US/MPL/2.0/
+.. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg
+   :target: https://www.gnu.org/licenses/agpl-3.0
