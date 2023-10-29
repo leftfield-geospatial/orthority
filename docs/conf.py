@@ -21,11 +21,7 @@ release = __version__
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
-extensions = [
-    'sphinx_click',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.autosummary',
-]
+extensions = ['sphinx.ext.autodoc', 'sphinx.ext.autosummary', 'sphinx_click', 'sphinx_copybutton']
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
@@ -34,7 +30,7 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'alabaster'
 html_static_path = ['_static']
 
 # -- Options for autodoc -----------------------------------------------------
@@ -51,3 +47,5 @@ autodoc_typehints = 'both'
 # Make sure the target is unique
 autosectionlabel_prefix_document = True
 autosectionlabel_maxdepth = 3  # avoid duplicate section labels for CLI examples
+
+# TODO: investigate numpydoc extension - looks like it could improve reference formatting
