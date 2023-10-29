@@ -139,7 +139,7 @@ feature requests with the `github issue tracker
 Licensing
 ---------
 
-Orthority is licensed under the `AGPLv3 <LICENSE>`__.
+Orthority is licensed under the `GNU Affero General Public License v3.0 (AGPLv3) <LICENSE>`__.
 
 Portions of the `AGPLv3 <https://github.com/OpenDroneMap/ODM/blob/master/LICENSE>`__ licensed
 `OpenDroneMap software <https://github.com/OpenDroneMap/ODM>`__, and
