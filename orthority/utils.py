@@ -2,26 +2,28 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+# TODO: rename this module _utils
+# TODO: use from __future__ import annotations for std type type hints
+# TODO: add module docstrings
+from __future__ import annotations
 import cProfile
 import logging
 import pstats
 import tracemalloc
 import warnings
 from contextlib import contextmanager
-from typing import Iterable, Tuple, Union
+from typing import Iterable
 
 import cv2
 import numpy as np
@@ -42,7 +44,7 @@ def suppress_no_georef():
         yield
 
 
-def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) -> Window:
+def expand_window_to_grid(win: Window, expand_pixels: tuple[int, int] = (0, 0)) -> Window:
     """Expand rasterio window extents to the nearest whole numbers."""
     col_off, col_frac = np.divmod(win.col_off - expand_pixels[1], 1)
     row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
@@ -54,7 +56,7 @@ def expand_window_to_grid(win: Window, expand_pixels: Tuple[int, int] = (0, 0)) 
     return exp_win
 
 
-def nan_equals(a: Union[np.ndarray, float], b: Union[np.ndarray, float]) -> np.ndarray:
+def nan_equals(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray:
     """Compare two numpy objects a & b, returning true where elements of both a & b are nan."""
     return (a == b) | (np.isnan(a) & np.isnan(b))
 

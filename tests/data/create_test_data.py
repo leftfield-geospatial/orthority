@@ -5,7 +5,6 @@ import json
 import multiprocessing
 import re
 from pathlib import Path
-from typing import Tuple
 
 import numpy as np
 import rasterio as rio
@@ -89,7 +88,7 @@ def downsample_rgb(
 
 
 def downsample_dem(
-    src_file: Path, dst_file: Path, ds_fact: int = 8, bounds: Tuple = None, dst_crs: rio.CRS = None
+    src_file: Path, dst_file: Path, ds_fact: int = 8, bounds: tuple = None, dst_crs: rio.CRS = None
 ):
     """
     Downsample `src_file` by `ds_fact`, cropping to `bounds` if specified.

@@ -2,26 +2,24 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 import argparse
 import csv
 import logging
 import re
 import sys
 from pathlib import Path
-from typing import Dict, Optional, Tuple
 
 import click
 import numpy as np
@@ -118,7 +116,7 @@ def _configure_logging(verbosity: int):
     logging.captureWarnings(True)
 
 
-def _read_src_crs(filename: Path) -> Optional[rio.CRS]:
+def _read_src_crs(filename: Path) -> rio.CRS | None:
     """Read CRS from source image file."""
     with suppress_no_georef(), rio.open(filename, 'r') as im:
         if not im.crs:
@@ -173,7 +171,7 @@ def _lla_crs_cb(ctx: click.Context, param: click.Parameter, lla_crs: str):
     return lla_crs
 
 
-def _resolution_cb(ctx: click.Context, param: click.Parameter, resolution: Tuple):
+def _resolution_cb(ctx: click.Context, param: click.Parameter, resolution: tuple):
     """Click callback to validate and parse the resolution."""
     if len(resolution) == 1:
         resolution *= 2
@@ -197,10 +195,10 @@ def _odm_dataset_dir_cb(ctx: click.Context, param: click.Parameter, proj_dir: Pa
 
 
 def _ortho(
-    src_files: Tuple[Path, ...],
+    src_files: tuple[Path, ...],
     dem_file: Path,
-    int_param_dict: Dict[str, Dict],
-    ext_param_dict: Dict[str, Dict],
+    int_param_dict: dict[str, dict],
+    ext_param_dict: dict[str, dict],
     crs: rio.CRS,
     dem_band: int,
     alpha: float,
@@ -328,7 +326,7 @@ resolution_option = click.option(
     show_default='auto',
     multiple=True,
     callback=_resolution_cb,
-    help='Ortho image pixel size in units of the :option:`--crs` (usually meters).  Can be used '
+    help='Ortho image pixel size in units of the ``--crs`` (usually meters).  Can be used '
     'twice for non-square pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
 )
 dem_band_option = click.option(
@@ -479,7 +477,7 @@ def cli(verbose, quiet):
 @out_dir_option
 @overwrite_option
 def ortho(
-    src_files: Tuple[Path, ...],
+    src_files: tuple[Path, ...],
     int_param_file: Path,
     ext_param_file: Path,
     crs: rio.CRS,
@@ -514,12 +512,12 @@ def ortho(
 
         oty ortho --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
-    Orthorectify images matching '*rgb.tif' using DEM 'dem.tif', and 'int_param.yaml' interior &
+    Orthorectify images matching 'source*.tif' using DEM 'dem.tif', and 'int_param.yaml' interior &
     'ext_param.csv' exterior parameter files.  Specify a 1m ortho resolution and 'EPSG:32651'
     CRS.  Write ortho files to the 'data' directory using 'deflate' compression and a 'uint16'
     data type::
 
-        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --res 1 --crs EPSG:32651 --out-dir data --compress deflate --dtype uint16 *rgb.tif
+        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --res 1 --crs EPSG:32651 --out-dir data --compress deflate --dtype uint16 source*.tif
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
@@ -595,7 +593,7 @@ def ortho(
 @export_params_option
 @out_dir_option
 @overwrite_option
-def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
+def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     """
     Orthorectify with camera model(s) defined by image EXIF / XMP tags.
 
@@ -608,14 +606,14 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     Examples
     ========
 
-    Orthorectify images matching '*rgb.tif' with DEM 'dem.tif'::
+    Orthorectify images matching 'source*.tif' with DEM 'dem.tif'::
 
-        oty exif --dem dem.tif *rgb.tif
+        oty exif --dem dem.tif source*.tif
 
-    Export interior and exterior parameters for images matching '*rgb.tif' to orthority format
+    Export interior and exterior parameters for images matching 'source*.tif' to orthority format
     files::
 
-        oty exif --export-params *rgb.tif
+        oty exif --export-params source*.tif
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
@@ -675,7 +673,7 @@ def exif(src_files: Tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     help='Directory in which to place output file(s).',
 )
 @overwrite_option
-def odm(dataset_dir: Path, resolution: Tuple[float, float], out_dir: Path, **kwargs):
+def odm(dataset_dir: Path, resolution: tuple[float, float], out_dir: Path, **kwargs):
     """
     Orthorectify using OpenDroneMap generated camera models and DSM.
 

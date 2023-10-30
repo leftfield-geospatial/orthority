@@ -2,22 +2,20 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 import logging
 from pathlib import Path
-from typing import Dict, Tuple
 
 import cv2
 import numpy as np
@@ -40,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_ortho_files(
-    files: Tuple[Path, ...], cc_thresh: float = 0.75, num_ovl_thresh: int = None
+    files: tuple[Path, ...], cc_thresh: float = 0.75, num_ovl_thresh: int = None
 ):
     """Validate the similarity of overlapping areas in ortho files."""
     cc_array = np.full((len(files),) * 2, fill_value=np.nan)
@@ -170,7 +168,7 @@ def test_init_geogcrs_error(
 
 
 def test_init_dem_coverage_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
 ):
     """Test Ortho initialisation without DEM coverage of ortho bounds raises an error."""
     # create a camera positioned away from dem bounds
@@ -183,7 +181,7 @@ def test_init_dem_coverage_error(
 
 
 def test_init_horizon_fov_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
 ):
     """Test Ortho initialisation with a horizontal FOV camera raises an error."""
     # create a camera pointing away from dem bounds
@@ -205,7 +203,7 @@ def test_reproject_dem(
     pinhole_camera: Camera,
     utm34n_crs: str,
     interp: Interp,
-    resolution: Tuple,
+    resolution: tuple,
 ):
     """Test DEM is reprojected when it's CRS & resolution is different to the world / ortho CRS &
     ortho resolution.
@@ -378,10 +376,10 @@ def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
 def test_mask_dem(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    camera_args: Dict,
+    camera_args: dict,
     utm34n_crs: str,
-    xyz_offset: Tuple,
-    opk_offset: Tuple,
+    xyz_offset: tuple,
+    opk_offset: tuple,
     tmp_path: Path,
 ):
     """Test the similarity of the masked DEM (ortho boundary) and ortho valid data mask (without
@@ -526,7 +524,7 @@ def test_mask_dem_crop(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
 
 
 def test_mask_dem_partial(
-    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, camera_args: Dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, camera_args: dict, utm34n_crs: str
 ):
     """Test the DEM mask excludes DEM nodata and is cropped to mask boundaries."""
     camera: Camera = PinholeCamera(**camera_args)
@@ -577,7 +575,7 @@ def test_mask_dem_partial(
 
 
 def test_mask_dem_coverage_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
 ):
     """Test DEM masking without DEM coverage raises an error."""
     camera: Camera = PinholeCamera(**camera_args)
@@ -596,7 +594,7 @@ def test_mask_dem_coverage_error(
 
 
 def test_mask_dem_above_camera_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: Dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
 ):
     """Test DEM masking raises an error when the DEM is higher the camera."""
     camera: Camera = PinholeCamera(**camera_args)
@@ -650,7 +648,7 @@ def test_undistort(
 
 
 @pytest.mark.parametrize('resolution', [(30.0, 30.0), (60.0, 60.0), (60.0, 30.0)])
-def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, tmp_path: Path):
+def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: tuple, tmp_path: Path):
     """Test ortho ``resolution`` is set correctly."""
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(ortho_file, resolution)
@@ -668,9 +666,9 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: Tuple, 
 def test_process_auto_resolution(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    camera_args: Dict,
+    camera_args: dict,
     utm34n_crs: str,
-    opk_offset: Tuple,
+    opk_offset: tuple,
     tmp_path: Path,
 ):
     """Test that auto resolution generates approx as many ortho pixels as source pixels."""
@@ -854,7 +852,7 @@ def test_process_full_remap(
 def test_process_alpha(
     cam_type: CameraType,
     dist_param: str,
-    camera_args: Dict,
+    camera_args: dict,
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     utm34n_crs: str,
@@ -862,7 +860,7 @@ def test_process_alpha(
     request: pytest.FixtureRequest,
 ):
     """Test ortho with ``alpha=1`` contains and is similar to ortho with ``alpha=0``."""
-    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
     camera_alpha1 = create_camera(cam_type, **camera_args, **dist_param, alpha=1.0)
     camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.0)
     resolution = (3, 3)
@@ -1148,7 +1146,7 @@ def test_process_camera(
 
 
 def test_process_ngi(
-    ngi_image_files: Tuple[Path, ...],
+    ngi_image_files: tuple[Path, ...],
     ngi_dem_file: Path,
     ngi_legacy_config_file: Path,
     ngi_legacy_csv_file: Path,
@@ -1175,7 +1173,7 @@ def test_process_ngi(
 
 
 def test_process_odm(
-    odm_image_files: Tuple[Path, ...],
+    odm_image_files: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_crs: str,

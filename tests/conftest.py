@@ -2,24 +2,23 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
+
+from __future__ import annotations
 import csv
 import json
 import os
 import re
 from pathlib import Path
-from typing import Dict, Tuple
 
 import numpy as np
 import pytest
@@ -51,7 +50,7 @@ def checkerboard(shape, square: int = 25, vals: np.ndarray = None):
     return vals[idx]
 
 
-def sinusoidal(shape: Tuple):
+def sinusoidal(shape: tuple):
     """Return a sinusoidal surface with z vals 0..1, given an array shape."""
     # adapted from https://docs.enthought.com/mayavi/mayavi/auto/mlab_helper_functions.html#surf
     x = np.linspace(-4 * np.pi, 4 * np.pi, shape[1])
@@ -66,7 +65,7 @@ def sinusoidal(shape: Tuple):
 
 def ortho_bounds(
     camera: Camera, dem_min: float = Ortho._egm96_min, include_camera: bool = False
-) -> Tuple:
+) -> tuple:
     """Return ortho bounds for the given ``camera`` at z=``dem_min``."""
     size = camera._im_size
     ji = np.array([[0, 0], [0, size[1]], [*size], [size[0], 0]]).T
@@ -80,10 +79,10 @@ def create_dem(
     camera: Camera,
     camera_crs: str,
     dem_crs: str = None,
-    resolution: Tuple = _dem_resolution,
+    resolution: tuple = _dem_resolution,
     dtype: str = 'float32',
     include_camera=False,
-) -> Tuple[np.ndarray, Dict]:
+) -> tuple[np.ndarray, dict]:
     """
     Create a 2 band DEM file that covers the ortho bounds of the given ``camera``.
 
@@ -122,7 +121,7 @@ def create_dem(
 
 def create_src(
     filename: Path,
-    size: Tuple,
+    size: tuple,
     dtype: str = 'uint8',
     count: int = 3,
     camera: Camera = None,
@@ -149,7 +148,7 @@ def create_src(
         src_im.write(array)
 
 
-def oty_to_osfm_int_param(int_param_dict: Dict) -> Dict:
+def oty_to_osfm_int_param(int_param_dict: dict) -> dict:
     """Return equivalent OpenSfM / ODM format interior parameters for given orthority format
     parameters.
     """
@@ -181,13 +180,13 @@ def runner():
 
 
 @pytest.fixture(scope='session')
-def xyz() -> Tuple[float, float, float]:
+def xyz() -> tuple[float, float, float]:
     """Example camera (easting, northing, altitude) position (m)."""
     return 2e4, 3e4, 1e3
 
 
 @pytest.fixture(scope='session')
-def opk() -> Tuple[float, float, float]:
+def opk() -> tuple[float, float, float]:
     """Example camera (omega, phi, kappa) rotation (radians)."""
     return tuple(np.radians((-3.0, 2.0, 10.0)).tolist())
 
@@ -199,25 +198,25 @@ def focal_len() -> float:
 
 
 @pytest.fixture(scope='session')
-def im_size() -> Tuple[int, int]:
+def im_size() -> tuple[int, int]:
     """Example camera image size (pixels)."""
     return 200, 150
 
 
 @pytest.fixture(scope='session')
-def sensor_size() -> Tuple[float, float]:
+def sensor_size() -> tuple[float, float]:
     """Example camera sensor size (mm)."""
     return 6.0, 4.5
 
 
 @pytest.fixture(scope='session')
-def cxy() -> Tuple[float, float]:
+def cxy() -> tuple[float, float]:
     """Example principal point offset (normalised image coordinates)."""
     return -0.01, 0.02
 
 
 @pytest.fixture(scope='session')
-def interior_args(focal_len, im_size, sensor_size, cxy) -> Dict:
+def interior_args(focal_len, im_size, sensor_size, cxy) -> dict:
     """A dictionary of interior parameters for ``Camera.__init__()``."""
     return dict(
         im_size=im_size,
@@ -229,31 +228,31 @@ def interior_args(focal_len, im_size, sensor_size, cxy) -> Dict:
 
 
 @pytest.fixture(scope='session')
-def exterior_args(xyz: Tuple, opk: Tuple) -> Dict:
+def exterior_args(xyz: tuple, opk: tuple) -> dict:
     """A dictionary of exterior parameters for ``Camera.__init__()`` / ``Camera.update()``."""
     return dict(xyz=xyz, opk=opk)
 
 
 @pytest.fixture(scope='session')
-def camera_args(interior_args: Dict, exterior_args: Dict) -> Dict:
+def camera_args(interior_args: dict, exterior_args: dict) -> dict:
     """A dictionary of interior and exterior parameters for ``Camera.__init__()``."""
     return dict(**interior_args, **exterior_args)
 
 
 @pytest.fixture(scope='session')
-def brown_dist_param() -> Dict:
+def brown_dist_param() -> dict:
     """Example ``BrownCamera`` distortion coefficients."""
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1)
 
 
 @pytest.fixture(scope='session')
-def opencv_dist_param() -> Dict:
+def opencv_dist_param() -> dict:
     """Example ``OpenCVCamera`` distortion coefficients."""
     return dict(k1=-0.25, k2=0.2, p1=0.01, p2=0.01, k3=-0.1, k4=0.001, k5=0.001, k6=-0.001)
 
 
 @pytest.fixture(scope='session')
-def fisheye_dist_param() -> Dict:
+def fisheye_dist_param() -> dict:
     """Example ``FisheyeCamera`` distortion coefficients."""
     return dict(k1=-0.25, k2=0.1, k3=0.01, k4=-0.01)
 
@@ -265,19 +264,19 @@ def pinhole_camera(camera_args) -> Camera:
 
 
 @pytest.fixture(scope='session')
-def brown_camera(camera_args, brown_dist_param: Dict) -> Camera:
+def brown_camera(camera_args, brown_dist_param: dict) -> Camera:
     """Example ``BrownCamera`` object with near-nadir orientation."""
     return BrownCamera(**camera_args, **brown_dist_param)
 
 
 @pytest.fixture(scope='session')
-def opencv_camera(camera_args, opencv_dist_param: Dict) -> Camera:
+def opencv_camera(camera_args, opencv_dist_param: dict) -> Camera:
     """Example ``OpenCVCamera`` object with near-nadir orientation."""
     return OpenCVCamera(**camera_args, **opencv_dist_param)
 
 
 @pytest.fixture(scope='session')
-def fisheye_camera(camera_args, fisheye_dist_param: Dict) -> Camera:
+def fisheye_camera(camera_args, fisheye_dist_param: dict) -> Camera:
     """Example ``FisheyeCamera`` object with near-nadir orientation."""
     return FisheyeCamera(**camera_args, **fisheye_dist_param)
 
@@ -355,7 +354,7 @@ def wgs84_egm2008_crs() -> str:
 
 
 @pytest.fixture(scope='session')
-def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
+def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) -> Path:
     """An RGB byte checkerboard image with no CRS."""
     src_filename = tmp_path_factory.mktemp('data').joinpath('rgb_byte_src.tif')
     create_src(src_filename, im_size, dtype='uint8', count=3)
@@ -363,7 +362,7 @@ def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) 
 
 
 @pytest.fixture(scope='session')
-def float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: Tuple) -> Path:
+def float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) -> Path:
     """A single band float64 checkerboard image with no CRS."""
     src_filename = tmp_path_factory.mktemp('data').joinpath('float_src.tif')
     create_src(src_filename, im_size, dtype='float32', count=1)
@@ -503,7 +502,7 @@ def odm_dataset_dir() -> Path:
 
 
 @pytest.fixture(scope='session')
-def odm_image_files(odm_dataset_dir: Path) -> Tuple[Path, ...]:
+def odm_image_files(odm_dataset_dir: Path) -> tuple[Path, ...]:
     """ODM drone image files."""
     return tuple([fn for fn in odm_dataset_dir.joinpath('images').glob('*.tif')])
 
@@ -535,7 +534,7 @@ def odm_crs(odm_dem_file) -> str:
 
 
 @pytest.fixture(scope='session')
-def ngi_image_files() -> Tuple[Path, ...]:
+def ngi_image_files() -> tuple[Path, ...]:
     """NGI image files."""
     return tuple([fn for fn in root_path.joinpath('tests/data/ngi').glob('*RGB.tif')])
 
@@ -658,13 +657,13 @@ def odm_xyz_opk_csv_file() -> Path:
 
 
 @pytest.fixture(scope='session')
-def pinhole_int_param_dict(interior_args: Dict) -> Dict:
+def pinhole_int_param_dict(interior_args: dict) -> dict:
     """A pinhole camera interior parameter dictionary."""
     return {'pinhole test camera': dict(cam_type=CameraType.pinhole, **interior_args)}
 
 
 @pytest.fixture(scope='session')
-def opencv_int_param_dict(interior_args: Dict, opencv_dist_param: Dict) -> Dict:
+def opencv_int_param_dict(interior_args: dict, opencv_dist_param: dict) -> dict:
     """An opencv camera interior parameter dictionary."""
     return {
         'cv test camera': dict(cam_type=CameraType.opencv, **interior_args, **opencv_dist_param)
@@ -672,7 +671,7 @@ def opencv_int_param_dict(interior_args: Dict, opencv_dist_param: Dict) -> Dict:
 
 
 @pytest.fixture(scope='session')
-def brown_int_param_dict(interior_args: Dict, brown_dist_param: Dict) -> Dict:
+def brown_int_param_dict(interior_args: dict, brown_dist_param: dict) -> dict:
     """A brown camera interior parameter dictionary."""
     return {
         'brown test camera': dict(cam_type=CameraType.brown, **interior_args, **brown_dist_param)
@@ -680,7 +679,7 @@ def brown_int_param_dict(interior_args: Dict, brown_dist_param: Dict) -> Dict:
 
 
 @pytest.fixture(scope='session')
-def fisheye_int_param_dict(interior_args: Dict, fisheye_dist_param: Dict) -> Dict:
+def fisheye_int_param_dict(interior_args: dict, fisheye_dist_param: dict) -> dict:
     """A fisheye camera interior parameter dictionary."""
     return {
         'fisheye test camera': dict(
@@ -691,11 +690,11 @@ def fisheye_int_param_dict(interior_args: Dict, fisheye_dist_param: Dict) -> Dic
 
 @pytest.fixture(scope='session')
 def mult_int_param_dict(
-    pinhole_int_param_dict: Dict,
-    brown_int_param_dict: Dict,
-    opencv_int_param_dict: Dict,
-    fisheye_int_param_dict: Dict,
-) -> Dict:
+    pinhole_int_param_dict: dict,
+    brown_int_param_dict: dict,
+    opencv_int_param_dict: dict,
+    fisheye_int_param_dict: dict,
+) -> dict:
     """An interior parameter dictionary consisting of multiple cameras."""
     return dict(
         **pinhole_int_param_dict,
@@ -706,7 +705,7 @@ def mult_int_param_dict(
 
 
 @pytest.fixture(scope='session')
-def mult_ext_param_dict(xyz: Tuple, opk: Tuple, mult_int_param_dict: Dict):
+def mult_ext_param_dict(xyz: tuple, opk: tuple, mult_int_param_dict: dict):
     """An exterior parameter dictionary referencing multiple cameras."""
     ext_param_dict = {}
     for i, cam_id in enumerate(mult_int_param_dict.keys()):
@@ -715,7 +714,7 @@ def mult_ext_param_dict(xyz: Tuple, opk: Tuple, mult_int_param_dict: Dict):
 
 
 @pytest.fixture(scope='session')
-def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict) -> Path:
+def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: dict) -> Path:
     """An interior parameter file in ODM cameras.json format."""
     filename = tmp_path_factory.mktemp('data').joinpath('odm_int_param_file.json')
     int_param = oty_to_osfm_int_param(mult_int_param_dict)
@@ -726,7 +725,7 @@ def odm_int_param_file(tmp_path_factory: pytest.TempPathFactory, mult_int_param_
 
 @pytest.fixture(scope='session')
 def osfm_int_param_file(
-    tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: Dict
+    tmp_path_factory: pytest.TempPathFactory, mult_int_param_dict: dict
 ) -> Path:
     """An interior parameter file in OpenSfM reconstruction.json format."""
     filename = tmp_path_factory.mktemp('data').joinpath('osfm_int_param_file.json')

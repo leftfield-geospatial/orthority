@@ -2,25 +2,23 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 import copy
 import logging
 import shutil
 import tracemalloc
 from pathlib import Path
-from typing import Dict, Tuple
 
 import click
 import numpy as np
@@ -116,7 +114,7 @@ def test_ortho_crs_src(
 
 
 def test_ortho_crs_auto(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_lla_rpy_csv_file: Path,
@@ -139,7 +137,7 @@ def test_ortho_crs_auto(
 
 
 def test_ortho_crs_cli(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -164,7 +162,7 @@ def test_ortho_crs_cli(
 
 
 def test_ortho_crs_file(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -191,7 +189,7 @@ def test_ortho_crs_file(
 
 
 def test_ortho_crs_prj(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -221,7 +219,7 @@ def test_ortho_crs_prj(
 
 
 def test_ortho_crs_missing_error(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -418,7 +416,7 @@ def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
 
 
 def test_ortho_full_remap(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     tmp_path: Path,
@@ -467,7 +465,7 @@ def test_ortho_full_remap(
 
 
 def test_ortho_alpha(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     tmp_path: Path,
@@ -523,7 +521,7 @@ def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner
 
 
 def test_ortho_lla_crs(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_lla_rpy_csv_file: Path,
@@ -790,7 +788,7 @@ def test_exif_option(
 
 
 def test_exif_lla_crs(
-    odm_image_file: Tuple[Path, ...],
+    odm_image_file: tuple[Path, ...],
     odm_dem_file: Path,
     odm_crs: str,
     tmp_path: Path,
@@ -839,7 +837,7 @@ def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
 
 
 def test_odm_dataset_dir(
-    odm_dataset_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm`` creates orthos in '<--dataset-dir>/orthority' sub-folder."""
     shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
@@ -852,7 +850,7 @@ def test_odm_dataset_dir(
 
 
 def test_odm_out_dir(
-    odm_dataset_dir: Path, odm_image_files: Tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder."""
     cli_str = f'odm --dataset-dir {odm_dataset_dir} --res 5 --out-dir {tmp_path}'
@@ -921,7 +919,7 @@ def test_simple_ortho_write_conf(
 def test_mult_camera(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    mult_int_param_dict: Dict,
+    mult_int_param_dict: dict,
     mult_ext_param_dict: dict,
     utm34n_crs: str,
     tmp_path: Path,
@@ -953,9 +951,9 @@ def test_mult_camera(
 def test_single_no_camera(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    pinhole_int_param_dict: Dict,
-    xyz: Tuple,
-    opk: Tuple,
+    pinhole_int_param_dict: dict,
+    xyz: tuple,
+    opk: tuple,
     utm34n_crs: str,
     tmp_path: Path,
     runner: CliRunner,
@@ -983,9 +981,9 @@ def test_single_no_camera(
 def test_mult_camera_unknown_camera_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    mult_int_param_dict: Dict,
-    xyz: Tuple,
-    opk: Tuple,
+    mult_int_param_dict: dict,
+    xyz: tuple,
+    opk: tuple,
     utm34n_crs: str,
     tmp_path: Path,
     runner: CliRunner,
@@ -1014,9 +1012,9 @@ def test_mult_camera_unknown_camera_error(
 def test_mult_camera_no_camera_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    mult_int_param_dict: Dict,
-    xyz: Tuple,
-    opk: Tuple,
+    mult_int_param_dict: dict,
+    xyz: tuple,
+    opk: tuple,
     utm34n_crs: str,
     tmp_path: Path,
     runner: CliRunner,

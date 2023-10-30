@@ -2,21 +2,19 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 from enum import Enum
-from typing import List
 
 import cv2
 from rasterio.enums import Resampling
@@ -74,9 +72,9 @@ class CameraType(str, Enum):
 class Interp(str, Enum):
     """
     Enumeration for common `OpenCV
-    <https://docs.opencv.org/4.8.0/da/d54/group__imgproc__transform.html
-    #ga5bb5a1fea74ea38e1a5445ca803ff121>`_ and `rasterio
-    https://rasterio.readthedocs.io/en/stable/api/rasterio.enums.html#rasterio.enums.Resampling`_
+    <https://docs.opencv.org/4.8.0/da/d54/group__imgproc__transform.html#ga5bb5a1fea74ea38e1a5445ca803ff121>`_
+    and `rasterio
+    <https://rasterio.readthedocs.io/en/stable/api/rasterio.enums.html#rasterio.enums.Resampling>`_
     interpolation types.
     """
 
@@ -98,8 +96,8 @@ class Interp(str, Enum):
         return self._name_
 
     @classmethod
-    def cv_list(cls) -> List:
-        """A list of OpenCV compatible :class:`~rasterio.enums.Interp` values."""
+    def cv_list(cls) -> list:
+        """A list of OpenCV compatible :class:`~orthority.enums.Interp` values."""
         _cv_list = []
         for interp in list(cls):
             try:
@@ -158,10 +156,10 @@ class CsvFormat(Enum):
 
     @property
     def is_opk(self) -> bool:
-        """True if format has an (omega, phi, kappa) orientation, otherwise False."""
+        """True if format has an (omega, phi, kappa) orientation, False otherwise."""
         return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
 
     @property
     def is_xyz(self) -> bool:
-        """True if format has an (easting, northing, altitude) position, otherwise False."""
+        """True if format has an (easting, northing, altitude) position, False otherwise."""
         return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy

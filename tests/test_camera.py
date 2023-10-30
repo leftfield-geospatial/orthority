@@ -2,20 +2,18 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
-from typing import Dict, Tuple
+from __future__ import annotations
 
 import numpy as np
 import pytest
@@ -45,16 +43,16 @@ def test_init(
     cam_type: CameraType,
     dist_param: str,
     exp_type: type,
-    xyz: Tuple,
-    opk: Tuple,
-    im_size: Tuple,
+    xyz: tuple,
+    opk: tuple,
+    im_size: tuple,
     focal_len: float,
-    sensor_size: Tuple,
-    cxy: Tuple,
+    sensor_size: tuple,
+    cxy: tuple,
     request: pytest.FixtureRequest,
 ):
     """Test camera creation."""
-    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
 
     camera = create_camera(
         cam_type,
@@ -80,7 +78,7 @@ def test_init(
         assert np.all(camera._dist_param == [*dist_param.values()])
 
 
-def test_update(im_size: Tuple, focal_len: float, sensor_size: Tuple, xyz: Tuple, opk: Tuple):
+def test_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz: tuple, opk: tuple):
     """Test exterior parameter update."""
     camera = PinholeCamera(
         im_size, focal_len, sensor_size=sensor_size, xyz=(0, 0, 0), opk=(0, 0, 0)
@@ -92,7 +90,7 @@ def test_update(im_size: Tuple, focal_len: float, sensor_size: Tuple, xyz: Tuple
 
 
 @pytest.mark.parametrize('cam_type', [*CameraType])
-def test_update_error(cam_type: CameraType, im_size: Tuple, focal_len: float, sensor_size: Tuple):
+def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple):
     """Test an error is raised if the camera is used before intialising exterior parameters."""
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
@@ -202,7 +200,7 @@ def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
     'cam_type',
     [CameraType.brown, CameraType.opencv],
 )
-def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: Dict):
+def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: dict):
     """Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs."""
     camera: Camera = create_camera(cam_type, **camera_args)
 
@@ -216,7 +214,7 @@ def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, ca
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
+def test_brown_opencv_equiv(camera_args: dict, brown_dist_param: dict):
     """Test OpenCV and Brown cameras are equivalent for the Brown distortion parameter set."""
     brown_camera = BrownCamera(**camera_args, **brown_dist_param)
     opencv_camera = OpenCVCamera(**camera_args, **brown_dist_param)
@@ -243,14 +241,14 @@ def test_brown_opencv_equiv(camera_args: Dict, brown_dist_param: Dict):
     ],
 )
 def test_project_im_size(
-    camera_args: Dict,
+    camera_args: dict,
     cam_type: CameraType,
     dist_param: str,
     scale: float,
     request: pytest.FixtureRequest,
 ):
     """Test camera coordinate equivalence for different image sizes."""
-    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
     ref_camera = create_camera(cam_type, **camera_args, **dist_param)
 
     test_camera_args = camera_args.copy()
@@ -313,12 +311,12 @@ def test_pixel_to_world_z_error(pinhole_camera: Camera):
 
 
 def test_intrinsic_equivalence(
-    im_size: Tuple,
+    im_size: tuple,
     focal_len: float,
-    sensor_size: Tuple,
-    cxy: Tuple,
-    xyz: Tuple,
-    opk: Tuple,
+    sensor_size: tuple,
+    cxy: tuple,
+    xyz: tuple,
+    opk: tuple,
 ):
     """Test intrinsic matrix validity for equivalent focal_len & sensor_size options."""
     ref_camera = PinholeCamera(
@@ -357,11 +355,11 @@ def test_intrinsic_equivalence(
 
 
 def test_instrinsic_nonsquare_pixels(
-    im_size: Tuple,
+    im_size: tuple,
     focal_len: float,
-    sensor_size: Tuple,
-    xyz: Tuple,
-    opk: Tuple,
+    sensor_size: tuple,
+    xyz: tuple,
+    opk: tuple,
 ):
     """Test intrinsic matrix validity for non-square pixels."""
     sensor_size = np.array(sensor_size)
@@ -384,12 +382,12 @@ def test_instrinsic_nonsquare_pixels(
 def test_horizon_fov(
     cam_type: CameraType,
     dist_param: str,
-    camera_args: Dict,
-    xyz: Tuple,
+    camera_args: dict,
+    xyz: tuple,
     request: pytest.FixtureRequest,
 ):
     """Test Camera._horizon_fov() validity."""
-    dist_param: Dict = request.getfixturevalue(dist_param)
+    dist_param: dict = request.getfixturevalue(dist_param)
     camera = create_camera(cam_type, **camera_args, **dist_param)
     assert not camera._horizon_fov()
 
@@ -411,7 +409,7 @@ def test_horizon_fov(
     ],
 )
 def test_undistort_alpha(
-    camera_args: Dict,
+    camera_args: dict,
     cam_type: CameraType,
     dist_param: str,
     alpha: float,
@@ -420,7 +418,7 @@ def test_undistort_alpha(
     """Test alpha=0 gives undistorted image boundaries outside, and alpha=1 gives undistorted image
     boundaries inside the source image.
     """
-    dist_param: Dict = request.getfixturevalue(dist_param) if dist_param else {}
+    dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
     camera = create_camera(cam_type, **camera_args, **dist_param, alpha=alpha)
 
     # create boundary coordinates and undistort

@@ -2,25 +2,24 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+
+from __future__ import annotations
 import logging
 import multiprocessing
 import threading
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -39,6 +38,25 @@ logger = logging.getLogger(__name__)
 
 
 class Ortho:
+    """
+    Class for orthorectifying an image with a specified DEM and camera model.
+
+    Parameters
+    ----------
+    src_filename: str, pathlib.Path
+        Path/URL to a source image to be orthorectified.
+    dem_filename: str, pathlib.Path
+        Path/URL to a DEM image covering the source image.
+    camera: Camera
+        Source image camera model (see :meth:`~orthority.camera.create_camera`).
+    crs: str, rasterio.CRS, optional
+        CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT
+        string.  It should be a projected, not geographic CRS.  Can be omitted if the source
+        image is projected in the world / ortho CRS.
+    dem_band: int, optional
+        Index of the DEM band to use (1-based).
+    """
+
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_band=1,
@@ -71,30 +89,12 @@ class Ortho:
 
     def __init__(
         self,
-        src_filename: Union[str, Path],
-        dem_filename: Union[str, Path],
+        src_filename: str | Path,
+        dem_filename: str | Path,
         camera: Camera,
-        crs: Union[str, rio.CRS] = None,
+        crs: str | rio.CRS = None,
         dem_band: int = 1,
     ):
-        """
-        Class for orthorectifying an image with a specified DEM and camera model.
-
-        Parameters
-        ----------
-        src_filename: str, pathlib.Path
-            Path/URL to a source image to be orthorectified.
-        dem_filename: str, pathlib.Path
-            Path/URL to a DEM image covering the source image.
-        camera: Camera
-            Source image camera model (see :meth:`~orthority.camera.create_camera`).
-        crs: str, rasterio.CRS, optional
-            CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT
-            string.  It should be a projected, not geographic CRS.  Can be omitted if the source
-            image is projected in the world / ortho CRS.
-        dem_band: int, optional
-            Index of the DEM band to use (1-based).
-        """
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
@@ -122,7 +122,7 @@ class Ortho:
         ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         im.build_overviews(ovw_levels, Resampling.average)
 
-    def _parse_crs(self, crs: Union[str, rio.CRS]) -> rio.CRS:
+    def _parse_crs(self, crs: str | rio.CRS) -> rio.CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
         if crs:
             try:
@@ -143,7 +143,7 @@ class Ortho:
 
     def _get_init_dem(
         self, dem_filename: Path, dem_band: int
-    ) -> Tuple[np.ndarray, rio.Affine, rio.CRS, bool]:
+    ) -> tuple[np.ndarray, rio.Affine, rio.CRS, bool]:
         """
         Return an initial DEM array in its own CRS and resolution.  Includes the corresponding DEM
         transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
@@ -218,11 +218,10 @@ class Ortho:
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
-    def _get_auto_res(self) -> Tuple[float, float]:
+    def _get_auto_res(self) -> tuple[float, float]:
         """
-        Return an ortho resolution that gives approx.
-
-        as many valid ortho pixels as valid source pixels.
+        Return an ortho resolution that gives approx as many valid ortho pixels as valid source
+        pixels.
         """
 
         def area_poly(coords: np.array) -> float:
@@ -248,8 +247,8 @@ class Ortho:
         return (res,) * 2
 
     def _reproject_dem(
-        self, dem_interp: Interp, resolution: Tuple[float, float]
-    ) -> Tuple[np.ndarray, rio.Affine]:
+        self, dem_interp: Interp, resolution: tuple[float, float]
+    ) -> tuple[np.ndarray, rio.Affine]:
         """
         Reproject self._dem_array to the world / ortho CRS and ortho resolution, given reprojection
         interpolation and resolution parameters.
@@ -316,7 +315,7 @@ class Ortho:
         crop: bool = True,
         mask: bool = True,
         num_pts: int = 400,
-    ) -> Tuple[np.ndarray, rio.Affine]:
+    ) -> tuple[np.ndarray, rio.Affine]:
         """Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and
         corresponding transform.
         """
@@ -416,12 +415,12 @@ class Ortho:
     def _create_ortho_profile(
         self,
         src_im: rio.DatasetReader,
-        shape: Tuple[int, int],
+        shape: tuple[int, int],
         transform: rio.Affine,
         dtype: str,
         compress: Compress,
         write_mask: bool,
-    ) -> Tuple[Dict, bool]:
+    ) -> tuple[dict, bool]:
         """Return a rasterio profile for the ortho image."""
         # Determine dtype, check dtype support
         # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with
@@ -478,7 +477,7 @@ class Ortho:
         src_array,
         dem_array: np.ndarray,
         tile_win: Window,
-        indexes: List[int],
+        indexes: list[int],
         init_xgrid: np.ndarray,
         init_ygrid: np.ndarray,
         interp: Interp,
@@ -580,7 +579,7 @@ class Ortho:
                 ortho_im.write_mask(~tile_mask, window=tile_win)
 
     def _undistort(
-        self, image: np.ndarray, nodata: Union[float, int], interp: Union[str, Interp]
+        self, image: np.ndarray, nodata: float | int, interp: str | Interp
     ) -> np.ndarray:
         """Undistort an image using ``interp`` interpolation and setting invalid pixels to
         ``nodata``.
@@ -687,15 +686,15 @@ class Ortho:
 
     def process(
         self,
-        ortho_filename: Union[str, Path],
-        resolution: Tuple[float, float] = _default_config['resolution'],
-        interp: Union[str, Interp] = _default_config['interp'],
-        dem_interp: Union[str, Interp] = _default_config['dem_interp'],
+        ortho_filename: str | Path,
+        resolution: tuple[float, float] = _default_config['resolution'],
+        interp: str | Interp = _default_config['interp'],
+        dem_interp: str | Interp = _default_config['dem_interp'],
         per_band: bool = _default_config['per_band'],
         full_remap: bool = _default_config['full_remap'],
-        write_mask: Optional[bool] = _default_config['write_mask'],
+        write_mask: bool | None = _default_config['write_mask'],
         dtype: str = _default_config['dtype'],
-        compress: Union[str, Compress] = _default_config['compress'],
+        compress: str | Compress = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],
         overwrite: bool = _default_config['overwrite'],
     ):
@@ -731,7 +730,7 @@ class Ortho:
             source image dtype is used.
         compress: str, Compress, optional
             Ortho image compression type ('deflate', 'jpeg' or 'auto').  See
-            :class:`~orthority.enums.Compress`_ for option details.
+            :class:`~orthority.enums.Compress` for option details.
         build_ovw: bool, optional
             Build overviews for the ortho image.
         overwrite: bool, optional

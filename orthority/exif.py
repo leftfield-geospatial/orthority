@@ -2,22 +2,20 @@
 #
 # This file is part of Orthority.
 #
-# Orthority is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# Orthority is free software: you can redistribute it and/or modify it under the terms of the GNU
+# Affero General Public License as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
 #
-# Orthority is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
+# Orthority is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without
+# even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Affero General Public License for more details.
 #
-# You should have received a copy of the GNU Affero General Public License
-# along with Orthority.  If not, see <https://www.gnu.org/licenses/>.
+# You should have received a copy of the GNU Affero General Public License along with Orthority.
+# If not, see <https://www.gnu.org/licenses/>.
 
+from __future__ import annotations
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Tuple, Union
 from xml.etree import cElementTree as ET
 
 import numpy as np
@@ -27,7 +25,7 @@ from orthority.utils import suppress_no_georef
 
 logger = logging.getLogger(__name__)
 
-xmp_schemas = dict(
+_xmp_schemas = dict(
     dji=dict(
         lla_keys=[
             '{http://www.dji.com/drone-dji/1.0/}GpsLatitude',
@@ -69,14 +67,14 @@ xmp_schemas = dict(
     ),
 )
 """
-A schema of known RPY & LLA XMP keys.
+A schema of known XMP keys.
 
 Uses xml namspace qualified keys which are unique, rather than xmltodict type prefix qualified keys,
 which can have different prefixes referring to the same namepace.
 """
 
 
-def xml_to_flat_dict(xmp_str: str) -> Dict[str, str]:
+def _xml_to_flat_dict(xmp_str: str) -> dict[str, str]:
     """Convert the given XML string to a flat dictionary."""
     etree = ET.fromstring(xmp_str)
     flat_dict = {}
@@ -96,8 +94,17 @@ def xml_to_flat_dict(xmp_str: str) -> Dict[str, str]:
 
 
 class Exif:
+    """
+    Class to extract camera model relevant EXIF and XMP values from an image.
+
+    Parameters
+    ----------
+    filename: str, Path
+        Path to the image file.
+    """
+
     # Adapted from https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
-    def __init__(self, filename: Union[str, Path]):
+    def __init__(self, filename: str | Path):
         """
         Class to extract camera model relevant EXIF and XMP values from an image.
 
@@ -116,7 +123,7 @@ class Exif:
             if 'xml:XMP' in namespaces:
                 # read XMP, stripping 'xml:XMP=' for rio copied tags
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP'].strip('xml:XMP=')
-                xmp_dict = xml_to_flat_dict(xmp_str)
+                xmp_dict = _xml_to_flat_dict(xmp_str)
             else:
                 logger.warning(f"'{filename.name}' contains no XMP metadata")
                 xmp_dict = {}
@@ -154,69 +161,69 @@ class Exif:
         return self._filename
 
     @property
-    def make(self) -> Optional[str]:
+    def make(self) -> str | None:
         """Camera make."""
         return self._make
 
     @property
-    def model(self) -> Optional[str]:
+    def model(self) -> str | None:
         """Camera model."""
         return self._model
 
     @property
-    def serial(self) -> Optional[str]:
+    def serial(self) -> str | None:
         """Camera serial number."""
         return self._serial
 
     @property
-    def im_size(self) -> Optional[Tuple[int, int]]:
+    def im_size(self) -> tuple[int, int] | None:
         """Actual image (width, height) in pixels."""
         return self._im_size
 
     @property
-    def tag_im_size(self) -> Optional[Tuple[int, int]]:
+    def tag_im_size(self) -> tuple[int, int] | None:
         """Tagged image (width, height) in pixels."""
         return self._tag_im_size
 
     @property
-    def sensor_size(self) -> Optional[Tuple[float, float]]:
+    def sensor_size(self) -> tuple[float, float] | None:
         """Sensor (width, height) in mm."""
         return self._sensor_size
 
     @property
-    def focal_len(self) -> Optional[float]:
+    def focal_len(self) -> float | None:
         """Focal length in mm."""
         return self._focal_len
 
     @property
-    def focal_len_35(self) -> Optional[float]:
+    def focal_len_35(self) -> float | None:
         """35mm equivalent focal length in mm."""
         return self._focal_len_35
 
     @property
-    def orientation(self) -> Optional[int]:
+    def orientation(self) -> int | None:
         """Image orientation code (see https://exiftool.org/TagNames/EXIF.html)."""
         return self._orientation
 
     @property
-    def lla(self) -> Optional[Tuple[float, float, float]]:
+    def lla(self) -> tuple[float, float, float] | None:
         """(Latitude, longitude, altitude) coordinates with latitude and longitude in decimal
         degrees, and altitude in meters.
         """
         return self._lla
 
     @property
-    def rpy(self) -> Optional[Tuple[float, float, float]]:
+    def rpy(self) -> tuple[float, float, float] | None:
         """(Roll, pitch, yaw) camera/gimbal angles in degrees."""
         return self._rpy
 
     @property
-    def dewarp(self) -> Optional[Tuple[float]]:
+    def dewarp(self) -> tuple[float] | None:
         """Dewarp parameters."""
         return self._dewarp
 
     @staticmethod
-    def _get_exif_float(exif_dict: Dict[str, str], key: str) -> Optional[Union[float, Tuple]]:
+    def _get_exif_float(exif_dict: dict[str, str], key: str) -> float | tuple[float] | None:
         """Convert numeric EXIF tag to float(s)."""
         if key not in exif_dict:
             return None
@@ -226,7 +233,9 @@ class Exif:
         return val_list[0] if len(val_list) == 1 else tuple(val_list)
 
     @staticmethod
-    def _get_make_model_serial(exif_dict: Dict[str, str]) -> Tuple:
+    def _get_make_model_serial(
+        exif_dict: dict[str, str]
+    ) -> tuple[str | None, str | None, str | None]:
         """Return camera make and model string."""
         make_key = 'EXIF_Make'
         model_key = 'EXIF_Model'
@@ -237,7 +246,7 @@ class Exif:
         return make, model, serial
 
     @staticmethod
-    def _get_tag_im_size(exif_dict: Dict[str, str]) -> Optional[Tuple]:
+    def _get_tag_im_size(exif_dict: dict[str, str]) -> tuple[int, int] | None:
         """Return the tagged image (width, height) in pixels."""
         width = Exif._get_exif_float(exif_dict, 'EXIF_PixelXDimension')
         height = Exif._get_exif_float(exif_dict, 'EXIF_PixelYDimension')
@@ -245,8 +254,8 @@ class Exif:
 
     @staticmethod
     def _get_sensor_size(
-        exif_dict: Dict[str, str], im_size: Union[Tuple, np.ndarray]
-    ) -> Optional[Tuple]:
+        exif_dict: dict[str, str], im_size: tuple[int, int] | np.ndarray
+    ) -> tuple[float, float] | None:
         """Return the sensor (width, height) in mm."""
 
         unit_key = 'EXIF_FocalPlaneResolutionUnit'
@@ -277,20 +286,20 @@ class Exif:
         return tuple((mm_per_unit * np.array(im_size) / pixels_per_unit).tolist())
 
     @staticmethod
-    def _get_focal_len(exif_dict: Dict[str, str]) -> Tuple:
+    def _get_focal_len(exif_dict: dict[str, str]) -> tuple[float | None, float | None]:
         """Return the actual and 35mm equivalent focal lengths in mm."""
         focal_35 = Exif._get_exif_float(exif_dict, 'EXIF_FocalLengthIn35mmFilm')
         focal = Exif._get_exif_float(exif_dict, 'EXIF_FocalLength')
         return focal, focal_35
 
     @staticmethod
-    def _get_orientation(exif_dict: Dict[str, str]) -> Optional[int]:
+    def _get_orientation(exif_dict: dict[str, str]) -> int | None:
         ori_key = 'EXIF_Orientation'
         orientation = int(exif_dict[ori_key]) if ori_key in exif_dict else None
         return orientation
 
     @staticmethod
-    def _get_lla(exif_dict: Dict[str, str]) -> Optional[Tuple]:
+    def _get_lla(exif_dict: dict[str, str]) -> tuple[float, float, float] | None:
         """Return the (latitutde, longitude, altitude) EXIF image location with latitude, longitude
         in decimal degrees, and altitude in meters.
         """
@@ -302,7 +311,7 @@ class Exif:
             return None
 
         # get latitude, longitude
-        def dms_to_decimal(dms: Tuple[float, float, float], ref: str):
+        def dms_to_decimal(dms: tuple[float], ref: str):
             """Convert (degrees, minutes, seconds) tuple to decimal degrees, applying reference
             sign.
             """
@@ -321,19 +330,19 @@ class Exif:
         return lat, lon, alt
 
     @staticmethod
-    def _get_xmp_lla(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
+    def _get_xmp_lla(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
         """Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
-        for schema_name, xmp_schema in xmp_schemas.items():
-            if all([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]):
+        for schema_name, xmp_schema in _xmp_schemas.items():
+            if sum([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]) == 3:
                 lla = [float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']]
                 return tuple(lla)
         return None
 
     @staticmethod
-    def _get_xmp_rpy(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
+    def _get_xmp_rpy(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
         """Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist."""
-        for schema_name, xmp_schema in xmp_schemas.items():
-            if all([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]):
+        for schema_name, xmp_schema in _xmp_schemas.items():
+            if sum([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]) == 3:
                 rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
                 rpy *= np.array(xmp_schema['rpy_gains'])
                 rpy += np.array(xmp_schema['rpy_offsets'])
@@ -341,14 +350,14 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: Dict[str, str]) -> Optional[Tuple]:
+    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> tuple[float] | None:
         """Return the camera dewarp parameters if they exist."""
-        for schema_name, xmp_schema in xmp_schemas.items():
+        for schema_name, xmp_schema in _xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
             if dewarp_str:
                 return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
         return None
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         """Convert to a dictionary of properties."""
         return {k: getattr(self, k) for k, v in vars(type(self)).items() if isinstance(v, property)}
