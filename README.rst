@@ -6,12 +6,20 @@ Orthority
 .. image:: https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/docs/readme_banner.webp
    :alt: banner
 
+.. description_start
+
 Orthority provides a command line interface and Python API for orthorectifying drone and aerial
 imagery, given a camera model and DEM. It supports common lens distortion types. Camera parameters
 can be read from various file formats, or image EXIF / XMP tags.
 
+.. description_end
+
+.. installation_start
+
 Installation
 ------------
+
+Orthority is a python 3 package that can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.conda.io/projects/miniconda>`_.
 
 pip
 ~~~
@@ -26,6 +34,8 @@ conda
 .. code:: shell
 
    conda install -c conda-forge orthority
+
+.. installation_end
 
 Quick start
 -----------
