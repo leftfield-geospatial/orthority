@@ -7,15 +7,24 @@ orthority
 =========
 
 .. image:: readme_banner.webp
-   :alt: example
+   :alt: banner
 
+.. include:: ../README.rst
+   :start-after: description_start
+   :end-before: description_end
+
+.. include:: installation.rst
 
 Contents
 --------
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 5
    :caption: Contents:
+
+   installation
+   cli/index
+   api/index
 
 
 Indices and tables
