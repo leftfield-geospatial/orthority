@@ -57,6 +57,8 @@ class PlainInfoFormatter(logging.Formatter):
 class RstCommand(click.Command):
     """click.Command subclass for formatting help with RST markup."""
 
+    # TODO: can we lose this?
+
     def get_help(self, ctx: click.Context):
         """
         Strip some RST markup from the help text for CLI display.
@@ -910,50 +912,50 @@ def _simple_ortho(
         raise ex
 
 
+def _get_simple_ortho_parser():
+    """Return an argparse parser for the legacy ``simple-ortho`` CLI."""
+    parser = argparse.ArgumentParser(
+        description='Orthorectify an image with known DEM and camera model.'
+    )
+    parser.add_argument(
+        "src_im_file",
+        help="path(s) and or wildcard(s) specifying the source image file(s)",
+        type=str,
+        metavar='src_im_file',
+        nargs='+',
+    )
+    parser.add_argument("dem_file", help="path to the DEM file", type=str)
+    parser.add_argument(
+        "pos_ori_file", help="path to the camera position and orientation file", type=str
+    )
+    parser.add_argument(
+        "-od",
+        "--ortho-dir",
+        help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
+        type=str,
+    )
+    parser.add_argument(
+        "-rc",
+        "--read-conf",
+        help="read custom config from this path (default: use config.yaml in simple-ortho root)",
+        type=str,
+    )
+    parser.add_argument(
+        "-wc", "--write-conf", help="write default config to this path and exit", type=str
+    )
+    parser.add_argument(
+        "-v",
+        "--verbosity",
+        choices=[1, 2, 3, 4],
+        help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)",
+        type=int,
+    )
+    return parser
+
+
 def simple_ortho(argv=None):
-    """Entry point to legacy 'simple-ortho' CLI."""
-
-    def parse_args(argv=None):
-        """Parse arguments."""
-        parser = argparse.ArgumentParser(
-            description='Orthorectify an image with known DEM and camera model.'
-        )
-        parser.add_argument(
-            "src_im_file",
-            help="path(s) and or wildcard(s) specifying the source image file(s)",
-            type=str,
-            metavar='src_im_file',
-            nargs='+',
-        )
-        parser.add_argument("dem_file", help="path to the DEM file", type=str)
-        parser.add_argument(
-            "pos_ori_file", help="path to the camera position and orientation file", type=str
-        )
-        parser.add_argument(
-            "-od",
-            "--ortho-dir",
-            help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
-            type=str,
-        )
-        parser.add_argument(
-            "-rc",
-            "--read-conf",
-            help="read custom config from this path (default: use config.yaml in simple-ortho root)",
-            type=str,
-        )
-        parser.add_argument(
-            "-wc", "--write-conf", help="write default config to this path and exit", type=str
-        )
-        parser.add_argument(
-            "-v",
-            "--verbosity",
-            choices=[1, 2, 3, 4],
-            help="logging level: 1=DEBUG, 2=INFO, 3=WARNING, 4=ERROR (default: 2)",
-            type=int,
-        )
-        return parser.parse_args(argv)
-
-    args = parse_args(argv)
+    """Entry point to legacy ``simple-ortho`` CLI."""
+    args = _get_simple_ortho_parser().parse_args(argv)
     _simple_ortho(**vars(args))
 
 
