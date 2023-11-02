@@ -22,9 +22,8 @@ release = __version__
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.autodoc',
-    'sphinx.ext.napoleon',
     'sphinx.ext.intersphinx',
+    'sphinx.ext.autodoc',
     'sphinx_click',
     'sphinxarg.ext',
     'sphinx_copybutton',
@@ -37,30 +36,17 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'furo'
 html_static_path = ['_static']
 
 # -- Options for autodoc -----------------------------------------------------
 # see https://www.sphinx-doc.org/en/master/usage/extensions/autodoc.html
-# autodoc_mock_imports = ['rasterio', 'click']
-# autosummary_generate = True
-# autoclass_content = 'both'
-# autodoc_class_signature = 'mixed'
 autodoc_member_order = 'bysource'
-# autodoc_typehints = 'both'
-# autodoc_default_flags = ['members', 'inherited-members', 'show-inheritance', 'special-members']
+autodoc_typehints = 'description'
 
-
-# -- Options for autosectionlabel ----------------------------------------------------
-# Make sure the target is unique
-autosectionlabel_prefix_document = True
-autosectionlabel_maxdepth = 3  # avoid duplicate section labels for CLI examples
-
-
-# -- Options for intersphinx ----------------------------------------------------
+# -- Options for intersphinx ---------------------------------------------------
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable', None),
-    'rasterio': ('https://rasterio.readthedocs.io', None),
+    'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
 }
-# TODO: investigate numpydoc extension - looks like it could improve reference formatting

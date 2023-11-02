@@ -12,8 +12,8 @@
 #
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
-
 from __future__ import annotations
+
 import logging
 
 import cv2
@@ -31,29 +31,29 @@ class Camera:
     Pinhole camera class, without any distortion model, for transforming between 3D world and 2D
     pixel coordinates.
 
-    Parameters
-    ----------
-    im_size: tuple of int, ndarray
+    :param im_size:
         Image (width, height) in pixels.
-    focal_len: float, tuple of float, ndarray
+    :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value
         or (x, y) tuple/ndarray pair.
-    sensor_size: tuple of float, ndarray, optional
+    :param sensor_size:
          Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
          specified, pixels are assumed square, and ``focal_len`` should be a normalised &
          unitless value: ``focal_len`` = (focal length) / (sensor width).
-    cx, cy: float, optional
-        Principal point offsets in `normalised image coordinates
-        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`_.
-    xyz: tuple of float, ndarray, optional
+    :param cx:
+        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+    :param cy:
+    :param xyz:
         Camera position (x=easting, y=northing, z=altitude) in world coordinates.
-    opk: tuple of float, ndarray, optional
+    :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
         world coordinates.
-    alpha: float, optional
+    :param alpha:
         Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
         pixels.  1 results in an undistorted image that keeps all source pixels.  Not used for
         the pinhole camera model.
+
+    .. _ncoords: https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates
     """
 
     _default_alpha: float = 1.0
@@ -61,16 +61,16 @@ class Camera:
     # TODO: make externally used params properties or public methods
     def __init__(
         self,
-        im_size: tuple[int, int] | np.ndarray,
-        focal_len: float | tuple[float, float] | np.ndarray,
-        sensor_size: tuple[float, float] | np.ndarray | None = None,
+        im_size: tuple[int, int],
+        focal_len: float | tuple[float, float],
+        sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
         cy: float = 0.0,
-        xyz: tuple[float, float, float] | np.ndarray = None,
-        opk: tuple[float, float, float] | np.ndarray = None,
+        xyz: tuple[float, float, float] | None = None,
+        opk: tuple[float, float, float] | None = None,
         alpha: float = _default_alpha,
-    ):
-        self._im_size = tuple([int(dim) for dim in im_size])
+    ) -> None:
+        self._im_size = (int(im_size[0]), int(im_size[1]))
         self._K = self._get_intrinsic(im_size, focal_len, sensor_size, cx, cy)
         self._R, self._T = self._get_extrinsic(xyz, opk)
         self._undistort_maps = None
@@ -78,9 +78,9 @@ class Camera:
 
     @staticmethod
     def _get_intrinsic(
-        im_size: tuple[int, int] | np.ndarray,
-        focal_len: float | tuple[float, float] | np.ndarray,
-        sensor_size: tuple[float, float] | np.ndarray | None,
+        im_size: tuple[int, int],
+        focal_len: float | tuple[float, float],
+        sensor_size: tuple[float, float] | None,
         cx: float,
         cy: float,
     ) -> np.ndarray:
@@ -102,7 +102,8 @@ class Camera:
         # find the xy focal lengths in pixels
         if sensor_size is None:
             logger.warning(
-                "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by sensor width."
+                "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by "
+                "sensor width."
             )
             sigma_xy = (focal_len * im_size[0]) * np.ones(2)
         else:
@@ -121,8 +122,8 @@ class Camera:
 
     @staticmethod
     def _get_extrinsic(
-        xyz: tuple[float, float, float] | np.ndarray,
-        opk: tuple[float, float, float] | np.ndarray,
+        xyz: tuple[float, float, float],
+        opk: tuple[float, float, float],
     ) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Return the rotation matrix and translation vector for the given exterior parameters."""
         if xyz is None or opk is None:
@@ -142,7 +143,7 @@ class Camera:
         return R, T
 
     @staticmethod
-    def _check_world_coordinates(xyz: np.ndarray):
+    def _check_world_coordinates(xyz: np.ndarray) -> None:
         """Utility function to check world coordinate dimensions."""
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
             raise ValueError(f"'xyz' should be a 3xN 2D array.")
@@ -150,12 +151,12 @@ class Camera:
             raise ValueError(f"'xyz' should have float64 data type.")
 
     @staticmethod
-    def _check_pixel_coordinates(ji: np.ndarray):
+    def _check_pixel_coordinates(ji: np.ndarray) -> None:
         """Utility function to check pixel coordinate dimensions."""
         if not (ji.ndim == 2 and ji.shape[0] == 2):
             raise ValueError(f"'ji' should be a 2xN 2D array.")
 
-    def _check_init(self):
+    def _check_init(self) -> None:
         """Utility function to check if exterior parameters are initialised."""
         if self._R is None or self._T is None:
             raise CameraInitError(f'Exterior parameters not initialised.')
@@ -186,12 +187,12 @@ class Camera:
         areas. For ``alpha=0``, the undistorted image includes the largest portion of the source
         image that allows all undistorted pixels to be valid.
         """
-
         # Adapted from and equivalent to cv2.getOptimalNewCameraMatrix(
         # newImageSize=self._im_size, centerPrincipalPoint=False). See
-        # https://github.com/opencv/opencv/blob/4790a3732e725b102f6c27858e7b43d78aee2c3e/modules
-        # /calib3d/src/calibration.cpp#L2772
-        def _get_rectangles(im_size: tuple[int, int] | np.ndarray):
+        # https://github.com/opencv/opencv/blob/4790a3732e725b102f6c27858e7b43d78aee2c3e/modules/calib3d/src/calibration.cpp#L2772
+        rect = tuple[np.ndarray, np.ndarray]
+
+        def _get_rectangles(im_size: tuple[int, int]) -> tuple[rect, rect]:
             """Return inner and outer rectangles for distorted image grid points."""
             w, h = np.array(im_size) - 1
             n = 9
@@ -206,9 +207,9 @@ class Camera:
             return inner, outer
 
         alpha = np.clip(alpha, a_min=0, a_max=1)
-        im_size = np.array(self._im_size)
-        (inner_off, inner_size), (outer_off, outer_size) = _get_rectangles(im_size)
+        (inner_off, inner_size), (outer_off, outer_size) = _get_rectangles(self._im_size)
 
+        im_size = np.array(self._im_size)
         f0 = (im_size - 1) / inner_size
         c0 = -f0 * inner_off
         f1 = (im_size - 1) / outer_size
@@ -242,17 +243,15 @@ class Camera:
 
     def update(
         self,
-        xyz: tuple[float, float, float] | np.ndarray,
-        opk: tuple[float, float, float] | np.ndarray,
-    ):
+        xyz: tuple[float, float, float],
+        opk: tuple[float, float, float],
+    ) -> None:
         """
         Update exterior parameters.
 
-        Parameters
-        ----------
-        xyz: tuple of float, ndarray
+        :param xyz: tuple of floats or ndarray
             Camera position (x=easting, y=northing, z=altitude) in world coordinates.
-        opk: tuple of float, ndarray
+        :param opk:
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
             world coordinates.
         """
@@ -262,17 +261,13 @@ class Camera:
         """
         Transform from 3D world to 2D pixel coordinates.
 
-        Parameters
-        ----------
-        xyz: ndarray
+        :param xyz:
             3D world (x=easting, y=northing, z=altitude) coordinates to transform, as a 3-by-N
             array with (x, y, z) along the first dimension.
-        distort: bool, optional
+        :param distort:
             Whether to include the distortion model.
 
-        Returns
-        -------
-        ndarray
+        :return:
             Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
             dimension.
         """
@@ -282,7 +277,8 @@ class Camera:
         # transform from world to camera coordinates & scale to origin
         xyz_ = self._R.T.dot(xyz - self._T)
         xyz_ = xyz_ / xyz_[2, :]
-        # transform from camera to pixel coordinates, including the distortion model if distort==True
+        # transform from camera to pixel coordinates, including the distortion model if
+        # distort==True
         ji = self._camera_to_pixel(xyz_) if distort else Camera._camera_to_pixel(self, xyz_)
         return ji
 
@@ -292,20 +288,16 @@ class Camera:
         """
         Transform from 2D pixel to 3D world coordinates at a specified z (altitude).
 
-        Parameters
-        ----------
-        ji: ndarray
+        :param ji:
             Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
             dimension.
-        z: float, ndarray
+        :param z:
             Z altitude(s) to project to, as a single value, or 1-by-N array where ``ji`` is 2-by-N
             or 2-by-1.
-        distort: bool, optional
+        :param distort:
             Whether to include the distortion model.
 
-        Returns
-        -------
-        ndarray
+        :return:
             3D world (x=easting, y=northing, z=altitude) coordinates, as a 3-by-N array with
             (x, y, z) along the first dimension.
         """
@@ -331,17 +323,13 @@ class Camera:
         """
         Undistort pixel coordinates.
 
-        Parameters
-        ----------
-        ji: ndarray
+        :param ji:
             Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
             dimension.
-        clip: bool
+        :param clip:
             Whether to clip the undistorted coordinates to the image dimensions.
 
-        Returns
-        -------
-        ndarray
+        :return:
             Undistorted pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along
             the first dimension.
         """
@@ -349,7 +337,7 @@ class Camera:
         self._check_pixel_coordinates(ji)
 
         xyz_ = self._pixel_to_camera(ji)
-        ji = self._K_undistort.dot(xyz_ / xyz_[2, :])[:2, :]
+        ji = Camera._camera_to_pixel(self, xyz_)
 
         if clip:
             ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
@@ -373,38 +361,48 @@ class OpenCVCamera(Camera):
     first 5 distortion coefficients are specified, this model corresponds to
     :class:`BrownCamera` with (cx, cy) = (0, 0).
 
-    Parameters
-    ----------
-    im_size: tuple of int, ndarray
+    :param im_size:
         Image (width, height) in pixels.
-    focal_len: float, tuple of float, ndarray
+    :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple/ndarray pair.
-    sensor_size: tuple of float, ndarray, optional
+    :param sensor_size:
         Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
         specified, pixels are assumed square, and ``focal_len`` should be a normalised &
         unitless value: ``focal_len`` = (focal length) / (sensor width).
-    cx, cy: float, optional
-        Principal point offsets in `normalised image coordinates
-        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`_.
-    k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tx, ty: float, optional
-        OpenCV distortion coefficients - see their
-        `docs <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_ for details.
-    xyz: tuple of float, ndarray
+    :param cx:
+        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+    :param cy:
+    :param k1:
+        Distortion coefficients.
+    :param k2:
+    :param k3:
+    :param p1:
+    :param p2:
+    :param k4:
+    :param k5:
+    :param k6:
+    :param s1:
+    :param s2:
+    :param s3:
+    :param s4:
+    :param tx:
+    :param ty:
+    :param xyz:
         Camera position (x=easting, y=northing, z=altitude) in world coordinates.
-    opk: tuple of float, ndarray
+    :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
         world coordinates.
-    alpha: float
+    :param alpha:
         Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
         pixels.  1 results in an undistorted image that keeps all source pixels.
     """
 
     def __init__(
         self,
-        im_size: tuple[int, int] | np.ndarray,
-        focal_len: float | tuple[float, float] | np.ndarray,
-        sensor_size: tuple[float, float] | np.ndarray | None = None,
+        im_size: tuple[int, int],
+        focal_len: float | tuple[float, float],
+        sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
         cy: float = 0.0,
         k1: float = 0.0,
@@ -419,10 +417,10 @@ class OpenCVCamera(Camera):
         s2: float = 0.0,
         s3: float = 0.0,
         s4: float = 0.0,
-        t1: float = 0.0,
-        t2: float = 0.0,
-        xyz: tuple[float, float, float] | np.ndarray = None,
-        opk: tuple[float, float, float] | np.ndarray = None,
+        tx: float = 0.0,
+        ty: float = 0.0,
+        xyz: tuple[float, float, float] | None = None,
+        opk: tuple[float, float, float] | None = None,
         alpha: float = Camera._default_alpha,
     ):
         Camera.__init__(
@@ -431,7 +429,7 @@ class OpenCVCamera(Camera):
 
         # order _dist_param & truncate zeros according to OpenCV docs
         # https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html#ga1019495a2c8d1743ed5cc23fa0daff8c
-        self._dist_param = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, t1, t2])
+        self._dist_param = np.array([k1, k2, p1, p2, k3, k4, k5, k6, s1, s2, s3, s4, tx, ty])
         for dist_len in (4, 5, 8, 12, 14):
             if np.all(self._dist_param[dist_len:] == 0.0):
                 self._dist_param = self._dist_param[:dist_len]
@@ -475,37 +473,39 @@ class BrownCamera(OpenCVCamera):
     <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.  ODM places their estimates
     in *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
 
-    Parameters
-    ----------
-    im_size: tuple of int, ndarray
+    :param im_size:
         Image (width, height) in pixels.
-    focal_len: float, tuple of float, ndarray
+    :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple/ndarray pair.
-    sensor_size: tuple of float, ndarray, optional
+    :param sensor_size:
         Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
         specified, pixels are assumed square, and ``focal_len`` should be a normalised &
         unitless value: ``focal_len`` = (focal length) / (sensor width).
-    cx, cy: float, optional
-        Principal point offsets in `normalised image coordinates
-        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`_.
-    k1, k2, p1, p2, k3: float, optional
-        Brown model distortion coefficients.
-    xyz: tuple of float, ndarray, optional
+    :param cx:
+        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+    :param cy:
+    :param k1:
+        Distortion coefficients.
+    :param k2:
+    :param p1:
+    :param p2:
+    :param k3:
+    :param xyz:
         Camera position (x=easting, y=northing, z=altitude) in world coordinates.
-    opk: tuple of float, ndarray, optional
+    :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
         world coordinates.
-    alpha: float
+    :param alpha:
         Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
         pixels.  1 results in an undistorted image that keeps all source pixels.
     """
 
     def __init__(
         self,
-        im_size: tuple[int, int] | np.ndarray,
-        focal_len: float | tuple[float, float] | np.ndarray,
-        sensor_size: tuple[float, float] | np.ndarray | None = None,
+        im_size: tuple[int, int],
+        focal_len: float | tuple[float, float],
+        sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
         cy: float = 0.0,
         k1: float = 0.0,
@@ -513,8 +513,8 @@ class BrownCamera(OpenCVCamera):
         p1: float = 0.0,
         p2: float = 0.0,
         k3: float = 0.0,
-        xyz: tuple[float, float, float] | np.ndarray = None,
-        opk: tuple[float, float, float] | np.ndarray = None,
+        xyz: tuple[float, float, float] | None = None,
+        opk: tuple[float, float, float] | None = None,
         alpha: float = Camera._default_alpha,
     ):
         # fmt: off
@@ -559,46 +559,45 @@ class FisheyeCamera(Camera):
     ODM places their estimates in *<dataset path>/cameras.json*, and OpenSFM in
     *<dataset path>/camera_models.json*.
 
-    Parameters
-    ----------
-    im_size: tuple of int, ndarray
+    :param im_size:
         Image (width, height) in pixels.
-    focal_len: float, tuple of float, ndarray
+    :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple/ndarray pair.
-    sensor_size: tuple of float, ndarray, optional
+    :param sensor_size:
         Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
         specified, pixels are assumed square, and ``focal_len`` should be a normalised &
         unitless value: ``focal_len`` = (focal length) / (sensor width).
-    cx, cy: float, optional
-        Principal point offsets in `normalised image coordinates
-        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`_.
-    k1, k2, k3, k4: float, optional
-        Fisheye distortion coefficients.  OpenCV uses all coefficients, while ODM and OpenSFM
-        use k1 & k2 only.
-    xyz: tuple of float, ndarray, optional
+    :param cx: Principal point offsets in `normalised image coordinates <ncoords_>`__.
+    :param cy:
+    :param k1:
+        Distortion coefficients.
+    :param k2:
+    :param k3:
+    :param k4:
+    :param xyz:
         Camera position (x=easting, y=northing, z=altitude) in world coordinates.
-    opk: tuple of float, ndarray, optional
+    :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
         world coordinates.
-    alpha: float
+    :param alpha:
         Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
         pixels.  1 results in an undistorted image that keeps all source pixels.
     """
 
     def __init__(
         self,
-        im_size: tuple[int, int] | np.ndarray,
-        focal_len: float | tuple[float, float] | np.ndarray,
-        sensor_size: tuple[float, float] | np.ndarray | None = None,
+        im_size: tuple[int, int],
+        focal_len: float | tuple[float, float],
+        sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
         cy: float = 0.0,
         k1: float = 0.0,
         k2: float = 0.0,
         k3: float = 0.0,
         k4: float = 0.0,
-        xyz: tuple[float, float, float] | np.ndarray = None,
-        opk: tuple[float, float, float] | np.ndarray = None,
+        xyz: tuple[float, float, float] | None = None,
+        opk: tuple[float, float, float] | None = None,
         alpha: float = Camera._default_alpha,
     ):
         Camera.__init__(
@@ -664,18 +663,14 @@ def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
     """
     Create a camera object given a camera type and its parameters.
 
-    Parameters
-    ----------
-    cam_type: CameraType
+    :param cam_type:
         Camera type (pinhole, brown, fisheye, opencv).
-    args:
+    :param args:
         Positional arguments to pass to camera constructor.
-    kwargs:
+    :param kwargs:
         Keyword arguments to pass to camera constructor.
 
-    Returns
-    -------
-    Camera
+    :return:
         The created camera object.
     """
     cam_type = CameraType(cam_type)

@@ -28,6 +28,7 @@ from typing import Iterable
 import cv2
 import numpy as np
 import rasterio as rio
+from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.windows import Window
 
@@ -91,7 +92,7 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
 
 
 @contextmanager
-def profiler():
+def profiler() -> None:
     """Context manager for profiling in DEBUG log level."""
     if logger.getEffectiveLevel() <= logging.DEBUG:
         proc_profile = cProfile.Profile()
@@ -115,15 +116,15 @@ def profiler():
         yield
 
 
-def utm_crs_from_latlon(lat: float, lon: float) -> rio.CRS:
+def utm_crs_from_latlon(lat: float, lon: float) -> CRS:
     """Return a 2D rasterio UTM CRS for the given (lat, lon) coordinates in degrees."""
     # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
     zone = int(np.floor((lon + 180) / 6) % 60) + 1
     epsg = 32600 + zone if lat >= 0 else 32700 + zone
-    return rio.CRS.from_epsg(epsg)
+    return CRS.from_epsg(epsg)
 
 
-def validate_collection(template: Iterable, coll: Iterable) -> bool:
+def validate_collection(template: Iterable, coll: Iterable):
     """
     Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples
     of types, and values (``template``).

@@ -97,22 +97,12 @@ class Exif:
     """
     Class to extract camera model relevant EXIF and XMP values from an image.
 
-    Parameters
-    ----------
-    filename: str, Path
+    :param filename:
         Path to the image file.
     """
 
     # Adapted from https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
     def __init__(self, filename: str | Path):
-        """
-        Class to extract camera model relevant EXIF and XMP values from an image.
-
-        Parameters
-        ----------
-        filename: str, Path
-            Path to the image file.
-        """
         filename = Path(filename)
 
         with suppress_no_georef(), rio.open(filename, 'r') as ds:

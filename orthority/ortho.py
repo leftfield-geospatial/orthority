@@ -13,7 +13,6 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
-
 from __future__ import annotations
 import logging
 import multiprocessing
@@ -24,6 +23,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rasterio as rio
+from rasterio.crs import CRS
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
 from tqdm.auto import tqdm
@@ -41,19 +41,17 @@ class Ortho:
     """
     Class for orthorectifying an image with a specified DEM and camera model.
 
-    Parameters
-    ----------
-    src_filename: str, pathlib.Path
+    :param src_filename:
         Path/URL to a source image to be orthorectified.
-    dem_filename: str, pathlib.Path
+    :param dem_filename:
         Path/URL to a DEM image covering the source image.
-    camera: Camera
+    :param camera:
         Source image camera model (see :meth:`~orthority.camera.create_camera`).
-    crs: str, rasterio.CRS, optional
+    :param crs:
         CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT
         string.  It should be a projected, not geographic CRS.  Can be omitted if the source
         image is projected in the world / ortho CRS.
-    dem_band: int, optional
+    :param dem_band:
         Index of the DEM band to use (1-based).
     """
 
@@ -75,7 +73,8 @@ class Ortho:
     # default ortho (x, y) block size
     _default_blocksize = (512, 512)
 
-    # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84 ellipsoid
+    # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84
+    # ellipsoid
     _egm96_min = -106.71
 
     # nodata values for supported ortho data types
@@ -90,11 +89,11 @@ class Ortho:
     def __init__(
         self,
         src_filename: str | Path,
-        dem_filename: str | Path,
+        dem_filename: str | Path | None,
         camera: Camera,
-        crs: str | rio.CRS = None,
+        crs: str | CRS | None = None,
         dem_band: int = 1,
-    ):
+    ) -> None:
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
@@ -114,7 +113,7 @@ class Ortho:
     @staticmethod
     def _build_overviews(
         im: rio.io.DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256
-    ):
+    ) -> None:
         """Build internal overviews for a given rasterio dataset."""
         max_ovw_levels = int(np.min(np.log2(im.shape)))
         min_level_shape_pow2 = int(np.log2(min_level_pixels))
@@ -122,11 +121,11 @@ class Ortho:
         ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         im.build_overviews(ovw_levels, Resampling.average)
 
-    def _parse_crs(self, crs: str | rio.CRS) -> rio.CRS:
+    def _parse_crs(self, crs: str | CRS) -> CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
         if crs:
             try:
-                crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
+                crs = CRS.from_string(crs) if isinstance(crs, str) else crs
             except rio.errors.CRSError as ex:
                 raise CrsError(f"Could not interpret 'crs': '{crs}'. {str(ex)}")
         else:
@@ -143,7 +142,7 @@ class Ortho:
 
     def _get_init_dem(
         self, dem_filename: Path, dem_band: int
-    ) -> tuple[np.ndarray, rio.Affine, rio.CRS, bool]:
+    ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
         """
         Return an initial DEM array in its own CRS and resolution.  Includes the corresponding DEM
         transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
@@ -156,7 +155,8 @@ class Ortho:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(dem_filename, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 raise DemBandError(
-                    f"DEM band {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} band(s)"
+                    f"DEM band {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} "
+                    f"band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use
             # elsewhere
@@ -224,7 +224,7 @@ class Ortho:
         pixels.
         """
 
-        def area_poly(coords: np.array) -> float:
+        def area_poly(coords: np.ndarray) -> float:
             """Area of the polygon defined by (x, y) ``coords`` with (x, y) along 2nd dimension."""
             # uses "shoelace formula": https://en.wikipedia.org/wiki/Shoelace_formula
             return 0.5 * np.abs(
@@ -280,7 +280,7 @@ class Ortho:
     def _get_src_boundary(self, full_remap: bool, num_pts: int) -> np.ndarray:
         """Return a pixel coordinate boundary of the source image with ``num_pts`` points."""
 
-        def im_boundary(im_size: np.array, num_pts: int):
+        def im_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
             """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
             for the given image size ``im_size``.
             """
@@ -320,7 +320,7 @@ class Ortho:
         corresponding transform.
         """
 
-        def inv_transform(transform: rio.Affine, xy: np.array):
+        def inv_transform(transform: rio.Affine, xy: np.ndarray) -> np.ndarray:
             """Return the center (j, i) pixel coords for the given transform and world (x, y)
             coordinates.
             """
@@ -381,7 +381,7 @@ class Ortho:
         # find intersection of poly_xy and dem mask, and check dem coverage
         poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
         poly_mask = np.zeros(dem_array.shape, dtype='uint8')
-        poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=255).astype('bool', copy=False)
+        poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).astype('bool', copy=False)
         dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
         if dem_mask_sum == 0:
@@ -415,7 +415,7 @@ class Ortho:
     def _create_ortho_profile(
         self,
         src_im: rio.DatasetReader,
-        shape: tuple[int, int],
+        shape: tuple[int, ...],
         transform: rio.Affine,
         dtype: str,
         compress: Compress,
@@ -474,7 +474,7 @@ class Ortho:
     def _remap_tile(
         self,
         ortho_im: rio.io.DatasetWriter,
-        src_array,
+        src_array: np.ndarray,
         dem_array: np.ndarray,
         tile_win: Window,
         indexes: list[int],
@@ -483,7 +483,7 @@ class Ortho:
         interp: Interp,
         full_remap: bool,
         write_mask: bool,
-    ):
+    ) -> None:
         """Thread safe method to map the source image to an ortho tile, given an open ortho dataset,
         source image array, DEM array in the world CRS and grid, tile window into the ortho dataset,
         band indexes of the source array, xy grids for the first ortho tile, and configuration
@@ -508,22 +508,12 @@ class Ortho:
         ]
 
         # find the source (j, i) pixel coords corresponding to ortho image (x, y, z) world coords
+        # fmt: off
         tile_ji = self._camera.world_to_pixel(
-            np.array(
-                [
-                    tile_xgrid.reshape(
-                        -1,
-                    ),
-                    tile_ygrid.reshape(
-                        -1,
-                    ),
-                    tile_zgrid.reshape(
-                        -1,
-                    ),
-                ]
-            ),
+            np.array([tile_xgrid.reshape(-1,), tile_ygrid.reshape(-1,), tile_zgrid.reshape(-1,)]),
             distort=full_remap,
         )
+        # fmt: on
 
         # separate tile_ji into (j, i) grids, converting to float32 for compatibility with
         # cv2.remap (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
@@ -618,7 +608,7 @@ class Ortho:
         per_band: bool,
         full_remap: bool,
         write_mask: bool,
-    ):
+    ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
         """
@@ -697,43 +687,43 @@ class Ortho:
         compress: str | Compress = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],
         overwrite: bool = _default_config['overwrite'],
-    ):
+    ) -> None:
         """
         Orthorectify the source image based on the camera model and DEM.
 
-        ortho_filename: str, pathlib.Path
+        :param ortho_filename:
             Path of the ortho image file to create.
-        resolution: list of float, optional
+        :param resolution:
             Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).
-        interp: str, orthority.enums.Interp, optional
+        :param interp:
             Interpolation method to use for remapping the source to ortho image.  See
             :class:`~orthority.enums.Interp` for options.
             :attr:`~orthority.enums.Interp.nearest` is recommended when the ortho and source
             image resolutions are similar.
-        dem_interp: str, orthority.enums.Interp, optional
+        :param dem_interp:
             Interpolation method for reprojecting the DEM.  See
             :class:`~orthority.enums.Interp` for options.
             :attr:`~orthority.enums.Interp.cubic` is recommended when the DEM has a coarser
             resolution than the ortho.
-        per_band: bool, optional
+        :param per_band:
             Remap the source to the ortho image band-by-band (True), or all bands at once (False).
             False is faster but requires more memory.
-        full_remap: bool, optional
+        :param full_remap:
             Orthorectify the source image with the full camera model (True), or the undistorted
             source image with a pinhole camera model (False).  False is faster but can reduce the
             extents and quality of the ortho image.
-        write_mask: bool, optional
+        :param write_mask:
             Write an internal mask for the ortho image. This helps remove nodata noise caused by
             lossy compression. If None, the mask will be written when jpeg compression is used.
-        dtype: str, optional
+        :param dtype:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None, the
             source image dtype is used.
-        compress: str, Compress, optional
+        :param compress:
             Ortho image compression type ('deflate', 'jpeg' or 'auto').  See
             :class:`~orthority.enums.Compress` for option details.
-        build_ovw: bool, optional
+        :param build_ovw:
             Build overviews for the ortho image.
-        overwrite: bool, optional
+        :param overwrite:
             Overwrite the ortho image if it exists.
         """
         with profiler():  # run profiler in DEBUG log level
