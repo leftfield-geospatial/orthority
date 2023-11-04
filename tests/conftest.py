@@ -181,7 +181,7 @@ def runner():
 
 @pytest.fixture(scope='session')
 def xyz() -> tuple[float, float, float]:
-    """Example camera (easting, northing, altitude) position (m)."""
+    """Example camera (x, y, z) position (m)."""
     return 2e4, 3e4, 1e3
 
 
@@ -604,8 +604,7 @@ def ngi_oty_ext_param_file() -> Path:
 @pytest.fixture(scope='session')
 def ngi_xyz_opk_csv_file() -> Path:
     """
-    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV
-    format.
+    Exterior parameters for NGI data in (x, y, z), (omega, phi, kappa) CSV format.
 
     Includes a header and .proj file.
     """
@@ -617,8 +616,7 @@ def ngi_xyz_opk_radians_csv_file(
     ngi_xyz_opk_csv_file: Path, tmp_path_factory: pytest.TempPathFactory
 ) -> Path:
     """
-    Exterior parameters for NGI data in (easting, northing, altitude), (omega, phi, kappa) CSV
-    format.
+    Exterior parameters for NGI data in (x, y, z), (omega, phi, kappa) CSV format.
 
     Includes a header and .proj file.  Angles in radians.
     """
@@ -648,8 +646,7 @@ def odm_lla_rpy_csv_file() -> Path:
 @pytest.fixture(scope='session')
 def odm_xyz_opk_csv_file() -> Path:
     """
-    Exterior parameters for ODM data in (easting, northing, altitude), (omega, phi, kappa) CSV
-    format.
+    Exterior parameters for ODM data in (x, y, z), (omega, phi, kappa) CSV format.
 
     Includes a header.
     """

@@ -456,7 +456,7 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
 @pytest.mark.parametrize(
     'fieldnames',
     [
-        ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw'],
+        ['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
         ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
     ],
 )
@@ -524,13 +524,13 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
         (
             'ngi_xyz_opk_csv_file',
             'ngi_crs',
-            ['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
+            ['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
             CsvFormat.xyz_opk,
         ),
         (
             'ngi_xyz_opk_csv_file',
             'ngi_crs',
-            ['filename', 'easting', 'northing', 'altitude', 'roll', 'pitch', 'yaw'],
+            ['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
             CsvFormat.xyz_rpy,
         ),
         (

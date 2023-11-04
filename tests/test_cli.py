@@ -572,7 +572,7 @@ def test_ortho_lla_crs_projected_error(
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --lla-crs {ngi_crs}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--lla-crs' in result.stdout and 'projected' in result.stdout
+    assert '--lla-crs' in result.stdout and 'geographic' in result.stdout
 
 
 def test_ortho_write_mask(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):

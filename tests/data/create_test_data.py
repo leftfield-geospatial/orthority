@@ -182,12 +182,12 @@ def create_ngi_test_data():
     with open(src_ext_file, 'r', newline=None) as fin, open(dst_ext_file, 'w', newline='') as fout:
         reader = csv.DictReader(
             fin,
-            fieldnames=['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
+            fieldnames=['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
             delimiter=' ',
         )
         writer = csv.DictWriter(
             fout,
-            fieldnames=['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'],
+            fieldnames=['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
             delimiter=' ',
         )
         for row in reader:
@@ -291,9 +291,7 @@ def create_io_test_data():
     # create xyz_opk csv file for odm data
     with open(io_root.joinpath('odm_xyz_opk.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=' ', quotechar="'", quoting=csv.QUOTE_NONNUMERIC)
-        writer.writerow(
-            ['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa', 'camera']
-        )
+        writer.writerow(['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa', 'camera'])
         ext_param_dict = osfm_reader.read_ext_param()
         for filename, ext_param in ext_param_dict.items():
             writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk']), cam_id])
@@ -304,7 +302,7 @@ def create_io_test_data():
     ext_param_dict = reader.read_ext_param()
     with open(io_root.joinpath('ngi_xyz_opk.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=',', quotechar='"')
-        writer.writerow(['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa'])
+        writer.writerow(['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'])
         for filename, ext_param in ext_param_dict.items():
             writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk'])])
 
