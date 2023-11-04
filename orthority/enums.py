@@ -21,7 +21,7 @@ from rasterio.enums import Resampling
 
 
 class CameraType(str, Enum):
-    """Enumeration for the camera model type."""
+    """Camera model types."""
 
     pinhole = 'pinhole'
     """Pinhole camera model."""
@@ -30,28 +30,24 @@ class CameraType(str, Enum):
     """
     Brown-Conrady camera model.
 
-    Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/>`_ /
-    `OpenSFM <https://github.com/mapillary/OpenSfM>`_
-    *brown* parameter estimates; and the 4 &    5-coefficient version of the
-    `general OpenCV distortion model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.
+    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__ and
+    `OpenSfM <https://opensfm.org/docs/geometry.html#brown-camera>`__ *brown* model parameters,
+    and the 4- and 5-coefficient versions of the `OpenCV general model
+    <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
     """
 
     fisheye = 'fisheye'
     """
     Fisheye camera model.
 
-    Compatible with `ODM <https://docs.opendronemap.org/arguments/camera-lens/>`_ /
-    `OpenSFM <https://github.com/mapillary/OpenSfM>`_,
-    and `OpenCV
-    <https://docs.opencv.org/4.7.0/db/d58/group__calib3d__fisheye.html>`_ *fisheye* parameter
-    estimates.
+    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__,
+    `OpenSfM <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model parameters.
     """
 
     opencv = 'opencv'
     """
-    OpenCV `general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.
-     
-    Supports the full set of distortion coefficient estimates.
+    OpenCV `general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
     """
 
     def __repr__(self):
@@ -62,21 +58,15 @@ class CameraType(str, Enum):
 
     @classmethod
     def from_odm(cls, cam_type: str):
-        """Convert from ODM / OpenSFM projection type."""
+        """Convert from OpenDroneMap / OpenSfM projection type."""
         cam_type = 'brown' if cam_type == 'perspective' else cam_type
         if cam_type not in cls.__members__:
-            raise ValueError(f"Unsupported ODM / OpenSFM camera type: '{cam_type}'")
+            raise ValueError(f"Unsupported OpenDroneMap / OpenSfM camera type: '{cam_type}'")
         return cls(cam_type)
 
 
 class Interp(str, Enum):
-    """
-    Enumeration for common `OpenCV
-    <https://docs.opencv.org/4.8.0/da/d54/group__imgproc__transform.html#ga5bb5a1fea74ea38e1a5445ca803ff121>`_
-    and `rasterio
-    <https://rasterio.readthedocs.io/en/stable/api/rasterio.enums.html#rasterio.enums.Resampling>`_
-    interpolation types.
-    """
+    """Interpolation types."""
 
     average = 'average'
     """Average input pixels over the corresponding output pixel area (suited to downsampling)."""
@@ -95,18 +85,6 @@ class Interp(str, Enum):
     def __str__(self):
         return self._name_
 
-    @classmethod
-    def cv_list(cls) -> list:
-        """A list of OpenCV compatible :class:`~orthority.enums.Interp` values."""
-        _cv_list = []
-        for interp in list(cls):
-            try:
-                interp.to_cv()
-                _cv_list.append(interp)
-            except ValueError:
-                pass
-        return _cv_list
-
     def to_cv(self) -> int:
         """Convert to OpenCV interpolation type."""
         name_to_cv = dict(
@@ -116,8 +94,6 @@ class Interp(str, Enum):
             lanczos=cv2.INTER_LANCZOS4,
             nearest=cv2.INTER_NEAREST,
         )
-        if self._name_ not in name_to_cv:
-            raise ValueError(f"OpenCV does not support '{self._name_}' interpolation.")
         return name_to_cv[self._name_]
 
     def to_rio(self) -> Resampling:
@@ -126,14 +102,14 @@ class Interp(str, Enum):
 
 
 class Compress(str, Enum):
-    """Enumeration for ortho compression."""
+    """Compression types."""
 
     jpeg = 'jpeg'
     """Jpeg (lossy) compression."""
     deflate = 'deflate'
     """Deflate (lossless) compression."""
     auto = 'auto'
-    """Use jpeg compression if possible, otherwise deflate."""
+    """Use jpeg compression if possible, deflate otherwise."""
 
     def __repr__(self):
         return self._name_
@@ -143,14 +119,14 @@ class Compress(str, Enum):
 
 
 class CsvFormat(Enum):
-    """Enumeration for CSV exterior parameter format."""
+    """CSV exterior parameter file formats."""
 
     xyz_opk = 1
-    """Projected (easting, northing, altitude) position and (omega, phi, kappa) orientation."""
+    """Projected (x, y, z) position and (omega, phi, kappa) orientation."""
     lla_opk = 2
     """Geographic (latitude, longitude, altitude) position and (omega, phi, kappa) orientation."""
     xyz_rpy = 3
-    """Projected (easting, northing, altitude) position and (roll, pitch, yaw) orientation."""
+    """Projected (x, y, z) position and (roll, pitch, yaw) orientation."""
     lla_rpy = 4
     """Geographic (latitude, longitude, altitude) position and (roll, pitch, yaw) orientation."""
 
@@ -161,5 +137,5 @@ class CsvFormat(Enum):
 
     @property
     def is_xyz(self) -> bool:
-        """True if format has an (easting, northing, altitude) position, False otherwise."""
+        """True if format has an (x, y, z) position, False otherwise."""
         return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy
