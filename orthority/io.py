@@ -13,12 +13,21 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
+"""
+Interior & exterior parameter file IO and conversions.
+
+Files are read and converted into standard format dictionaries that can be used to create camera
+objects with :func:`~orthority.camera.create_camera` or the various
+:class:`~orthority.camera.Camera` subclasses.
+"""
+# TODO: specify the dict formats with examples (maybe in its own doc)?
 from __future__ import annotations
 import csv
 import json
 import logging
 from csv import Dialect, DictReader, Sniffer
 from pathlib import Path
+from typing import Any
 
 import cv2
 import numpy as np
@@ -53,10 +62,10 @@ _default_lla_crs = CRS.from_epsg(4979)
 """Default CRS for geographic camera coordinates."""
 
 
-def _read_osfm_int_param(json_dict: dict) -> dict[str, dict]:
-    """Read camera interior parameters from an ODM / OpenSfM json dictionary."""
+def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
+    """Read camera interior parameters from an OpenDroneMap / OpenSfM json dictionary."""
 
-    def parse_json_param(json_param: dict, cam_id: str) -> dict:
+    def parse_json_param(json_param: dict, cam_id: str) -> dict[str, Any]:
         """Validate & convert the given json dictionary for a single camera."""
         int_param = {}
         for req_key in ['projection_type', 'width', 'height']:
@@ -85,7 +94,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict]:
             )
 
         # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM /
-        # OpenSFM json files do not define sensor size)
+        # OpenSfM json files do not define sensor size)
         int_param['sensor_size'] = tuple((np.array(im_size) / max(im_size)).tolist())
 
         # rename c_x->cx & c_y->cy
@@ -108,7 +117,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict]:
     int_param_dict = {}
     for cam_id, json_param in json_dict.items():
         cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
-        int_param_dict[cam_id] = parse_json_param(json_param, cam_id)
+        int_param_dict[cam_id] = parse_json_param(json_param.copy(), cam_id)
 
     return int_param_dict
 
@@ -121,7 +130,7 @@ def _create_exif_cam_id(exif: Exif) -> str:
     return cam_id
 
 
-def _read_exif_int_param(exif: Exif) -> dict[str, dict]:
+def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
     """Read camera interior parameters from an Exif object."""
     if exif.dewarp:
         if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
@@ -169,7 +178,9 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict]:
     return {_create_exif_cam_id(exif): cam_dict}
 
 
-def _read_exif_ext_param(exif: Exif, crs: str | CRS, lla_crs: str | CRS) -> dict:
+def _read_exif_ext_param(
+    exif: Exif, crs: str | CRS, lla_crs: str | CRS
+) -> dict[str, dict[str, Any]]:
     """Read camera exterior parameters from an Exif object."""
     if not exif.lla:
         raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif.filename.name}'.")
@@ -181,24 +192,22 @@ def _read_exif_ext_param(exif: Exif, crs: str | CRS, lla_crs: str | CRS) -> dict
     opk = _rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
     xyz = tuple([coord[0] for coord in xyz])
-    return dict(xyz=xyz, opk=opk, camera=_create_exif_cam_id(exif))
+    ext_param = dict(xyz=xyz, opk=opk, camera=_create_exif_cam_id(exif))
+    return {exif.filename.name: ext_param}
 
 
-def read_oty_int_param(filename: str | Path) -> dict[str, dict]:
+def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for one or more cameras from an orthority format yaml file.
 
     :param filename:
         Path of the yaml file to read.
-
-    :return:
-        A dictionary of camera interior parameters.
     """
     filename = Path(filename)
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
 
-    def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict:
+    def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
         """Validate & convert the given yaml dictionary for a single camera."""
         # test required keys for all cameras
         for req_key in ['type', 'im_size', 'focal_len', 'sensor_size']:
@@ -245,16 +254,13 @@ def read_oty_int_param(filename: str | Path) -> dict[str, dict]:
     return int_param_dict
 
 
-def read_osfm_int_param(filename: str | Path) -> dict[str, dict]:
+def read_osfm_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more camera, from an ODM cameras.json or OpenSfM
-    reconstruction.json file.
+    Read interior parameters for one or more camera, from an OpenDroneMap 'cameras.json' or OpenSfM
+    'reconstruction.json' file.
 
     :param filename:
-        Path of the ODM / OpenSFM json file to read.
-
-    :return:
-        A dictionary of camera interior parameters.
+        Path of the OpenDroneMap / OpenSfM json file to read.
     """
     with open(filename, 'r') as f:
         json_dict = json.load(f)
@@ -262,23 +268,94 @@ def read_osfm_int_param(filename: str | Path) -> dict[str, dict]:
     return _read_osfm_int_param(json_dict)
 
 
-def read_exif_int_param(filename: str | Path) -> dict[str, dict]:
+def read_exif_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for a camera from an image file with EXIF / XMP tags.
 
     :param filename:
         Path of the image file to read.
-
-    :return:
-        A dictionary of camera interior parameters.
     """
     return _read_exif_int_param(Exif(filename))
 
 
+def write_int_param(
+    filename: str | Path, int_param_dict: dict[str, dict[str, Any]], overwrite: bool = False
+) -> None:
+    """
+    Write interior parameters to an orthority format yaml file.
+
+    :param filename:
+        Path of the yaml file to write.
+    :param int_param_dict:
+        Interior parameters to write.
+    :param overwrite:
+        Overwrite the yaml file if it exists.
+    """
+    filename = Path(filename)
+    if filename.exists():
+        if not overwrite:
+            raise FileExistsError(f"Interior parameter file exists: '{filename}'.")
+        filename.unlink()
+
+    # convert 'cam_type' key to 'type' & make the converted item the first in the dict
+    yaml_dict = {}
+    for cam_id, int_param in int_param_dict.items():
+        yaml_param = {}
+        if 'cam_type' in int_param:
+            yaml_param['type'] = int_param['cam_type'].value
+        yaml_param.update(**{k: v for k, v in int_param.items() if k != 'cam_type'})
+        yaml_dict[cam_id] = yaml_param
+
+    with open(filename, 'w') as f:
+        yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
+
+
+def write_ext_param(
+    filename: str | Path,
+    ext_param_dict: dict[str, dict[str, Any]],
+    crs: str | CRS,
+    overwrite: bool = False,
+) -> None:
+    """
+    Write exterior parameters to an orthority format geojson file.
+
+    :param filename:
+        Path of the geojson file to write.
+    :param ext_param_dict:
+        Exterior parameters to write.
+    :param crs:
+        CRS of the world coordinate system.
+    :param overwrite:
+        Overwrite the geojson file if it exists.
+    """
+    filename = Path(filename)
+    if filename.exists():
+        if not overwrite:
+            raise FileExistsError(f"Exterior parameter file exists: '{filename}'.")
+        filename.unlink()
+
+    feat_list = []
+    lla_crs = _default_lla_crs
+    crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+    for src_file, ext_param in ext_param_dict.items():
+        xyz = ext_param['xyz']
+        lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
+        lla = [lla[0][0], lla[1][0], lla[2][0]]  # (lon, lat) order for geojson point
+        props_dict = dict(
+            filename=src_file, camera=ext_param['camera'], xyz=xyz, opk=ext_param['opk']
+        )
+        geom_dict = dict(type='Point', coordinates=list(lla))
+        feat_dict = dict(type='Feature', properties=props_dict, geometry=geom_dict)
+        feat_list.append(feat_dict)
+
+    json_dict = dict(type='FeatureCollection', world_crs=crs.to_string(), features=feat_list)
+    with open(filename, 'w') as f:
+        json.dump(json_dict, f, indent=4)
+
+
 def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
-    """Return the rotation matrix for the given (roll, pitch, yaw) orientations in radians."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    """Convert the given (roll, pitch, yaw) angles in radians to a rotation matrix."""
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     roll, pitch, yaw = rpy
     R_x = np.array([[1, 0, 0], [0, np.cos(roll), -np.sin(roll)], [0, np.sin(roll), np.cos(roll)]])
     R_y = np.array(
@@ -289,9 +366,8 @@ def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
 
 
 def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
-    """Return the rotation matrix for the given (omega, phi, kappa) orientations in radians."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    """Convert the given (omega, phi, kappa) angles in radians to a rotation matrix."""
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega, phi, kappa = opk
     R_x = np.array(
         [[1, 0, 0], [0, np.cos(omega), -np.sin(omega)], [0, np.sin(omega), np.cos(omega)]]
@@ -304,9 +380,8 @@ def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
 
 
 def _rotation_to_opk(R: np.ndarray) -> tuple[float, float, float]:
-    """Return the (omega, phi, kappa) orientations in radians for the given rotation matrix."""
-    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
+    """Convert the given rotation matrix to the (omega, phi, kappa) angles in radians."""
+    # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
     omega = np.arctan2(-R[1, 2], R[2, 2])
     phi = np.arcsin(R[0, 2])
     kappa = np.arctan2(-R[0, 1], R[0, 0])
@@ -314,13 +389,14 @@ def _rotation_to_opk(R: np.ndarray) -> tuple[float, float, float]:
 
 
 def _aa_to_opk(aa: tuple[float, float, float]) -> tuple[float, float, float]:
-    """Convert angle axis vector to (omega, phi, kappa) angles."""
+    """Convert the given angle axis vector (OpenSfM / OpenCV convention) to (omega, phi,
+    kappa) angles in radians (PATB convention)."""
     # convert ODM angle/axis to rotation matrix (see
     # https://github.com/mapillary/OpenSfM/issues/121)
     R = cv2.Rodrigues(np.array(aa))[0].T
 
-    # rotate from ODM to PATB convention
-    R = np.dot(R, np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+    # rotate from OpenSfM / OpenCV to PATB convention
+    R = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
 
     # extract OPK from R
     omega, phi, kappa = _rotation_to_opk(R)
@@ -337,34 +413,34 @@ def _rpy_to_opk(
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
 
-    Coordinate conventions are as defined in: https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
+    Coordinate conventions are as `defined by Pix4D
+    <https://s3.amazonaws.com/mics.pix4d.com/KB/documents
+    /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.>`__
 
-    Note this conversion does not correct for earth curvature & assumes ``crs`` is orthogonal and
-    uniform scale (cartesian) in the vicinity of ``lla``.  ``crs`` should be conformal, and have
-    its central meridian(s) close to ``lla`` for this assumption to be accurate.
+    Note this conversion assumes ``crs`` is orthogonal and uniform scale (cartesian) in the
+    vicinity of ``lla``.  ``crs`` should be conformal, and have its central meridian(s) close to
+    ``lla`` for this assumption to be accurate.
 
     :param rpy:
-        (roll, pitch, yaw) orientation to rotate from body to navigation coordinate system
-        (radians).
+        (roll, pitch, yaw) angles to rotate from body to navigation coordinates (radians).
     :param lla:
-        (latitude, longitude, altitude) geographic coordinates of the camera (degrees).
+        (latitude, longitude, altitude) geographic coordinates of the camera (in units of
+        ``lla_crs``).
     :param crs:
-        CRS of the world / ortho coordinate system.
+        CRS of the world coordinate system.
     :param lla_crs:
         CRS of the ``lla`` geographic coordinates.
     :param C_bB:
-        Optional camera to body rotation matrix.  Defaults to :
+        Optional camera to body rotation matrix.  Defaults to:
         ``[[0, 1, 0], [1, 0, 0], [0, 0, -1]]``, which describes typical drone geometry.
 
     :return:
-        (omega, phi, kappa) angles in radians, to rotate from Pix4D / PATB convention camera to
-        world coordinate systems.
+        (omega, phi, kappa) angles in radians, to rotate from camera (PATB convention) to world
+        coordinates.
     """
     # Adapted from the OpenSfM exif module
     # https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py and Pix4D doc
-    # https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    # /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
+    # https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.
 
     # Note that what the Pix4D reference calls Object (E), and Image (B) coordinates, orthority
     # calls world and camera coordinates respectively.
@@ -405,19 +481,19 @@ def _rpy_to_opk(
     # combine C_En, C_nb, C_bB to find rotation from camera (B) to world (E) coordinates.
     C_EB = C_En.dot(C_nb).dot(C_bB)
 
-    # extract OPK angles from C_EB and return
+    # return OPK angles extracted from C_EB
     omega, phi, kappa = _rotation_to_opk(C_EB)
     return omega, phi, kappa
 
 
 class Reader:
     """
-    Abstract class for reading interior and exterior camera parameters.
+    Abstract interior and exterior parameter reader.
 
     :param crs:
         CRS of the world coordinate system.
     :param lla_crs:
-        CRS of input geographic camera coordinates (if any).
+        CRS of input geographic coordinates (if any).
     """
 
     def __init__(self, crs: str | CRS = None, lla_crs: str | CRS = _default_lla_crs) -> None:
@@ -432,7 +508,7 @@ class Reader:
             except RioCrsError as ex:
                 raise CrsError(f"Could not interpret 'crs': {crs}. {str(ex)}")
             if crs.is_geographic:
-                raise CrsError(f"'crs' should be a projected, not geographic system.")
+                raise CrsError(f"'crs' should not be geographic system.")
 
         if lla_crs:
             try:
@@ -440,7 +516,7 @@ class Reader:
             except RioCrsError as ex:
                 raise CrsError(f"Could not interpret 'lla_crs': '{lla_crs}'. {str(ex)}")
             if not lla_crs.is_geographic:
-                raise CrsError(f"'lla_crs' should be a geographic, not projected system.")
+                raise CrsError(f"'lla_crs' should be a geographic system.")
         return crs, lla_crs
 
     @property
@@ -448,116 +524,55 @@ class Reader:
         """CRS of the world coordinate system."""
         return self._crs
 
-    def read_int_param(self) -> dict[str, dict]:
-        """
-        Read interior camera parameters.
-
-        :return:
-            A dictionary of camera interior parameters.
-        """
+    def read_int_param(self) -> dict[str, dict[str, Any]]:
+        """Read interior camera parameters."""
         raise NotImplementedError()
 
-    def read_ext_param(self) -> dict[str, dict]:
-        """
-        Read exterior camera parameters.
-
-        :return:
-            A dictionary of camera exterior parameters.
-        """
+    def read_ext_param(self) -> dict[str, dict[str, Any]]:
+        """Read exterior camera parameters."""
         raise NotImplementedError()
 
 
 class CsvReader(Reader):
-    r"""
-    Class for reading camera exterior parameters from a CSV file.
+    # TODO: clarify that crs applies to xyz & opk, and lla_crs to lla (& rpy?).  perhaps
+    #  explaining that crs might apply to input params and or output params depending on the file
+    #  format.  Perhaps this needs to go in the CLI too?
+    """
+    Exterior parameter reader for a CSV file.
 
-    Reads tabular data from a text CSV file with a row per source image and column fields for
-    the image file name, camera position coordinates and orientation angles.  Positions and
-    orientations are converted into :class:`~orthority.camera.Camera` compatible values.
+    Reads tabular data from a CSV file with a row per source image and column fields for image
+    file name, camera position, orientation and ID.
 
-    Fields can be identified with a first line file header or by passing the ``fieldnames``
-    argument. Recognised names and corresponding descriptions for the header and
-    ``fieldnames`` fields are:
-
-        =================================== ====================================================
-        Field name(s)                       Description
-        =================================== ====================================================
-        'filename'                          Image file name, excluding parent path, with or
-                                            without an extension.
-        'easting', 'northing', 'altitude'   Camera position in ``crs`` coordinates and units.
-        'latitude', 'longitude', 'altitude' Camera position in ``lla_crs`` coordinates and
-                                            units.
-        'omega', 'phi', 'kappa'             Camera orientation with units specified by
-                                            ``radians``.
-        'roll', 'pitch', 'yaw'              Camera orientation with units specified by
-                                            ``radians``.
-        'camera'                            ID of camera interior parameters (optional).
-        =================================== ====================================================
-
-    'filename', one of ('easting', 'northing', 'altitude') or ('latitude', 'longitude',
-    'altitude'), and one of ('omega', 'phi', 'kappa') or ('roll', 'pitch', 'yaw') are
-    required.  'camera' is required for multi-camera set ups to reference corresponding
-    interior parameters, but is otherwise optional.  Other fields included in the file that
-    are not in the recognised list are ignored.
-
-    If there is no file header and ``fieldnames`` is not provided, the file is assumed to be
-    in the legacy ``simple-ortho`` format::
-
-        <filename> <easting> <northing> <altitude> <omega> <phi> <kappa>
-
-    Comma, space, semicolon, colon and tab delimiters are supported, as are windows '\\r\\n' and
-    unix '\\n' line terminators.  Values can optionally be enclosed in single or double quotes.
-    This may be required with e.g. the 'camera' field if ID values contain the CSV delimiter.
-
-    :Example:
-
-        A file specifying (easting, northing, altitude) positions, and (omega, phi,
-        kappa) orientations with a comma delimiter.  The 'other' field is ignored.::
-
-            filename,easting,northing,altitude,omega,phi,kappa,other
-            image1.jpg,-523.615,-372.785,525.161,0.019,-0.080,-179.006,ignored
-            image2.jpg,-537.559,-372.772,525.130,-0.080,-0.100,-179.173,ignored
-            ...
-            image100.jpg,-523.869,-373.883,525.553,-0.076,0.127,0.720,ignored
-
-        A file specifying (latitude, longitude, altitude) positions, and (roll, pitch,
-        yaw) orientations with a space delimiter.  A 'camera' field is included, with values
-        enclosed in quotes as they contain the space delimiter.::
-
-            filename latitude longitude altitude roll pitch yaw camera
-            100_0005_0001.JPG 24.680427 120.948453 186.54 0.0 30.0 94.5 "dji fc6310r brown 0.6666"
-            100_0005_0002.JPG 24.680420 120.948593 186.5 0.0 30.0 93.7 "dji fc6310r brown 0.6666"
-            ...
-            100_0005_0271.JPG 24.679835 120.949276 186.62 0.0 30.0 -176.8 "dji fc6310r brown 0.6666"
-
+    See :ref:`file_formats:CSV exterior parameters` for detail on supported fields and formats.
 
     :param filename:
         Path of the CSV file.
     :param crs:
-        CRS of the world coordinate system.  If not specified and the CSV file contains (
-        easting, northing, altitude) positions, ``crs`` will be read from a .prj file if it
-        exists. (A prj file is a text file defining the CRS with a WKT, proj4 or EPSG string.
-        It should and have the same path & stem as ``filename``, but a .prj extension).  If
-        ``crs`` is not specified, and the file is in :attr:`~CsvFormat.lla_rpy` format,
-        a UTM CRS will be auto-determined.  Otherwise, if the file is in
-        :attr:`~CsvFormat.lla_opk` format, ``crs`` should be provided.
+        CRS of the world coordinate system.   If not specified and the file contains
+        :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined. For
+        files containing (x, y, z) world coordinate positions ``crs`` can be omitted here and
+        provided via a '.prj' file (i.e. a text file defining the CRS with a WKT, proj4 or EPSG
+        string, and having the same path & stem as ``filename``, but a '.prj' extension).  In all
+        other situations, ``crs`` is required.
     :param lla_crs:
-        CRS of (latitude, longitude, altitude) geographic camera coordinates (if any).
+        Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
+        pitch, yaw) angle values in the file.
     :param fieldnames:
-        List of recognised, and possibly other strings specifying the CSV fields.  The
-        default is to determine the fields from a file header when it exists.  If
-        ``fieldnames`` is passed, any existing file header is ignored.
+        List of names specifying the CSV fields.  Can be omitted if field names are specified in a
+        file header.  If ``fieldnames`` is passed, any existing file header is ignored.  See
+        :ref:`file_formats:CSV exterior parameters` for recognised field names.
     :param dialect:
-        A :class:`csv.Dialect` object specifying CSV delimiter etc. configuration.  By default,
-        this is auto-determined.
+        :class:`~csv.Dialect` object specifying the CSV delimiter, quote character, line terminator
+        etc. By default, this is auto-determined from the file.
     :param radians:
-        Orientation angles are in radians (True), or degrees (False).
+        Whether orientation angles are in radians (True), or degrees (False).
     """
 
     _type_schema = dict(
         filename=str,
-        easting=float,
-        northing=float,
+        x=float,
+        y=float,
+        z=float,
         latitude=float,
         longitude=float,
         altitude=float,
@@ -569,7 +584,7 @@ class CsvReader(Reader):
         yaw=float,
         camera=lambda x: str(x) if x else x,
     )
-    _legacy_fieldnames = ['filename', 'easting', 'northing', 'altitude', 'omega', 'phi', 'kappa']
+    _legacy_fieldnames = ['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa']
 
     def __init__(
         self,
@@ -600,15 +615,14 @@ class CsvReader(Reader):
         if 'filename' not in fieldnames:
             raise ParamFileError(f"Fields should include 'filename'.")
 
-        has_xyz = {'easting', 'northing', 'altitude'}.issubset(fieldnames)
+        has_xyz = {'x', 'y', 'z'}.issubset(fieldnames)
         has_lla = {'latitude', 'longitude', 'altitude'}.issubset(fieldnames)
         has_opk = {'omega', 'phi', 'kappa'}.issubset(fieldnames)
         has_rpy = {'roll', 'pitch', 'yaw'}.issubset(fieldnames)
 
         if not (has_xyz or has_lla):
             raise ParamFileError(
-                f"Fields should include 'easting', 'northing' & 'altitude', or 'latitude', "
-                f"'longitude' & 'altitude'."
+                f"Fields should include 'x', 'y' & 'z', or 'latitude', 'longitude' & 'altitude'."
             )
         if not (has_opk or has_rpy):
             raise ParamFileError(
@@ -687,7 +701,7 @@ class CsvReader(Reader):
                     raise CrsError(f"Could not interpret CRS in '{prj_filename.name}': '{str(ex)}'")
                 if crs.is_geographic:
                     raise CrsError(
-                        f"CRS in '{prj_filename.name}' should be a projected, not geographic system"
+                        f"CRS in '{prj_filename.name}' should not be a geographic system"
                     )
                 logger.debug(f"Using '{prj_filename.name}' CRS: '{crs.to_proj4()}'")
             elif self._format is CsvFormat.xyz_rpy:
@@ -709,11 +723,11 @@ class CsvReader(Reader):
         return crs
 
     def _convert(self, row: dict[str, float], radians=False) -> tuple[tuple, tuple]:
-        """Convert a CSV row dictionary to (easting, northing, altitude) position, and (omega, phi,
+        """Convert a CSV row dictionary to (x, y, z) position, and (omega, phi,
         kappa) orientation.
         """
         if self._format.is_xyz:
-            xyz = (row['easting'], row['northing'], row['altitude'])
+            xyz = (row['x'], row['y'], row['z'])
         else:
             lla = (row['latitude'], row['longitude'], row['altitude'])
             xyz = transform(self._lla_crs, self._crs, [lla[1]], [lla[0]], [lla[2]])
@@ -732,7 +746,7 @@ class CsvReader(Reader):
 
         return xyz, opk
 
-    def read_ext_param(self) -> dict[str, dict]:
+    def read_ext_param(self) -> dict[str, dict[str, Any]]:
         ext_param_dict = {}
         with open(self._filename, 'r', newline=None) as f:
             reader = DictReader(f, fieldnames=self._fieldnames, dialect=self._dialect)
@@ -751,16 +765,14 @@ class CsvReader(Reader):
 
 class OsfmReader(Reader):
     """
-    Class for reading camera interior and exterior parameters from an OpenSfM
-    'reconstruction.json' file.
+    Interior and exterior parameter reader for an OpenSfM 'reconstruction.json' file.
 
     :param filename:
         Path of the 'reconstruction.json' file.
     :param crs:
-        CRS of the world coordinate system.  If not specified, a UTM CRS will be
-        auto-determined.
+        CRS of the world coordinate system.  If not specified, a UTM CRS will be auto-determined.
     :param lla_crs:
-        CRS of geographic camera coordinates in the OpenSFM reconstruction file.
+        CRS of the 'reference_lla' value in the 'reconstruction.json' file.
     """
 
     # TODO: OSfM reconstruction is in a topocentric system, so the transfer of 3D cartesian
@@ -815,10 +827,10 @@ class OsfmReader(Reader):
         ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
         return utm_crs_from_latlon(*ref_lla[:2])
 
-    def read_int_param(self) -> dict[str, dict]:
+    def read_int_param(self) -> dict[str, dict[str, Any]]:
         return _read_osfm_int_param(self._json_dict['cameras'])
 
-    def read_ext_param(self) -> dict[str, dict]:
+    def read_ext_param(self) -> dict[str, dict[str, Any]]:
         # transform reference coordinates to the world CRS
         ref_lla = self._json_dict['reference_lla']
         ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
@@ -835,10 +847,12 @@ class OsfmReader(Reader):
         for filename, shot_dict in self._json_dict['shots'].items():
             # convert  reconstruction 'translation' and 'rotation' to oty exterior params,
             # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
-            R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0]
-            delta_xyz = -R.T.dot(shot_dict['translation'])
+            R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0].T
+            delta_xyz = -R.dot(shot_dict['translation'])
             xyz = tuple((ref_xyz + delta_xyz).tolist())
-            opk = _aa_to_opk(shot_dict['rotation'])
+            # rotate camera coords from OpenSfM / OpenCV to PATB convention
+            R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+            opk = _rotation_to_opk(R_)
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
             ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)
@@ -848,16 +862,14 @@ class OsfmReader(Reader):
 
 class ExifReader(Reader):
     """
-    Class for reading interior and exterior camera parameters from image files with EXIF / XMP
-    tags.
+    Interior and exterior parameter reader for image file(s) with EXIF / XMP tags.
 
     :param filenames:
-        Paths of the image files.
+        Path(s) of the image file(s).
     :param crs:
-        CRS of the world coordinate system.  If not specified, a UTM CRS will be
-        auto-determined.
+        CRS of the world coordinate system.  If not specified, a UTM CRS will be auto-determined.
     :param lla_crs:
-        CRS of geographic camera coordinates in the EXIF / XMP image file tags.
+        CRS of geographic camera coordinates in the EXIF / XMP tags.
     """
 
     def __init__(
@@ -887,6 +899,7 @@ class ExifReader(Reader):
 
     def _find_utm_crs(self) -> CRS:
         """Return a UTM CRS that covers the mean of the camera positions."""
+        # TODO: use weighted sum as in OpenSfM: https://github.com/mapillary/OpenSfM/blob/c6b5acef9376a75b87414d900c258ef876a6413a/opensfm/dataset.py#L985
         llas = []
         for e in self._exif_dict.values():
             if not e.lla:
@@ -898,41 +911,38 @@ class ExifReader(Reader):
         mean_latlon = np.array(llas)[:, :2].mean(axis=0)
         return utm_crs_from_latlon(*mean_latlon)
 
-    def read_int_param(self) -> dict[str, dict]:
+    def read_int_param(self) -> dict[str, dict[str, Any]]:
         int_param_dict = {}
         for filename, exif in self._exif_dict.items():
             int_param = _read_exif_int_param(exif)
             int_param_dict.update(**int_param)
         return int_param_dict
 
-    def read_ext_param(self) -> dict[str, dict]:
+    def read_ext_param(self) -> dict[str, dict[str, Any]]:
         ext_param_dict = {}
         for filename, exif in self._exif_dict.items():
-            ext_param_dict[filename] = _read_exif_ext_param(
-                exif, crs=self._crs, lla_crs=self._lla_crs
+            ext_param_dict.update(
+                **_read_exif_ext_param(exif, crs=self._crs, lla_crs=self._lla_crs)
             )
         return ext_param_dict
 
 
 class OtyReader(Reader):
     """
-    Class for reading exterior camera parameters from an orthority format geojson file.
+    Exterior parameter reader for an Orthority format geojson file.
 
     :param filename:
-        Paths of the geojson file.
+        Path of the geojson file.
     :param crs:
-        CRS of the world coordinate system.  By default this is read from the file.
-    :param lla_crs:
-        CRS of geographic camera coordinates (not used).
+        CRS of the world coordinate system.  By default, this is read from the file.
     """
 
     def __init__(
         self,
         filename: str | Path,
         crs: str | CRS = None,
-        lla_crs: str | CRS = _default_lla_crs,
     ) -> None:
-        Reader.__init__(self, crs=crs, lla_crs=lla_crs)
+        Reader.__init__(self, crs=crs)
         self._filename = Path(filename)
         if not self._filename.exists():
             raise FileNotFoundError(f"File not found: '{self._filename}'.")
@@ -971,7 +981,7 @@ class OtyReader(Reader):
 
         return crs, json_dict
 
-    def read_ext_param(self) -> dict[str, dict]:
+    def read_ext_param(self) -> dict[str, dict[str, Any]]:
         ext_param_dict = {}
         for feat_dict in self._json_dict['features']:
             prop_dict = feat_dict['properties']
@@ -981,78 +991,3 @@ class OtyReader(Reader):
             )
             ext_param_dict[filename] = ext_parm
         return ext_param_dict
-
-
-def write_int_param(
-    filename: str | Path, int_param_dict: dict[str, dict], overwrite: bool = False
-) -> None:
-    """
-    Write interior parameters to an orthority format yaml file.
-
-    :param filename:
-        Path of the yaml file to write.
-    :param int_param_dict:
-        Interior parameters to write.
-    :param overwrite:
-        Overwrite the yaml file if it exists.
-    """
-    filename = Path(filename)
-    if filename.exists():
-        if not overwrite:
-            raise FileExistsError(f"Interior parameter file exists: '{filename}'.")
-        filename.unlink()
-
-    # convert 'cam_type' key to 'type' & make the converted item the first in the dict
-    yaml_dict = {}
-    for cam_id, int_param in int_param_dict.items():
-        yaml_param = {}
-        if 'cam_type' in int_param:
-            yaml_param['type'] = int_param['cam_type'].value
-        yaml_param.update(**{k: v for k, v in int_param.items() if k != 'cam_type'})
-        yaml_dict[cam_id] = yaml_param
-
-    with open(filename, 'w') as f:
-        yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
-
-
-def write_ext_param(
-    filename: str | Path,
-    ext_param_dict: dict[str, dict],
-    crs: str | CRS,
-    overwrite: bool = False,
-) -> None:
-    """
-    Write exterior parameters to an orthority format geojson file.
-
-    :param filename:
-        Path of the geojson file to write.
-    :param ext_param_dict:
-        Exterior parameters to write.
-    :param crs:
-        CRS of the world coordinate system.
-    :param overwrite:
-        Overwrite the geojson file if it exists.
-    """
-    filename = Path(filename)
-    if filename.exists():
-        if not overwrite:
-            raise FileExistsError(f"Exterior parameter file exists: '{filename}'.")
-        filename.unlink()
-
-    feat_list = []
-    lla_crs = _default_lla_crs
-    crs = CRS.from_string(crs) if isinstance(crs, str) else crs
-    for src_file, ext_param in ext_param_dict.items():
-        xyz = ext_param['xyz']
-        lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
-        lla = [lla[0][0], lla[1][0], lla[2][0]]  # (lon, lat) order for geojson point
-        props_dict = dict(
-            filename=src_file, camera=ext_param['camera'], xyz=xyz, opk=ext_param['opk']
-        )
-        geom_dict = dict(type='Point', coordinates=list(lla))
-        feat_dict = dict(type='Feature', properties=props_dict, geometry=geom_dict)
-        feat_list.append(feat_dict)
-
-    json_dict = dict(type='FeatureCollection', world_crs=crs.to_string(), features=feat_list)
-    with open(filename, 'w') as f:
-        json.dump(json_dict, f, indent=4)
