@@ -78,7 +78,6 @@ class Camera:
         self._R, self._T = self._get_extrinsic(xyz, opk)
         self._undistort_maps = None
         self._K_undistort = self._K
-        self._alpha = alpha
 
     @staticmethod
     def _get_intrinsic(
@@ -162,7 +161,7 @@ class Camera:
     def undistort_maps(self) -> tuple[np.ndarray, np.ndarray] | None:
         """Undistort (x, y) maps for use in cv2.remap."""
         if self._undistort_maps is None:
-            self._undistort_maps = self._get_undistort_maps(self._alpha)
+            self._undistort_maps = self._get_undistort_maps()
         return self._undistort_maps
 
     def _check_init(self) -> None:
@@ -230,7 +229,7 @@ class Camera:
         K_undistort[:2, 2] = c
         return K_undistort
 
-    def _get_undistort_maps(self, alpha: float) -> tuple[np.ndarray, np.ndarray] | None:
+    def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray] | None:
         """Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted
         image.
         """
@@ -238,7 +237,7 @@ class Camera:
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
         """Transform from homogenous 3D camera to 2D pixel coordinates."""
-        ji = self._K_undistort.dot(xyz_)[:2, :]
+        ji = self._K_undistort.dot(xyz_)[:2]
         return ji
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
@@ -282,7 +281,7 @@ class Camera:
 
         # transform from world to camera coordinates & scale to origin
         xyz_ = self._R.T.dot(xyz - self._T)
-        xyz_ = xyz_ / xyz_[2, :]
+        xyz_ = xyz_ / xyz_[2]
         # transform from camera to pixel coordinates, including the distortion model if
         # distort==True
         ji = self._camera_to_pixel(xyz_) if distort else Camera._camera_to_pixel(self, xyz_)
@@ -454,7 +453,7 @@ class OpenCVCamera(Camera):
                 break
         self._K_undistort = self._get_undistort_intrinsic(alpha)
 
-    def _get_undistort_maps(self, alpha: float) -> tuple[np.ndarray, np.ndarray]:
+    def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
         # TODO: experiment with different map types and undistort speed
         undistort_maps = cv2.initUndistortRectifyMap(
@@ -548,19 +547,19 @@ class BrownCamera(OpenCVCamera):
         # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25.
         # Works out faster than the opencv equivalent in OpenCVCamera._camera_to_pixel().
         k1, k2, p1, p2, k3 = self._dist_param
-        x2, y2 = np.square(xyz_[:2, :])
-        xy = xyz_[0, :] * xyz_[1, :]
+        x2, y2 = np.square(xyz_[:2])
+        xy = xyz_[0] * xyz_[1]
         r2 = x2 + y2
 
         radial_dist = 1.0 + r2 * (k1 + r2 * (k2 + r2 * k3))
         x_tangential_dist = 2.0 * p1 * xy + p2 * (r2 + 2.0 * x2)
         y_tangential_dist = p1 * (r2 + 2.0 * y2) + 2.0 * p2 * xy
 
-        xyz_[0, :] = xyz_[0, :] * radial_dist + x_tangential_dist
-        xyz_[1, :] = xyz_[1, :] * radial_dist + y_tangential_dist
+        xyz_[0] = xyz_[0] * radial_dist + x_tangential_dist
+        xyz_[1] = xyz_[1] * radial_dist + y_tangential_dist
 
         # transform from distorted camera to pixel coordinates
-        ji = self._K.dot(xyz_)[:2, :]
+        ji = self._K.dot(xyz_)[:2]
         return ji
 
 
@@ -628,7 +627,7 @@ class FisheyeCamera(Camera):
         self._dist_param = np.array([k1, k2, k3, k4])
         self._K_undistort = self._get_undistort_intrinsic(alpha)
 
-    def _get_undistort_maps(self, alpha: float) -> tuple[np.ndarray, np.ndarray]:
+    def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires
         # default R & P (new camera matrix) params to be specified
@@ -650,7 +649,7 @@ class FisheyeCamera(Camera):
         #   ji = np.squeeze(ji).T
 
         k1, k2, k3, k4 = self._dist_param
-        r = np.sqrt(np.square(xyz_[:2, :]).sum(axis=0))
+        r = np.sqrt(np.square(xyz_[:2]).sum(axis=0))
         theta = np.arctan(r)
         theta2 = theta * theta
         if k3 == k4 == 0.0:
@@ -659,10 +658,10 @@ class FisheyeCamera(Camera):
         else:
             # opencv 4 parameter version
             theta_d = theta * (1.0 + theta2 * (k1 + theta2 * (k2 + theta2 * (k3 + theta2 * k4))))
-        xyz_[:2, :] *= theta_d / r
+        xyz_[:2] *= theta_d / r
 
         # transform from distorted camera to pixel coordinates
-        ji = self._K.dot(xyz_)[:2, :]
+        ji = self._K.dot(xyz_)[:2]
         return ji
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
