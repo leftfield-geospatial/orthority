@@ -679,7 +679,7 @@ def test_process_auto_resolution(
 
     # find the auto res and masked dem
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
-    resolution = ortho._get_auto_res()
+    resolution = (ortho._get_gsd(),) * 2
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
         dem_array, dem_transform, dem_interp, full_remap=True, crop=True, mask=True

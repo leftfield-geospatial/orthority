@@ -224,10 +224,9 @@ class Ortho:
 
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
-    def _get_auto_res(self) -> tuple[float, float]:
+    def _get_gsd(self) -> float:
         """
-        Return an ortho resolution that gives approx as many valid ortho pixels as valid source
-        pixels.
+        Return a GSD estimate that gives approx as many valid ortho pixels as valid source pixels.
         """
 
         def area_poly(coords: np.ndarray) -> float:
@@ -244,13 +243,12 @@ class Ortho:
         src_ji = np.array(
             [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
         ).T
-        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmedian(self._dem_array))[:2].T
+        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmean(self._dem_array))[:2].T
 
         # return the average pixel resolution inside the world CRS boundary
         pixel_area = np.array(self._camera._im_size).prod()
         world_area = area_poly(world_xy)
-        res = np.sqrt(world_area / pixel_area)
-        return (res,) * 2
+        return np.sqrt(world_area / pixel_area)
 
     def _reproject_dem(
         self, dem_interp: Interp, resolution: tuple[float, float]
@@ -366,7 +364,7 @@ class Ortho:
 
             # find the dem z values corresponding to the ray (dem_z will be nan outside the dem
             # bounds and for already masked / nan dem pixels)
-            dem_ji = inv_transform(dem_transform, ray_xyz[:2, :]).astype('float32', copy=False)
+            dem_ji = inv_transform(dem_transform, ray_xyz[:2]).astype('float32', copy=False)
             dem_z = np.full((dem_ji.shape[1],), dtype=dem_array.dtype, fill_value=float('nan'))
             # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
             cv2.remap(
@@ -490,6 +488,7 @@ class Ortho:
         interp: Interp,
         full_remap: bool,
         write_mask: bool,
+        gsd: float,
     ) -> None:
         """Thread safe method to map the source image to an ortho tile, given an open ortho dataset,
         source image array, DEM array in the world CRS and grid, tile window into the ortho dataset,
@@ -527,8 +526,8 @@ class Ortho:
         # on some packages/platforms see
         # https://answers.opencv.org/question/1057/behavior-of-not-a-number-nan-values-in-remap/)
         tile_ji[np.isnan(tile_ji)] = -1
-        tile_jgrid = tile_ji[0, :].reshape(tile_win.height, tile_win.width).astype('float32')
-        tile_igrid = tile_ji[1, :].reshape(tile_win.height, tile_win.width).astype('float32')
+        tile_jgrid = tile_ji[0].reshape(tile_win.height, tile_win.width).astype('float32')
+        tile_igrid = tile_ji[1].reshape(tile_win.height, tile_win.width).astype('float32')
         # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
@@ -540,13 +539,14 @@ class Ortho:
 
         # remap source image to ortho tile, looping over band(s) (cv2.remap execution time
         # depends on array ordering)
+        # TODO: test speed if src and tile are in cv ordering and this done all bands at once
         for oi in range(0, src_array.shape[0]):
             cv2.remap(
-                src_array[oi, :, :],
+                src_array[oi],
                 tile_jgrid,
                 tile_igrid,
                 interp.to_cv(),
-                dst=tile_array[oi, :, :],
+                dst=tile_array[oi],
                 borderMode=cv2.BORDER_TRANSPARENT,
             )
 
@@ -560,7 +560,7 @@ class Ortho:
             and not np.isnan(dtype_nodata)
             and self._camera.undistort_maps is not None
         ):
-            src_res = np.array(self._get_auto_res())
+            src_res = np.array((gsd, gsd))
             ortho_res = np.abs((tile_transform.a, tile_transform.e))
             kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
             kernel = np.ones(kernel_size[::-1], np.uint8)
@@ -615,6 +615,7 @@ class Ortho:
         per_band: bool,
         full_remap: bool,
         write_mask: bool,
+        gsd: float,
     ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
@@ -676,6 +677,7 @@ class Ortho:
                             interp,
                             full_remap,
                             write_mask,
+                            gsd,
                         )
                         for ortho_win in ortho_wins
                     ]
@@ -750,9 +752,10 @@ class Ortho:
                     missing_ok=True
                 )
 
-            # get an auto resolution if resolution not provided
+            # get the GSD and use for auto resolution if resolution not provided
+            gsd = self._get_gsd()
             if not resolution:
-                resolution = self._get_auto_res()
+                resolution = (gsd, gsd)
                 logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
             env = rio.Env(
@@ -788,6 +791,7 @@ class Ortho:
                         per_band=per_band,
                         full_remap=full_remap,
                         write_mask=write_mask,
+                        gsd=gsd,
                     )
 
             if build_ovw:
