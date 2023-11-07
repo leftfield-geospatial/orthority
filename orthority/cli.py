@@ -401,9 +401,8 @@ compress_option = click.option(
     '--compress',
     type=click.Choice(Compress, case_sensitive=False),
     default=Ortho._default_config['compress'],
-    show_default=True,
-    help=f'Ortho image compression. `auto` uses `jpeg` compression for `uint8` :option:`--dtype`, '
-    f'and `deflate` otherwise.',
+    show_default="jpeg for 'uint8' :option:`--dtype`, deflate otherwise",
+    help=f'Ortho image compression.',
 )
 build_ovw_option = click.option(
     '-bo/-nbo',

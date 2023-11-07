@@ -939,7 +939,7 @@ def test_process_write_mask_per_band(
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
 
 
-@pytest.mark.parametrize('compress', [*Compress])
+@pytest.mark.parametrize('compress', [None, *Compress])
 def test_process_write_mask_compress(
     rgb_pinhole_utm34n_ortho: Ortho, compress: Compress, tmp_path: Path
 ):
@@ -1022,10 +1022,10 @@ def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: P
 @pytest.mark.parametrize(
     'src_file, compress',
     [
-        ('rgb_byte_src_file', Compress.auto),
+        ('rgb_byte_src_file', None),
         ('rgb_byte_src_file', Compress.jpeg),
         ('rgb_byte_src_file', Compress.deflate),
-        ('float_src_file', Compress.auto),
+        ('float_src_file', None),
         ('float_src_file', Compress.deflate),
     ],
 )
@@ -1046,8 +1046,8 @@ def test_process_compress(
 
     assert ortho_file.exists()
     with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
-        if compress == Compress.auto:
-            compress = Compress.jpeg if src_im.dtypes[0] == 'uint8' else compress.deflate
+        if compress is None:
+            compress = Compress.jpeg if src_im.dtypes[0] == 'uint8' else Compress.deflate
         interleave, photometric = (
             ('pixel', 'ycbcr')
             if compress == Compress.jpeg and src_im.count == 3

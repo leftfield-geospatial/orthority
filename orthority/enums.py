@@ -108,8 +108,6 @@ class Compress(str, Enum):
     """Jpeg (lossy) compression."""
     deflate = 'deflate'
     """Deflate (lossless) compression."""
-    auto = 'auto'
-    """Use jpeg compression if possible, deflate otherwise."""
 
     def __repr__(self):
         return self._name_

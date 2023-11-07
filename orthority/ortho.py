@@ -71,7 +71,7 @@ class Ortho:
         full_remap=True,
         write_mask=None,
         dtype=None,
-        compress=Compress.auto,
+        compress=None,
         build_ovw=True,
         overwrite=False,
     )
@@ -424,7 +424,7 @@ class Ortho:
         shape: tuple[int, ...],
         transform: rio.Affine,
         dtype: str,
-        compress: Compress,
+        compress: str | Compress | None,
         write_mask: bool | None,
     ) -> tuple[dict, bool]:
         """Return a rasterio profile for the ortho image."""
@@ -436,12 +436,12 @@ class Ortho:
             raise ValueError(f"Data type '{dtype}' is not supported.")
 
         # setup compression, data interleaving and photometric interpretation
-        if compress == Compress.jpeg and dtype != 'uint8':
-            raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
-
-        if compress == Compress.auto:
-            # TODO: remove auto option and use None similar to write_mask
+        if compress is None:
             compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+        else:
+            compress = Compress(compress)
+            if compress == Compress.jpeg and dtype != 'uint8':
+                raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.jpeg:
             interleave, photometric = (
@@ -693,7 +693,7 @@ class Ortho:
         full_remap: bool = _default_config['full_remap'],
         write_mask: bool | None = _default_config['write_mask'],
         dtype: str = _default_config['dtype'],
-        compress: str | Compress = _default_config['compress'],
+        compress: str | Compress | None = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],
         overwrite: bool = _default_config['overwrite'],
     ) -> None:
@@ -733,8 +733,8 @@ class Ortho:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (
             the default), the source image dtype is used.
         :param compress:
-            Ortho image compression type ('deflate', 'jpeg' or 'auto').  See
-            :class:`~orthority.enums.Compress` for option details.
+            Ortho image compression type.  If set to None (the default), jpeg compression is used
+            for the uint8 ``dtype``, and deflate compression otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param overwrite:
@@ -774,7 +774,7 @@ class Ortho:
                     dem_array.shape,
                     dem_transform,
                     dtype=dtype,
-                    compress=Compress(compress),
+                    compress=compress,
                     write_mask=write_mask,
                 )
 
