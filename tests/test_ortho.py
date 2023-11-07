@@ -405,6 +405,7 @@ def test_mask_dem(
     # create an ortho image without DEM masking
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=1)
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    gsd = ortho._get_gsd()
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     with rio.open(rgb_byte_src_file, 'r') as src_im:
         ortho_profile, _ = ortho._create_ortho_profile(
@@ -424,6 +425,7 @@ def test_mask_dem(
                 per_band=False,
                 full_remap=True,
                 write_mask=False,
+                gsd=gsd,
             )
 
     # create the dem mask
