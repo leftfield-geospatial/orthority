@@ -23,7 +23,7 @@ class ParamFileError(OrthorityError):
 
 
 class CrsError(OrthorityError):
-    """Raised when CRS could not be interpreted."""
+    """Raised when a CRS could not be interpreted."""
 
 
 class CrsMissingError(OrthorityError):
@@ -35,4 +35,4 @@ class DemBandError(OrthorityError):
 
 
 class CameraInitError(OrthorityError):
-    """Raised when a camera has no exterior parameters."""
+    """Raised when a camera's exterior parameters have not been initialised."""

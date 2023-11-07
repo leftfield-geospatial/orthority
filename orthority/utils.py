@@ -13,8 +13,8 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
-# TODO: rename this module _utils
-# TODO: use from __future__ import annotations for std type type hints
+"""Utility functions for internal use."""
+# TODO: rename this module _utils, likewise version -> _version
 # TODO: add module docstrings
 from __future__ import annotations
 import cProfile

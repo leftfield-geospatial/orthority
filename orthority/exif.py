@@ -13,7 +13,9 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
+"""EXIF / XMP image tag decoding and reading."""
 from __future__ import annotations
+
 import logging
 from pathlib import Path
 from xml.etree import cElementTree as ET
@@ -75,11 +77,11 @@ which can have different prefixes referring to the same namepace.
 
 
 def _xml_to_flat_dict(xmp_str: str) -> dict[str, str]:
-    """Convert the given XML string to a flat dictionary."""
+    """Return a flat dictionary for the given XML string."""
     etree = ET.fromstring(xmp_str)
     flat_dict = {}
 
-    def traverse_etree(etree):
+    def traverse_etree(etree: ET) -> None:
         """Traverse the given XML tree, populating flat_dict with xml element (tag, text) and
         attribute (name, value) pairs.
         """
@@ -94,14 +96,14 @@ def _xml_to_flat_dict(xmp_str: str) -> dict[str, str]:
 
 
 class Exif:
+    # Adapted from https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
     """
-    Class to extract camera model relevant EXIF and XMP values from an image.
+    EXIF / XMP image tag extractor for camera model related values.
 
     :param filename:
         Path to the image file.
     """
 
-    # Adapted from https://github.com/mapillary/OpenSfM/blob/main/opensfm/exif.py
     def __init__(self, filename: str | Path):
         filename = Path(filename)
 
@@ -135,7 +137,8 @@ class Exif:
         return (
             f'Image: {self._filename}'
             f'\nCamera: {self._make} {self._model}'
-            f'\nImage size: {self.im_size}'
+            f'\nActual image size: {self.im_size}'
+            f'\nTagged image size: {self._tag_im_size}'
             f'\nFocal length: {self._focal_len}'
             f'\nFocal length (35mm): {self._focal_len_35}'
             f'\nSensor size: {self._sensor_size}'
@@ -147,7 +150,7 @@ class Exif:
 
     @property
     def filename(self) -> Path:
-        """Path to source file."""
+        """Path to the image file."""
         return self._filename
 
     @property
@@ -197,14 +200,14 @@ class Exif:
 
     @property
     def lla(self) -> tuple[float, float, float] | None:
-        """(Latitude, longitude, altitude) coordinates with latitude and longitude in decimal
+        """(latitude, longitude, altitude) coordinates with latitude and longitude in decimal
         degrees, and altitude in meters.
         """
         return self._lla
 
     @property
     def rpy(self) -> tuple[float, float, float] | None:
-        """(Roll, pitch, yaw) camera/gimbal angles in degrees."""
+        """(roll, pitch, yaw) camera/gimbal angles in degrees."""
         return self._rpy
 
     @property
@@ -325,7 +328,7 @@ class Exif:
         for schema_name, xmp_schema in _xmp_schemas.items():
             if sum([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]) == 3:
                 lla = [float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']]
-                return tuple(lla)
+                return lla[0], lla[1], lla[2]
         return None
 
     @staticmethod
@@ -348,6 +351,6 @@ class Exif:
                 return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
         return None
 
-    def to_dict(self) -> dict:
-        """Convert to a dictionary of properties."""
+    def to_dict(self) -> dict[str, object]:
+        """Convert to a property dictionary."""
         return {k: getattr(self, k) for k, v in vars(type(self)).items() if isinstance(v, property)}

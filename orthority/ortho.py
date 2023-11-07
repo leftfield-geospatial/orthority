@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
+"""Orthrectification using DEM and camera model input."""
 from __future__ import annotations
 import logging
 import multiprocessing
@@ -39,18 +40,23 @@ logger = logging.getLogger(__name__)
 
 class Ortho:
     """
-    Class for orthorectifying an image with a specified DEM and camera model.
+    Orthorectifier.
+
+    Uses a supplied DEM and camera model to correct a source image for sensor and terrain
+    distortion.  The camera model, and a portion of the DEM corresponding to the ortho bounds
+    are stored internally.
 
     :param src_filename:
         Path/URL to a source image to be orthorectified.
     :param dem_filename:
         Path/URL to a DEM image covering the source image.
     :param camera:
-        Source image camera model (see :meth:`~orthority.camera.create_camera`).
+        Source image camera model (can be created with :meth:`~orthority.camera.create_camera`).
     :param crs:
-        CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT
-        string.  It should be a projected, not geographic CRS.  Can be omitted if the source
-        image is projected in the world / ortho CRS.
+        CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string,
+        or :class:`~rasterio.crs.CRS` object.  Should not be a geographic CRS.  If set to None
+        (the default), the CRS will be read from the source image if possible. If the source image
+        is not projected in the world / ortho CRS, ``crs`` should be supplied.
     :param dem_band:
         Index of the DEM band to use (1-based).
     """
@@ -137,7 +143,7 @@ class Ortho:
                         f"No source image projection found, 'crs' should be specified."
                     )
         if crs.is_geographic:
-            raise CrsError(f"'crs' should be a projected, not geographic system.")
+            raise CrsError(f"'crs' should not be a geographic system.")
         return crs
 
     def _get_init_dem(
@@ -419,7 +425,7 @@ class Ortho:
         transform: rio.Affine,
         dtype: str,
         compress: Compress,
-        write_mask: bool,
+        write_mask: bool | None,
     ) -> tuple[dict, bool]:
         """Return a rasterio profile for the ortho image."""
         # Determine dtype, check dtype support
@@ -434,6 +440,7 @@ class Ortho:
             raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.auto:
+            # TODO: remove auto option and use None similar to write_mask
             compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
         if compress == Compress.jpeg:
@@ -652,6 +659,8 @@ class Ortho:
                     dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
                     src_array = self._undistort(src_array, nodata=dtype_nodata, interp=interp)
 
+                # TODO: write tiles sequentially, outside the thread - I expect this to be faster
+                #  for magnetic disks
                 # map ortho tiles concurrently
                 with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
                     futures = [
@@ -689,42 +698,47 @@ class Ortho:
         overwrite: bool = _default_config['overwrite'],
     ) -> None:
         """
-        Orthorectify the source image based on the camera model and DEM.
+        Orthorectify the source image.
+
+        The source image is read and processed band-by-band, or all bands at once, depending on
+        the value of ``per_band``.  If necessary, the portion of the DEM stored internally is
+        reprojected to the ortho CRS and resolution.  If ``full_remap`` is False, the camera
+        model is used to undistort the source image.  Using the camera model and DEM, the ortho
+        image is remapped from the source or undistorted source image tile-by-tile.  Up to N
+        ortho tiles are processed concurrently, where N is the number of CPUs.
 
         :param ortho_filename:
             Path of the ortho image file to create.
         :param resolution:
-            Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).
+            Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).  If
+            set to None (the default), an approximate ground sampling distance is used as the
+            resolution.
         :param interp:
-            Interpolation method to use for remapping the source to ortho image.  See
-            :class:`~orthority.enums.Interp` for options.
-            :attr:`~orthority.enums.Interp.nearest` is recommended when the ortho and source
-            image resolutions are similar.
+            Interpolation method to use for remapping the source to ortho image.
         :param dem_interp:
-            Interpolation method for reprojecting the DEM.  See
-            :class:`~orthority.enums.Interp` for options.
-            :attr:`~orthority.enums.Interp.cubic` is recommended when the DEM has a coarser
-            resolution than the ortho.
+            Interpolation method for reprojecting the DEM.
         :param per_band:
-            Remap the source to the ortho image band-by-band (True), or all bands at once (False).
+            Remap the source to ortho image all bands at once (False), or band-by-band (True).
             False is faster but requires more memory.
         :param full_remap:
             Orthorectify the source image with the full camera model (True), or the undistorted
-            source image with a pinhole camera model (False).  False is faster but can reduce the
-            extents and quality of the ortho image.
+            source image with a pinhole camera model (False).  True remaps the source
+            image once.  False is faster but remaps the source image twice, so can reduce ortho
+            image quality.
         :param write_mask:
             Write an internal mask for the ortho image. This helps remove nodata noise caused by
-            lossy compression. If None, the mask will be written when jpeg compression is used.
+            lossy compression. If set to None (the default), the mask will be written when jpeg
+            compression is used.
         :param dtype:
-            Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None, the
-            source image dtype is used.
+            Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (
+            the default), the source image dtype is used.
         :param compress:
             Ortho image compression type ('deflate', 'jpeg' or 'auto').  See
             :class:`~orthority.enums.Compress` for option details.
         :param build_ovw:
-            Build overviews for the ortho image.
+            Whether to build overviews for the ortho image.
         :param overwrite:
-            Overwrite the ortho image if it exists.
+            Whether to overwrite the ortho image if it exists.
         """
         with profiler():  # run profiler in DEBUG log level
             ortho_filename = Path(ortho_filename)

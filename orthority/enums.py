@@ -68,6 +68,8 @@ class CameraType(str, Enum):
 class Interp(str, Enum):
     """Interpolation types."""
 
+    nearest = 'nearest'
+    """Nearest neighbor interpolation."""
     average = 'average'
     """Average input pixels over the corresponding output pixel area (suited to downsampling)."""
     bilinear = 'bilinear'
@@ -76,8 +78,6 @@ class Interp(str, Enum):
     """Bicubic interpolation."""
     lanczos = 'lanczos'
     """Lanczos windowed sinc interpolation."""
-    nearest = 'nearest'
-    """Nearest neighbor interpolation."""
 
     def __repr__(self):
         return self._name_
@@ -119,23 +119,23 @@ class Compress(str, Enum):
 
 
 class CsvFormat(Enum):
-    """CSV exterior parameter file formats."""
+    """Type of the position and orientation values in a CSV exterior parameter file."""
 
     xyz_opk = 1
     """Projected (x, y, z) position and (omega, phi, kappa) orientation."""
-    lla_opk = 2
-    """Geographic (latitude, longitude, altitude) position and (omega, phi, kappa) orientation."""
-    xyz_rpy = 3
+    xyz_rpy = 2
     """Projected (x, y, z) position and (roll, pitch, yaw) orientation."""
+    lla_opk = 3
+    """Geographic (latitude, longitude, altitude) position and (omega, phi, kappa) orientation."""
     lla_rpy = 4
     """Geographic (latitude, longitude, altitude) position and (roll, pitch, yaw) orientation."""
 
     @property
-    def is_opk(self) -> bool:
-        """True if format has an (omega, phi, kappa) orientation, False otherwise."""
-        return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
+    def is_xyz(self) -> bool:
+        """Whether the format has (x, y, z) position."""
+        return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy
 
     @property
-    def is_xyz(self) -> bool:
-        """True if format has an (x, y, z) position, False otherwise."""
-        return self is CsvFormat.xyz_opk or self is CsvFormat.xyz_rpy
+    def is_opk(self) -> bool:
+        """Whether the format has (omega, phi, kappa) orientation."""
+        return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
