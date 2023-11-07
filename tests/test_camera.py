@@ -98,8 +98,6 @@ def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, se
         camera.world_to_pixel(None)
     with pytest.raises(CameraInitError):
         camera.pixel_to_world_z(None, None)
-    with pytest.raises(CameraInitError):
-        camera.undistort(None)
 
 
 @pytest.mark.parametrize(
@@ -457,3 +455,15 @@ def test_undistort_alpha(
         assert np.all(undistort_ji.min(axis=1) <= ji.min(axis=1))
         assert np.all(undistort_ji.max(axis=1) >= ji.max(axis=1))
         inside_outside(ji, undistort_ji, inside=False)
+
+
+@pytest.mark.parametrize('cam_type', [*CameraType])
+def test_undistort_no_ext_init(
+    cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
+):
+    """Test undistorting without exterior initialisation."""
+    camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
+
+    ji = (np.array([im_size]).T - 1) / 2
+    ji_ = camera.undistort(ji)
+    assert ji_ == pytest.approx(ji, 1e-3)
