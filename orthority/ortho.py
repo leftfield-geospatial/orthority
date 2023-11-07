@@ -558,7 +558,7 @@ class Ortho:
             not full_remap
             and interp != Interp.nearest
             and not np.isnan(dtype_nodata)
-            and self._camera._undistort_maps is not None
+            and self._camera.undistort_maps is not None
         ):
             src_res = np.array(self._get_auto_res())
             ortho_res = np.abs((tile_transform.a, tile_transform.e))
@@ -581,7 +581,7 @@ class Ortho:
         """Undistort an image using ``interp`` interpolation and setting invalid pixels to
         ``nodata``.
         """
-        if self._camera._undistort_maps is None:
+        if self._camera.undistort_maps is None:
             return image
 
         def undistort_band(src_array: np.ndarray, dst_array: np.ndarray):
@@ -590,7 +590,7 @@ class Ortho:
             # return cv2.undistort(band_array, self._K, self._dist_param)
             cv2.remap(
                 src_array,
-                *self._camera._undistort_maps,
+                *self._camera.undistort_maps,
                 Interp[interp].to_cv(),
                 dst=dst_array,
                 borderMode=cv2.BORDER_TRANSPARENT,
