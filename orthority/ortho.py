@@ -115,6 +115,7 @@ class Ortho:
         self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
             Path(dem_filename), dem_band
         )
+        self._gsd = self._get_gsd()
 
     @staticmethod
     def _build_overviews(
@@ -243,7 +244,7 @@ class Ortho:
         src_ji = np.array(
             [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
         ).T
-        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmean(self._dem_array))[:2].T
+        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmedian(self._dem_array))[:2].T
 
         # return the average pixel resolution inside the world CRS boundary
         pixel_area = np.array(self._camera._im_size).prod()
@@ -488,7 +489,6 @@ class Ortho:
         interp: Interp,
         full_remap: bool,
         write_mask: bool,
-        gsd: float,
     ) -> None:
         """Thread safe method to map the source image to an ortho tile, given an open ortho dataset,
         source image array, DEM array in the world CRS and grid, tile window into the ortho dataset,
@@ -560,7 +560,7 @@ class Ortho:
             and not np.isnan(dtype_nodata)
             and self._camera.undistort_maps is not None
         ):
-            src_res = np.array((gsd, gsd))
+            src_res = np.array((self._gsd, self._gsd))
             ortho_res = np.abs((tile_transform.a, tile_transform.e))
             kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
             kernel = np.ones(kernel_size[::-1], np.uint8)
@@ -615,7 +615,6 @@ class Ortho:
         per_band: bool,
         full_remap: bool,
         write_mask: bool,
-        gsd: float,
     ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
@@ -677,7 +676,6 @@ class Ortho:
                             interp,
                             full_remap,
                             write_mask,
-                            gsd,
                         )
                         for ortho_win in ortho_wins
                     ]
@@ -752,10 +750,9 @@ class Ortho:
                     missing_ok=True
                 )
 
-            # get the GSD and use for auto resolution if resolution not provided
-            gsd = self._get_gsd()
+            # use the GSD for auto resolution if resolution not provided
             if not resolution:
-                resolution = (gsd, gsd)
+                resolution = (self._gsd, self._gsd)
                 logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
             env = rio.Env(
@@ -791,7 +788,6 @@ class Ortho:
                         per_band=per_band,
                         full_remap=full_remap,
                         write_mask=write_mask,
-                        gsd=gsd,
                     )
 
             if build_ovw:
