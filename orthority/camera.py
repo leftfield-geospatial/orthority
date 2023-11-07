@@ -12,6 +12,8 @@
 #
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
+
+"""Camera models for projecting between 3D world and 2D pixel coordinates."""
 from __future__ import annotations
 
 import logging
@@ -27,33 +29,34 @@ logger = logging.getLogger(__name__)
 
 
 class Camera:
+    # TODO: make principal point offsets a x,y tuple
     """
-    Pinhole camera class, without any distortion model, for transforming between 3D world and 2D
-    pixel coordinates.
+    Pinhole camera with no distortion.
+
+    The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
+    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
         Image (width, height) in pixels.
     :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value
-        or (x, y) tuple/ndarray pair.
+        or (x, y) tuple.
     :param sensor_size:
-         Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
-         specified, pixels are assumed square, and ``focal_len`` should be a normalised &
-         unitless value: ``focal_len`` = (focal length) / (sensor width).
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
+         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
-        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+        Principal point offsets in `normalised image coordinates
+        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`__.
     :param cy:
     :param xyz:
-        Camera position (x=easting, y=northing, z=altitude) in world coordinates.
+        Camera (x, y, z) position in world coordinates.
     :param opk:
-        Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
+        Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
     :param alpha:
-        Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
-        pixels.  1 results in an undistorted image that keeps all source pixels.  Not used for
-        the pinhole camera model.
-
-    .. _ncoords: https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates
+        Not used for the pinhole camera model.
     """
 
     _default_alpha: float = 1.0
@@ -84,10 +87,9 @@ class Camera:
         cx: float,
         cy: float,
     ) -> np.ndarray:
-        """Return the camera intrinsic matrix for the given interior parameters."""
-        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal
-        # -and-External-Camera-Parameters-defined and
-        # https://en.wikipedia.org/wiki/Camera_resectioning
+        """Return the intrinsic matrix for the given interior parameters."""
+        # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
+        # and https://en.wikipedia.org/wiki/Camera_resectioning
         # TODO: incorporate orientation from exif
 
         if len(im_size) != 2:
@@ -110,7 +112,7 @@ class Camera:
             sensor_size = np.array(sensor_size)
             sigma_xy = focal_len * im_size / sensor_size
 
-        # principal point
+        # find principal point in pixels
         c_xy = (im_size - 1) / 2
         c_xy += im_size.max() * np.array((cx, cy))
 
@@ -131,8 +133,7 @@ class Camera:
         elif len(xyz) != 3 or len(opk) != 3:
             raise ValueError("'xyz' and 'opk' should contain 3 values.")
 
-        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and
-        # -External-Camera-Parameters-defined
+        # See https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         T = np.array(xyz).reshape(-1, 1)
         R = _opk_to_rotation(opk)
 
@@ -162,10 +163,8 @@ class Camera:
             raise CameraInitError(f'Exterior parameters not initialised.')
 
     def _horizon_fov(self) -> bool:
-        """Return True if this camera's field of view includes, or is above, the horizon; otherwise
-        False.
-        """
-        # TODO: this can be called from Ortho without the camera having been initialised
+        """Whether this camera's field of view includes, or is above, the horizon."""
+        self._check_init()
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
         src_ji = np.array(
@@ -182,10 +181,9 @@ class Camera:
         Return a new camera intrinsic matrix for an undistorted image that is the same size as the
         source image.
 
-        ``alpha`` (0-1) controls the portion of the source included in the distorted image. For
-        ``alpha=1``, the undistorted image includes all source pixels and some invalid (nodata)
-        areas. For ``alpha=0``, the undistorted image includes the largest portion of the source
-        image that allows all undistorted pixels to be valid.
+        ``alpha`` (0-1) controls the portion of the source included in the distorted image. 0
+        includes the largest portion of the source image that allows all undistorted pixels to be
+        valid.  1 includes all source pixels in the undistorted image.
         """
         # Adapted from and equivalent to cv2.getOptimalNewCameraMatrix(
         # newImageSize=self._im_size, centerPrincipalPoint=False). See
@@ -236,7 +234,7 @@ class Camera:
         return ji
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        """Transform 2D pixel to 3D camera coordinates."""
+        """Transform 2D pixel to homogenous 3D camera coordinates."""
         ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
         xyz_ = np.linalg.inv(self._K_undistort).dot(ji_)
         return xyz_
@@ -249,8 +247,8 @@ class Camera:
         """
         Update exterior parameters.
 
-        :param xyz: tuple of floats or ndarray
-            Camera position (x=easting, y=northing, z=altitude) in world coordinates.
+        :param xyz:
+            Camera (x, y, z) position in world coordinates.
         :param opk:
             Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
             world coordinates.
@@ -262,13 +260,13 @@ class Camera:
         Transform from 3D world to 2D pixel coordinates.
 
         :param xyz:
-            3D world (x=easting, y=northing, z=altitude) coordinates to transform, as a 3-by-N
-            array with (x, y, z) along the first dimension.
+            3D world (x, y, z) coordinates to transform, as a 3-by-N array, with (x, y, z) along
+            the first dimension.
         :param distort:
             Whether to include the distortion model.
 
         :return:
-            Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
             dimension.
         """
         self._check_init()
@@ -286,20 +284,22 @@ class Camera:
         self, ji: np.ndarray, z: float | np.ndarray, distort: bool = True
     ) -> np.ndarray:
         """
-        Transform from 2D pixel to 3D world coordinates at a specified z (altitude).
+        Transform from 2D pixel to 3D world coordinates at a specified z.
+
+        Allows broadcasting of the pixel coordinate(s) and z value(s) i.e. can transform multiple
+        pixel coordinates to a single z value, or a single pixel coordinate to multiple z values.
 
         :param ji:
-            Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
             dimension.
         :param z:
-            Z altitude(s) to project to, as a single value, or 1-by-N array where ``ji`` is 2-by-N
-            or 2-by-1.
+            Z values(s) to project to as a 1-by-N array.
         :param distort:
             Whether to include the distortion model.
 
         :return:
-            3D world (x=easting, y=northing, z=altitude) coordinates, as a 3-by-N array with
-            (x, y, z) along the first dimension.
+            3D world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the first
+            dimension.
         """
         self._check_init()
         self._check_pixel_coordinates(ji)
@@ -324,16 +324,15 @@ class Camera:
         Undistort pixel coordinates.
 
         :param ji:
-            Pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along the first
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
             dimension.
         :param clip:
             Whether to clip the undistorted coordinates to the image dimensions.
 
         :return:
-            Undistorted pixel (j=column, i=row) coordinates, as a 2-by-N array with (j, i) along
+            Undistorted pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along
             the first dimension.
         """
-        self._check_init()
         self._check_pixel_coordinates(ji)
 
         xyz_ = self._pixel_to_camera(ji)
@@ -345,36 +344,37 @@ class Camera:
 
 
 class PinholeCamera(Camera):
-    pass
+    __doc__ = Camera.__doc__
 
 
 class OpenCVCamera(Camera):
     """
-    Camera class with OpenCV distortion model, for transforming between 3D world and 2D pixel
-    coordinates, and undistorting images.
+    OpenCV camera model.
 
     This is a wrapper around the `OpenCV general model
-    <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_ that includes radial,
-    tangential & thin prism distortion components.  Partial or special cases of the model can
-    be computed by omitting some or all of the distortion coefficients; e.g. if no distortion
-    coefficients are specified, this model corresponds to :class:`PinholeCamera`, or if the
-    first 5 distortion coefficients are specified, this model corresponds to
-    :class:`BrownCamera` with (cx, cy) = (0, 0).
+    <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.  Partial or special cases can be
+    specified by omitting some or all of the distortion coefficients.
+
+    The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
+    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
         Image (width, height) in pixels.
     :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
-        (x, y) tuple/ndarray pair.
+        (x, y) tuple.
     :param sensor_size:
-        Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
-        specified, pixels are assumed square, and ``focal_len`` should be a normalised &
-        unitless value: ``focal_len`` = (focal length) / (sensor width).
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
+         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
-        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+        Principal point offsets in `normalised image coordinates
+        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`__.
     :param cy:
     :param k1:
-        Distortion coefficients.
+        Distortion coefficients - see the `OpenCV docs
+        <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
     :param k2:
     :param k3:
     :param p1:
@@ -389,13 +389,15 @@ class OpenCVCamera(Camera):
     :param tx:
     :param ty:
     :param xyz:
-        Camera position (x=easting, y=northing, z=altitude) in world coordinates.
+        Camera (x, y, z) position in world coordinates.
     :param opk:
-        Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
+        Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
     :param alpha:
-        Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
-        pixels.  1 results in an undistorted image that keeps all source pixels.
+        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
+        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
+        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
+        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
     """
 
     def __init__(
@@ -440,8 +442,8 @@ class OpenCVCamera(Camera):
         self, alpha: float
     ) -> tuple[tuple[np.ndarray, np.ndarray] | None, np.ndarray]:
         im_size = np.array(self._im_size)
-        # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha)  # cv2
-        # equivalent
+        # cv2 equivalent
+        # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha)
         K_undistort = self._get_undistort_intrinsic(alpha)
         undistort_maps = cv2.initUndistortRectifyMap(
             self._K, self._dist_param, np.eye(3), K_undistort, im_size, cv2.CV_16SC2
@@ -463,27 +465,28 @@ class OpenCVCamera(Camera):
 
 class BrownCamera(OpenCVCamera):
     """
-    Camera class with Brown-Conrady distortion for transforming between 3D world and 2D pixel
-    coordinates, and undistorting images.
+    Brown-Conrady camera model.
 
-    The distortion model is compatible with `OpenDroneMap (ODM)
-    <https://docs.opendronemap.org/arguments/camera-lens/>`_ / `OpenSFM
-    <https://github.com/mapillary/OpenSfM>`_ *brown* parameter estimates; and the 4- &
-    5-coefficient version of the `general OpenCV distortion model
-    <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`_.  ODM places their estimates
-    in *<dataset path>/cameras.json*, and OpenSFM in *<dataset path>/camera_models.json*.
+    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__ and
+    `OpenSfM <https://opensfm.org/docs/geometry.html#brown-camera>`__ *brown* model parameters,
+    and equivalent to the 4- and 5-coefficient versions of :class:`OpenCVCamera`.
+
+    The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
+    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
         Image (width, height) in pixels.
     :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
-        (x, y) tuple/ndarray pair.
+        (x, y) tuple.
     :param sensor_size:
-        Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
-        specified, pixels are assumed square, and ``focal_len`` should be a normalised &
-        unitless value: ``focal_len`` = (focal length) / (sensor width).
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
+         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
-        Principal point offsets in `normalised image coordinates <ncoords_>`__.
+        Principal point offsets in `normalised image coordinates
+        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`__.
     :param cy:
     :param k1:
         Distortion coefficients.
@@ -492,13 +495,15 @@ class BrownCamera(OpenCVCamera):
     :param p2:
     :param k3:
     :param xyz:
-        Camera position (x=easting, y=northing, z=altitude) in world coordinates.
+        Camera (x, y, z) position in world coordinates.
     :param opk:
-        Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
+        Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
     :param alpha:
-        Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
-        pixels.  1 results in an undistorted image that keeps all source pixels.
+        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
+        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
+        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
+        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
     """
 
     def __init__(
@@ -523,13 +528,13 @@ class BrownCamera(OpenCVCamera):
             cx=cx, cy=cy, xyz=xyz, opk=opk, alpha=alpha,
         )
         # fmt: on
-        # ensure all coefficients are in _dist_param for _camera_to_pixel
+        # overwrite possibly truncated _dist_param for use in _camera_to_pixel
         self._dist_param = np.array([k1, k2, p1, p2, k3])
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
         # Brown model adapted from OpenSfM:
         # https://github.com/mapillary/OpenSfM/blob/7e393135826d3c0a7aa08d40f2ccd25f31160281/opensfm/src/bundle.h#LL299C25-L299C25.
-        # Works out faster than the opencv equivalent in OpenCVCamera.world_to_pixel().
+        # Works out faster than the opencv equivalent in OpenCVCamera._camera_to_pixel().
         k1, k2, p1, p2, k3 = self._dist_param
         x2, y2 = np.square(xyz_[:2, :])
         xy = xyz_[0, :] * xyz_[1, :]
@@ -549,26 +554,28 @@ class BrownCamera(OpenCVCamera):
 
 class FisheyeCamera(Camera):
     """
-    Camera class with fisheye distortion for transforming between 3D world and 2D pixel
-    coordinates, and undistorting images.
+    Fisheye camera model.
 
-    The distortion model is compatible with `OpenDroneMap (ODM)
-    <https://docs.opendronemap.org/arguments/camera-lens/>`_ / `OpenSFM
-    <https://github.com/mapillary/OpenSfM>`_ *fisheye* parameter estimates; and the `OpenCV
-    fisheye distortion model <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`_.
-    ODM places their estimates in *<dataset path>/cameras.json*, and OpenSFM in
-    *<dataset path>/camera_models.json*.
+    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__,
+    `OpenSfM <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model parameters.
+
+    The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
+    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
         Image (width, height) in pixels.
     :param focal_len:
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
-        (x, y) tuple/ndarray pair.
+        (x, y) tuple.
     :param sensor_size:
-        Sensor (ccd) (width, height) with the same units/scale as ``focal_len``.  If not
-        specified, pixels are assumed square, and ``focal_len`` should be a normalised &
-        unitless value: ``focal_len`` = (focal length) / (sensor width).
-    :param cx: Principal point offsets in `normalised image coordinates <ncoords_>`__.
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
+         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         ``focal_len`` = focal length / max(sensor width & height)).
+    :param cx:
+        Principal point offsets in `normalised image coordinates
+        <https://opensfm.readthedocs.io/en/latest/geometry.html#normalized-image-coordinates>`__.
     :param cy:
     :param k1:
         Distortion coefficients.
@@ -576,13 +583,15 @@ class FisheyeCamera(Camera):
     :param k3:
     :param k4:
     :param xyz:
-        Camera position (x=easting, y=northing, z=altitude) in world coordinates.
+        Camera (x, y, z) position in world coordinates.
     :param opk:
-        Camera (omega, phi, kappa) angles in radians to rotate camera (PATB convention) to
+        Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
     :param alpha:
-        Undistorted image scaling (0-1).  0 results in an undistorted image with all valid
-        pixels.  1 results in an undistorted image that keeps all source pixels.
+        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
+        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
+        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
+        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
     """
 
     def __init__(
@@ -641,7 +650,7 @@ class FisheyeCamera(Camera):
         theta = np.arctan(r)
         theta2 = theta * theta
         if k3 == k4 == 0.0:
-            # odm 2 parameter version
+            # odm / opensfm 2 parameter version
             theta_d = theta * (1.0 + theta2 * (k1 + theta2 * k2))
         else:
             # opencv 4 parameter version
@@ -661,17 +670,11 @@ class FisheyeCamera(Camera):
 
 def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
     """
-    Create a camera object given a camera type and its parameters.
+    Create a camera object given a camera type and parameters.
 
-    :param cam_type:
-        Camera type (pinhole, brown, fisheye, opencv).
-    :param args:
-        Positional arguments to pass to camera constructor.
-    :param kwargs:
-        Keyword arguments to pass to camera constructor.
-
-    :return:
-        The created camera object.
+    :param cam_type: Camera type.
+    :param args: Positional arguments to pass to camera constructor.
+    :param kwargs: Keyword arguments to pass to camera constructor.
     """
     cam_type = CameraType(cam_type)
     if cam_type == CameraType.brown:
