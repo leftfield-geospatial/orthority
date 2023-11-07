@@ -719,11 +719,11 @@ def test_oty_rw_ext_param(mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: 
 def test_oty_reader_validity_error(odm_reconstruction_file: Path):
     """Test OtyReader raises an error with an invalid file format."""
     with pytest.raises(ParamFileError) as ex:
-        _ = io.OtyReader(odm_reconstruction_file, crs=None)
+        _ = io.OtyReader(odm_reconstruction_file)
     assert 'valid' in str(ex)
 
 
 def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     """Test OtyReader reads the crs correctly."""
-    reader = io.OtyReader(ngi_oty_ext_param_file, crs=None)
+    reader = io.OtyReader(ngi_oty_ext_param_file)
     assert reader.crs == rio.CRS.from_string(ngi_crs)
