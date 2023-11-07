@@ -65,6 +65,7 @@ def test_init(
         xyz=xyz,
         opk=opk,
     )
+
     im_size = np.array(im_size)
     cxy_pixel = (im_size - 1) / 2 + np.array(cxy) * im_size.max()
 
@@ -76,6 +77,23 @@ def test_init(
     assert all(camera._K[:2, 2] == cxy_pixel)
     if dist_param:
         assert np.all(camera._dist_param == [*dist_param.values()])
+
+
+@pytest.mark.parametrize(
+    'camera',
+    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+)
+def test_undistort_maps(camera: str, request: pytest.FixtureRequest):
+    """Test undistort_maps property."""
+    camera: Camera = request.getfixturevalue(camera)
+
+    if isinstance(camera, PinholeCamera):
+        assert camera.undistort_maps is None
+    else:
+        assert camera.undistort_maps is not None
+        im_shape = np.array(camera._im_size[::-1])
+        for i in range(2):
+            assert all(camera.undistort_maps[i].shape[:2] == im_shape)
 
 
 def test_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz: tuple, opk: tuple):
@@ -102,12 +120,7 @@ def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, se
 
 @pytest.mark.parametrize(
     'camera',
-    [
-        'pinhole_camera',
-        'brown_camera',
-        'opencv_camera',
-        'fisheye_camera',
-    ],
+    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
 )
 def test_project_points(camera: str, request: pytest.FixtureRequest):
     """Test projection of multiple points between pixel & world coordinates."""
@@ -269,12 +282,7 @@ def test_project_im_size(
 
 @pytest.mark.parametrize(
     'camera',
-    [
-        'pinhole_camera',
-        'brown_camera',
-        'opencv_camera',
-        'fisheye_camera',
-    ],
+    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
 )
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """Test world_to_pixel raises a ValueError with invalid coordinate shapes."""

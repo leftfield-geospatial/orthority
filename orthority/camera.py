@@ -456,6 +456,7 @@ class OpenCVCamera(Camera):
 
     def _get_undistort_maps(self, alpha: float) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
+        # TODO: experiment with different map types and undistort speed
         undistort_maps = cv2.initUndistortRectifyMap(
             self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_16SC2
         )
