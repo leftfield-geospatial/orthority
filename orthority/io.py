@@ -19,8 +19,12 @@ Interior & exterior parameter file IO and conversions.
 Files are read and converted into standard format dictionaries that can be used to create camera
 objects with :func:`~orthority.camera.create_camera` or the various
 :class:`~orthority.camera.Camera` subclasses.
+
+All ``crs`` and ``lla_crs`` parameters can be supplied as EPSG, proj4 or WKT strings;
+or :class:`~rasterio.crs.CRS` objects.
 """
 # TODO: specify the dict formats with examples (maybe in its own doc)?
+# TODO: could dataclasses be a better way of defining the int / ext parameter dicts?
 from __future__ import annotations
 import csv
 import json
@@ -285,11 +289,11 @@ def write_int_param(
     Write interior parameters to an orthority format yaml file.
 
     :param filename:
-        Path of the yaml file to write.
+        Path of the file to write.
     :param int_param_dict:
         Interior parameters to write.
     :param overwrite:
-        Overwrite the yaml file if it exists.
+        Whether to overwrite the file if it exists.
     """
     filename = Path(filename)
     if filename.exists():
@@ -320,13 +324,13 @@ def write_ext_param(
     Write exterior parameters to an orthority format geojson file.
 
     :param filename:
-        Path of the geojson file to write.
+        Path of the file to write.
     :param ext_param_dict:
         Exterior parameters to write.
     :param crs:
         CRS of the world coordinate system.
     :param overwrite:
-        Overwrite the geojson file if it exists.
+        Whether to overwrite the file if it exists.
     """
     filename = Path(filename)
     if filename.exists():
@@ -548,22 +552,23 @@ class CsvReader(Reader):
     :param filename:
         Path of the CSV file.
     :param crs:
-        CRS of the world coordinate system.   If not specified and the file contains
-        :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined. For
-        files containing (x, y, z) world coordinate positions ``crs`` can be omitted here and
+        CRS of the world coordinate system.  If set to None (the default), and the file contains
+        :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined.  If
+        set to None, and the file contains (x, y, z) world coordinate positions, a CRS can
         provided via a '.prj' file (i.e. a text file defining the CRS with a WKT, proj4 or EPSG
         string, and having the same path & stem as ``filename``, but a '.prj' extension).  In all
-        other situations, ``crs`` is required.
+        other situations, ``crs`` should be supplied.
     :param lla_crs:
         Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
         pitch, yaw) angle values in the file.
     :param fieldnames:
-        List of names specifying the CSV fields.  Can be omitted if field names are specified in a
-        file header.  If ``fieldnames`` is passed, any existing file header is ignored.  See
-        :ref:`file_formats:CSV exterior parameters` for recognised field names.
+        List of names specifying the CSV fields.  If set to None (the default), names will be
+        read from the file header if it exists.  If ``fieldnames`` is supplied, any existing file
+        header is ignored.  See :ref:`file_formats:CSV exterior parameters` for recognised field
+        names.
     :param dialect:
-        :class:`~csv.Dialect` object specifying the CSV delimiter, quote character, line terminator
-        etc. By default, this is auto-determined from the file.
+        :class:`~csv.Dialect` object specifying the CSV delimiter, quote character etc. If set to
+        None (the default), this is auto-determined from the file.
     :param radians:
         Whether orientation angles are in radians (True), or degrees (False).
     """
@@ -770,7 +775,8 @@ class OsfmReader(Reader):
     :param filename:
         Path of the 'reconstruction.json' file.
     :param crs:
-        CRS of the world coordinate system.  If not specified, a UTM CRS will be auto-determined.
+        CRS of the world coordinate system.  If set to None (the default), a UTM CRS will be
+        auto-determined.
     :param lla_crs:
         CRS of the 'reference_lla' value in the 'reconstruction.json' file.
     """
@@ -867,7 +873,8 @@ class ExifReader(Reader):
     :param filenames:
         Path(s) of the image file(s).
     :param crs:
-        CRS of the world coordinate system.  If not specified, a UTM CRS will be auto-determined.
+        CRS of the world coordinate system.  If set to None (the default), a UTM CRS will be
+        auto-determined.
     :param lla_crs:
         CRS of geographic camera coordinates in the EXIF / XMP tags.
     """
@@ -933,16 +940,10 @@ class OtyReader(Reader):
 
     :param filename:
         Path of the geojson file.
-    :param crs:
-        CRS of the world coordinate system.  By default, this is read from the file.
     """
 
-    def __init__(
-        self,
-        filename: str | Path,
-        crs: str | CRS = None,
-    ) -> None:
-        Reader.__init__(self, crs=crs)
+    def __init__(self, filename: str | Path) -> None:
+        Reader.__init__(self)
         self._filename = Path(filename)
         if not self._filename.exists():
             raise FileNotFoundError(f"File not found: '{self._filename}'.")
