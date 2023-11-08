@@ -80,8 +80,7 @@ def test_init(
 
 
 @pytest.mark.parametrize(
-    'camera',
-    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_undistort_maps(camera: str, request: pytest.FixtureRequest):
     """Test undistort_maps property."""
@@ -119,8 +118,7 @@ def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, se
 
 
 @pytest.mark.parametrize(
-    'camera',
-    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_project_points(camera: str, request: pytest.FixtureRequest):
     """Test projection of multiple points between pixel & world coordinates."""
@@ -189,10 +187,7 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert ji_ == pytest.approx(ji, abs=1)
 
 
-@pytest.mark.parametrize(
-    'camera',
-    ['brown_camera', 'opencv_camera', 'fisheye_camera'],
-)
+@pytest.mark.parametrize('camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'])
 def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
     """Test projected points with distort==False match pinhole camera."""
     camera: Camera = request.getfixturevalue(camera)
@@ -207,12 +202,11 @@ def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-@pytest.mark.parametrize(
-    'cam_type',
-    [CameraType.brown, CameraType.opencv],
-)
+@pytest.mark.parametrize('cam_type', [CameraType.brown, CameraType.opencv])
 def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: dict):
-    """Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs."""
+    """Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs (
+    Fisheye is exlcuded as the model distorts with zero distortion coeffs).
+    """
     camera: Camera = create_camera(cam_type, **camera_args)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
@@ -281,8 +275,7 @@ def test_project_im_size(
 
 
 @pytest.mark.parametrize(
-    'camera',
-    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """Test world_to_pixel raises a ValueError with invalid coordinate shapes."""
@@ -401,6 +394,21 @@ def test_horizon_fov(
     assert camera._horizon_fov()
     camera.update(xyz, (0, np.pi, 0))
     assert camera._horizon_fov()
+
+
+@pytest.mark.parametrize(
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
+)
+def test_undistort(camera: str, request: pytest.FixtureRequest):
+    """Test undistort + pixel_to_world_z(distort=False) matches pixel_to_world_z(distort=True)."""
+    camera: Camera = request.getfixturevalue(camera)
+
+    ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
+    z = np.random.rand(1000) * (camera._T[2] * 0.8)
+    ji_undistort = camera.undistort(ji)
+    xyz_undistort = camera.pixel_to_world_z(ji_undistort, z, distort=False)
+    xyz = camera.pixel_to_world_z(ji, z)
+    assert xyz_undistort == pytest.approx(xyz, abs=1e-3)
 
 
 @pytest.mark.parametrize(
