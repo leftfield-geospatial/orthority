@@ -62,7 +62,8 @@ def _validate_ortho_files(
                 mask = ~(array1.mask | array2.mask)
 
                 # test similarity if overlap area > 5%
-                if mask.sum() / (im1.width * im1.height) > 0.05:
+                im1_mask = im1.dataset_mask().astype('bool', copy=False)
+                if (mask.sum() / im1_mask.sum()) > 0.05:
                     cc = np.corrcoef(array1[mask], array2[mask])
                     log_str = (
                         f"Overlap similarity of '{file1.name}' and '{file2.name}': {cc[0, 1]:.4f}"
@@ -291,10 +292,7 @@ def test_reproject_dem_vdatum_both(
 
 @pytest.mark.parametrize(
     'dem_file, crs',
-    [
-        ('float_utm34n_dem_file', 'utm34n_egm96_crs'),
-        ('float_utm34n_egm96_dem_file', 'utm34n_crs'),
-    ],
+    [('float_utm34n_dem_file', 'utm34n_egm96_crs'), ('float_utm34n_egm96_dem_file', 'utm34n_crs')],
 )
 @pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
 def test_reproject_dem_vdatum_one(
@@ -615,8 +613,7 @@ def test_mask_dem_above_camera_error(
 
 
 @pytest.mark.parametrize(
-    'camera',
-    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera'],
+    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_undistort(
     rgb_byte_src_file: Path,
@@ -689,10 +686,7 @@ def test_process_auto_resolution(
     assert np.array(camera._im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
 
 
-@pytest.mark.parametrize(
-    'interp',
-    [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos],
-)
+@pytest.mark.parametrize('interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos])
 def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_path: Path):
     """Test the process ``interp`` setting by comparing with an ``interp='nearest'`` reference
     ortho.
@@ -723,10 +717,7 @@ def test_process_interp(rgb_pinhole_utm34n_ortho: Ortho, interp: Interp, tmp_pat
         assert cc[0, 1] != 1.0
 
 
-@pytest.mark.parametrize(
-    'dem_interp',
-    [Interp.bilinear, Interp.cubic, Interp.lanczos],
-)
+@pytest.mark.parametrize('dem_interp', [Interp.bilinear, Interp.cubic, Interp.lanczos])
 def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp, tmp_path: Path):
     """Test the process ``dem_interp`` setting by comparing with an ``dem_interp='nearest'``
     reference ortho.
