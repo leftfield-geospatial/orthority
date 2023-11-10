@@ -192,14 +192,15 @@ class Camera:
         includes the largest portion of the source image that allows all undistorted pixels to be
         valid.  1 includes all source pixels in the undistorted image.
         """
+
         # Adapted from and equivalent to:
         # K_undistort, _ = cv2.getOptimalNewCameraMatrix(K, dist_param, im_size, alpha).
         # See https://github.com/opencv/opencv/blob/4790a3732e725b102f6c27858e7b43d78aee2c3e/modules/calib3d/src/calibration.cpp#L2772
         # Note that cv2.fisheye.estimateNewCameraMatrixForUndistortRectify() does not include all
         # source pixels for balance=1.  This method works for all subclasses including fisheye.
-        rect = tuple[np.ndarray, np.ndarray]
-
-        def _get_rectangles(im_size: tuple[int, int]) -> tuple[rect, rect]:
+        def _get_rectangles(
+            im_size: tuple[int, int]
+        ) -> tuple[tuple[np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]]:
             """Return inner and outer rectangles for distorted image grid points."""
             w, h = np.array(im_size) - 1
             n = 9
