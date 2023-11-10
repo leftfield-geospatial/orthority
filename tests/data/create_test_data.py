@@ -96,10 +96,9 @@ def downsample_dem(
     Write to float32 deflate geotiff `dst_file`.
     """
     nodata = float('nan')
-    with (
-        rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False),
-        rio.open(src_file, 'r') as src_im,
-    ):
+    with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False), rio.open(
+        src_file, 'r'
+    ) as src_im:
         if bounds:
             src_win = expand_window_to_grid(src_im.window(*bounds))
             src_transform = src_im.window_transform(src_win)
