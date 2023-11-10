@@ -143,8 +143,8 @@ class Ortho:
                     raise CrsMissingError(
                         f"No source image projection found, 'crs' should be specified."
                     )
-        if crs.is_geographic:
-            raise CrsError(f"'crs' should not be a geographic system.")
+        if not crs.is_projected:
+            raise CrsError(f"'crs' should be a projected system.")
         return crs
 
     def _get_init_dem(

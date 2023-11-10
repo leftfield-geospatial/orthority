@@ -165,7 +165,7 @@ def test_init_geogcrs_error(
     """Test Ortho initialisation with a geographic CRS raises an error."""
     with pytest.raises(errors.CrsError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs='EPSG:4326')
-    assert 'geographic' in str(ex)
+    assert 'projected' in str(ex)
 
 
 def test_init_dem_coverage_error(

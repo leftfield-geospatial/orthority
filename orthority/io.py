@@ -511,8 +511,8 @@ class Reader:
                 crs = CRS.from_string(crs) if isinstance(crs, str) else crs
             except RioCrsError as ex:
                 raise CrsError(f"Could not interpret 'crs': {crs}. {str(ex)}")
-            if crs.is_geographic:
-                raise CrsError(f"'crs' should not be geographic system.")
+            if not crs.is_projected:
+                raise CrsError(f"'crs' should be a projected system.")
 
         if lla_crs:
             try:

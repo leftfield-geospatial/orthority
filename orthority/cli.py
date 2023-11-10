@@ -140,8 +140,8 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
             crs = _read_crs(crs)
         except Exception as ex:
             raise click.BadParameter(f'{str(ex)}', param=param)
-        if crs.is_geographic:
-            raise click.BadParameter(f"CRS should not be a geographic system.", param=param)
+        if not crs.is_projected:
+            raise click.BadParameter(f"CRS should be a projected system.", param=param)
     return crs
 
 
@@ -193,7 +193,11 @@ def _ortho(
     overwrite: bool,
     **kwargs,
 ):
-    """"""
+    """
+    Orthorectify images given a DEM filename, and interior & exterior parameter dictionaries.
+
+    Backend function for orthorectification sub-commands.
+    """
     if export_params:
         # convert interior / exterior params to oty format files
         logger.info('Writing parameter files...')

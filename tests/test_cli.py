@@ -244,7 +244,7 @@ def test_ortho_crs_geographic_error(
     cli_str = ortho_legacy_ngi_cli_str + ' --crs EPSG:4326'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'geographic' in result.stdout
+    assert '--crs' in result.stdout and 'projected' in result.stdout
 
 
 def test_ortho_resolution_square(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
