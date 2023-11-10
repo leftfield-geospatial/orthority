@@ -397,7 +397,7 @@ def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
         cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
         result = runner.invoke(cli, cli_str.split())
         _, per_band_peak = tracemalloc.get_traced_memory()
-        tracemalloc.reset_peak()
+        tracemalloc.clear_traces()
         assert result.exit_code == 0, result.stdout
         ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
