@@ -116,16 +116,6 @@ def _configure_logging(verbosity: int):
     logging.captureWarnings(True)
 
 
-def _read_src_crs(filename: Path) -> rio.CRS | None:
-    """Read CRS from source image file."""
-    with suppress_no_georef(), rio.open(filename, 'r') as im:
-        if not im.crs:
-            logger.debug(f"No CRS found for source image: '{filename.name}'")
-        else:
-            logger.debug(f"Found source image '{filename.name}' CRS: '{im.crs.to_proj4()}'")
-        return im.crs
-
-
 def _read_crs(crs: str):
     """Read a CRS from a string, text file, or image file."""
     crs_file = Path(crs)
@@ -518,7 +508,12 @@ def ortho(
     """
     if not crs and len(src_files) > 0:
         # read crs from the first source image, if it has one
-        crs = _read_src_crs(src_files[0])
+        with suppress_no_georef(), rio.open(src_files[0], 'r') as im:
+            if not im.crs:
+                logger.debug(f"No CRS found for source image: '{src_files[0].name}'")
+            else:
+                logger.debug(f"Using source image '{src_files[0].name}' CRS: '{im.crs.to_proj4()}'")
+                crs = im.crs
 
     # read interior params
     try:
@@ -612,10 +607,6 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
-    if not crs and len(src_files) > 0:
-        # get crs from the first source image, if it has one
-        crs = _read_src_crs(src_files[0])
-
     # read interior & exterior params
     try:
         logger.info('Reading camera parameters:')
