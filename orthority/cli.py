@@ -81,13 +81,15 @@ class RstCommand(click.Command):
             # convert from RST '``literal``' to 'literal'
             '``(.*?)``': r'\g<1>',
             # convert ':option:`--name <group-command --name>`' to '--name'
-            ':option:`(.*?)( <.*?>)?`': r'\g<1>',
+            r':option:`(.*?)(\s+<.*?>)?`': r'\g<1>',
             # convert ':option:`--name`' to '--name'
             ':option:`(.*?)`': r'\g<1>',
             # strip '----...'
-            '-{4,}': r'',
-            # convert from RST cross-ref '`<name> <<link>>`__' to 'name'
-            '`([^<]*) <([^>]*)>`_+': r'\g<1>',
+            # '-{4,}': r'',
+            # # convert from RST cross-ref '`<name> <link>`__' to 'name'
+            # r'`(.*?)(\s+<.*?>)?`_+': r'\g<1>',
+            # convert from RST cross-ref '`<name> <link>`__' to 'link'
+            r'`(.*?)<(.*?)>`_+': r'\g<2>',
         }
 
         def reformat_text(text, width, **kwargs):
@@ -313,10 +315,10 @@ resolution_option = click.option(
     'resolution',
     type=click.FLOAT,
     default=None,
-    show_default='auto',
+    show_default='ground sampling distance',
     multiple=True,
     callback=_resolution_cb,
-    help='Ortho image pixel size in units of the ``--crs`` (usually meters).  Can be used '
+    help='Ortho image resolution in units of the ``--crs`` (usually meters).  Can be used '
     'twice for non-square pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
 )
 dem_band_option = click.option(
@@ -361,7 +363,7 @@ full_remap_option = click.option(
     show_default=True,
     help='Orthorectify the source image with full camera model (``--full-remap``), '
     'or an undistorted source image with pinhole camera model (``--no-full-remap``).  '
-    '``--no-full-remap`` is faster but can reduce the ortho image quality.',
+    '``--no-full-remap`` is faster but can reduce ortho image quality.',
 )
 alpha_option = click.option(
     '-a',
@@ -370,8 +372,9 @@ alpha_option = click.option(
     nargs=1,
     default=1,
     show_default=True,
-    help='Scaling of the ``--no-full-remap`` undistorted image: 0 results in an undistorted image '
-    'with all valid pixels, 1 results in an undistorted image with all source pixels.',
+    help='Scaling of the ``--no-full-remap`` undistorted image: 0 includes the largest '
+    'source image portion that allows all undistorted pixels to be valid.  1 includes all '
+    'source pixels in the undistorted image.',
 )
 write_mask_option = click.option(
     '-wm/-nwm',
@@ -395,7 +398,7 @@ compress_option = click.option(
     '--compress',
     type=click.Choice(Compress, case_sensitive=False),
     default=Ortho._default_config['compress'],
-    show_default="jpeg for 'uint8' :option:`--dtype`, deflate otherwise",
+    show_default="jpeg for uint8 --dtype, deflate otherwise",
     help=f'Ortho image compression.',
 )
 build_ovw_option = click.option(
@@ -413,7 +416,7 @@ export_params_option = click.option(
     type=click.BOOL,
     default=False,
     show_default=True,
-    help='Export interior & exterior parameters to orthority format file(s), and exit.',
+    help='Export interior & exterior parameters to orthority format files, and exit.',
 )
 out_dir_option = click.option(
     '-od',
@@ -444,7 +447,7 @@ def cli(verbose, quiet):
     _configure_logging(verbosity)
 
 
-@cli.command(cls=RstCommand)
+@cli.command(cls=RstCommand, short_help='Orthorectify with camera parameter files.')
 @src_files_arg
 @dem_file_option
 @int_param_file_option
@@ -476,37 +479,25 @@ def ortho(
     """
     Orthorectify with camera model(s) defined by interior and exterior parameter files.
 
-    Interior parameters are supported in orthority (.yaml), ODM cameras (.json), and OpenSfM
-    reconstruction (.json) formats.  Exterior parameters are supported in orthority (.geojson),
-    custom CSV (.csv), and ODM / OpenSfM reconstruction (.json) formats.  Note that parameter
-    file extensions are used to distinguish their format.
+    Interior parameters are supported in orthority (.yaml), OpenDroneMap 'cameras.json',
+    and OpenSfM 'reconstruction.json' formats.  Exterior parameters are supported in Orthority (
+    .geojson), CSV, and OpenSfM 'reconstruction.json' formats.  Note that parameter file
+    extensions are used to distinguish their format.
 
-    If possible, a world / ortho CRS will be read from input files, or auto-determined when
-    :option:`--crs <oty-ortho --crs>` is not passed.
+    The :option:`--dem <oty-ortho --dem>`, :option:`--int-param <oty-ortho --int-param>` and
+    :option:`--ext-param <oty-ortho --ext-param>` options are required.  Depending on the input
+    file formats, :option:`--crs <oty-ortho --crs>` may also be required::
 
-    See the `online docs <https://orthority.readthedocs.io/>`__ for more detail on file formats and
-    CRS.
-    \b
+        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
 
-    Examples
-    ========
-
-    Orthorectify `source.tif` using DEM `dem.tif` and interior and exterior parameters from
-    `reconstruction.json`.  An ortho resolution and UTM CRS are auto-determined::
-
-        oty ortho --dem dem.tif --int-param reconstruction.json --ext-param reconstruction.json source.tif
-
-    Convert 'reconstruction.json' interior and exterior parameters to orthority format files in
-    the current working directory::
+    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    <oty-ortho --export-params>`.  With this option, only :option:`--int-param <oty-ortho
+    --int-param>` and :option:`--ext-param <oty-ortho --ext-param>` are required::
 
         oty ortho --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
-    Orthorectify images matching 'source*.tif' using DEM 'dem.tif', and 'int_param.yaml' interior &
-    'ext_param.csv' exterior parameter files.  Specify a 1m ortho resolution and 'EPSG:32651'
-    CRS.  Write ortho files to the 'data' directory using 'deflate' compression and a 'uint16'
-    data type::
-
-        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --res 1 --crs EPSG:32651 --out-dir data --compress deflate --dtype uint16 source*.tif
+    See `the online docs <https://orthority.readthedocs.io/>`__ for more detail on file formats
+    and usage.
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
@@ -568,7 +559,7 @@ def ortho(
     )
 
 
-@cli.command(cls=RstCommand)
+@cli.command(cls=RstCommand, short_help='Orthorectify with image EXIF / XMP tags.')
 @src_files_arg
 @dem_file_option
 @crs_option
@@ -591,23 +582,22 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     """
     Orthorectify with camera model(s) defined by image EXIF / XMP tags.
 
-    Source image tags should include focal length & sensor size, or 35mm equivalent focal length;
-    camera position; and camera / gimbal roll, pitch & yaw.
+    Source image tags should include focal length & sensor size or 35mm equivalent focal length,
+    camera position, and camera roll, pitch & yaw.
+
+    The :option:`--dem <oty-exif --dem>` option is required.  By default a UTM world / ortho CRS
+    is auto-determined from the camera positions.  This can be overridden with :option:`--crs
+    <oty-exif --crs>`::
+
+        oty exif --dem dem.tif --crs EPSG:32651 source*.tif
+
+    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    <oty-exif --export-params>`.  With this option, :option:`--dem <oty-exif --dem>` is not
+    required::
+
+        oty exif ---export-params
 
     See the `online docs <https://orthority.readthedocs.io/>`__ for more detail.
-    \b
-
-    Examples
-    ========
-
-    Orthorectify images matching 'source*.tif' with DEM 'dem.tif'::
-
-        oty exif --dem dem.tif source*.tif
-
-    Export interior and exterior parameters for images matching 'source*.tif' to orthority format
-    files::
-
-        oty exif --export-params source*.tif
 
     SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
@@ -633,7 +623,7 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     )
 
 
-@cli.command(cls=RstCommand)
+@cli.command(cls=RstCommand, short_help='Orthorectify with OpenDroneMap outputs.')
 @click.option(
     '-dd',
     '--dataset-dir',
@@ -643,6 +633,7 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     callback=_odm_dataset_dir_cb,
     help='ODM dataset directory to process.',
 )
+@crs_option
 @resolution_option
 @interp_option
 @dem_interp_option
@@ -663,34 +654,25 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     help='Directory in which to place output file(s).',
 )
 @overwrite_option
-def odm(dataset_dir: Path, resolution: tuple[float, float], out_dir: Path, **kwargs):
+def odm(dataset_dir: Path, crs: rio.CRS, resolution: tuple[float, float], out_dir: Path, **kwargs):
     """
-    Orthorectify using OpenDroneMap generated camera models and DSM.
+    Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 
-    A DSM is required, and can be generated by running OpenDroneMap with the `--dsm
-    <https://docs.opendronemap.org/arguments/dsm/#dsm>`__ option.
+    The :option:`--dataset-dir <oty-odm --dataset-dir>` option should be supplied::
 
-    If  :option:`--out-dir <oty-odm --out-dir>` is not specified, outputs files are placed in the
-    '<:option:`--dataset-dir <oty-odm --dataset-dir>`>/orthority' directory.
-    \b
+        oty odm --dataset-dir dataset
 
-    Examples
-    ========
+    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    <oty-odm --export-params>`::
 
-    Orthorectify images in '<odm dataset>/images' folder using the '<odm dataset>' camera
-    models and DSM::
+        oty odm --dataset-dir dataset --export-params
 
-        oty odm --dataset-dir <odm dataset>
+    Ortho images and parameter files are placed in the '<dataset-dir>/orthority' subdirectory by
+    default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
 
-    Export '<odm dataset>' interior and exterior parameters to orthority format files::
+    See the `online docs <https://orthority.readthedocs.io/>`__ for more detail.
 
-        oty odm --dataset-dir <odm dataset> --export-params
-
-    Orthorectify images in '<odm dataset>/images' directory using the '<odm dataset>' camera
-    models and DSM.  Use an ortho resolution of 0.1m and 'lanczos' interpolation to remap source
-    to ortho.
-
-        oty odm --dataset-dir <odm dataset> --res 0.1 --interp lanczos
+    SOURCE... Path/URL(s) of source image(s) to orthorectify.
     """
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
@@ -703,12 +685,13 @@ def odm(dataset_dir: Path, resolution: tuple[float, float], out_dir: Path, **kwa
             param_hint="'-pd' / '--dataset-dir'",
         )
 
-    # set crs from ODM orthophoto or DSM
-    orthophoto_file = dataset_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
-    dem_file = dataset_dir.joinpath('odm_dem', 'dsm.tif')
-    crs_file = orthophoto_file if orthophoto_file.exists() else dem_file
-    with rio.open(crs_file, 'r') as im:
-        crs = im.crs
+    if not crs:
+        # set crs from ODM orthophoto or DSM
+        orthophoto_file = dataset_dir.joinpath('odm_orthophoto', 'odm_orthophoto.tif')
+        dem_file = dataset_dir.joinpath('odm_dem', 'dsm.tif')
+        crs_file = orthophoto_file if orthophoto_file.exists() else dem_file
+        with rio.open(crs_file, 'r') as im:
+            crs = im.crs
 
     # set and create output dir
     out_dir = out_dir or dataset_dir.joinpath('orthority')
