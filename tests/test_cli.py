@@ -575,6 +575,53 @@ def test_ortho_lla_crs_projected_error(
     assert '--lla-crs' in result.stdout and 'geographic' in result.stdout
 
 
+def test_ortho_radians(
+    ngi_image_file: tuple[Path, ...],
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    ngi_xyz_opk_csv_file: Path,
+    ngi_xyz_opk_radians_csv_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho --radians`` by comparing orthos created exterior parameter orientation
+    angles in radians and degrees.
+    """
+    # create an ortho with orientation angles in degrees
+    out_dir_degrees = tmp_path.joinpath('degrees')
+    out_dir_degrees.mkdir()
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_xyz_opk_csv_file} --out-dir {out_dir_degrees} --res 24 '
+        f'--degrees {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files_degrees = [*out_dir_degrees.glob('*_ORTHO.tif')]
+    assert len(ortho_files_degrees) == 1
+
+    # create an ortho with orientation angles in radians
+    out_dir_radians = tmp_path.joinpath('radians')
+    out_dir_radians.mkdir()
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_xyz_opk_radians_csv_file} --out-dir {out_dir_radians} --res 24 '
+        f'--radians {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files_radians = [*out_dir_radians.glob('*_ORTHO.tif')]
+    assert len(ortho_files_radians) == 1
+
+    # compare
+    with rio.open(ortho_files_degrees[0], 'r') as degrees_im, rio.open(
+        ortho_files_radians[0], 'r'
+    ) as radians_im:
+        degrees_array = degrees_im.read(1)
+        radians_array = radians_im.read(1)
+        assert radians_array == pytest.approx(degrees_array, abs=1)
+
+
 def test_ortho_write_mask(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty ortho --write-mask`` writes an internal mask to the ortho with
     ``compress=deflate``.

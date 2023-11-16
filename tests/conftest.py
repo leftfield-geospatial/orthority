@@ -18,6 +18,7 @@ import csv
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -621,6 +622,8 @@ def ngi_xyz_opk_radians_csv_file(
     Includes a header and .proj file.  Angles in radians.
     """
     filename = tmp_path_factory.mktemp('data').joinpath('ngi_xyz_opk_radians.csv')
+    shutil.copy(ngi_xyz_opk_csv_file.with_suffix('.prj'), filename.with_suffix('.prj'))
+
     dialect = dict(delimiter=',', quotechar='"', quoting=csv.QUOTE_MINIMAL)
     with open(ngi_xyz_opk_csv_file, 'r', newline=None) as rf, open(filename, 'w', newline='') as wf:
         reader = csv.reader(rf, **dialect)

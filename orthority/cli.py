@@ -309,6 +309,14 @@ lla_crs_option = click.option(
     help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; '
     'or path of a text file containing string',
 )
+radians_option = click.option(
+    '-rd/-dg',
+    '--radians/--degrees',
+    type=click.BOOL,
+    default=False,
+    show_default=True,
+    help='Orientation angle units. Only used for ``--ext-param`` in CSV format.',
+)
 resolution_option = click.option(
     '-r',
     '--res',
@@ -465,6 +473,7 @@ def cli(verbose, quiet):
 @full_remap_option
 @alpha_option
 @lla_crs_option
+@radians_option
 @write_mask_option
 @dtype_option
 @compress_option
@@ -478,6 +487,7 @@ def ortho(
     ext_param_file: Path,
     crs: rio.CRS,
     lla_crs: rio.CRS,
+    radians: bool,
     **kwargs,
 ):
     """
@@ -530,7 +540,7 @@ def ortho(
     # read exterior params
     try:
         if ext_param_file.suffix.lower() in ['.csv', '.txt']:
-            reader = io.CsvReader(ext_param_file, crs=crs, lla_crs=lla_crs)
+            reader = io.CsvReader(ext_param_file, crs=crs, lla_crs=lla_crs, radians=radians)
         elif ext_param_file.suffix.lower() == '.json':
             reader = io.OsfmReader(ext_param_file, crs=crs, lla_crs=lla_crs)
         elif ext_param_file.suffix.lower() == '.geojson':
@@ -941,7 +951,6 @@ if __name__ == '__main__':
     cli()
 
 # TODO: test CLI exceptions are meaningful
-# TODO: add radians option for CSV files
 # TODO: consider typing with PathLike, ArrayLike and Iterable, rather than Union[] etc
 # TODO: a lot of args are spec'd as Tuples, is this correct or would List, or Iterable be more appropriate?
 
