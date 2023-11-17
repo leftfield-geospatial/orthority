@@ -392,7 +392,7 @@ def test_mask_dem(
     camera: Camera = PinholeCamera(
         camera_args['im_size'],
         camera_args['focal_len'],
-        sensor_size=camera_args['sensor_size'],
+        sensor_size=camera_args.get('sensor_size', None),
         xyz=_xyz,
         opk=_opk,
     )

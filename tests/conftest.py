@@ -162,10 +162,13 @@ def oty_to_osfm_int_param(int_param_dict: dict) -> dict:
         osfm_params['width'] = im_size[0]
         osfm_params['height'] = im_size[1]
 
-        sensor_size = osfm_params.pop('sensor_size')
-        osfm_params['focal_x'] = osfm_params['focal_y'] = (
-            osfm_params.pop('focal_len') / sensor_size[0]
-        )
+        if 'sensor_size' in osfm_params:
+            sensor_size = osfm_params.pop('sensor_size')
+            osfm_params['focal_x'] = osfm_params['focal_y'] = (
+                osfm_params.pop('focal_len') / sensor_size[0]
+            )
+        else:
+            osfm_params['focal_x'] = osfm_params['focal_y'] = osfm_params.pop('focal_len')
 
         for from_key, to_key in zip(['cx', 'cy'], ['c_x', 'c_y']):
             if from_key in osfm_params:

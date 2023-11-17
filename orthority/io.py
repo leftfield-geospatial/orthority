@@ -50,15 +50,15 @@ from orthority.utils import utm_crs_from_latlon, validate_collection
 logger = logging.getLogger(__name__)
 
 _optional_schema = {
-    CameraType.pinhole: ['cx', 'cy'],
+    CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
     # fmt: off
     CameraType.opencv: [
-        'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2', 's3', 's4', 'tx', 'ty', 'cx',
-        'cy',
+        'sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2',
+        's3', 's4', 'tx', 'ty',
     ],
     # fmt: on
-    CameraType.brown: ['k1', 'k2', 'p1', 'p2', 'k3', 'cx', 'cy'],
-    CameraType.fisheye: ['k1', 'k2', 'k3', 'k4', 'cx', 'cy'],
+    CameraType.brown: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'],
+    CameraType.fisheye: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
 }
 """Schema of valid optional parameters for each camera type."""
 
@@ -96,10 +96,6 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
             raise ParamFileError(
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
             )
-
-        # find a normalised sensor size in same units as focal_len, assuming square pixels (ODM /
-        # OpenSfM json files do not define sensor size)
-        int_param['sensor_size'] = tuple((np.array(im_size) / max(im_size)).tolist())
 
         # rename c_x->cx & c_y->cy
         for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy']):
@@ -173,7 +169,6 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
             # normalise 35mm focal length assuming "35mm" = 36 mm max sensor dimension, and find
             # a normalised sensor size in same units, assuming square pixels
             cam_dict['focal_len'] = exif.focal_len_35 / 36.0
-            cam_dict['sensor_size'] = tuple((np.array(exif.im_size) / max(exif.im_size)).tolist())
     else:
         raise ParamFileError(
             f"No focal length & sensor size, or 35mm focal length tags in '{exif.filename.name}'."
@@ -214,7 +209,7 @@ def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
         """Validate & convert the given yaml dictionary for a single camera."""
         # test required keys for all cameras
-        for req_key in ['type', 'im_size', 'focal_len', 'sensor_size']:
+        for req_key in ['type', 'im_size', 'focal_len']:
             if req_key not in yaml_param:
                 raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
@@ -233,7 +228,8 @@ def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
         # set focal_len & sensor_size
         focal_len = yaml_param.pop('focal_len')
         int_param['focal_len'] = tuple(focal_len) if isinstance(focal_len, list) else focal_len
-        int_param['sensor_size'] = tuple(yaml_param.pop('sensor_size'))
+        if 'sensor_size' in yaml_param:
+            int_param['sensor_size'] = tuple(yaml_param.pop('sensor_size'))
 
         # validate any remaining distortion params, update param_dict & return
         err_keys = set(yaml_param.keys()).difference(_optional_schema[int_param['cam_type']])
@@ -568,7 +564,7 @@ class CsvReader(Reader):
         names.
     :param dialect:
         :class:`~csv.Dialect` object specifying the CSV delimiter, quote character etc. If set to
-        None (the default), this is auto-determined from the file.
+        None (the default), this is auto-detected from the file.
     :param radians:
         Whether orientation angles are in radians (True), or degrees (False).
     """
@@ -695,6 +691,7 @@ class CsvReader(Reader):
 
     def _get_crs(self) -> CRS:
         """Read / auto-determine and validate a CRS when no user CRS was supplied."""
+        # TODO: should .prj crs be read as lla_crs for lla positions?
         crs = None
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
             # read CRS of xyz positions / opk orientations from .prj file, if it exists

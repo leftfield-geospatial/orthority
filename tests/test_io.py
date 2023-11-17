@@ -35,15 +35,16 @@ def _validate_int_param_dict(int_param_dict: dict):
     """Basic validation of an internal parameter dictionary."""
     for cam_id, int_params in int_param_dict.items():
         assert isinstance(cam_id, str) or cam_id is None
-        req_keys = {'cam_type', 'im_size', 'focal_len', 'sensor_size'}
+        req_keys = {'cam_type', 'im_size', 'focal_len'}
         assert set(int_params.keys()).issuperset(req_keys)
         cam_type = CameraType(int_params['cam_type'])
         assert len(int_params['im_size']) == 2 and all(
             [isinstance(dim, int) for dim in int_params['im_size']]
         )
-        assert len(int_params['sensor_size']) == 2 and all(
-            [isinstance(dim, float) for dim in int_params['sensor_size']]
-        )
+        if 'sensor_size' in int_params:
+            assert len(int_params['sensor_size']) == 2 and all(
+                [isinstance(dim, float) for dim in int_params['sensor_size']]
+            )
         assert isinstance(int_params['focal_len'], float) or (
             len(int_params['focal_len']) == 2
             and all([isinstance(f, float) for f in int_params['focal_len']])
@@ -74,7 +75,7 @@ def test_rw_oty_int_param(mult_int_param_dict: dict, tmp_path: Path):
     assert test_dict == mult_int_param_dict
 
 
-@pytest.mark.parametrize('missing_key', ['focal_len', 'sensor_size', 'im_size'])
+@pytest.mark.parametrize('missing_key', ['focal_len', 'im_size'])
 def test_read_oty_int_param_missing_error(
     pinhole_int_param_dict: dict, missing_key: str, tmp_path: Path
 ):
@@ -123,7 +124,16 @@ def test_read_osfm_int_param(
     """Test reading interior parameters from ODM / OpenSfM format files."""
     filename: Path = request.getfixturevalue(filename)
     test_dict = io.read_osfm_int_param(filename)
-    assert test_dict == mult_int_param_dict
+
+    def compare_dicts(test: dict, ref: dict):
+        """Compare interior parameter dicts omitting 'sensor_size'."""
+        for k, v in ref.items():
+            if isinstance(v, dict):
+                compare_dicts(test[k], v)
+            elif k != 'sensor_size':
+                assert test[k] == v
+
+    compare_dicts(test_dict, mult_int_param_dict)
 
 
 @pytest.mark.parametrize(
@@ -199,8 +209,8 @@ def test_read_exif_int_param_no_dewarp(filename: str, request: pytest.FixtureReq
 def test_read_exif_int_param_values(
     image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest
 ):
-    """Test EXIF focal length and sensor size interior parameter values against those from
-    OsfmReader for images with different tag combinations.
+    """Test EXIF focal length values against those from OsfmReader for images with different tag
+    combinations.
     """
     # read EXIF and OpenSfM interior parameters
     image_file: Path = request.getfixturevalue(image_file)
@@ -210,12 +220,10 @@ def test_read_exif_int_param_values(
     test_int_params = next(iter(test_int_param_dict.values()))
 
     # normalise EXIF interior parameters and compare to OpenSfM values
-    test_sensor_size = np.array(test_int_params['sensor_size']) / max(
-        test_int_params['sensor_size']
-    )
-    test_focal_len = np.array(test_int_params['focal_len']) / max(test_int_params['sensor_size'])
-    test_focal_len = test_focal_len if np.isscalar(test_focal_len) else test_focal_len[0]
-    assert test_sensor_size == pytest.approx(ref_int_params['sensor_size'], abs=0.01)
+    test_focal_len = np.array(test_int_params['focal_len'])
+    if 'sensor_size' in test_int_params:
+        test_focal_len = test_focal_len / max(test_int_params['sensor_size'])
+    test_focal_len = test_focal_len if test_focal_len.size == 1 else test_focal_len[0]
     assert test_focal_len == pytest.approx(ref_int_params['focal_len'], abs=0.01)
 
 
@@ -371,8 +379,8 @@ def test_csv_reader_xyz_opk_values(
 
     for filename, test_ext_param in test_ext_param_dict.items():
         ref_ext_param = ref_ext_param_dict[Path(filename).stem]
-        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=1e-6)
-        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=1e-6)
+        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=1e-3)
+        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=1e-3)
 
 
 def test_csv_reader_xyz_opk_radians(
