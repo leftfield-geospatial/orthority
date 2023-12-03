@@ -293,7 +293,9 @@ def create_io_test_data():
         writer.writerow(['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa', 'camera'])
         ext_param_dict = osfm_reader.read_ext_param()
         for filename, ext_param in ext_param_dict.items():
-            writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk']), cam_id])
+            xyz = np.round(ext_param['xyz'], 3)
+            opk = np.round(np.degrees(ext_param['opk']), 3)
+            writer.writerow([filename, *xyz, *opk, cam_id])
 
     # create xyz_opk csv file for ngi data
     src_csv_file = ngi_test_root.joinpath('camera_pos_ori.txt')
@@ -303,7 +305,9 @@ def create_io_test_data():
         writer = csv.writer(f, delimiter=',', quotechar='"')
         writer.writerow(['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'])
         for filename, ext_param in ext_param_dict.items():
-            writer.writerow([filename, *ext_param['xyz'], *np.degrees(ext_param['opk'])])
+            xyz = np.round(ext_param['xyz'], 3)
+            opk = np.round(np.degrees(ext_param['opk']), 3)
+            writer.writerow([filename, *xyz, *opk])
 
     # create proj file for above
     src_im_file = next(iter(ngi_test_root.glob('*RGB.tif')))
