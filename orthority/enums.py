@@ -30,24 +30,23 @@ class CameraType(str, Enum):
     """
     Brown-Conrady camera model.
 
-    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__ and
-    `OpenSfM <https://opensfm.org/docs/geometry.html#brown-camera>`__ *brown* model parameters,
-    and the 4- and 5-coefficient versions of the `OpenCV general model
-    <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
-    """
+    Compatible with `OpenDroneMap / OpenSfM 
+    <https://opensfm.org/docs/geometry.html#camera-models>`__ ``perspective``, ``simple_radial``, 
+    ``radial`` and ``brown`` model parameters, and the 4- and 5-coefficient versions of the 
+    `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__."""
 
     fisheye = 'fisheye'
     """
     Fisheye camera model.
 
-    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__,
-    `OpenSfM <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV
-    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model parameters.
-    """
+    Compatible with `OpenDroneMap / OpenSfM 
+    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV 
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  ``fisheye`` model 
+    parameters."""
 
     opencv = 'opencv'
     """
-    OpenCV `general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
+    `OpenCV general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
     """
 
     def __repr__(self):
@@ -59,7 +58,9 @@ class CameraType(str, Enum):
     @classmethod
     def from_odm(cls, cam_type: str):
         """Convert from OpenDroneMap / OpenSfM projection type."""
-        cam_type = 'brown' if cam_type == 'perspective' else cam_type
+        cam_type = cam_type.lower().strip()
+        if cam_type in ['perspective', 'simple_radial', 'radial']:
+            cam_type = 'brown'
         if cam_type not in cls.__members__:
             raise ValueError(f"Unsupported OpenDroneMap / OpenSfM camera type: '{cam_type}'")
         return cls(cam_type)
