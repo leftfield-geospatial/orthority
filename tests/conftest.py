@@ -287,73 +287,73 @@ def fisheye_camera(camera_args, fisheye_dist_param: dict) -> Camera:
 
 @pytest.fixture(scope='session')
 def utm34n_crs() -> str:
-    """CRS string for UTM zone 34N with no vertical datum."""
+    """CRS string for UTM zone 34N with no vertical CRS."""
     return 'EPSG:32634'
 
 
 @pytest.fixture(scope='session')
 def utm34n_wgs84_crs() -> str:
-    """CRS string for UTM zone 34N with WGS84 ellipsoid vertical datum."""
+    """CRS string for UTM zone 34N with WGS84 ellipsoid vertical CRS."""
     return 'EPSG:32634+4326'
 
 
 @pytest.fixture(scope='session')
 def utm34n_egm96_crs() -> str:
-    """CRS string for UTM zone 34N with EGM96 geoid vertical datum."""
+    """CRS string for UTM zone 34N with EGM96 geoid vertical CRS."""
     return 'EPSG:32634+5773'
 
 
 @pytest.fixture(scope='session')
 def utm34n_egm2008_crs() -> str:
-    """CRS string for UTM zone 34N with EGM2008 geoid vertical datum."""
+    """CRS string for UTM zone 34N with EGM2008 geoid vertical CRS."""
     return 'EPSG:32634+3855'
 
 
 @pytest.fixture(scope='session')
 def webmerc_crs() -> str:
-    """CRS string for web mercator with no vertical datum."""
+    """CRS string for web mercator with no vertical CRS."""
     return '+proj=webmerc +datum=WGS84'
 
 
 @pytest.fixture(scope='session')
 def webmerc_wgs84_crs() -> str:
-    """CRS string for web mercator with WGS84 ellipsoid vertical datum."""
+    """CRS string for web mercator with WGS84 ellipsoid vertical CRS."""
     return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
 
 
 @pytest.fixture(scope='session')
 def webmerc_egm96_crs() -> str:
-    """CRS string for web mercator with EGM96 geoid vertical datum."""
+    """CRS string for web mercator with EGM96 geoid vertical CRS."""
     return '+proj=webmerc +datum=WGS84 +geoidgrids=egm96_15.gtx +vunits=m'
 
 
 @pytest.fixture(scope='session')
 def webmerc_egm2008_crs() -> str:
-    """CRS string for web mercator with EGM2008 geoid vertical datum."""
+    """CRS string for web mercator with EGM2008 geoid vertical CRS."""
     return '+proj=webmerc +datum=WGS84 +geoidgrids=egm08_25.gtx +vunits=m'
 
 
 @pytest.fixture(scope='session')
 def wgs84_crs() -> str:
-    """CRS string for WGS84 with no vertical datum."""
+    """CRS string for WGS84 with no vertical CRS."""
     return 'EPSG:4326'
 
 
 @pytest.fixture(scope='session')
 def wgs84_wgs84_crs() -> str:
-    """CRS string for WGS84 with WGS84 ellipsoid vertical datum."""
+    """CRS string for WGS84 with WGS84 ellipsoid vertical CRS."""
     return 'EPSG:4979'
 
 
 @pytest.fixture(scope='session')
 def wgs84_egm96_crs() -> str:
-    """CRS string for WGS84 with EGM96 geoid vertical datum."""
+    """CRS string for WGS84 with EGM96 geoid vertical CRS."""
     return 'EPSG:4326+5773'
 
 
 @pytest.fixture(scope='session')
 def wgs84_egm2008_crs() -> str:
-    """CRS string for WGS84 with EGM2008 geoid vertical datum."""
+    """CRS string for WGS84 with EGM2008 geoid vertical CRS."""
     return 'EPSG:4326+3855'
 
 
@@ -397,7 +397,7 @@ def float_utm34n_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with no vertical datum.
+    A 2 band float DEM file in UTM zone 34N with no vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
@@ -415,7 +415,7 @@ def float_utm34n_wgs84_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_wgs84_crs
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with WGS84 ellipsoid vertical datum.
+    A 2 band float DEM file in UTM zone 34N with WGS84 ellipsoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
@@ -433,7 +433,7 @@ def float_utm34n_egm96_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_egm96_crs
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with EGM96 geoid vertical datum.
+    A 2 band float DEM file in UTM zone 34N with EGM96 geoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
@@ -451,7 +451,7 @@ def float_wgs84_wgs84_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_wgs84_crs
 ) -> Path:
     """
-    A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical datum.
+    A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
@@ -473,7 +473,7 @@ def float_utm34n_partial_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with no vertical datum.
+    A 2 band float DEM file in UTM zone 34N with no vertical CRS.
 
     Pixels above the diagonal are nodata. Band 1 is a sinusoidal surface, and band 2, a planar
     surface.
@@ -494,7 +494,7 @@ def rgb_pinhole_utm34n_ortho(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ) -> Ortho:
     """An Ortho object initialised with with RGB byte source image, float DEM in UTM zone 34N (no
-    vertical datum), pinhole camera, and UTM zone 34N CRS (no vertical datum).
+    vertical CRS), pinhole camera, and UTM zone 34N CRS (no vertical CRS).
     """
     return Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs)
 

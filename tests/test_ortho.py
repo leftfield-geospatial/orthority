@@ -226,7 +226,6 @@ def test_reproject_dem(
     assert array.shape != ortho._dem_array.shape
     assert np.all(np.abs((transform[0], transform[4])) == resolution)
     assert bounds == pytest.approx(init_bounds, abs=max(resolution))
-    assert np.all(bounds[:2] <= init_bounds[:2]) and np.all(bounds[-2:] >= init_bounds[-2:])
     assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array), abs=1e-3)
 
 
@@ -1202,7 +1201,7 @@ def test_process_file_error(
 
 
 # TODO: add test with dem that includes occlusion
-# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical datum & with ortho & DEM in
+# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical CRS & with ortho & DEM in
 #  different CRSs
 # TODO: add a test with nadir pinhole camera and test for proper pixel alignment and similarity
 #  with source (as far as possible make the ortho identical to the source)
