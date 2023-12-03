@@ -67,10 +67,10 @@ _default_lla_crs = CRS.from_epsg(4979)
 
 
 def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
-    """Read camera interior parameters from an OpenDroneMap / OpenSfM json dictionary."""
+    """Read camera interior parameters from an OpenDroneMap / OpenSfM JSON dictionary."""
 
     def parse_json_param(json_param: dict, cam_id: str) -> dict[str, Any]:
-        """Validate & convert the given json dictionary for a single camera."""
+        """Validate & convert the given JSON dictionary for a single camera."""
         int_param = {}
         for req_key in ['projection_type', 'width', 'height']:
             if req_key not in json_param:
@@ -86,7 +86,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         im_size = (json_param.pop('width'), json_param.pop('height'))
         int_param['im_size'] = im_size
 
-        # read focal length(s) (json values are normalised by max of sensor width & height)
+        # read focal length(s) (JSON values are normalised by max of sensor width & height)
         if 'focal' in json_param:
             int_param['focal_len'] = json_param.pop('focal')
         elif 'focal_x' in json_param and 'focal_y' in json_param:
@@ -132,6 +132,8 @@ def _create_exif_cam_id(exif: Exif) -> str:
 
 def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
     """Read camera interior parameters from an Exif object."""
+    # TODO: might there be cases where XMP tags CalibratedFocalLength, CalibratedOpticalCenter* are
+    #  present but not DewarpData, and better than equiv EXIF tags?
     if exif.dewarp:
         if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
             logger.warning(f"Cannot interpret dewarp data for '{exif.filename.name}'.")
@@ -197,17 +199,17 @@ def _read_exif_ext_param(
 
 def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more cameras from an orthority format yaml file.
+    Read interior parameters for one or more cameras from an orthority format YAML file.
 
     :param filename:
-        Path of the yaml file to read.
+        Path of the YAML file to read.
     """
     filename = Path(filename)
     with open(filename, 'r') as f:
         yaml_dict = yaml.safe_load(f)
 
     def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
-        """Validate & convert the given yaml dictionary for a single camera."""
+        """Validate & convert the given YAML dictionary for a single camera."""
         # test required keys for all cameras
         for req_key in ['type', 'im_size', 'focal_len']:
             if req_key not in yaml_param:
@@ -256,11 +258,11 @@ def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
 
 def read_osfm_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more camera, from an OpenDroneMap 'cameras.json' or OpenSfM
-    'reconstruction.json' file.
+    Read interior parameters for one or more camera, from an OpenDroneMap :file:`cameras.json` or
+    OpenSfM :file:`reconstruction.json` file.
 
     :param filename:
-        Path of the OpenDroneMap / OpenSfM json file to read.
+        Path of the OpenDroneMap / OpenSfM JSON file to read.
     """
     with open(filename, 'r') as f:
         json_dict = json.load(f)
@@ -282,7 +284,7 @@ def write_int_param(
     filename: str | Path, int_param_dict: dict[str, dict[str, Any]], overwrite: bool = False
 ) -> None:
     """
-    Write interior parameters to an orthority format yaml file.
+    Write interior parameters to an orthority format YAML file.
 
     :param filename:
         Path of the file to write.
@@ -317,7 +319,7 @@ def write_ext_param(
     overwrite: bool = False,
 ) -> None:
     """
-    Write exterior parameters to an orthority format geojson file.
+    Write exterior parameters to an orthority format GeoJSON file.
 
     :param filename:
         Path of the file to write.
@@ -340,7 +342,7 @@ def write_ext_param(
     for src_file, ext_param in ext_param_dict.items():
         xyz = ext_param['xyz']
         lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
-        lla = [lla[0][0], lla[1][0], lla[2][0]]  # (lon, lat) order for geojson point
+        lla = [lla[0][0], lla[1][0], lla[2][0]]  # (lon, lat) order for GeoJSON point
         props_dict = dict(
             filename=src_file, camera=ext_param['camera'], xyz=xyz, opk=ext_param['opk']
         )
@@ -767,15 +769,15 @@ class CsvReader(Reader):
 
 class OsfmReader(Reader):
     """
-    Interior and exterior parameter reader for an OpenSfM 'reconstruction.json' file.
+    Interior and exterior parameter reader for an OpenSfM :file:`reconstruction.json` file.
 
     :param filename:
-        Path of the 'reconstruction.json' file.
+        Path of the :file:`reconstruction.json` file.
     :param crs:
         CRS of the world coordinate system.  If set to None (the default), a UTM CRS will be
         auto-determined.
     :param lla_crs:
-        CRS of the 'reference_lla' value in the 'reconstruction.json' file.
+        CRS of the ``reference_lla`` value in the :file:`reconstruction.json` file.
     """
 
     # TODO: OSfM reconstruction is in a topocentric system, so the transfer of 3D cartesian
@@ -801,7 +803,7 @@ class OsfmReader(Reader):
 
     @staticmethod
     def _read_json_dict(filename: Path) -> dict[str, dict]:
-        """Read and validate the reconstruction json file."""
+        """Read and validate the reconstruction JSON file."""
         with open(filename, 'r') as f:
             json_data = json.load(f)
 
@@ -914,6 +916,7 @@ class ExifReader(Reader):
 
         mean_latlon = np.array(llas)[:, :2].mean(axis=0)
         return utm_crs_from_latlon(*mean_latlon)
+        # return CRS.from_proj4(f'+proj=ortho +lat_0={mean_latlon[0]} +lon_0={mean_latlon[1]}'
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
         int_param_dict = {}
@@ -933,10 +936,10 @@ class ExifReader(Reader):
 
 class OtyReader(Reader):
     """
-    Exterior parameter reader for an Orthority format geojson file.
+    Exterior parameter reader for an Orthority format GeoJSON file.
 
     :param filename:
-        Path of the geojson file.
+        Path of the GeoJSON file.
     """
 
     def __init__(self, filename: str | Path) -> None:
@@ -949,7 +952,7 @@ class OtyReader(Reader):
 
     @staticmethod
     def _read_json_dict(filename: Path, crs: CRS) -> tuple[CRS, dict]:
-        """Read and validate the geojson file."""
+        """Read and validate the GeoJSON file."""
         with open(filename, 'r') as f:
             json_dict = json.load(f)
 

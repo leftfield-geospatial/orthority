@@ -71,9 +71,8 @@ _xmp_schemas = dict(
 """
 A schema of known XMP keys.
 
-Uses xml namspace qualified keys which are unique, rather than xmltodict type prefix qualified keys,
-which can have different prefixes referring to the same namepace.
-"""
+Uses xml namespace qualified keys which are unique, rather than xmltodict type prefix qualified 
+keys, which can have different prefixes referring to the same namespace."""
 
 
 def _xml_to_flat_dict(xmp_str: str) -> dict[str, str]:

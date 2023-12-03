@@ -361,7 +361,9 @@ class OpenCVCamera(Camera):
 
     This is a wrapper around the `OpenCV general model
     <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.  Partial or special cases can be
-    specified by omitting some or all of the distortion coefficients.
+    specified by omitting some or all of the distortion coefficients.  E.g. if no distortion
+    coefficients are specified, this model corresponds to :class:`PinholeCamera`, or if the first 5
+    distortion coefficients are specified, this model corresponds to :class:`BrownCamera`.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
     :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
@@ -479,9 +481,10 @@ class BrownCamera(OpenCVCamera):
     """
     Brown-Conrady camera model.
 
-    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__ and
-    `OpenSfM <https://opensfm.org/docs/geometry.html#brown-camera>`__ *brown* model parameters,
-    and equivalent to the 4- and 5-coefficient versions of :class:`OpenCVCamera`.
+    Compatible with `OpenDroneMap / OpenSfM
+    <https://opensfm.org/docs/geometry.html#camera-models>`__ ``perspective``, ``simple_radial``,
+    ``radial`` and ``brown`` model parameters, and the 4- and 5-coefficient versions of the
+    `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
     :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
@@ -568,9 +571,10 @@ class FisheyeCamera(Camera):
     """
     Fisheye camera model.
 
-    Compatible with `OpenDroneMap <https://docs.opendronemap.org/arguments/camera-lens/>`__,
-    `OpenSfM <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV
-    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model parameters.
+    Compatible with `OpenDroneMap / OpenSfM
+    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  ``fisheye`` model
+    parameters.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
     :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or

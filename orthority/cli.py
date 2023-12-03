@@ -84,6 +84,8 @@ class RstCommand(click.Command):
             r':option:`(.*?)(\s+<.*?>)?`': r'\g<1>',
             # convert ':option:`--name`' to '--name'
             ':option:`(.*?)`': r'\g<1>',
+            # convert ':file:`file/na.me`' to "'file/na.me'"
+            ':file:`(.*?)`': r"'\g<1>'",
             # strip '----...'
             # '-{4,}': r'',
             # # convert from RST cross-ref '`<name> <link>`__' to 'name'
@@ -494,10 +496,10 @@ def ortho(
     Orthorectify SOURCE images with camera model(s) defined by interior and exterior parameter
     files.
 
-    Interior parameters are supported in orthority (.yaml), OpenDroneMap 'cameras.json',
-    and OpenSfM 'reconstruction.json' formats.  Exterior parameters are supported in Orthority
-    (.geojson), CSV, and OpenSfM 'reconstruction.json' formats.  Note that parameter file
-    extensions are used to distinguish their format.
+    Interior parameters are supported in orthority (.yaml), OpenDroneMap :file:`cameras.json`,
+    and OpenSfM :file:`reconstruction.json` formats.  Exterior parameters are supported in
+    Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Note that
+    parameter file extensions are used to distinguish their format.
 
     The :option:`--dem <oty-ortho --dem>`, :option:`--int-param <oty-ortho --int-param>` and
     :option:`--ext-param <oty-ortho --ext-param>` options are required.  Depending on the input
@@ -599,8 +601,9 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
     """
     Orthorectify SOURCE images with camera model(s) defined by image EXIF / XMP tags.
 
-    SOURCE image tags should include focal length & sensor size or 35mm equivalent focal length,
-    camera position, and camera roll, pitch & yaw.
+    SOURCE image tags should include DewarpData, focal length & sensor size or 35mm equivalent
+    focal length; camera position and camera roll, pitch & yaw.  DewarpData is converted to a
+    Brown model if it is present, otherwise a pinhole model is used.
 
     The :option:`--dem <oty-exif --dem>` option is required.  If :option:`--crs <oty-exif --crs>`
     is not supplied, a UTM world / ortho CRS is auto-determined from the camera positions::
@@ -690,8 +693,8 @@ def odm(
 
         oty odm --dataset-dir dataset --export-params
 
-    Ortho images and parameter files are placed in the '<dataset-dir>/orthority' subdirectory by
-    default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    Ortho images and parameter files are placed in the :file:`{dataset}/orthority` subdirectory
+    by default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']

@@ -54,9 +54,9 @@ class Ortho:
         Source image camera model (can be created with :meth:`~orthority.camera.create_camera`).
     :param crs:
         CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string,
-        or :class:`~rasterio.crs.CRS` object.  Should not be a geographic CRS.  If set to None
-        (the default), the CRS will be read from the source image if possible. If the source image
-        is not projected in the world / ortho CRS, ``crs`` should be supplied.
+        or :class:`~rasterio.crs.CRS` object.  If set to None (the default), the CRS will be read
+        from the source image if possible. If the source image is not projected in the world /
+        ortho CRS, ``crs`` should be supplied.
     :param dem_band:
         Index of the DEM band to use (1-based).
     """
@@ -95,7 +95,7 @@ class Ortho:
     def __init__(
         self,
         src_filename: str | Path,
-        dem_filename: str | Path | None,
+        dem_filename: str | Path,
         camera: Camera,
         crs: str | CRS | None = None,
         dem_band: int = 1,
