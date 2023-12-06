@@ -19,17 +19,11 @@ Contents
 --------
 
 .. toctree::
-   :maxdepth: 5
+   :maxdepth: 2
    :caption: Contents:
 
    installation
+   background/index
+   file_formats/index
    cli/index
    api/index
-
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
