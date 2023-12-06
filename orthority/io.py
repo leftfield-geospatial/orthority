@@ -545,7 +545,7 @@ class CsvReader(Reader):
     Reads tabular data from a CSV file with a row per source image and column fields for image
     file name, camera position, orientation and ID.
 
-    See :ref:`file_formats:CSV exterior parameters` for detail on supported fields and formats.
+    See :doc:`../file_formats/csv` for detail on supported fields and formats.
 
     :param filename:
         Path of the CSV file.
@@ -562,8 +562,7 @@ class CsvReader(Reader):
     :param fieldnames:
         List of names specifying the CSV fields.  If set to None (the default), names will be
         read from the file header if it exists.  If ``fieldnames`` is supplied, any existing file
-        header is ignored.  See :ref:`file_formats:CSV exterior parameters` for recognised field
-        names.
+        header is ignored.  See :doc:`../file_formats/csv` for recognised field names.
     :param dialect:
         :class:`~csv.Dialect` object specifying the CSV delimiter, quote character etc. If set to
         None (the default), this is auto-detected from the file.
