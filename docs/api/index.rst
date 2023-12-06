@@ -1,15 +1,7 @@
-API
-===
-
-Reference
----------
+API reference
+=============
 
 .. toctree::
     :glob:
 
-    io
-    camera
-    ortho
-    enums
-    errors
-
+    *

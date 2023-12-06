@@ -1,5 +1,5 @@
-Exceptions
-==========
+Errors
+======
 
 .. automodule:: orthority.errors
     :members:
