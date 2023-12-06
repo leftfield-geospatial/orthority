@@ -1,14 +1,10 @@
-Command line interface
-----------------------
-
-Reference
-~~~~~~~~~
-
-.. click:: orthority.cli:cli
-  :prog: oty
+Command line reference
+======================
 
 .. toctree::
+    :maxdepth: 1
 
+    oty
     ortho
     exif
     odm
