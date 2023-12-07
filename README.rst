@@ -43,6 +43,8 @@ Quick start
 Command line interface
 ~~~~~~~~~~~~~~~~~~~~~~
 
+.. cli_start
+
 Orthority command line functionality is accessed with the ``oty`` command, and its sub-commands:
 
 -  ``ortho``: Orthorectify with camera model(s) defined by interior and exterior parameter files.
@@ -61,7 +63,13 @@ and help on an ``oty`` sub-command with:
 
    oty <sub-command> --help
 
+.. cli_end
+
 Options for the orthorectification algorithm and ortho image format are common to all sub-commands.
+
+.. note::
+
+    The ``simple-ortho`` command is deprecated and will be removed in future.  Please switch to ``oty`` and its sub-commands.
 
 Examples
 ^^^^^^^^
