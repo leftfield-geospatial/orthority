@@ -56,7 +56,6 @@ class RstCommand(click.Command):
     """click.Command subclass for formatting help with RST markup."""
 
     # TODO: can we lose this?
-
     def get_help(self, ctx: click.Context):
         """
         Strip some RST markup from the help text for CLI display.
@@ -103,6 +102,22 @@ class RstCommand(click.Command):
 
         click.formatting.wrap_text = reformat_text
         return click.Command.get_help(self, ctx)
+
+
+class CondReqOption(click.Option):
+    """
+    click.Option subclass whose ``required`` attribute is turned off when any of a specified
+    list of other options is present.
+    """
+
+    # adapted from https://stackoverflow.com/questions/44247099/click-command-line-interfaces-make-options-required-if-other-optional-option-is
+    def __init__(self, *args, not_required: list[str] | None = None, **kwargs):
+        self.not_required = not_required or []
+        click.Option.__init__(self, *args, **kwargs)
+
+    def handle_parse_result(self, ctx, opts, args):
+        self.required = not any([opt in self.not_required for opt in opts])
+        return click.Option.handle_parse_result(self, ctx, opts, args)
 
 
 def _configure_logging(verbosity: int):
@@ -270,8 +285,11 @@ dem_file_option = click.option(
     '--dem',
     'dem_file',
     type=click.Path(dir_okay=False, readable=True, path_type=Path),
+    required=True,
     default=None,
-    help='Path/URL of a DEM image covering the source image(s). [required]',
+    help='Path/URL of a DEM image covering the source image(s).',
+    cls=CondReqOption,
+    not_required=['export_params'],
 )
 int_param_file_option = click.option(
     '-ip',
@@ -790,22 +808,15 @@ def _simple_ortho(
                 logger.warning(f'Creating ortho directory {ortho_dir}')
                 ortho_dir.mkdir()
 
-    # TODO: add deprecation warning with link to docs
-    # logger.warning(
-    #     "This command is deprecated and will be removed in version 0.4.0.  Please switch to 'oty'
-    #     and its " "sub-commands."
-    # )
-
     try:
         # set logging level
         if verbosity is not None:
-            pkg_logger = logging.getLogger('orthority')
-            formatter = PlainInfoFormatter()
-            handler = logging.StreamHandler(sys.stderr)
-            handler.setFormatter(formatter)
-            pkg_logger.addHandler(handler)
-            pkg_logger.setLevel(10 * verbosity)
-            logging.captureWarnings(True)
+            _configure_logging(2 - verbosity)
+
+        logger.warning(
+            "This command is deprecated and will be removed in a future version.  Please switch to"
+            " 'oty' and its sub-commands.\n"
+        )
 
         # read configuration
         if read_conf is None:
