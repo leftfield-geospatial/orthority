@@ -61,6 +61,7 @@ class Ortho:
         Index of the DEM band to use (1-based).
     """
 
+    # TODO: what happens when the source image size does not match the camera configuration?
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_band=1,
@@ -440,6 +441,7 @@ class Ortho:
         else:
             compress = Compress(compress)
             if compress == Compress.jpeg and dtype != 'uint8':
+                # TODO: enable 12bit jpeg support with dtype==uint16 with unit test
                 raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.jpeg:
@@ -473,6 +475,7 @@ class Ortho:
             compress=compress.value,
             interleave=interleave,
             photometric=photometric,
+            nbits=12,
         )
 
         return ortho_profile, write_mask
@@ -726,8 +729,9 @@ class Ortho:
             image once.  False is faster but remaps the source image twice, so can reduce ortho
             image quality.
         :param write_mask:
-            Write an internal mask for the ortho image. This helps remove nodata noise caused by
-            lossy compression. If set to None (the default), the mask will be written when jpeg
+            Mask valid ortho pixels with an internal mask (True), or with a nodata value based on
+            ``dtype`` (False). An internal mask helps remove nodata noise caused by lossy
+            compression. If set to None (the default), the mask will be written when jpeg
             compression is used.
         :param dtype:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (

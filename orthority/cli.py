@@ -410,8 +410,9 @@ write_mask_option = click.option(
     type=click.BOOL,
     default=Ortho._default_config['write_mask'],
     show_default='true for jpeg compression.',
-    help='Write an internal mask for the ortho image. Helps remove nodata noise caused by lossy '
-    'compression.',
+    help='Mask valid pixels with an internal mask (``--write-mask``), or with a nodata value '
+    'based on ``--dtype`` (``--no-write-mask``). An internal mask helps remove nodata noise '
+    'caused by lossy compression.',
 )
 dtype_option = click.option(
     '-dt',
@@ -621,7 +622,8 @@ def exif(src_files: tuple[Path, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
 
     SOURCE image tags should include DewarpData, focal length & sensor size or 35mm equivalent
     focal length; camera position and camera roll, pitch & yaw.  DewarpData is converted to a
-    Brown model if it is present, otherwise a pinhole model is used.
+    Brown model if it is present, otherwise a pinhole model is used.  Pinhole approximation and
+    tag value accuracy affect ortho image accuracy.
 
     The :option:`--dem <oty-exif --dem>` option is required.  If :option:`--crs <oty-exif --crs>`
     is not supplied, a UTM world / ortho CRS is auto-determined from the camera positions::
