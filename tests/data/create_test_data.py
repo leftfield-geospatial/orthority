@@ -117,7 +117,7 @@ def downsample_dem(
             src_nodata=src_im.nodata,
             dst_crs=dst_crs,
             dst_nodata=nodata,
-            dst_resolution=(np.abs(src_transform.a) * ds_fact,) * 2,
+            dst_resolution=(round(np.abs(src_transform.a) * ds_fact, 2),) * 2,
             resampling=Resampling.cubic,
             init_dest_nodata=True,
             num_threads=multiprocessing.cpu_count(),
