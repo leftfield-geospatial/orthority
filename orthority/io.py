@@ -241,7 +241,12 @@ def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
         return int_param
 
     # flatten if in original simple-ortho format
-    yaml_dict = yaml_dict.get('camera', yaml_dict)
+    if 'camera' in yaml_dict:
+        logger.warning(
+            "Support for the 'config.yaml' format is deprecated and will be removed in future. "
+            "Please switch to the Orthority YAML format for interior parameters."
+        )
+        yaml_dict = yaml_dict['camera']
 
     # convert to nested dict if in flat format
     first_value = next(iter(yaml_dict.values()))
