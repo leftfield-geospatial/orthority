@@ -199,7 +199,8 @@ def _read_exif_ext_param(
 
 def read_oty_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more cameras from an orthority format YAML file.
+    Read interior parameters for one or more cameras from an :doc:`Orthority format YAML file
+    <../file_formats/yaml>`.
 
     :param filename:
         Path of the YAML file to read.
@@ -266,6 +267,8 @@ def read_osfm_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     Read interior parameters for one or more camera, from an OpenDroneMap :file:`cameras.json` or
     OpenSfM :file:`reconstruction.json` file.
 
+    See the :doc:`format documentation <../file_formats/opensfm>` for supported camera models.
+
     :param filename:
         Path of the OpenDroneMap / OpenSfM JSON file to read.
     """
@@ -279,6 +282,8 @@ def read_exif_int_param(filename: str | Path) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for a camera from an image file with EXIF / XMP tags.
 
+    See the :doc:`format documentation <../file_formats/exif_xmp>` for required tags.
+
     :param filename:
         Path of the image file to read.
     """
@@ -289,7 +294,7 @@ def write_int_param(
     filename: str | Path, int_param_dict: dict[str, dict[str, Any]], overwrite: bool = False
 ) -> None:
     """
-    Write interior parameters to an orthority format YAML file.
+    Write interior parameters to an :doc:`Orthority format YAML file <../file_formats/yaml>`.
 
     :param filename:
         Path of the file to write.
@@ -324,7 +329,7 @@ def write_ext_param(
     overwrite: bool = False,
 ) -> None:
     """
-    Write exterior parameters to an orthority format GeoJSON file.
+    Write exterior parameters to an :doc:`Orthority format GeoJSON file <../file_formats/geojson>`.
 
     :param filename:
         Path of the file to write.
@@ -550,7 +555,8 @@ class CsvReader(Reader):
     Reads tabular data from a CSV file with a row per source image and column fields for image
     file name, camera position, orientation and ID.
 
-    See :doc:`../file_formats/csv` for detail on supported fields and formats.
+    See the :doc:`CSV documentation <../file_formats/csv>` for details on supported fields and
+    formats.
 
     :param filename:
         Path of the CSV file.
@@ -567,7 +573,8 @@ class CsvReader(Reader):
     :param fieldnames:
         List of names specifying the CSV fields.  If set to None (the default), names will be
         read from the file header if it exists.  If ``fieldnames`` is supplied, any existing file
-        header is ignored.  See :doc:`../file_formats/csv` for recognised field names.
+        header is ignored.  See the :doc:`CSV documentation <../file_formats/csv>` for recognised
+        and required field names.
     :param dialect:
         :class:`~csv.Dialect` object specifying the CSV delimiter, quote character etc. If set to
         None (the default), this is auto-detected from the file.
@@ -775,6 +782,8 @@ class OsfmReader(Reader):
     """
     Interior and exterior parameter reader for an OpenSfM :file:`reconstruction.json` file.
 
+    See the :doc:`format documentation <../file_formats/opensfm>` for supported camera models.
+
     :param filename:
         Path of the :file:`reconstruction.json` file.
     :param crs:
@@ -873,6 +882,8 @@ class ExifReader(Reader):
     """
     Interior and exterior parameter reader for image file(s) with EXIF / XMP tags.
 
+    See the :doc:`format documentation <../file_formats/exif_xmp>` for required tags.
+
     :param filenames:
         Path(s) of the image file(s).
     :param crs:
@@ -940,7 +951,7 @@ class ExifReader(Reader):
 
 class OtyReader(Reader):
     """
-    Exterior parameter reader for an Orthority format GeoJSON file.
+    Exterior parameter reader for an :doc:`Orthority format GeoJSON file <../file_formats/geojson>`.
 
     :param filename:
         Path of the GeoJSON file.
