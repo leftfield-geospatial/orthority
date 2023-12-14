@@ -6,8 +6,6 @@ Interior and exterior parameters can be read from image EXIF / XMP tags.  The ta
 Interior parameters
 -------------------
 
-.. TODO: add ref for camera types below
-
 .. list-table::
     :widths: auto
     :header-rows: 1
@@ -19,18 +17,18 @@ Interior parameters
     * - - ``DewarpData``
       - XMP
       - - ``http://www.dji.com/drone-dji/1.0/``
-      - Brown
+      - :attr:`~orthority.enums.CameraType.brown`
     * - - ``EXIF_FocalLength``
         - ``EXIF_FocalPlaneXResolution``
         - ``EXIF_FocalPlaneYResolution``
         - ``EXIF_FocalPlaneResolutionUnit``
       - EXIF
       -
-      - Pinhole
+      - :attr:`~orthority.enums.CameraType.pinhole`
     * - - ``EXIF_FocalLengthIn35mmFilm``
       - EXIF
       -
-      - Pinhole
+      - :attr:`~orthority.enums.CameraType.pinhole`
 
 Exterior parameters
 -------------------

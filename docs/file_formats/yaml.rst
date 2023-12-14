@@ -86,7 +86,3 @@ An example of a valid YAML file defining two cameras:
         p1: 0.01
         p2: 0.01
         k3: -0.1
-
-.. TODO: refer to camera model section for more on model specific parameters when that is done
-
-.. TODO: decide on a quoting standard for rst docs.  The CSV section used *field* to specify fields while here I am using ``parameter`` to specify parameters.  Then I also use 'filename' to refer to an actual file.
