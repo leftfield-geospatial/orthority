@@ -13,17 +13,16 @@ orthority
    :start-after: description_start
    :end-before: description_end
 
-.. include:: installation.rst
 
-Contents
---------
+Documentation
+-------------
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
 
    installation
    background/index
    file_formats/index
+   getting_started/index
    cli/index
    api/index
