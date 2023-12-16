@@ -441,7 +441,8 @@ class Ortho:
         else:
             compress = Compress(compress)
             if compress == Compress.jpeg and dtype != 'uint8':
-                # TODO: enable 12bit jpeg support with dtype==uint16 with unit test
+                # TODO: enable 12bit jpeg support input and output support with dtype==uint16 with
+                #  unit test
                 raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.jpeg:
@@ -475,7 +476,6 @@ class Ortho:
             compress=compress.value,
             interleave=interleave,
             photometric=photometric,
-            nbits=12,
         )
 
         return ortho_profile, write_mask
