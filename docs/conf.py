@@ -51,6 +51,7 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3', None),
     'numpy': ('https://numpy.org/doc/stable', None),
     'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
+    'gdal': ('https://gdal.org/', None),
 }
 
 # -- Options for pygments -----------------------------------------------------
