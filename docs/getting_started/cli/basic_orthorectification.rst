@@ -1,12 +1,12 @@
 Basic orthorectification
 ------------------------
 
-The |oty|_ sub-commands allow :doc:`DEM <../../background/dem>` and :doc:`camera models <../../background/models>` to be specified in different ways.
+The |oty|_ sub-commands allow :doc:`DEM <../../background/dem>` and :doc:`camera models <../../background/camera_models>` to be specified in different ways.
 
 ``oty ortho``
 ~~~~~~~~~~~~~
 
-|oty ortho|_ uses :ref:`interior <background/models:interior parameters>` and :ref:`exterior <background/models:interior parameters>` parameter files to specify camera models.  Here we orthorectify `NGI <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ aerial images using the associated DEM, :doc:`YAML format <../../file_formats/yaml>` interior parameters, and :doc:`CSV format <../../file_formats/csv>` exterior parameters.  Ortho images are placed in the current directory:
+|oty ortho|_ uses :ref:`interior <background/camera_models:interior parameters>` and :ref:`exterior <background/camera_models:interior parameters>` parameter files to specify camera models.  Here we orthorectify `NGI <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ aerial images using the associated DEM, :doc:`YAML format <../../file_formats/yaml>` interior parameters, and :doc:`CSV format <../../file_formats/csv>` exterior parameters.  Ortho images are placed in the current directory:
 
 .. code-block:: bash
 

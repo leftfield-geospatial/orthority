@@ -7,7 +7,7 @@ This section covers terminology and background information relevant to command l
     :maxdepth: 1
 
     coordinates
-    models
+    camera_models
     dem
     vertical_crs
 
