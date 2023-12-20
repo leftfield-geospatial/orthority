@@ -127,18 +127,27 @@ def test_init_dem_band(
     assert np.all(ortho._dem_array == dem_array)
 
 
+@pytest.mark.parametrize(
+    'filename',
+    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
+)
 def test_init_file_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
+    filename: str,
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_crs: str,
 ):
     """Test Ortho initialisation with non existent source / DEM file raises an error."""
-    filename = 'unknown.tif'
-    with pytest.raises(rio.errors.RasterioIOError) as ex:
+    with pytest.raises(errors.SrcFileError) as ex:
         _ = Ortho(filename, float_utm34n_dem_file, pinhole_camera, crs=None)
-    assert filename in str(ex)
+    if not filename.startswith('http'):
+        assert filename in str(ex)
 
-    with pytest.raises(rio.errors.RasterioIOError) as ex:
+    with pytest.raises(errors.DemFileError) as ex:
         _ = Ortho(rgb_byte_src_file, filename, pinhole_camera, crs=utm34n_crs)
-    assert filename in str(ex)
+    if not filename.startswith('http'):
+        assert filename in str(ex)
 
 
 def test_init_dem_band_error(
@@ -1189,15 +1198,23 @@ def test_process_odm(
     _validate_ortho_files(ortho_files, num_ovl_thresh=5)
 
 
+@pytest.mark.parametrize(
+    'src_file',
+    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
+)
 def test_process_file_error(
-    float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str, tmp_path: Path
+    src_file: str,
+    float_utm34n_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_crs: str,
+    tmp_path: Path,
 ):
     """Test process with non existent source file raises an error."""
-    src_file = 'unknown.tif'
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
-    with pytest.raises(rio.errors.RasterioIOError) as ex:
+    with pytest.raises(errors.SrcFileError) as ex:
         ortho.process(tmp_path.joinpath('test_ortho.tif'), (5, 5))
-    assert src_file in str(ex)
+    if not src_file.startswith('http'):
+        assert src_file in str(ex)
 
 
 # TODO: add test with dem that includes occlusion
@@ -1205,4 +1222,5 @@ def test_process_file_error(
 #  different CRSs
 # TODO: add a test with nadir pinhole camera and test for proper pixel alignment and similarity
 #  with source (as far as possible make the ortho identical to the source)
+# TODO: test with source and dem file urls
 ##

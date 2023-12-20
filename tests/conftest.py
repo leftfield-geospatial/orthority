@@ -262,25 +262,25 @@ def fisheye_dist_param() -> dict:
 
 
 @pytest.fixture(scope='session')
-def pinhole_camera(camera_args) -> Camera:
+def pinhole_camera(camera_args: dict) -> Camera:
     """Example ``PinholeCamera`` object with near-nadir orientation."""
     return PinholeCamera(**camera_args)
 
 
 @pytest.fixture(scope='session')
-def brown_camera(camera_args, brown_dist_param: dict) -> Camera:
+def brown_camera(camera_args: dict, brown_dist_param: dict) -> Camera:
     """Example ``BrownCamera`` object with near-nadir orientation."""
     return BrownCamera(**camera_args, **brown_dist_param)
 
 
 @pytest.fixture(scope='session')
-def opencv_camera(camera_args, opencv_dist_param: dict) -> Camera:
+def opencv_camera(camera_args: dict, opencv_dist_param: dict) -> Camera:
     """Example ``OpenCVCamera`` object with near-nadir orientation."""
     return OpenCVCamera(**camera_args, **opencv_dist_param)
 
 
 @pytest.fixture(scope='session')
-def fisheye_camera(camera_args, fisheye_dist_param: dict) -> Camera:
+def fisheye_camera(camera_args: dict, fisheye_dist_param: dict) -> Camera:
     """Example ``FisheyeCamera`` object with near-nadir orientation."""
     return FisheyeCamera(**camera_args, **fisheye_dist_param)
 
