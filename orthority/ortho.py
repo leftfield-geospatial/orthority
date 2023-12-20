@@ -19,6 +19,7 @@ import logging
 import multiprocessing
 import threading
 from concurrent.futures import as_completed, ThreadPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -27,11 +28,12 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
+from rasterio.errors import RasterioIOError
 from tqdm.auto import tqdm
 
 from orthority.camera import Camera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsError, CrsMissingError, DemBandError
+from orthority.errors import CrsError, CrsMissingError, DemBandError, DemFileError, SrcFileError
 from orthority.utils import expand_window_to_grid, nan_equals, profiler, suppress_no_georef
 
 
@@ -108,13 +110,13 @@ class Ortho:
                 "'camera' has a field of view that includes, or is above, the horizon."
             )
 
-        self._src_filename = Path(src_filename)
+        self._src_filename = src_filename
         self._camera = camera
         self._write_lock = threading.Lock()
 
         self._crs = self._parse_crs(crs)
         self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
-            Path(dem_filename), dem_band
+            dem_filename, dem_band
         )
         self._gsd = self._get_gsd()
 
@@ -129,6 +131,32 @@ class Ortho:
         ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         im.build_overviews(ovw_levels, Resampling.average)
 
+    @staticmethod
+    @contextmanager
+    def _dem_im(filename: str | Path) -> rio.DatasetReader:
+        """Context manager for DEM image reader.  Raises DemFileError if image can not be opened."""
+        try:
+            dem_im = rio.open(filename, 'r')
+        except RasterioIOError as ex:
+            raise DemFileError(str(ex))
+        try:
+            yield dem_im
+        finally:
+            dem_im.close()
+
+    @contextmanager
+    def _src_im(self) -> rio.DatasetReader:
+        """Context manager for source image reader.  Raises SrcFileError if image can not be
+        opened."""
+        try:
+            src_im = rio.open(self._src_filename, 'r')
+        except RasterioIOError as ex:
+            raise SrcFileError(str(ex))
+        try:
+            yield src_im
+        finally:
+            src_im.close()
+
     def _parse_crs(self, crs: str | CRS) -> CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
         if crs:
@@ -137,7 +165,7 @@ class Ortho:
             except rio.errors.CRSError as ex:
                 raise CrsError(f"Could not interpret 'crs': '{crs}'. {str(ex)}")
         else:
-            with suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
+            with suppress_no_georef(), self._src_im() as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
@@ -149,7 +177,7 @@ class Ortho:
         return crs
 
     def _get_init_dem(
-        self, dem_filename: Path, dem_band: int
+        self, dem_filename: str, dem_band: int
     ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
         """
         Return an initial DEM array in its own CRS and resolution.  Includes the corresponding DEM
@@ -159,12 +187,13 @@ class Ortho:
         for worst case vertical datum offset between the DEM and world / ortho CRS, and within the
         limits of the DEM image bounds.
         """
+
         # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), rio.open(dem_filename, 'r') as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), self._dem_im(dem_filename) as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 raise DemBandError(
-                    f"DEM band {dem_band} is invalid for '{dem_filename.name}' with {dem_im.count} "
-                    f"band(s)"
+                    f"DEM band {dem_band} is invalid for '{Path(dem_filename).name}' with"
+                    f" {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use
             # elsewhere
@@ -193,9 +222,8 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise ValueError(
-                        f"Ortho boundary for '{self._src_filename.name}' lies outside the DEM."
-                    )
+                    src_name = Path(self._src_filename).name
+                    raise ValueError(f"Ortho boundary for '{src_name}' lies outside the DEM.")
                 return expand_window_to_grid(dem_win)
 
             # get a dem window corresponding to ortho world bounds at min possible altitude,
@@ -390,17 +418,15 @@ class Ortho:
         poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).astype('bool', copy=False)
         dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
+        src_name = Path(self._src_filename).name
+
         if dem_mask_sum == 0:
-            raise ValueError(
-                f"Ortho boundary for '{self._src_filename.name}' lies outside the valid DEM area."
-            )
+            raise ValueError(f"Ortho boundary for '{src_name}' lies outside the valid DEM area.")
         elif poly_mask.sum() > dem_mask_sum or (
             np.any(np.min(poly_ji, axis=1) < (0, 0))
             or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
-            logger.warning(
-                f"Ortho boundary for '{self._src_filename.name}' is not fully covered by the DEM."
-            )
+            logger.warning(f"Ortho boundary for '{src_name}' is not fully covered by the DEM.")
 
         if crop:
             # crop dem_mask & dem_array to poly_xy and find corresponding transform
@@ -762,7 +788,7 @@ class Ortho:
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
-            with env, suppress_no_georef(), rio.open(self._src_filename, 'r') as src_im:
+            with env, suppress_no_georef(), self._src_im() as src_im:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
