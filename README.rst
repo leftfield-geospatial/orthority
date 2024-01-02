@@ -109,36 +109,37 @@ Orthorectify an image with the camera model defined by its EXIF / XMP tags:
 
 .. code:: python
 
-   from pathlib import Path
-   import orthority as oty
+    from pathlib import Path
+    import orthority as oty
+    from orthority import param_io
 
-   # URLs of source image and DEM
-   src_file = (
-       'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
-       'tests/data/odm/images/100_0005_0140.tif'
-   )
-   dem_file = (
-       'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
-       'tests/data/odm/odm_dem/dsm.tif'
-   )
+    # URLs of source image and DEM
+    src_file = (
+        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
+        'tests/data/odm/images/100_0005_0140.tif'
+    )
+    dem_file = (
+        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
+        'tests/data/odm/odm_dem/dsm.tif'
+    )
 
-   # read interior and exterior parameters from src_file EXIF / XMP tags
-   reader = oty.ExifReader((src_file,))
-   int_param_dict = reader.read_int_param()
-   ext_param_dict = reader.read_ext_param()
+    # read interior and exterior parameters from src_file EXIF / XMP tags
+    reader = param_io.ExifReader((src_file,))
+    int_param_dict = reader.read_int_param()
+    ext_param_dict = reader.read_ext_param()
 
-   # extract exterior parameters for src_file, and interior parameters for
-   # src_file's camera
-   ext_params = ext_param_dict[Path(src_file).name]
-   int_params = int_param_dict[ext_params.pop('camera')]
+    # extract exterior parameters for src_file, and interior parameters for
+    # src_file's camera
+    ext_params = ext_param_dict[Path(src_file).name]
+    int_params = int_param_dict[ext_params.pop('camera')]
 
-   # create camera from interior & exterior parameters
-   camera = oty.create_camera(**int_params, **ext_params)
+    # create camera from interior & exterior parameters
+    camera = oty.create_camera(**int_params, **ext_params)
 
-   # orthorectify src_file with dem_file, the created camera & exterior parameter
-   # ('world') CRS
-   ortho = oty.Ortho(src_file, dem_file, camera, crs=reader.crs)
-   ortho.process('ortho.tif')
+    # orthorectify src_file with dem_file, the created camera & exterior parameter
+    # ('world') CRS
+    ortho = oty.Ortho(src_file, dem_file, camera, crs=reader.crs)
+    ortho.process('ortho.tif')
 
 Documentation
 -------------
