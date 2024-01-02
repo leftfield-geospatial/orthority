@@ -23,7 +23,7 @@ import numpy as np
 
 from orthority.enums import CameraType
 from orthority.errors import CameraInitError
-from orthority.io import _opk_to_rotation
+from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
 
@@ -676,7 +676,7 @@ class FisheyeCamera(Camera):
         return xyz_
 
 
-def create_camera(cam_type: CameraType, *args, **kwargs) -> Camera:
+def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera:
     """
     Create a camera object given a camera type and parameters.
 
