@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
 import copy
 import logging
 import shutil
@@ -65,6 +66,67 @@ def test_ortho_help(runner: CliRunner):
     assert len(result.stdout) > 0
 
 
+@pytest.mark.parametrize(
+    'src_file',
+    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
+)
+def test_ortho_src_file_not_found_error(
+    src_file: str,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with a non-existing SOURCE image raises an error ."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {src_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'SOURCE' in result.stdout
+
+
+def test_ortho_dem_missing_error(
+    ngi_image_file: Path,
+    ngi_oty_int_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` without ``--dem`` raises an error ."""
+    cli_str = (
+        f'ortho --int-param {ngi_oty_int_param_file} --ext-param {ngi_oty_ext_param_file} '
+        f'--out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--dem' in result.stdout and 'missing' in result.stdout.lower()
+
+
+@pytest.mark.parametrize(
+    'dem_file',
+    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
+)
+def test_ortho_dem_not_found_error(
+    ngi_image_file: Path,
+    dem_file: str,
+    ngi_oty_int_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with a non-existing ``--dem`` raises an error ."""
+    cli_str = (
+        f'ortho --dem {dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--dem' in result.stdout
+
+
 def test_ortho_int_param_missing_error(
     ngi_image_file: Path,
     ngi_dem_file: Path,
@@ -79,7 +141,46 @@ def test_ortho_int_param_missing_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
+    assert '--int-param' in result.stdout and 'missing' in result.stdout.lower()
+
+
+@pytest.mark.parametrize(
+    'int_param_file',
+    ['unknown.yaml', 'https://un.known/unknown.yaml', 'https://github.com/unknown/unknown.yaml'],
+)
+def test_ortho_int_param_not_found_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    int_param_file: str,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with a non-existing ``--int-param`` raises an error ."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {int_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
     assert '--int-param' in result.stdout
+
+
+def test_ortho_int_param_ext_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with an unrecognised ``--int-param`` extension raises an error."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_ext_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--int-param' in result.stdout and 'not supported' in result.stdout.lower()
 
 
 def test_ortho_ext_param_missing_error(
@@ -96,7 +197,50 @@ def test_ortho_ext_param_missing_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
+    assert '--ext-param' in result.stdout and 'missing' in result.stdout.lower()
+
+
+@pytest.mark.parametrize(
+    'ext_param_file',
+    [
+        'unknown.geojson',
+        'https://un.known/unknown.geojson',
+        'https://github.com/unknown/unknown.geojson',
+    ],
+)
+def test_ortho_ext_param_not_found_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    ext_param_file: str,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with a non-existing ``--ext-param`` raises an error ."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
     assert '--ext-param' in result.stdout
+
+
+def test_ortho_ext_param_ext_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with an unrecognised ``--ext-param`` extension raises an error."""
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_oty_int_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--ext-param' in result.stdout and 'not supported' in result.stdout.lower()
 
 
 def test_ortho_crs_src(
@@ -197,7 +341,7 @@ def test_ortho_crs_prj(
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test ``oty ortho`` uses reads the CRS in a CSV exterior parameter .prj file."""
+    """Test ``oty ortho`` reads the CRS in a CSV exterior parameter .prj file."""
     # copy csv file to tmp_path and create .prj file
     csv_file = tmp_path.joinpath(odm_xyz_opk_csv_file.name)
     csv_file.write_text(odm_xyz_opk_csv_file.read_text())
@@ -234,7 +378,7 @@ def test_ortho_crs_missing_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout
+    assert '--crs' in result.stdout and 'missing' in result.stdout.lower()
 
 
 def test_ortho_crs_geographic_error(
@@ -245,6 +389,14 @@ def test_ortho_crs_geographic_error(
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--crs' in result.stdout and 'projected' in result.stdout
+
+
+def test_ortho_crs_invalid_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty ortho`` raises an error when ``--crs`` is invalid."""
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --crs unknown'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--crs' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_resolution_square(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -342,7 +494,7 @@ def test_ortho_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runne
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --interp other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--interp' in result.stdout
+    assert '--interp' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_dem_interp(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -384,7 +536,7 @@ def test_ortho_dem_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, r
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --dem-interp other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--dem-interp' in result.stdout
+    assert '--dem-interp' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -517,7 +669,7 @@ def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --no-full-remap --alpha 2'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--alpha' in result.stdout
+    assert '--alpha' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_lla_crs(
@@ -573,6 +725,16 @@ def test_ortho_lla_crs_projected_error(
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert '--lla-crs' in result.stdout and 'geographic' in result.stdout
+
+
+def test_ortho_lla_crs_invalid_error(
+    ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty ortho`` raises an error when ``--lla_crs`` is invalid."""
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --lla-crs unknown'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--lla-crs' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_radians(
@@ -660,7 +822,7 @@ def test_ortho_dtype_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype int32'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--dtype' in result.stdout
+    assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 @pytest.mark.parametrize('compress', ['jpeg', 'deflate'])
@@ -683,7 +845,7 @@ def test_ortho_compress_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, run
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--compress' in result.stdout
+    assert '--compress' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_ortho_build_ovw(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -726,7 +888,7 @@ def test_ortho_export_params(
     request: pytest.FixtureRequest,
 ):
     """Test ``oty ortho --export-params`` exports interior & exterior parameters provided in
-    different formats.
+    different formats (with no ``--dem-file``).
     """
     # note this doubles as a test of reading params in different formats
     int_param_file: Path = request.getfixturevalue(int_param_file)
@@ -774,15 +936,15 @@ def test_ortho_overwrite_error(
 def test_ortho_urls(
     ngi_image_url: str,
     ngi_dem_url: str,
-    ngi_legacy_config_file: Path,
-    ngi_legacy_csv_file: Path,
+    ngi_oty_int_param_url: str,
+    ngi_oty_ext_param_url: str,
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test ``oty ortho`` with source and DEM URLs."""
+    """Test ``oty ortho`` with source, DEM & parameter file URLs."""
     cli_str = (
-        f'ortho --dem {ngi_dem_url} --int-param {ngi_legacy_config_file} '
-        f'--ext-param {ngi_legacy_csv_file} --out-dir {tmp_path} {ngi_image_url}'
+        f'ortho --dem {ngi_dem_url} --int-param {ngi_oty_int_param_url} '
+        f'--ext-param {ngi_oty_ext_param_url} --out-dir {tmp_path} {ngi_image_url}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
@@ -880,7 +1042,7 @@ def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout
+    assert 'SOURCE' in result.stdout and 'tags' in result.stdout.lower()
 
 
 def test_odm_dataset_dir(
@@ -963,7 +1125,7 @@ def test_simple_ortho_write_conf(
     )
 
 
-def test_mult_camera(
+def test__ortho_mult_camera(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     mult_int_param_dict: dict,
@@ -995,7 +1157,7 @@ def test_mult_camera(
     assert len(ortho_files) == len(src_files)
 
 
-def test_single_no_camera(
+def test__ortho_single_no_camera(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     pinhole_int_param_dict: dict,
@@ -1025,7 +1187,7 @@ def test_single_no_camera(
     assert len(ortho_files) == 1
 
 
-def test_mult_camera_unknown_camera_error(
+def test__ortho_mult_camera_unknown_camera_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     mult_int_param_dict: dict,
@@ -1053,10 +1215,10 @@ def test_mult_camera_unknown_camera_error(
             out_dir=tmp_path,
             overwrite=False,
         )
-    assert camera in str(ex)
+    assert camera in str(ex) and '--int-param' in ex.value.param_hint
 
 
-def test_mult_camera_no_camera_error(
+def test__ortho_mult_camera_no_camera_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     mult_int_param_dict: dict,
@@ -1083,4 +1245,34 @@ def test_mult_camera_no_camera_error(
             out_dir=tmp_path,
             overwrite=False,
         )
-    assert rgb_byte_src_file.name in str(ex)
+    assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
+
+
+def test__ortho_ext_param_not_found_error(
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_int_param_dict: dict,
+    xyz: tuple,
+    opk: tuple,
+    utm34n_crs: str,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test the _ortho backend raises an error when there are no exterior parameters for the
+    source image.
+    """
+    ext_param_dict = {'unknown.tif': dict(xyz=xyz, opk=opk, camera='pinhole test camera')}
+    with pytest.raises(click.BadParameter) as ex:
+        _ortho(
+            src_files=(rgb_byte_src_file,),
+            dem_file=float_utm34n_dem_file,
+            int_param_dict=pinhole_int_param_dict,
+            ext_param_dict=ext_param_dict,
+            crs=utm34n_crs,
+            dem_band=1,
+            alpha=1.0,
+            export_params=False,
+            out_dir=tmp_path,
+            overwrite=False,
+        )
+    assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
