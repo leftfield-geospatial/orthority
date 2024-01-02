@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
 import csv
 import json
 import os
@@ -500,6 +501,12 @@ def rgb_pinhole_utm34n_ortho(
 
 
 @pytest.fixture(scope='session')
+def github_root_url() -> str:
+    """URL of github repository root."""
+    return r'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
+
+
+@pytest.fixture(scope='session')
 def odm_dataset_dir() -> Path:
     """ODM dataset directory."""
     return root_path.joinpath('tests', 'data', 'odm')
@@ -518,6 +525,12 @@ def odm_image_file(odm_dataset_dir: Path) -> Path:
 
 
 @pytest.fixture(scope='session')
+def odm_image_url(github_root_url: str, odm_image_file: Path) -> str:
+    """ODM drone image URL."""
+    return github_root_url + str(odm_image_file.relative_to(root_path).as_posix())
+
+
+@pytest.fixture(scope='session')
 def odm_dem_file(odm_dataset_dir: Path) -> Path:
     """ODM DEM file."""
     return odm_dataset_dir.joinpath('odm_dem', 'dsm.tif')
@@ -527,6 +540,12 @@ def odm_dem_file(odm_dataset_dir: Path) -> Path:
 def odm_reconstruction_file(odm_dataset_dir: Path) -> Path:
     """ODM reconstruction file."""
     return odm_dataset_dir.joinpath('opensfm', 'reconstruction.json')
+
+
+@pytest.fixture(scope='session')
+def odm_reconstruction_url(github_root_url: str, odm_reconstruction_file: Path) -> str:
+    """ODM reconstruction URL."""
+    return github_root_url + str(odm_reconstruction_file.relative_to(root_path).as_posix())
 
 
 @pytest.fixture(scope='session')
@@ -550,12 +569,9 @@ def ngi_image_file() -> Path:
 
 
 @pytest.fixture(scope='session')
-def ngi_image_url(ngi_image_file: Path) -> str:
+def ngi_image_url(github_root_url: str, ngi_image_file: Path) -> str:
     """NGI aerial image URL."""
-    return (
-        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/tests/data/ngi/'
-        + ngi_image_file.name
-    )
+    return github_root_url + str(ngi_image_file.relative_to(root_path).as_posix())
 
 
 @pytest.fixture(scope='session')
@@ -565,12 +581,9 @@ def ngi_dem_file() -> Path:
 
 
 @pytest.fixture(scope='session')
-def ngi_dem_url(ngi_dem_file: Path) -> str:
+def ngi_dem_url(github_root_url: str, ngi_dem_file: Path) -> str:
     """NGI DEM URL."""
-    return (
-        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/tests/data/ngi/'
-        + ngi_dem_file.name
-    )
+    return github_root_url + str(ngi_dem_file.relative_to(root_path).as_posix())
 
 
 @pytest.fixture(scope='session')
@@ -594,6 +607,12 @@ def ngi_oty_int_param_file() -> Path:
 
 
 @pytest.fixture(scope='session')
+def ngi_oty_int_param_url(github_root_url: str, ngi_oty_int_param_file: Path) -> str:
+    """Orthority format interior parameter URL for NGI test data."""
+    return github_root_url + str(ngi_oty_int_param_file.relative_to(root_path).as_posix())
+
+
+@pytest.fixture(scope='session')
 def ngi_legacy_csv_file() -> Path:
     """Legacy format exterior parameter CSV file for NGI test data."""
     return root_path.joinpath('tests/data/ngi/camera_pos_ori.txt')
@@ -606,13 +625,29 @@ def ngi_oty_ext_param_file() -> Path:
 
 
 @pytest.fixture(scope='session')
+def ngi_oty_ext_param_url(github_root_url: str, ngi_oty_ext_param_file: Path) -> str:
+    """Orthority format exterior parameter URL for NGI test data."""
+    return github_root_url + str(ngi_oty_ext_param_file.relative_to(root_path).as_posix())
+
+
+@pytest.fixture(scope='session')
 def ngi_xyz_opk_csv_file() -> Path:
     """
-    Exterior parameters for NGI data in (x, y, z), (omega, phi, kappa) CSV format.
+    Exterior parameter file path for NGI data in (x, y, z), (omega, phi, kappa) CSV format.
 
     Includes a header and .proj file.
     """
     return root_path.joinpath('tests/data/io/ngi_xyz_opk.csv')
+
+
+@pytest.fixture(scope='session')
+def ngi_xyz_opk_csv_url(github_root_url: str, ngi_xyz_opk_csv_file: Path) -> str:
+    """
+    Exterior parameter file URL for NGI data in (x, y, z), (omega, phi, kappa) CSV format.
+
+    Includes a header and .proj file.
+    """
+    return github_root_url + str(ngi_xyz_opk_csv_file.relative_to(root_path).as_posix())
 
 
 @pytest.fixture(scope='session')
