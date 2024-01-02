@@ -23,7 +23,7 @@ from xml.etree import cElementTree as ET
 import numpy as np
 import rasterio as rio
 
-from orthority.utils import suppress_no_georef
+from orthority.utils import raster_ctx, suppress_no_georef
 
 logger = logging.getLogger(__name__)
 
@@ -100,13 +100,12 @@ class Exif:
     EXIF / XMP image tag extractor for camera model related values.
 
     :param filename:
-        Path to the image file.
+        Path / URL of the image file.
     """
 
-    def __init__(self, filename: str | Path):
-        filename = Path(filename)
-
-        with suppress_no_georef(), rio.open(filename, 'r') as ds:
+    def __init__(self, filename: str | Path | rio.DatasetReader):
+        self._filename = filename if not isinstance(filename, rio.DatasetReader) else filename.name
+        with suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), raster_ctx(filename) as ds:
             namespaces = ds.tag_namespaces()
             exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
             self._im_size = ds.shape[::-1]
@@ -116,10 +115,9 @@ class Exif:
                 xmp_str = ds.tags(ns='xml:XMP')['xml:XMP'].strip('xml:XMP=')
                 xmp_dict = _xml_to_flat_dict(xmp_str)
             else:
-                logger.warning(f"'{filename.name}' contains no XMP metadata")
+                logger.debug(f"'{Path(self._filename).name}' contains no XMP metadata")
                 xmp_dict = {}
 
-        self._filename = filename
         self._make, self._model, self._serial = self._get_make_model_serial(exif_dict)
         self._tag_im_size = self._get_tag_im_size(exif_dict)
         self._sensor_size = self._get_sensor_size(exif_dict, self._im_size)
@@ -148,9 +146,9 @@ class Exif:
         )
 
     @property
-    def filename(self) -> Path:
-        """Path to the image file."""
-        return self._filename
+    def filename(self) -> str:
+        """Path / URL of the image file."""
+        return str(self._filename)
 
     @property
     def make(self) -> str | None:
