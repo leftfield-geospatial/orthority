@@ -17,13 +17,18 @@
 # TODO: rename this module _utils, likewise version -> _version
 # TODO: add module docstrings
 from __future__ import annotations
+
 import cProfile
 import logging
 import pstats
 import tracemalloc
 import warnings
 from contextlib import contextmanager
+from io import TextIOBase, TextIOWrapper
+from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import cv2
 import numpy as np
@@ -156,3 +161,68 @@ def validate_collection(template: Iterable, coll: Iterable):
         # struct is the value of conf
         if not coll == template:
             raise ValueError(f"'{coll}' does not equal '{template}'.")
+
+
+def is_url(filename: str | Path) -> bool:
+    """Return True if ``filename`` is a URL, False otherwise."""
+    filename = str(filename)
+    parse_res = urlparse(filename)
+    return len(parse_res.scheme) > 1
+
+
+def open_text(filename: str | Path, **kwargs) -> TextIOWrapper:
+    """Open a file path or URL for text reading."""
+    if is_url(filename):
+        req = urlopen(str(filename))
+        encoding = req.headers.get_content_charset(failobj='utf-8')
+        return TextIOWrapper(req, encoding=encoding, **kwargs)
+    else:
+        return open(filename, 'r', **kwargs)
+
+
+@contextmanager
+def raster_ctx(filename: str | Path | rio.DatasetReader, **kwargs) -> rio.DatasetReader:
+    """Re-entrant context manager for a rasterio dataset reader.
+
+    ``filename`` can be a file path or URL, or an opened dataset.  If it is an opened dataset,
+    it is not closed on exit.
+    """
+    close_on_exit = False
+    if isinstance(filename, rio.DatasetReader):
+        if filename.closed:
+            raise IOError('Dataset is closed.')
+        dataset = filename
+    elif isinstance(filename, (str, Path)):
+        dataset = rio.open(filename, 'r', **kwargs)
+        close_on_exit = True
+    else:
+        raise TypeError(f"Unsupported 'filename' type: {type(filename)}.")
+    try:
+        yield dataset
+    finally:
+        if close_on_exit:
+            dataset.close()
+
+
+@contextmanager
+def text_ctx(filename: str | Path | TextIOBase, **kwargs) -> rio.DatasetReader:
+    """Re-entrant context manager for a text file file reader.
+
+    ``filename`` can be a file path or URL, or an open file object.  If it is an opened file
+    object, it is not closed on exit.
+    """
+    close_on_exit = False
+    if isinstance(filename, TextIOBase):
+        if filename.closed:
+            raise IOError('File is closed.')
+        file_obj = filename
+    elif isinstance(filename, (str, Path)):
+        file_obj = open_text(filename, **kwargs)
+        close_on_exit = True
+    else:
+        raise TypeError(f"Unsupported 'filename' type: {type(filename)}.")
+    try:
+        yield file_obj
+    finally:
+        if close_on_exit:
+            file_obj.close()
