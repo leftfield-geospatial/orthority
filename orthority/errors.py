@@ -19,11 +19,7 @@ class OrthorityError(Exception):
 
 
 class ParamFileError(OrthorityError):
-    """Raised when the formatting of an interior or exterior parameter file is not supported."""
-
-
-class CrsError(OrthorityError):
-    """Raised when a CRS could not be interpreted."""
+    """Raised when there is a problem reading interior or exterior parameter file."""
 
 
 class CrsMissingError(OrthorityError):
