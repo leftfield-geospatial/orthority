@@ -15,11 +15,11 @@
 
 """Orthrectification using DEM and camera model input."""
 from __future__ import annotations
+
 import logging
-import multiprocessing
+import os
 import threading
 from concurrent.futures import as_completed, ThreadPoolExecutor
-from contextlib import contextmanager
 from pathlib import Path
 
 import cv2
@@ -28,14 +28,13 @@ import rasterio as rio
 from rasterio.crs import CRS
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
-from rasterio.errors import RasterioIOError
 from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
+from orthority import utils
 from orthority.camera import Camera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsError, CrsMissingError, DemBandError, DemFileError, SrcFileError
-from orthority.utils import expand_window_to_grid, nan_equals, profiler, suppress_no_georef
-
+from orthority.errors import CrsMissingError, DemBandError
 
 logger = logging.getLogger(__name__)
 
@@ -49,9 +48,9 @@ class Ortho:
     are stored internally.
 
     :param src_filename:
-        Path/URL to a source image to be orthorectified.
+        Path / URL / dataset of a source image to be orthorectified.
     :param dem_filename:
-        Path/URL to a DEM image covering the source image.
+        Path / URL / dataset of a DEM image covering the source image.
     :param camera:
         Source image camera model (can be created with :meth:`~orthority.camera.create_camera`).
     :param crs:
@@ -97,8 +96,8 @@ class Ortho:
 
     def __init__(
         self,
-        src_filename: str | Path,
-        dem_filename: str | Path,
+        src_filename: str | Path | rio.DatasetReader,
+        dem_filename: str | Path | rio.DatasetReader,
         camera: Camera,
         crs: str | CRS | None = None,
         dem_band: int = 1,
@@ -111,6 +110,8 @@ class Ortho:
             )
 
         self._src_filename = src_filename
+        src_str = src_filename.name if isinstance(src_filename, rio.DatasetReader) else src_filename
+        self._src_name = Path(src_str).name
         self._camera = camera
         self._write_lock = threading.Lock()
 
@@ -131,53 +132,25 @@ class Ortho:
         ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
         im.build_overviews(ovw_levels, Resampling.average)
 
-    @staticmethod
-    @contextmanager
-    def _dem_im(filename: str | Path) -> rio.DatasetReader:
-        """Context manager for DEM image reader.  Raises DemFileError if image can not be opened."""
-        try:
-            dem_im = rio.open(filename, 'r')
-        except RasterioIOError as ex:
-            raise DemFileError(str(ex))
-        try:
-            yield dem_im
-        finally:
-            dem_im.close()
-
-    @contextmanager
-    def _src_im(self) -> rio.DatasetReader:
-        """Context manager for source image reader.  Raises SrcFileError if image can not be
-        opened."""
-        try:
-            src_im = rio.open(self._src_filename, 'r')
-        except RasterioIOError as ex:
-            raise SrcFileError(str(ex))
-        try:
-            yield src_im
-        finally:
-            src_im.close()
-
     def _parse_crs(self, crs: str | CRS) -> CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
         if crs:
-            try:
-                crs = CRS.from_string(crs) if isinstance(crs, str) else crs
-            except rio.errors.CRSError as ex:
-                raise CrsError(f"Could not interpret 'crs': '{crs}'. {str(ex)}")
+            crs = CRS.from_string(crs) if isinstance(crs, str) else crs
         else:
-            with suppress_no_georef(), self._src_im() as src_im:
+            with utils.suppress_no_georef(), utils.raster_ctx(self._src_filename) as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
                     raise CrsMissingError(
-                        f"No source image projection found, 'crs' should be specified."
+                        f"Source image '{Path(src_im.name).name}' is not projected, 'crs' should "
+                        f"be specified."
                     )
         if not crs.is_projected:
-            raise CrsError(f"'crs' should be a projected system.")
+            raise ValueError(f"'crs' should be a projected system.")
         return crs
 
     def _get_init_dem(
-        self, dem_filename: str, dem_band: int
+        self, dem_filename: str | rio.DatasetReader, dem_band: int
     ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
         """
         Return an initial DEM array in its own CRS and resolution.  Includes the corresponding DEM
@@ -189,10 +162,10 @@ class Ortho:
         """
 
         # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), self._dem_im(dem_filename) as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.raster_ctx(dem_filename) as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 raise DemBandError(
-                    f"DEM band {dem_band} is invalid for '{Path(dem_filename).name}' with"
+                    f"DEM band {dem_band} is invalid for '{Path(dem_im.name).name}' with"
                     f" {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use
@@ -222,9 +195,8 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    src_name = Path(self._src_filename).name
-                    raise ValueError(f"Ortho boundary for '{src_name}' lies outside the DEM.")
-                return expand_window_to_grid(dem_win)
+                    raise ValueError(f"Ortho boundary for '{self._src_name}' lies outside the DEM.")
+                return utils.expand_window_to_grid(dem_win)
 
             # get a dem window corresponding to ortho world bounds at min possible altitude,
             # read the window from the dem & convert to float32 with nodata=nan
@@ -307,7 +279,7 @@ class Ortho:
             dst_nodata=float('nan'),
             init_dest_nodata=True,
             apply_vertical_shift=True,
-            num_threads=multiprocessing.cpu_count(),
+            num_threads=os.cpu_count(),
         )
         return dem_array.squeeze(), dem_transform
 
@@ -418,15 +390,18 @@ class Ortho:
         poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).astype('bool', copy=False)
         dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
-        src_name = Path(self._src_filename).name
 
         if dem_mask_sum == 0:
-            raise ValueError(f"Ortho boundary for '{src_name}' lies outside the valid DEM area.")
+            raise ValueError(
+                f"Ortho boundary for '{self._src_name}' lies outside the valid DEM area."
+            )
         elif poly_mask.sum() > dem_mask_sum or (
             np.any(np.min(poly_ji, axis=1) < (0, 0))
             or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
-            logger.warning(f"Ortho boundary for '{src_name}' is not fully covered by the DEM.")
+            logger.warning(
+                f"Ortho boundary for '{self._src_name}' is not fully covered by the DEM."
+            )
 
         if crop:
             # crop dem_mask & dem_array to poly_xy and find corresponding transform
@@ -580,7 +555,7 @@ class Ortho:
             )
 
         # mask of invalid ortho pixels
-        tile_mask = np.all(nan_equals(tile_array, dtype_nodata), axis=0)
+        tile_mask = np.all(utils.nan_equals(tile_array, dtype_nodata), axis=0)
 
         # remove cv2.remap blurring with undistort nodata when full_remap=False...
         if (
@@ -648,7 +623,6 @@ class Ortho:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
         """
-        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles
         # in _remap_tile (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world coordinates for e.g. high
@@ -673,7 +647,8 @@ class Ortho:
         # create a list of ortho tile windows (assumes all bands configured to same tile shape)
         ortho_wins = [ortho_win for _, ortho_win in ortho_im.block_windows(1)]
 
-        with tqdm(
+        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
+        with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm), tqdm(
             bar_format=bar_format, total=len(ortho_wins) * len(index_list), dynamic_ncols=True
         ) as bar:
             # read, process and write bands, one row of indexes at a time
@@ -691,7 +666,7 @@ class Ortho:
                 # TODO: write tiles sequentially, outside the thread - I expect this to be faster
                 #  for magnetic disks
                 # map ortho tiles concurrently
-                with ThreadPoolExecutor(max_workers=multiprocessing.cpu_count()) as executor:
+                with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                     futures = [
                         executor.submit(
                             self._remap_tile,
@@ -770,7 +745,7 @@ class Ortho:
         :param overwrite:
             Whether to overwrite the ortho image if it exists.
         """
-        with profiler():  # run profiler in DEBUG log level
+        with utils.profiler():  # run utils.profiler in DEBUG log level
             ortho_filename = Path(ortho_filename)
             if ortho_filename.exists():
                 if not overwrite:
@@ -788,7 +763,7 @@ class Ortho:
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
-            with env, suppress_no_georef(), self._src_im() as src_im:
+            with env, utils.suppress_no_georef(), utils.raster_ctx(self._src_filename) as src_im:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
