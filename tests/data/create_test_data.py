@@ -11,7 +11,7 @@ import rasterio as rio
 from rasterio.enums import Resampling
 from rasterio.warp import reproject
 
-from orthority import io
+from orthority import param_io
 from orthority.exif import Exif
 from orthority.utils import expand_window_to_grid
 
@@ -266,7 +266,7 @@ def create_io_test_data():
     # create lla_rpy csv file for odm data
     io_root.mkdir(exist_ok=True)
 
-    osfm_reader = io.OsfmReader(odm_test_root.joinpath('opensfm', 'reconstruction.json'))
+    osfm_reader = param_io.OsfmReader(odm_test_root.joinpath('opensfm', 'reconstruction.json'))
     cam_id = next(iter(osfm_reader.read_int_param().keys()))
     exif_list = [Exif(sf) for sf in odm_test_root.joinpath('images').glob('*.tif')]
     with open(io_root.joinpath('odm_lla_rpy.csv'), 'w', newline='') as f:
@@ -285,7 +285,7 @@ def create_io_test_data():
             ]
         )
         for exif in exif_list:
-            writer.writerow([exif.filename.name, *exif.lla, *exif.rpy, cam_id, 'ignored'])
+            writer.writerow([Path(exif.filename).name, *exif.lla, *exif.rpy, cam_id, 'ignored'])
 
     # create xyz_opk csv file for odm data
     with open(io_root.joinpath('odm_xyz_opk.csv'), 'w', newline='') as f:
@@ -299,7 +299,7 @@ def create_io_test_data():
 
     # create xyz_opk csv file for ngi data
     src_csv_file = ngi_test_root.joinpath('camera_pos_ori.txt')
-    reader = io.CsvReader(src_csv_file)
+    reader = param_io.CsvReader(src_csv_file)
     ext_param_dict = reader.read_ext_param()
     with open(io_root.joinpath('ngi_xyz_opk.csv'), 'w', newline='') as f:
         writer = csv.writer(f, delimiter=',', quotechar='"')
@@ -318,15 +318,15 @@ def create_io_test_data():
         f.write(crs.to_proj4())
 
     # create oty format interior and exterior param files for ngi data
-    int_param_dict = io.read_oty_int_param(ngi_test_root.joinpath('config.yaml'))
-    io.write_int_param(io_root.joinpath('ngi_int_param.yaml'), int_param_dict, overwrite=True)
+    int_param_dict = param_io.read_oty_int_param(ngi_test_root.joinpath('config.yaml'))
+    param_io.write_int_param(io_root.joinpath('ngi_int_param.yaml'), int_param_dict, overwrite=True)
     cam_id = next(iter(int_param_dict.keys()))
     for ext_params in ext_param_dict.values():
         ext_params.update(camera=cam_id)
     ngi_image_file = ngi_test_root.joinpath(next(iter(ext_param_dict.keys()))).with_suffix('.tif')
     with rio.open(ngi_image_file, 'r') as im:
         ngi_crs = im.crs
-    io.write_ext_param(
+    param_io.write_ext_param(
         io_root.joinpath('ngi_ext_param.geojson'), ext_param_dict, crs=ngi_crs, overwrite=True
     )
 
