@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 from __future__ import annotations
+
 import logging
 from pathlib import Path
 
@@ -22,12 +23,13 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.enums import MaskFlags
+from rasterio.errors import RasterioIOError
 from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
-from orthority import errors, io
+from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
 from orthority.enums import CameraType, Compress, Interp
 from orthority.ortho import Ortho
@@ -139,12 +141,12 @@ def test_init_file_error(
     utm34n_crs: str,
 ):
     """Test Ortho initialisation with non existent source / DEM file raises an error."""
-    with pytest.raises(errors.SrcFileError) as ex:
+    with pytest.raises(RasterioIOError) as ex:
         _ = Ortho(filename, float_utm34n_dem_file, pinhole_camera, crs=None)
     if not filename.startswith('http'):
         assert filename in str(ex)
 
-    with pytest.raises(errors.DemFileError) as ex:
+    with pytest.raises(RasterioIOError) as ex:
         _ = Ortho(rgb_byte_src_file, filename, pinhole_camera, crs=utm34n_crs)
     if not filename.startswith('http'):
         assert filename in str(ex)
@@ -172,7 +174,7 @@ def test_init_geogcrs_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera
 ):
     """Test Ortho initialisation with a geographic CRS raises an error."""
-    with pytest.raises(errors.CrsError) as ex:
+    with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs='EPSG:4326')
     assert 'projected' in str(ex)
 
@@ -1153,8 +1155,8 @@ def test_process_ngi(
     tmp_path: Path,
 ):
     """Test integration and ortho overlap using NGI aerial images."""
-    int_param_dict = io.read_oty_int_param(ngi_legacy_config_file)
-    ext_param_dict = io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs).read_ext_param()
+    int_param_dict = param_io.read_oty_int_param(ngi_legacy_config_file)
+    ext_param_dict = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs).read_ext_param()
     camera = create_camera(**next(iter(int_param_dict.values())))
 
     ortho_files = []
@@ -1179,7 +1181,7 @@ def test_process_odm(
     tmp_path: Path,
 ):
     """Test integration and ortho overlap using ODM drone images."""
-    reader = io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
+    reader = param_io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
     int_param_dict = reader.read_int_param()
     ext_param_dict = reader.read_ext_param()
     camera = create_camera(**next(iter(int_param_dict.values())))
@@ -1198,23 +1200,63 @@ def test_process_odm(
     _validate_ortho_files(ortho_files, num_ovl_thresh=5)
 
 
-@pytest.mark.parametrize(
-    'src_file',
-    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
-)
 def test_process_file_error(
-    src_file: str,
     float_utm34n_dem_file: Path,
     pinhole_camera: Camera,
     utm34n_crs: str,
     tmp_path: Path,
 ):
     """Test process with non existent source file raises an error."""
+    src_file = 'unknown.tif'
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
-    with pytest.raises(errors.SrcFileError) as ex:
+    with pytest.raises(RasterioIOError) as ex:
         ortho.process(tmp_path.joinpath('test_ortho.tif'), (5, 5))
-    if not src_file.startswith('http'):
-        assert src_file in str(ex)
+    assert src_file in str(ex)
+
+
+def test_ortho_process_url(
+    ngi_image_url: str,
+    ngi_dem_url: str,
+    ngi_legacy_config_file: Path,
+    ngi_legacy_csv_file: Path,
+    ngi_crs: str,
+    tmp_path: Path,
+):
+    """Test Ortho __init__ & process with source and DEM image URLs."""
+    # create camera
+    int_param_dict = param_io.read_oty_int_param(ngi_legacy_config_file)
+    ext_param_dict = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs).read_ext_param()
+    camera = create_camera(**next(iter(int_param_dict.values())))
+    ext_param = ext_param_dict[Path(ngi_image_url).stem]
+    camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+
+    # create ortho & process
+    ortho = Ortho(ngi_image_url, ngi_dem_url, camera, crs=ngi_crs)
+    ortho_file = tmp_path.joinpath('test_ortho_process_url.tif')
+    ortho.process(ortho_file, resolution=(5, 5))
+
+    assert ortho_file.exists()
+
+
+def test_ortho_process_dataset(
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_crs: str,
+    tmp_path: Path,
+):
+    """Test Ortho __init__ & process with open source and DEM image datasets."""
+    with rio.open(float_utm34n_dem_file, 'r') as dem_im, rio.open(rgb_byte_src_file, 'r') as src_im:
+        ortho = Ortho(src_im, dem_im, pinhole_camera, crs=utm34n_crs)
+        ortho_file = tmp_path.joinpath('test_ortho_process_dataset.tif')
+        ortho.process(ortho_file, resolution=(30, 30))
+
+        assert ortho_file.exists()
+        assert not dem_im.closed
+        assert not src_im.closed
+
+    assert dem_im.closed
+    assert src_im.closed
 
 
 # TODO: add test with dem that includes occlusion
@@ -1222,5 +1264,4 @@ def test_process_file_error(
 #  different CRSs
 # TODO: add a test with nadir pinhole camera and test for proper pixel alignment and similarity
 #  with source (as far as possible make the ortho identical to the source)
-# TODO: test with source and dem file urls
 ##
