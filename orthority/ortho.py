@@ -25,6 +25,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rasterio as rio
+from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
@@ -47,10 +48,12 @@ class Ortho:
     distortion.  The camera model, and a portion of the DEM corresponding to the ortho bounds
     are stored internally.
 
-    :param src_filename:
-        Path / URL / dataset of a source image to be orthorectified.
-    :param dem_filename:
-        Path / URL / dataset of a DEM image covering the source image.
+    :param src_file:
+        Source image to be orthorectified. Can be a path or URI string,
+        an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
+    :param dem_file:
+        DEM image covering the source image.  Can be a path or URI string,
+        an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
     :param camera:
         Source image camera model (can be created with :meth:`~orthority.camera.create_camera`).
     :param crs:
@@ -96,8 +99,8 @@ class Ortho:
 
     def __init__(
         self,
-        src_filename: str | Path | rio.DatasetReader,
-        dem_filename: str | Path | rio.DatasetReader,
+        src_file: str | Path | OpenFile | rio.DatasetReader,
+        dem_file: str | Path | OpenFile | rio.DatasetReader,
         camera: Camera,
         crs: str | CRS | None = None,
         dem_band: int = 1,
@@ -109,21 +112,22 @@ class Ortho:
                 "'camera' has a field of view that includes, or is above, the horizon."
             )
 
-        self._src_filename = src_filename
-        src_str = src_filename.name if isinstance(src_filename, rio.DatasetReader) else src_filename
-        self._src_name = Path(src_str).name
+        self._src_file = src_file
+        self._src_name = Path(utils.get_path_uri(src_file)).name
         self._camera = camera
         self._write_lock = threading.Lock()
 
         self._crs = self._parse_crs(crs)
         self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
-            dem_filename, dem_band
+            dem_file, dem_band
         )
         self._gsd = self._get_gsd()
 
     @staticmethod
     def _build_overviews(
-        im: rio.io.DatasetWriter, max_num_levels: int = 8, min_level_pixels: int = 256
+        im: rio.io.DatasetReaderBase,
+        max_num_levels: int = 8,
+        min_level_pixels: int = 256,
     ) -> None:
         """Build internal overviews for a given rasterio dataset."""
         max_ovw_levels = int(np.min(np.log2(im.shape)))
@@ -137,36 +141,31 @@ class Ortho:
         if crs:
             crs = CRS.from_string(crs) if isinstance(crs, str) else crs
         else:
-            with utils.suppress_no_georef(), utils.raster_ctx(self._src_filename) as src_im:
+            with utils.suppress_no_georef(), utils.OpenRaster(self._src_file) as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
                     raise CrsMissingError(
-                        f"Source image '{Path(src_im.name).name}' is not projected, 'crs' should "
-                        f"be specified."
+                        f"Source image '{self._src_name}' is not projected, 'crs' should be "
+                        f"specified."
                     )
         if not crs.is_projected:
             raise ValueError(f"'crs' should be a projected system.")
         return crs
 
     def _get_init_dem(
-        self, dem_filename: str | rio.DatasetReader, dem_band: int
+        self, dem_file: str | rio.DatasetReader, dem_band: int
     ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
-        """
-        Return an initial DEM array in its own CRS and resolution.  Includes the corresponding DEM
-        transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
-
-        The returned DEM array is read to cover the ortho bounds at the z=min(DEM) plane, accounting
-        for worst case vertical datum offset between the DEM and world / ortho CRS, and within the
-        limits of the DEM image bounds.
+        """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
+        DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
         """
 
         # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.raster_ctx(dem_filename) as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file) as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
+                dem_name = Path(utils.get_path_uri(dem_file)).name
                 raise DemBandError(
-                    f"DEM band {dem_band} is invalid for '{Path(dem_im.name).name}' with"
-                    f" {dem_im.count} band(s)"
+                    f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use
             # elsewhere
@@ -227,8 +226,8 @@ class Ortho:
             return dem_array, dem_transform, dem_im.crs, crs_equal
 
     def _get_gsd(self) -> float:
-        """
-        Return a GSD estimate that gives approx as many valid ortho pixels as valid source pixels.
+        """Return a GSD estimate that gives approx as many valid ortho pixels as valid source
+        pixels.
         """
 
         def area_poly(coords: np.ndarray) -> float:
@@ -405,13 +404,11 @@ class Ortho:
 
         if crop:
             # crop dem_mask & dem_array to poly_xy and find corresponding transform
-            dem_mask_ij = np.where(dem_mask)
-            ul_ij = np.min(dem_mask_ij, axis=1)
-            br_ij = 1 + np.max(dem_mask_ij, axis=1)
-            slices = (slice(ul_ij[0], br_ij[0]), slice(ul_ij[1], br_ij[1]))
-            dem_array = dem_array[slices]
-            dem_mask = dem_mask[slices]
-            dem_transform = dem_transform * rio.Affine.translation(*ul_ij[::-1])
+            mask_wheres = [np.where(dem_mask.max(axis=ax))[0] for ax in [1, 0]]
+            slices = [slice(mask_where.min(), mask_where.max() + 1) for mask_where in mask_wheres]
+            dem_array = dem_array[slices[0], slices[1]]
+            dem_mask = dem_mask[slices[0], slices[1]]
+            dem_transform = dem_transform * rio.Affine.translation(slices[1].start, slices[0].start)
 
         if mask:
             # mask the dem
@@ -442,8 +439,8 @@ class Ortho:
         else:
             compress = Compress(compress)
             if compress == Compress.jpeg and dtype != 'uint8':
-                # TODO: enable 12bit jpeg support input and output support with dtype==uint16 with
-                #  unit test
+                # TODO: enable 12bit jpeg input and output support with dtype==uint16 & add unit
+                #  test
                 raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
 
         if compress == Compress.jpeg:
@@ -494,10 +491,8 @@ class Ortho:
         full_remap: bool,
         write_mask: bool,
     ) -> None:
-        """Thread safe method to map the source image to an ortho tile, given an open ortho dataset,
-        source image array, DEM array in the world CRS and grid, tile window into the ortho dataset,
-        band indexes of the source array, xy grids for the first ortho tile, and configuration
-        parameters.
+        """Thread safe method to map the source image to an ortho tile.  Returns the tile array
+        and mask.
         """
         dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
 
@@ -645,11 +640,11 @@ class Ortho:
             index_list = [[*range(1, src_im.count + 1)]]
 
         # create a list of ortho tile windows (assumes all bands configured to same tile shape)
-        ortho_wins = [ortho_win for _, ortho_win in ortho_im.block_windows(1)]
+        tile_wins = [tile_win for _, tile_win in ortho_im.block_windows(1)]
 
         bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
         with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm), tqdm(
-            bar_format=bar_format, total=len(ortho_wins) * len(index_list), dynamic_ncols=True
+            bar_format=bar_format, total=len(tile_wins) * len(index_list), dynamic_ncols=True
         ) as bar:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:
@@ -663,9 +658,12 @@ class Ortho:
                     dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
                     src_array = self._undistort(src_array, nodata=dtype_nodata, interp=interp)
 
-                # TODO: write tiles sequentially, outside the thread - I expect this to be faster
-                #  for magnetic disks
-                # map ortho tiles concurrently
+                # TODO: Write tiles sequentially, outside the thread if possible - possibly
+                #  faster for magnetic disks (on reading too).  Note that this shouln't be done
+                #  simply by returning tiles from _remap_tile and writing them when collected
+                #  from futures below, as ortho tiles will queue up in mem when they are processed
+                #  faster than they are written.
+                # remap ortho tiles concurrently
                 with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                     futures = [
                         executor.submit(
@@ -673,7 +671,7 @@ class Ortho:
                             ortho_im,
                             src_array,
                             dem_array,
-                            ortho_win,
+                            tile_win,
                             indexes,
                             init_xgrid,
                             init_ygrid,
@@ -681,7 +679,7 @@ class Ortho:
                             full_remap,
                             write_mask,
                         )
-                        for ortho_win in ortho_wins
+                        for tile_win in tile_wins
                     ]
                     for future in as_completed(futures):
                         future.result()
@@ -689,7 +687,7 @@ class Ortho:
 
     def process(
         self,
-        ortho_filename: str | Path,
+        ortho_file: str | Path | OpenFile,
         resolution: tuple[float, float] = _default_config['resolution'],
         interp: str | Interp = _default_config['interp'],
         dem_interp: str | Interp = _default_config['dem_interp'],
@@ -711,8 +709,9 @@ class Ortho:
         image is remapped from the source or undistorted source image tile-by-tile.  Up to N
         ortho tiles are processed concurrently, where N is the number of CPUs.
 
-        :param ortho_filename:
-            Path of the ortho image file to create.
+        :param ortho_file:
+            Ortho image file to create.  Can be a path or URI string, or an
+            :class:`~fsspec.core.OpenFile` object in binary mode ('wb').
         :param resolution:
             Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).  If
             set to None (the default), an approximate ground sampling distance is used as the
@@ -746,14 +745,9 @@ class Ortho:
             Whether to overwrite the ortho image if it exists.
         """
         with utils.profiler():  # run utils.profiler in DEBUG log level
-            ortho_filename = Path(ortho_filename)
-            if ortho_filename.exists():
-                if not overwrite:
-                    raise FileExistsError(f"Ortho file: '{ortho_filename}' exists.")
-                ortho_filename.unlink()
-                ortho_filename.with_suffix(ortho_filename.suffix + '.aux.xml').unlink(
-                    missing_ok=True
-                )
+            # TODO: any existing PAM file may not be overwritten (ortho_profile dependent)
+            if not overwrite and utils.exists(ortho_file):
+                raise FileExistsError(f"Ortho file '{utils.get_path_uri(ortho_file)}' exists.")
 
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
@@ -763,7 +757,7 @@ class Ortho:
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
-            with env, utils.suppress_no_georef(), utils.raster_ctx(self._src_filename) as src_im:
+            with env, utils.suppress_no_georef(), utils.OpenRaster(self._src_file) as src_im:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
@@ -782,8 +776,7 @@ class Ortho:
                     compress=compress,
                     write_mask=write_mask,
                 )
-
-                with rio.open(ortho_filename, 'w', **ortho_profile) as ortho_im:
+                with utils.OpenRaster(ortho_file, 'w', **ortho_profile) as ortho_im:
                     # orthorectify
                     self._remap(
                         src_im,
@@ -795,11 +788,9 @@ class Ortho:
                         write_mask=write_mask,
                     )
 
-            if build_ovw:
-                # TODO: move this under the rio multithreaded environment for gdal>=3.8
-                # build overviews
-                with rio.open(ortho_filename, 'r+') as ortho_im:
-                    self._build_overviews(ortho_im)
+                    if build_ovw:
+                        # TODO: is it possible to convert to COG here?
+                        self._build_overviews(ortho_im)
 
 
 ##
