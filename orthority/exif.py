@@ -22,8 +22,9 @@ from xml.etree import cElementTree as ET
 
 import numpy as np
 import rasterio as rio
+from fsspec.core import OpenFile
 
-from orthority.utils import raster_ctx, suppress_no_georef
+from orthority import utils
 
 logger = logging.getLogger(__name__)
 
@@ -99,24 +100,28 @@ class Exif:
     """
     EXIF / XMP image tag extractor for camera model related values.
 
-    :param filename:
-        Path / URL of the image file.
+    :param file:
+        Image file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile`
+        object in binary mode ('rb'), or a dataset reader.
     """
 
-    def __init__(self, filename: str | Path | rio.DatasetReader):
-        self._filename = filename if not isinstance(filename, rio.DatasetReader) else filename.name
-        with suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), raster_ctx(filename) as ds:
-            namespaces = ds.tag_namespaces()
-            exif_dict = ds.tags(ns='EXIF') if 'EXIF' in namespaces else ds.tags()
+    def __init__(self, file: str | Path | OpenFile | rio.DatasetReader):
+        self._filename = utils.get_path_uri(file)
+        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+            file, 'r'
+        ) as ds:
+            # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset
+            # compared to ds.tags() with known ns=
+            exif_dict = ds.tags()
+            exif_dict = ds.tags(ns='EXIF') if len(exif_dict) == 0 else exif_dict
             self._im_size = ds.shape[::-1]
 
-            if 'xml:XMP' in namespaces:
-                # read XMP, stripping 'xml:XMP=' for rio copied tags
-                xmp_str = ds.tags(ns='xml:XMP')['xml:XMP'].strip('xml:XMP=')
+            xmp_dict = ds.tags(ns='xml:XMP')
+            if len(xmp_dict) > 0:
+                xmp_str = xmp_dict['xml:XMP'].strip('xml:XMP=')
                 xmp_dict = _xml_to_flat_dict(xmp_str)
             else:
                 logger.debug(f"'{Path(self._filename).name}' contains no XMP metadata")
-                xmp_dict = {}
 
         self._make, self._model, self._serial = self._get_make_model_serial(exif_dict)
         self._tag_im_size = self._get_tag_im_size(exif_dict)
@@ -148,7 +153,7 @@ class Exif:
     @property
     def filename(self) -> str:
         """Path / URL of the image file."""
-        return str(self._filename)
+        return self._filename
 
     @property
     def make(self) -> str | None:

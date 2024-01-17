@@ -709,8 +709,6 @@ class CsvReader(Reader):
         """Read / auto-determine and validate a CRS when no user CRS was supplied."""
         # TODO: should .prj crs be read as lla_crs for lla positions?
         crs = None
-        # TODO: if self._filename is a file object, we won't necessarily be able to get the
-        #  proper prj_filename
         filename_str = utils.get_path_uri(self._filename)
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
             # read CRS of xyz positions / opk orientations from .prj file, if it exists
@@ -909,7 +907,6 @@ class ExifReader(Reader):
         lla_crs: str | CRS = _default_lla_crs,
     ) -> None:
         Reader.__init__(self, crs, lla_crs)
-        # TODO: find a better test for an iterable
         files = files if isinstance(files, Iterable) else [files]
         self._exif_dict = self._read_exif(files)
 
