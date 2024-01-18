@@ -31,7 +31,7 @@ jobs:
       run: |
         mamba info
         mamba list
-        mamba install -c conda-forge rasterio opencv click tqdm pyyaml pytest pytest-cov
+        mamba install -c conda-forge rasterio opencv click tqdm pyyaml fsspec pytest pytest-cov
         mamba list
     - name: Run unit tests
       run: |

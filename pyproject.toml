@@ -8,7 +8,8 @@ dependencies = [
     'opencv-python-headless>=4.8',
     'pyyaml>=5',
     'click>=8',
-    'tqdm>=4'
+    'tqdm>=4',
+    'fsspec>=2023.12'
 ]
 authors = [{name = 'Leftfield Geospatial'}]
 license = {text = 'AGPL-3.0-or-later'}
