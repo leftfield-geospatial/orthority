@@ -106,7 +106,7 @@ class Exif:
     """
 
     def __init__(self, file: str | Path | OpenFile | rio.DatasetReader):
-        self._filename = utils.get_path_uri(file)
+        self._filename = utils.get_filename(file)
         with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
             file, 'r'
         ) as ds:
@@ -152,7 +152,7 @@ class Exif:
 
     @property
     def filename(self) -> str:
-        """Path / URL of the image file."""
+        """Image filename."""
         return self._filename
 
     @property

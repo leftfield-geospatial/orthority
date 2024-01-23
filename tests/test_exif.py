@@ -16,6 +16,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+
+import fsspec
 import rasterio as rio
 
 from orthority.exif import Exif
@@ -24,7 +26,7 @@ from orthority.exif import Exif
 def test_odm_image(odm_image_file: Path):
     """Test reading an image with valid EXIF & XMP tags."""
     exif = Exif(odm_image_file)
-    assert Path(exif.filename) == odm_image_file
+    assert exif.filename == Path(odm_image_file).name
     for attr in [
         'make',
         'model',
@@ -44,7 +46,7 @@ def test_odm_image(odm_image_file: Path):
 def test_exif_image(exif_image_file: Path):
     """Test reading an image with EXIF tags including sensor size, and no XMP tags."""
     exif = Exif(exif_image_file)
-    assert Path(exif.filename) == exif_image_file
+    assert exif.filename == Path(exif_image_file).name
     for attr in [
         'make',
         'model',
@@ -65,7 +67,7 @@ def test_exif_image(exif_image_file: Path):
 def test_ngi_image(ngi_image_file: Path):
     """Test reading an image with no EXIF / XMP tags."""
     exif = Exif(ngi_image_file)
-    assert Path(exif.filename) == ngi_image_file
+    assert exif.filename == Path(ngi_image_file).name
     assert exif.im_size is not None
     for attr in [
         'make',
@@ -83,17 +85,19 @@ def test_ngi_image(ngi_image_file: Path):
         assert getattr(exif, attr) is None
 
 
-def test_url(odm_image_url: str):
-    """Test reading an image from a URL."""
-    exif = Exif(odm_image_url)
-    assert exif.filename == odm_image_url
-    assert exif.im_size is not None
-
-
 def test_dataset(odm_image_file: str):
     """Test reading an image from an open dataset."""
     with rio.open(odm_image_file, 'r') as ds:
         exif = Exif(ds)
         assert not ds.closed
-    assert Path(exif.filename) == odm_image_file
+    assert ds.closed
+    assert exif.filename == Path(odm_image_file).name
+    assert exif.im_size is not None
+
+
+def test_open_file(odm_image_file: str):
+    """Test reading an image from an fsspec OpenFile instance."""
+    ofile = fsspec.open(odm_image_file, 'rb')
+    exif = Exif(ofile)
+    assert exif.filename == Path(odm_image_file).name
     assert exif.im_size is not None
