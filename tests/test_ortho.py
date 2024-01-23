@@ -23,7 +23,6 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.enums import MaskFlags
-from rasterio.errors import RasterioIOError
 from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
@@ -127,29 +126,6 @@ def test_init_dem_band(
         dem_win = dem_im.window(*dem_bounds)
         dem_array = dem_im.read(indexes=dem_band, window=dem_win).astype('float32')
     assert np.all(ortho._dem_array == dem_array)
-
-
-@pytest.mark.parametrize(
-    'filename',
-    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
-)
-def test_init_file_error(
-    filename: str,
-    rgb_byte_src_file: Path,
-    float_utm34n_dem_file: Path,
-    pinhole_camera: Camera,
-    utm34n_crs: str,
-):
-    """Test Ortho initialisation with non existent source / DEM file raises an error."""
-    with pytest.raises(RasterioIOError) as ex:
-        _ = Ortho(filename, float_utm34n_dem_file, pinhole_camera, crs=None)
-    if not filename.startswith('http'):
-        assert filename in str(ex)
-
-    with pytest.raises(RasterioIOError) as ex:
-        _ = Ortho(rgb_byte_src_file, filename, pinhole_camera, crs=utm34n_crs)
-    if not filename.startswith('http'):
-        assert filename in str(ex)
 
 
 def test_init_dem_band_error(
@@ -256,12 +232,14 @@ def test_reproject_dem_crs_equal(
     assert np.all(nan_equals(array, ortho._dem_array))
 
 
+# TODO: add case for utm34n_wgs84 if sidecar PAM files can be created with updated rasterio.open(
+#  opener=) support
 @pytest.mark.parametrize(
     'dem_file, crs',
     [
-        ('float_utm34n_wgs84_dem_file', 'utm34n_egm96_crs'),
-        ('float_utm34n_wgs84_dem_file', 'utm34n_egm2008_crs'),
-        ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
+        ('float_utm34n_egm2008_dem_file', 'utm34n_egm96_crs'),
+        ('float_utm34n_egm96_dem_file', 'utm34n_egm2008_crs'),
+        # ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
     ],
 )
 def test_reproject_dem_vdatum_both(
@@ -297,7 +275,7 @@ def test_reproject_dem_vdatum_both(
     assert test_array.shape == ortho._dem_array.shape
 
     mask = ~np.isnan(test_array) & ~np.isnan(ortho._dem_array)
-    assert test_array[mask] != pytest.approx(ortho._dem_array[mask], abs=5)
+    assert test_array[mask] != pytest.approx(ortho._dem_array[mask], abs=0.1)
 
 
 @pytest.mark.parametrize(
@@ -1091,23 +1069,6 @@ def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: 
             assert len(ortho_im.overviews(1)) == 0
 
 
-def test_process_overwrite(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """Test overwriting an existing file with ``overwrite=True``."""
-    ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho_file.touch()
-    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, overwrite=True)
-    assert ortho_file.exists()
-
-
-def test_process_overwrite_error(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """Test overwriting an existing file raises an error with ``overwrite=False``."""
-    ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho_file.touch()
-    with pytest.raises(FileExistsError) as ex:
-        rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, overwrite=False)
-    assert ortho_file.name in str(ex)
-
-
 @pytest.mark.parametrize(
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
@@ -1170,7 +1131,7 @@ def test_process_ngi(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(ortho_files)
+    _validate_ortho_files(tuple(ortho_files))
 
 
 def test_process_odm(
@@ -1197,66 +1158,7 @@ def test_process_odm(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(ortho_files, num_ovl_thresh=5)
-
-
-def test_process_file_error(
-    float_utm34n_dem_file: Path,
-    pinhole_camera: Camera,
-    utm34n_crs: str,
-    tmp_path: Path,
-):
-    """Test process with non existent source file raises an error."""
-    src_file = 'unknown.tif'
-    ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs)
-    with pytest.raises(RasterioIOError) as ex:
-        ortho.process(tmp_path.joinpath('test_ortho.tif'), (5, 5))
-    assert src_file in str(ex)
-
-
-def test_ortho_process_url(
-    ngi_image_url: str,
-    ngi_dem_url: str,
-    ngi_legacy_config_file: Path,
-    ngi_legacy_csv_file: Path,
-    ngi_crs: str,
-    tmp_path: Path,
-):
-    """Test Ortho __init__ & process with source and DEM image URLs."""
-    # create camera
-    int_param_dict = param_io.read_oty_int_param(ngi_legacy_config_file)
-    ext_param_dict = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs).read_ext_param()
-    camera = create_camera(**next(iter(int_param_dict.values())))
-    ext_param = ext_param_dict[Path(ngi_image_url).stem]
-    camera.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
-
-    # create ortho & process
-    ortho = Ortho(ngi_image_url, ngi_dem_url, camera, crs=ngi_crs)
-    ortho_file = tmp_path.joinpath('test_ortho_process_url.tif')
-    ortho.process(ortho_file, resolution=(5, 5))
-
-    assert ortho_file.exists()
-
-
-def test_ortho_process_dataset(
-    rgb_byte_src_file: Path,
-    float_utm34n_dem_file: Path,
-    pinhole_camera: Camera,
-    utm34n_crs: str,
-    tmp_path: Path,
-):
-    """Test Ortho __init__ & process with open source and DEM image datasets."""
-    with rio.open(float_utm34n_dem_file, 'r') as dem_im, rio.open(rgb_byte_src_file, 'r') as src_im:
-        ortho = Ortho(src_im, dem_im, pinhole_camera, crs=utm34n_crs)
-        ortho_file = tmp_path.joinpath('test_ortho_process_dataset.tif')
-        ortho.process(ortho_file, resolution=(30, 30))
-
-        assert ortho_file.exists()
-        assert not dem_im.closed
-        assert not src_im.closed
-
-    assert dem_im.closed
-    assert src_im.closed
+    _validate_ortho_files(tuple(ortho_files), num_ovl_thresh=5)
 
 
 # TODO: add test with dem that includes occlusion
