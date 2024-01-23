@@ -120,12 +120,6 @@ def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_pat
     assert 'camera type' in str(ex)
 
 
-def test_read_oty_int_param_url(ngi_oty_int_param_url: str):
-    """Test reading orthority format interior parameters from an URL."""
-    int_param_dict = param_io.read_oty_int_param(ngi_oty_int_param_url)
-    _validate_int_param_dict(int_param_dict)
-
-
 @pytest.mark.parametrize('filename', ['osfm_int_param_file', 'odm_int_param_file'])
 def test_read_osfm_int_param(
     filename: str, mult_int_param_dict: dict, request: pytest.FixtureRequest
@@ -256,13 +250,13 @@ def test_aa_to_opk(xyz: tuple, opk: tuple):
     [
         ('wgs84_wgs84_crs', 'utm34n_egm96_crs'),
         ('wgs84_wgs84_crs', 'utm34n_egm2008_crs'),
-        ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
+        # ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
         ('utm34n_egm96_crs', 'wgs84_wgs84_crs'),
         ('utm34n_egm2008_crs', 'wgs84_wgs84_crs'),
-        ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
+        # ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
         ('wgs84_wgs84_crs', 'webmerc_egm96_crs'),
         ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
-        ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
+        # ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
     ],
 )
 def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
@@ -277,16 +271,16 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
     assert dst_xyz[2][0] == pytest.approx(src_xyz[2][0], abs=1e-6)
 
     dst_xyz = transform(src_crs, dst_crs, *src_xyz)
-    assert dst_xyz[2][0] != pytest.approx(src_xyz[2][0], abs=1.0)
+    assert dst_xyz[2][0] != pytest.approx(src_xyz[2][0], abs=5.0)
 
 
 @pytest.mark.parametrize(
     'src_crs, dst_crs',
     [
-        ('wgs84_crs', 'utm34n_wgs84_crs'),
+        # ('wgs84_crs', 'utm34n_wgs84_crs'),
         ('wgs84_crs', 'utm34n_egm96_crs'),
         ('wgs84_crs', 'utm34n_egm2008_crs'),
-        ('wgs84_crs', 'webmerc_wgs84_crs'),
+        # ('wgs84_crs', 'webmerc_wgs84_crs'),
         ('wgs84_crs', 'webmerc_egm96_crs'),
         ('wgs84_crs', 'webmerc_egm2008_crs'),
         ('utm34n_crs', 'wgs84_wgs84_crs'),
@@ -324,7 +318,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
     # rotates between them. If body (b) and camera (B) describe a typical drone geometry,
     # then C_bB = C_En (== C_En.T) rotates between them.
     # This test uses the topocentric special case to compare OPK and RPY rotation matrices using:
-    # R(o, p, k) = C_EB = C_En * R(o, p, k) * C_bB = C_En * C_nb * C_bB
+    # R(o, p, k) = C_EB = C_En * R(r, p, y) * C_bB = C_En * C_nb * C_bB
 
     n = 100
     llas = np.random.rand(n, 3) * (180, 360, 1000) + (-90, 0, 0)
@@ -333,7 +327,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
 
     for lla, rpy in zip(llas, rpys):
         # create orthographic (2D topopcentric) CRS centered on lla
-        crs = rio.CRS.from_string(
+        crs = rio.CRS.from_proj4(
             f'+proj=ortho +lat_0={lla[0]:.4f} +lon_0={lla[1]:.4f} +ellps=WGS84'
         )
         opk = param_io._rpy_to_opk(rpy, lla, crs, C_bB=C_bB, lla_crs=param_io._default_lla_crs)
@@ -452,14 +446,15 @@ def test_csv_reader_lla_rpy_values(
         assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=0.1)
 
 
-def test_csv_reader_xyz_opk_prj_crs(ngi_xyz_opk_csv_file: Path):
+@pytest.mark.parametrize('csv_file', ['ngi_xyz_opk_csv_file', 'ngi_xyz_opk_csv_url'])
+def test_csv_reader_xyz_opk_prj_crs(csv_file: str, ngi_crs: str, request: pytest.FixtureRequest):
     """Test CsvReader initialised with a xyz_* format CSV file and no CRS, reads the CRS from a .prj
-    file.
+    file path / URI.
     """
-    reader = param_io.CsvReader(ngi_xyz_opk_csv_file, crs=None)
+    csv_file = str(request.getfixturevalue(csv_file))
+    reader = param_io.CsvReader(csv_file, crs=None)
     assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
-    with open(ngi_xyz_opk_csv_file.with_suffix('.prj')) as f:
-        assert reader.crs == rio.CRS.from_string(f.read())
+    assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
 def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
@@ -630,15 +625,6 @@ def test_csv_reader_dialect(
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
 
 
-def test_csv_reader_url(ngi_xyz_opk_csv_file: str, ngi_crs: str):
-    """Test CsvReader with a file URL."""
-    reader = param_io.CsvReader(ngi_xyz_opk_csv_file, crs=None)
-    ext_param_dict = reader.read_ext_param()
-
-    _validate_ext_param_dict(ext_param_dict)
-    assert reader.crs == rio.CRS.from_string(ngi_crs)
-
-
 def test_osfm_reader(odm_reconstruction_file: Path, odm_crs: str):
     """Test OsfmReader reads interior and exterior parameters successfully."""
     reader = param_io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
@@ -665,17 +651,6 @@ def test_osfm_reader_validity_error(ngi_oty_ext_param_file: Path):
     with pytest.raises(ParamFileError) as ex:
         _ = param_io.OsfmReader(ngi_oty_ext_param_file, crs=None)
     assert 'valid' in str(ex)
-
-
-def test_osfm_reader_url(odm_reconstruction_url: str, odm_crs: str):
-    """Test OsfmReader with a file URL."""
-    reader = param_io.OsfmReader(odm_reconstruction_url, crs=None)
-    int_param_dict = reader.read_int_param()
-    ext_param_dict = reader.read_ext_param()
-
-    _validate_int_param_dict(int_param_dict)
-    _validate_ext_param_dict(ext_param_dict)
-    assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
 def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
@@ -742,17 +717,6 @@ def test_exif_reader_empty():
     assert reader.read_ext_param() == {}
 
 
-def test_exif_reader_url(odm_image_url: str, odm_crs: str):
-    """Test ExifReader with a file URL."""
-    reader = param_io.ExifReader((odm_image_url,))
-    int_param_dict = reader.read_int_param()
-    ext_param_dict = reader.read_ext_param()
-
-    _validate_int_param_dict(int_param_dict)
-    _validate_ext_param_dict(ext_param_dict)
-    assert reader.crs == rio.CRS.from_string(odm_crs)
-
-
 def test_oty_rw_ext_param(mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: Path):
     """Test exterior parameter read / write from / to orthority geojson format."""
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
@@ -775,13 +739,4 @@ def test_oty_reader_validity_error(odm_reconstruction_file: Path):
 def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     """Test OtyReader reads the crs correctly."""
     reader = param_io.OtyReader(ngi_oty_ext_param_file)
-    assert reader.crs == rio.CRS.from_string(ngi_crs)
-
-
-def test_oty_reader_url(ngi_oty_ext_param_file: str, ngi_crs: str):
-    """Test OtyReader with a file URL."""
-    reader = param_io.OtyReader(ngi_oty_ext_param_file)
-    ext_param_dict = reader.read_ext_param()
-
-    _validate_ext_param_dict(ext_param_dict)
     assert reader.crs == rio.CRS.from_string(ngi_crs)

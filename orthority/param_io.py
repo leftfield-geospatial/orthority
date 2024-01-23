@@ -612,15 +612,16 @@ class CsvReader(Reader):
         self._file = file
         self._radians = radians
 
-        # get / create an OpenFile object to use when finding any .prj file
+        # get / create an OpenFile object to use when finding a .prj file
         self._ofile = None
         if isinstance(file, OpenFile):
             self._ofile = file
         elif isinstance(file, (str, Path)):
             self._ofile = fsspec.open(file, 'rt')
 
-        # read file once into a buffer
-        with utils.Open(self._ofile or file) as f:
+        # read file once into a buffer (newline=None works around some delimiter detection problems
+        # with newline='')
+        with utils.Open(self._ofile or file, 'rt', newline=None) as f:
             self._buffer = StringIO(f.read())
 
         self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
@@ -669,8 +670,7 @@ class CsvReader(Reader):
             """Strip and lower the case of a string list."""
             return [str_item.strip().lower() for str_item in str_list]
 
-        # read a sample of the csv file (newline=None works around some delimiter detection
-        # problems with newline='')
+        # read a sample of the csv file
         buffer.seek(0)
         sample = buffer.read(10000)
 
