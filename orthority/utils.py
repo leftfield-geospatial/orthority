@@ -14,32 +14,35 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Utility functions for internal use."""
-# TODO: rename this module _utils, likewise version -> _version
-# TODO: add module docstrings
 from __future__ import annotations
 
 import cProfile
 import logging
+import posixpath
 import pstats
 import tracemalloc
 import warnings
-from contextlib import contextmanager
-from io import TextIOBase, TextIOWrapper
+from contextlib import contextmanager, ExitStack
+from io import IOBase
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import urlparse
-from urllib.request import urlopen
 
 import cv2
+import fsspec
 import numpy as np
 import rasterio as rio
+from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning
+from rasterio.io import DatasetReaderBase
 from rasterio.windows import Window
 
 from orthority.enums import Interp
 
 logger = logging.getLogger(__name__)
+# TODO: rename this module _utils, & version -> _version
+# TODO: use the more general os.PathLike instead of pathlib.Path for all path type specifiers,
+#  then use os.fspath to convert paths to str (everywhere).
 
 
 @contextmanager
@@ -163,66 +166,165 @@ def validate_collection(template: Iterable, coll: Iterable):
             raise ValueError(f"'{coll}' does not equal '{template}'.")
 
 
-def is_url(filename: str | Path) -> bool:
-    """Return True if ``filename`` is a URL, False otherwise."""
-    filename = str(filename)
-    parse_res = urlparse(filename)
-    return len(parse_res.scheme) > 1
-
-
-def open_text(filename: str | Path, **kwargs) -> TextIOWrapper:
-    """Open a file path or URL for text reading."""
-    if is_url(filename):
-        req = urlopen(str(filename))
-        encoding = req.headers.get_content_charset(failobj='utf-8')
-        return TextIOWrapper(req, encoding=encoding, **kwargs)
-    else:
-        return open(filename, 'r', **kwargs)
-
-
-@contextmanager
-def raster_ctx(filename: str | Path | rio.DatasetReader, **kwargs) -> rio.DatasetReader:
-    """Re-entrant context manager for a rasterio dataset reader.
-
-    ``filename`` can be a file path or URL, or an opened dataset.  If it is an opened dataset,
-    it is not closed on exit.
+def get_filename(file: str | Path | OpenFile | DatasetReaderBase | IOBase) -> str:
+    """Return a source filename for the given ``file`` object.  If ``file`` is an
+    :class:`~fsspec.core.OpenFile` instance, a :class:`~rasterio.io.DatasetReaderBase` instance
+    or file object, it should have a ``filename`` attribute i.e. have been created by either
+    :class:`Open` or :class:`OpenRaster`.
     """
-    close_on_exit = False
-    if isinstance(filename, rio.DatasetReader):
-        if filename.closed:
+    if isinstance(file, DatasetReaderBase):
+        filename = getattr(file, 'filename', Path(file.name).name)
+    elif isinstance(file, OpenFile):
+        filename = getattr(file, 'filename', Path(file.path).name)
+    elif isinstance(file, IOBase):
+        filename = getattr(file, 'filename', Path(getattr(file, 'name', '<file object>')).name)
+    else:
+        filename = Path(str(file)).name
+    return filename
+
+
+def join_ofile(base: OpenFile, rel: str, mode: str = None, **kwargs: dict) -> OpenFile:
+    """Return an fsspec OpenFile whose path is a join of the ``base`` OpenFile path with the
+    ``rel`` path.
+    """
+    joined_path = posixpath.join(base.path, rel)
+    return OpenFile(base.fs, joined_path, mode=mode or base.mode, **kwargs)
+
+
+class OpenRaster:
+    """
+    Context manager for local or remote Rasterio datasets.
+
+    :param file:
+        A path, URI, :class:`~fsspec.core.OpenFile` instance, or open dataset.  If it is an open
+        dataset, it is returned unaltered on entering the context, not closed on exiting the
+        context, and ``mode`` and ``kwargs`` are ignored.  If is an OpenFile instance, it should
+        be open in a binary mode matching ``mode``.
+    :param mode:
+        Mode in which the dataset is opened.  Either 'r' or 'w'.
+    :param overwrite:
+        Whether to overwrite an existing file in 'w' mode.  Ignored in 'r' mode.
+    :param kwargs:
+        Keyword arguments to pass to :func:`rasterio.open`.
+    """
+
+    def __init__(
+        self,
+        file: str | Path | DatasetReaderBase | OpenFile,
+        mode: str = 'r',
+        overwrite: bool = False,
+        **kwargs,
+    ):
+        if mode not in ['r', 'w']:
+            raise ValueError(f"The 'mode' argument should be either 'r' or 'w', not '{mode}'.")
+
+        self._exit_stack = ExitStack()
+
+        if isinstance(file, DatasetReaderBase):
+            if file.closed:
+                raise IOError('Dataset is closed.')
+            self._dataset = file
+
+        elif isinstance(file, (str, Path, OpenFile)):
+            # TODO: use the opener arg to rio.open() when that rasterio version is released,
+            #  rather than passing an open file object.  test that files are not buffered in
+            #  memory with this option, and currently problematic fsspec protocols (e.g. github)
+            #  no longer cause a seg fault.
+            if isinstance(file, (str, Path)):
+                ofile = fsspec.open(file, mode + 'b')
+            else:
+                if mode + 'b' != file.mode:
+                    raise IOError(
+                        f"OpenFile object mode: '{file.mode}' should be a binary mode matching the "
+                        f"mode argument: '{mode}'."
+                    )
+                ofile = file
+
+            if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
+                raise FileExistsError(f"File exists: '{Path(ofile.path).name}'")
+
+            file_obj = self._exit_stack.enter_context(ofile)
+            self._dataset = self._exit_stack.enter_context(rio.open(file_obj, mode, **kwargs))
+
+            # store the source filename as a dataset attribute
+            self._dataset.filename = get_filename(file)
+
+        else:
+            raise TypeError(f"Unsupported 'file' type: {type(file)}")
+
+    def __enter__(self) -> DatasetReaderBase:
+        if self._dataset.closed:
             raise IOError('Dataset is closed.')
-        dataset = filename
-    elif isinstance(filename, (str, Path)):
-        dataset = rio.open(filename, 'r', **kwargs)
-        close_on_exit = True
-    else:
-        raise TypeError(f"Unsupported 'filename' type: {type(filename)}.")
-    try:
-        yield dataset
-    finally:
-        if close_on_exit:
-            dataset.close()
+        return self._dataset
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._exit_stack.__exit__(exc_type, exc_val, exc_tb)
+
+    def close(self):
+        self._exit_stack.close()
 
 
-@contextmanager
-def text_ctx(filename: str | Path | TextIOBase, **kwargs) -> rio.DatasetReader:
-    """Re-entrant context manager for a text file file reader.
-
-    ``filename`` can be a file path or URL, or an open file object.  If it is an opened file
-    object, it is not closed on exit.
+class Open:
     """
-    close_on_exit = False
-    if isinstance(filename, TextIOBase):
-        if filename.closed:
-            raise IOError('File is closed.')
-        file_obj = filename
-    elif isinstance(filename, (str, Path)):
-        file_obj = open_text(filename, **kwargs)
-        close_on_exit = True
-    else:
-        raise TypeError(f"Unsupported 'filename' type: {type(filename)}.")
-    try:
-        yield file_obj
-    finally:
-        if close_on_exit:
-            file_obj.close()
+    Context manager for local or remote file IO.
+
+    :param file:
+        A path, URI, :class:`~fsspec.core.OpenFile` instance, or file object.  If it is a file
+        object, it is returned unaltered on entering the context, not closed on exiting the
+        context, and ``mode`` and ``kwargs`` are ignored.  If is an OpenFile instance, it should
+        be opened in ``mode`` (``kwargs`` are ignored).
+    :param mode:
+        Mode in which the file is opened.
+    :param overwrite:
+        Whether to overwrite an existing file in 'w*' mode.  Ignored in 'r*' mode.
+    :param kwargs:
+        Keyword arguments to pass to :func:`fsspec.open` or ``opener`` if it is specified.
+    """
+
+    def __init__(
+        self,
+        file: str | Path | IOBase | OpenFile,
+        mode='rt',
+        overwrite: bool = False,
+        **kwargs: dict,
+    ):
+        # TODO: can text encoding be automatically determined?  previously this worked
+        #  with urllib:
+        #   req = urllib.urlopen(str(file))
+        #   encoding = req.headers.get_content_charset(failobj='utf-8')
+        self._exit_stack = ExitStack()
+        if isinstance(file, IOBase):
+            if file.closed:
+                raise IOError('File object is closed.')
+            self._file_obj = file
+
+        elif isinstance(file, (OpenFile, str, Path)):
+            if isinstance(file, (str, Path)):
+                ofile = fsspec.open(file, mode, **kwargs)
+            else:
+                if mode != file.mode:
+                    raise IOError(
+                        f"OpenFile object mode: '{file.mode}', should match the mode argument:"
+                        f" '{mode}'."
+                    )
+                ofile = file
+
+            # overwrite could be prevented with 'x' modes, but is done this way for consistency
+            # with OpenRaster & rasterio which doesn't support 'x'
+            if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
+                raise FileExistsError(f"File exists: '{Path(ofile.path).name}'")
+
+            self._file_obj = self._exit_stack.enter_context(ofile)
+            self._file_obj.filename = get_filename(file)
+
+        else:
+            raise TypeError(f"Unsupported 'file' type: {type(file)}")
+
+    def __enter__(self) -> IOBase:
+        return self._file_obj
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._exit_stack.__exit__(exc_type, exc_val, exc_tb)
+
+    def close(self):
+        self._exit_stack.close()
