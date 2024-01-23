@@ -245,7 +245,7 @@ class OpenRaster:
                 ofile = file
 
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(f"File exists: '{Path(ofile.path).name}'")
+                raise FileExistsError(f"File exists: '{ofile.path}'")
 
             file_obj = self._exit_stack.enter_context(ofile)
             self._dataset = self._exit_stack.enter_context(rio.open(file_obj, mode, **kwargs))
@@ -322,7 +322,7 @@ class Open:
             # overwrite could be prevented with 'x' modes, but is done this way for consistency
             # with OpenRaster & rasterio which doesn't support 'x'
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(f"File exists: '{Path(ofile.path).name}'")
+                raise FileExistsError(f"File exists: '{ofile.path}'")
 
             self._file_obj = self._exit_stack.enter_context(ofile)
             self._file_obj.filename = get_filename(file)
