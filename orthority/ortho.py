@@ -27,6 +27,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
+from rasterio.io import DatasetWriter
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
 from tqdm.auto import tqdm
@@ -65,7 +66,7 @@ class Ortho:
         Index of the DEM band to use (1-based).
     """
 
-    # TODO: what happens when the source image size does not match the camera configuration?
+    # TODO: what happens if the source image size does not match the camera configuration?
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_band=1,
@@ -113,7 +114,7 @@ class Ortho:
             )
 
         self._src_file = src_file
-        self._src_name = Path(utils.get_path_uri(src_file)).name
+        self._src_name = utils.get_filename(src_file)
         self._camera = camera
         self._write_lock = threading.Lock()
 
@@ -125,7 +126,7 @@ class Ortho:
 
     @staticmethod
     def _build_overviews(
-        im: rio.io.DatasetReaderBase,
+        im: DatasetWriter,
         max_num_levels: int = 8,
         min_level_pixels: int = 256,
     ) -> None:
@@ -141,7 +142,7 @@ class Ortho:
         if crs:
             crs = CRS.from_string(crs) if isinstance(crs, str) else crs
         else:
-            with utils.suppress_no_georef(), utils.OpenRaster(self._src_file) as src_im:
+            with utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
@@ -161,9 +162,9 @@ class Ortho:
         """
 
         # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file) as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
-                dem_name = Path(utils.get_path_uri(dem_file)).name
+                dem_name = utils.get_filename(dem_file)
                 raise DemBandError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
@@ -480,7 +481,7 @@ class Ortho:
 
     def _remap_tile(
         self,
-        ortho_im: rio.io.DatasetWriter,
+        ortho_im: DatasetWriter,
         src_array: np.ndarray,
         dem_array: np.ndarray,
         tile_win: Window,
@@ -608,7 +609,7 @@ class Ortho:
     def _remap(
         self,
         src_im: rio.DatasetReader,
-        ortho_im: rio.io.DatasetWriter,
+        ortho_im: DatasetWriter,
         dem_array: np.ndarray,
         interp: Interp,
         per_band: bool,
@@ -658,12 +659,9 @@ class Ortho:
                     dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
                     src_array = self._undistort(src_array, nodata=dtype_nodata, interp=interp)
 
-                # TODO: Write tiles sequentially, outside the thread if possible - possibly
-                #  faster for magnetic disks (on reading too).  Note that this shouln't be done
-                #  simply by returning tiles from _remap_tile and writing them when collected
-                #  from futures below, as ortho tiles will queue up in mem when they are processed
-                #  faster than they are written.
-                # remap ortho tiles concurrently
+                # remap ortho tiles concurrently (tiles are written as they are completed in a
+                # possibly non-sequential order, this saves queueing up completed tiles in
+                # memory, and is much the same speed as sequential writes)
                 with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                     futures = [
                         executor.submit(
@@ -745,10 +743,6 @@ class Ortho:
             Whether to overwrite the ortho image if it exists.
         """
         with utils.profiler():  # run utils.profiler in DEBUG log level
-            # TODO: any existing PAM file may not be overwritten (ortho_profile dependent)
-            if not overwrite and utils.exists(ortho_file):
-                raise FileExistsError(f"Ortho file '{utils.get_path_uri(ortho_file)}' exists.")
-
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
                 resolution = (self._gsd, self._gsd)
@@ -757,7 +751,7 @@ class Ortho:
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
-            with env, utils.suppress_no_georef(), utils.OpenRaster(self._src_file) as src_im:
+            with env, utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
@@ -776,7 +770,11 @@ class Ortho:
                     compress=compress,
                     write_mask=write_mask,
                 )
-                with utils.OpenRaster(ortho_file, 'w', **ortho_profile) as ortho_im:
+                # TODO: any existing PAM or other sidecar file will not be removed / overwritten
+                #  as utils.OpenRaster works currently
+                with utils.OpenRaster(
+                    ortho_file, 'w', overwrite=overwrite, **ortho_profile
+                ) as ortho_im:
                     # orthorectify
                     self._remap(
                         src_im,

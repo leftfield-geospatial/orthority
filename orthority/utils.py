@@ -34,7 +34,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning
-from rasterio.io import DatasetReaderBase
+from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
 
 from orthority.enums import Interp
@@ -183,7 +183,7 @@ def get_filename(file: str | Path | OpenFile | DatasetReaderBase | IOBase) -> st
     return filename
 
 
-def join_ofile(base: OpenFile, rel: str, mode: str = None, **kwargs: dict) -> OpenFile:
+def join_ofile(base: OpenFile, rel: str, mode: str = None, **kwargs) -> OpenFile:
     """Return an fsspec OpenFile whose path is a join of the ``base`` OpenFile path with the
     ``rel`` path.
     """
@@ -223,6 +223,10 @@ class OpenRaster:
         if isinstance(file, DatasetReaderBase):
             if file.closed:
                 raise IOError('Dataset is closed.')
+            if mode not in file.mode:
+                raise IOError(
+                    f"Dataset mode: '{file.mode}' not compatible with the mode argument: '{mode}'."
+                )
             self._dataset = file
 
         elif isinstance(file, (str, Path, OpenFile)):
@@ -252,7 +256,7 @@ class OpenRaster:
         else:
             raise TypeError(f"Unsupported 'file' type: {type(file)}")
 
-    def __enter__(self) -> DatasetReaderBase:
+    def __enter__(self) -> rio.DatasetReader | DatasetWriter:
         if self._dataset.closed:
             raise IOError('Dataset is closed.')
         return self._dataset
@@ -286,7 +290,7 @@ class Open:
         file: str | Path | IOBase | OpenFile,
         mode='rt',
         overwrite: bool = False,
-        **kwargs: dict,
+        **kwargs,
     ):
         # TODO: can text encoding be automatically determined?  previously this worked
         #  with urllib:
@@ -296,6 +300,12 @@ class Open:
         if isinstance(file, IOBase):
             if file.closed:
                 raise IOError('File object is closed.')
+            if getattr(file, 'mode', mode) != mode:
+                # note: fsspec text mode file objects do not have a mode property
+                raise IOError(
+                    f"File object mode: '{file.mode}', should match the mode argument:"
+                    f" '{mode}'."
+                )
             self._file_obj = file
 
         elif isinstance(file, (OpenFile, str, Path)):
