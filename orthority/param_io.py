@@ -23,9 +23,6 @@ objects with :func:`~orthority.camera.create_camera` or the various
 All ``crs`` and ``lla_crs`` parameters can be supplied as EPSG, proj4 or WKT strings;
 or :class:`~rasterio.crs.CRS` objects.
 """
-# TODO: add a note about file paths, urls & objects
-# TODO: specify the dict formats with examples (maybe in its own doc)?
-# TODO: could dataclasses be a better way of defining the int / ext parameter dicts?
 from __future__ import annotations
 
 import csv
@@ -39,6 +36,7 @@ from pathlib import Path
 from typing import Any
 
 import cv2
+import fsspec
 import numpy as np
 import rasterio as rio
 import yaml
@@ -55,6 +53,11 @@ from orthority.errors import CrsMissingError, ParamFileError
 from orthority.exif import Exif
 
 logger = logging.getLogger(__name__)
+
+# TODO: add a note about file paths, urls, OpenFile & file objects being options for specifying
+#  files
+# TODO: specify the dict formats with examples (maybe in its own doc)?
+# TODO: could dataclasses be a better way of defining the int / ext parameter dicts?
 
 _optional_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
@@ -325,10 +328,7 @@ def write_int_param(
         yaml_param.update(**{k: v for k, v in int_param.items() if k != 'cam_type'})
         yaml_dict[cam_id] = yaml_param
 
-    if not overwrite and utils.exists(file):
-        raise FileExistsError(f"File exists: '{utils.get_path_uri(file)}'")
-
-    with utils.Open(file, 'wt') as f:
+    with utils.Open(file, 'wt', overwrite=overwrite) as f:
         yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
 
 
@@ -367,10 +367,7 @@ def write_ext_param(
 
     json_dict = dict(type='FeatureCollection', world_crs=crs.to_string(), features=feat_list)
 
-    if not overwrite and utils.exists(file):
-        raise FileExistsError(f"File exists: '{utils.get_path_uri(file)}'")
-
-    with utils.Open(file, 'wt') as f:
+    with utils.Open(file, 'wt', overwrite=overwrite) as f:
         json.dump(json_dict, f, indent=4)
 
 
@@ -612,11 +609,18 @@ class CsvReader(Reader):
     ) -> None:
         # TODO: allow other coordinate conventions for opk / rpy (bluh, odm, patb)
         Reader.__init__(self, crs, lla_crs=lla_crs)
-        self._filename = file
+        self._file = file
         self._radians = radians
 
+        # get / create an OpenFile object to use when finding any .prj file
+        self._ofile = None
+        if isinstance(file, OpenFile):
+            self._ofile = file
+        elif isinstance(file, (str, Path)):
+            self._ofile = fsspec.open(file, 'rt')
+
         # read file once into a buffer
-        with utils.Open(file, 'rt', newline=None) as f:
+        with utils.Open(self._ofile or file) as f:
             self._buffer = StringIO(f.read())
 
         self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
@@ -709,28 +713,31 @@ class CsvReader(Reader):
         """Read / auto-determine and validate a CRS when no user CRS was supplied."""
         # TODO: should .prj crs be read as lla_crs for lla positions?
         crs = None
-        filename_str = utils.get_path_uri(self._filename)
+        filename = utils.get_filename(self._file)
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
-            # read CRS of xyz positions / opk orientations from .prj file, if it exists
+            if self._ofile:
+                # read CRS of xyz positions / opk orientations from .prj file, if it exists
+                prj_path = self._ofile.path[: self._ofile.path.rfind('.')] + '.prj'
+                prj_name = Path(prj_path).name
+                try:
+                    with self._ofile.fs.open(prj_path, 'rt') as f:
+                        crs_str = f.read()
+                    crs = CRS.from_string(crs_str)
 
-            prj_filename = filename_str[: filename_str.rfind('.')] + '.prj'
-            prj_name = Path(prj_filename).name
-            try:
-                with utils.Open(prj_filename, 'rt') as f:
-                    crs_str = f.read()
-                crs = CRS.from_string(crs_str)
+                    if crs.is_geographic:
+                        raise ValueError(f"CRS in '{prj_name}' should not be a geographic system")
 
-                if crs.is_geographic:
-                    raise ValueError(f"CRS in '{prj_name}' should not be a geographic system")
+                    logger.debug(f"Using '{prj_name}' CRS: '{crs.to_proj4()}'")
 
-                logger.debug(f"Using '{prj_name}' CRS: '{crs.to_proj4()}'")
+                except FileNotFoundError as ex:
+                    logger.debug(f"Could not open '{prj_name}': {str(ex)}.")
+            else:
+                # a file object was passed to __init__ so the CSV file path / URI is unknown and a
+                # .prj file cannot be found
+                logger.debug(f"Cannot read a .prj file with a CSV file object.")
 
-            except FileNotFoundError as ex:
-                logger.debug(f"Could not open '{prj_name}': {str(ex)}.")
-                if self._format is CsvFormat.xyz_rpy:
-                    raise CrsMissingError(
-                        f"'crs' should be specified for positions in '{Path(filename_str).name}'."
-                    )
+            if not crs and self._format is CsvFormat.xyz_rpy:
+                raise CrsMissingError(f"'crs' should be specified for positions in '{filename}'.")
 
         elif self._format is CsvFormat.lla_rpy:
             # find a UTM CRS to transform the lla positions & rpy orientations into
@@ -739,9 +746,7 @@ class CsvReader(Reader):
 
         elif self._format is CsvFormat.lla_opk:
             # a user-supplied opk CRS is required to project lla into
-            raise CrsMissingError(
-                f"'crs' should be specified for orientations in '{Path(filename_str).name}'."
-            )
+            raise CrsMissingError(f"'crs' should be specified for orientations in '{filename}'.")
 
         return crs
 
@@ -835,9 +840,8 @@ class OsfmReader(Reader):
         try:
             utils.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
-            fn_name = Path(utils.get_path_uri(file)).name
             raise ParamFileError(
-                f"'{fn_name}' is not a valid OpenSfM reconstruction file: {str(ex)}"
+                f"'{utils.get_filename(file)}' is not a valid OpenSfM reconstruction file: {str(ex)}"
             )
 
         # keep root schema keys and delete the rest
@@ -996,19 +1000,19 @@ class OtyReader(Reader):
             ],
         )
 
-        fn_name = Path(utils.get_path_uri(file)).name
+        filename = utils.get_filename(file)
         try:
             utils.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamFileError(
-                f"'{fn_name}' is not a valid GeoJSON exterior parameter file: {str(ex)}"
+                f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}"
             )
 
         if not crs:
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamFileError(f"Could not interpret CRS in '{fn_name}': {str(ex)}")
+                raise ParamFileError(f"Could not interpret CRS in '{filename}': {str(ex)}")
 
         return crs, json_dict
 
