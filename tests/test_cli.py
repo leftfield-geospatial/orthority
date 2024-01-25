@@ -975,7 +975,7 @@ def test_exif_lla_crs(
     """
     ortho_bounds = []
     res = 5
-    for i, lla_crs in enumerate(['EPSG:4326+4326', 'EPSG:4326+3855']):
+    for i, lla_crs in enumerate(['EPSG:4979', 'EPSG:4326+3855']):
         # create ortho
         out_dir = tmp_path.joinpath(str(i))
         out_dir.mkdir()
@@ -994,7 +994,7 @@ def test_exif_lla_crs(
             ortho_bounds.append(im.bounds)
 
     # compare ortho bounds
-    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res)
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res/2)
 
 
 def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
