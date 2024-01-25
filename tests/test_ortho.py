@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+import tracemalloc
 
 import cv2
 import numpy as np
@@ -736,19 +737,30 @@ def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp,
 
 
 def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """Test ortho equivalence for ``per_band=True/False``."""
+    """Test ortho equivalence for ``per_band=True/False`` and that ``per_band=True`` uses more
+    memory than ``per_band=False``."""
     resolution = (5, 5)
 
-    # create a ref (per_band=True) and test (per_band=False) ortho
-    ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(
-        ortho_ref_file, resolution, per_band=True, compress=Compress.deflate
-    )
+    tracemalloc.start()
+    try:
+        # create a ref (per_band=True) and test (per_band=False) ortho
+        ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
+        rgb_pinhole_utm34n_ortho.process(
+            ortho_ref_file, resolution, per_band=True, compress=Compress.deflate
+        )
+        _, ref_peak = tracemalloc.get_traced_memory()
+        tracemalloc.clear_traces()
 
-    ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(
-        ortho_test_file, resolution, per_band=False, compress=Compress.deflate
-    )
+        ortho_test_file = tmp_path.joinpath('test_ortho.tif')
+        rgb_pinhole_utm34n_ortho.process(
+            ortho_test_file, resolution, per_band=False, compress=Compress.deflate
+        )
+        _, test_peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    # compare memory usage
+    assert ref_peak > test_peak
 
     # compare ref and test orthos
     assert ortho_ref_file.exists() and ortho_test_file.exists()
