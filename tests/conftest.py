@@ -295,7 +295,11 @@ def utm34n_crs() -> str:
 @pytest.fixture(scope='session')
 def utm34n_wgs84_crs() -> str:
     """CRS string for UTM zone 34N with WGS84 ellipsoid vertical CRS."""
-    return 'EPSG:32634+4326'
+    # TODO: GDAL/rasterio implements this CRS as a sidecar PAM file which cannot be written to /
+    #   read from with rio.open(<python file object>).  Perhaps this be fixed with when rio.open(
+    #   opener=) when it is implemented.
+    # return 'EPSG:32634+4326'
+    raise NotImplementedError()
 
 
 @pytest.fixture(scope='session')
@@ -319,7 +323,9 @@ def webmerc_crs() -> str:
 @pytest.fixture(scope='session')
 def webmerc_wgs84_crs() -> str:
     """CRS string for web mercator with WGS84 ellipsoid vertical CRS."""
-    return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
+    # return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
+    # see utm34n_wgs84_crs note above
+    raise NotImplementedError()
 
 
 @pytest.fixture(scope='session')
@@ -448,8 +454,26 @@ def float_utm34n_egm96_dem_file(
 
 
 @pytest.fixture(scope='session')
+def float_utm34n_egm2008_dem_file(
+    tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_egm2008_crs
+) -> Path:
+    """
+    A 2 band float DEM file in UTM zone 34N with EGM2008 geoid vertical CRS.
+
+    Band 1 is a sinusoidal surface, and band 2, a planar surface.
+    """
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_egm96_dem.tif')
+    array, profile = create_dem(
+        pinhole_camera, utm34n_egm2008_crs, resolution=_dem_resolution, dtype='float32'
+    )
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
+    return filename
+
+
+@pytest.fixture(scope='session')
 def float_wgs84_wgs84_dem_file(
-    tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_wgs84_crs
+    tmp_path_factory: pytest.TempPathFactory, pinhole_camera, utm34n_crs
 ) -> Path:
     """
     A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical CRS.
@@ -459,7 +483,7 @@ def float_wgs84_wgs84_dem_file(
     filename = tmp_path_factory.mktemp('data').joinpath('float_wgs84_wgs84_dem.tif')
     array, profile = create_dem(
         pinhole_camera,
-        utm34n_wgs84_crs,
+        utm34n_crs,
         resolution=_dem_resolution,
         dtype='float32',
         dem_crs='EPSG:4326+4326',
@@ -503,7 +527,8 @@ def rgb_pinhole_utm34n_ortho(
 @pytest.fixture(scope='session')
 def github_root_url() -> str:
     """URL of github repository root."""
-    return r'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
+    # TODO: change to /main
+    return r'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/'
 
 
 @pytest.fixture(scope='session')
