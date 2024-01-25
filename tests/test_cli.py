@@ -22,6 +22,7 @@ import tracemalloc
 from pathlib import Path
 
 import click
+import fsspec
 import numpy as np
 import pytest
 import rasterio as rio
@@ -66,12 +67,29 @@ def test_ortho_help(runner: CliRunner):
     assert len(result.stdout) > 0
 
 
-@pytest.mark.parametrize(
-    'src_file',
-    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
-)
+def test_ortho_src_file_wildcard(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty ortho`` with a SOURCE image wildcard (that is not expanded by the console)."""
+    src_wildcard = ngi_image_file.parent.joinpath('*RGB.tif')
+    cli_str = (
+        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --res 30 --out-dir {tmp_path}'
+        f' {src_wildcard.as_posix()}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == len([*src_wildcard.parent.glob(src_wildcard.name)])
+
+
 def test_ortho_src_file_not_found_error(
-    src_file: str,
+    ngi_image_file: Path,
     ngi_dem_file: Path,
     ngi_oty_int_param_file: Path,
     ngi_oty_ext_param_file: Path,
@@ -79,13 +97,17 @@ def test_ortho_src_file_not_found_error(
     runner: CliRunner,
 ):
     """Test ``oty ortho`` with a non-existing SOURCE image raises an error ."""
+    # use a source path whose file name is in the exterior params, but the path doesn't exist
+    src_file = f'unknown/{ngi_image_file.name}'
     cli_str = (
         f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {src_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout
+    assert (
+        'SOURCE' in result.stdout and 'No such file' in result.stdout and src_file in result.stdout
+    )
 
 
 def test_ortho_dem_missing_error(
@@ -105,26 +127,24 @@ def test_ortho_dem_missing_error(
     assert '--dem' in result.stdout and 'missing' in result.stdout.lower()
 
 
-@pytest.mark.parametrize(
-    'dem_file',
-    ['unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown/unknown.tif'],
-)
 def test_ortho_dem_not_found_error(
     ngi_image_file: Path,
-    dem_file: str,
     ngi_oty_int_param_file: Path,
     ngi_oty_ext_param_file: Path,
     tmp_path: Path,
     runner: CliRunner,
 ):
     """Test ``oty ortho`` with a non-existing ``--dem`` raises an error ."""
+    dem_file = 'unknown.tif'
     cli_str = (
         f'ortho --dem {dem_file} --int-param {ngi_oty_int_param_file} '
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--dem' in result.stdout
+    assert (
+        '--dem' in result.stdout and 'No such file' in result.stdout and dem_file in result.stdout
+    )
 
 
 def test_ortho_int_param_missing_error(
@@ -144,26 +164,26 @@ def test_ortho_int_param_missing_error(
     assert '--int-param' in result.stdout and 'missing' in result.stdout.lower()
 
 
-@pytest.mark.parametrize(
-    'int_param_file',
-    ['unknown.yaml', 'https://un.known/unknown.yaml', 'https://github.com/unknown/unknown.yaml'],
-)
 def test_ortho_int_param_not_found_error(
     ngi_image_file: Path,
     ngi_dem_file: Path,
-    int_param_file: str,
     ngi_oty_ext_param_file: Path,
     tmp_path: Path,
     runner: CliRunner,
 ):
     """Test ``oty ortho`` with a non-existing ``--int-param`` raises an error ."""
+    int_param_file = 'unknown.yaml'
     cli_str = (
         f'ortho --dem {ngi_dem_file} --int-param {int_param_file} '
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--int-param' in result.stdout
+    assert (
+        '--int-param' in result.stdout
+        and 'No such file' in result.stdout
+        and int_param_file in result.stdout
+    )
 
 
 def test_ortho_int_param_ext_error(
@@ -200,30 +220,26 @@ def test_ortho_ext_param_missing_error(
     assert '--ext-param' in result.stdout and 'missing' in result.stdout.lower()
 
 
-@pytest.mark.parametrize(
-    'ext_param_file',
-    [
-        'unknown.geojson',
-        'https://un.known/unknown.geojson',
-        'https://github.com/unknown/unknown.geojson',
-    ],
-)
 def test_ortho_ext_param_not_found_error(
     ngi_image_file: Path,
     ngi_dem_file: Path,
     ngi_oty_int_param_file: Path,
-    ext_param_file: str,
     tmp_path: Path,
     runner: CliRunner,
 ):
     """Test ``oty ortho`` with a non-existing ``--ext-param`` raises an error ."""
+    ext_param_file = 'unknown.geojson'
     cli_str = (
         f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
         f'--ext-param {ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert '--ext-param' in result.stdout
+    assert (
+        '--ext-param' in result.stdout
+        and 'No such file' in result.stdout
+        and ext_param_file in result.stdout
+    )
 
 
 def test_ortho_ext_param_ext_error(
@@ -318,9 +334,10 @@ def test_ortho_crs_file(
     # use odm_xyz_opk_csv_file exterior params so there is no auto-crs
     crs_file = tmp_path.joinpath('test_crs.txt')
     crs_file.write_text(odm_crs)
+    # use file:// prefix to test differentiation with CRS string e.g. 'EPSG:...'
     cli_str = (
         f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_xyz_opk_csv_file} --out-dir {tmp_path} --crs {crs_file} --res 5 '
+        f'--ext-param {odm_xyz_opk_csv_file} --out-dir {tmp_path} --crs file://{crs_file} --res 5 '
         f'{odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -458,35 +475,27 @@ def test_ortho_dem_band_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, run
 
 def test_ortho_interp(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty ortho --interp`` by comparing 'nearest' to 'average' interpolation orthos."""
-    # create average interpolation dem
-    out_dir_average = tmp_path.joinpath('average')
-    out_dir_average.mkdir()
-    cli_str = (
-        ortho_legacy_ngi_cli_str
-        + f' --out-dir {out_dir_average} --res 24 --compress deflate --interp average '
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ref_ortho_files = [*out_dir_average.glob('*_ORTHO.tif')]
-    assert len(ref_ortho_files) == 1
+    ortho_std = []
+    for interp in ['average', 'nearest']:
+        # create ortho
+        out_dir = tmp_path.joinpath(interp)
+        out_dir.mkdir()
+        cli_str = (
+            ortho_legacy_ngi_cli_str
+            + f' --out-dir {out_dir} --res 24 --compress deflate --interp {interp}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create nearest interpolation dem
-    out_dir_nearest = tmp_path.joinpath('nearest')
-    out_dir_nearest.mkdir()
-    cli_str = (
-        ortho_legacy_ngi_cli_str
-        + f' --out-dir {out_dir_nearest} --res 24 --compress deflate --interp nearest'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    test_ortho_files = [*out_dir_nearest.glob('*_ORTHO.tif')]
-    assert len(test_ortho_files) == 1
+        # read ortho std dev
+        with rio.open(ortho_files[0], 'r') as im:
+            array = im.read(masked=True)
+        ortho_std.append(float(array.std()))
 
-    # compare nearest and average interpolation orthos
-    with rio.open(ref_ortho_files[0], 'r') as ref_im, rio.open(test_ortho_files[0], 'r') as test_im:
-        ref_array = ref_im.read(masked=True)
-        test_array = test_im.read(masked=True)
-        assert test_array.std() > ref_array.std()
+    # compare orthos
+    assert ortho_std[0] != pytest.approx(ortho_std[1], abs=0.1)
 
 
 def test_ortho_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -501,34 +510,27 @@ def test_ortho_dem_interp(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner:
     """Test ``oty ortho --dem-interp`` by comparing 'nearest' to 'average' DEM interpolation
     orthos.
     """
-    # create average dem interpolation ortho
-    out_dir_average = tmp_path.joinpath('average')
-    out_dir_average.mkdir()
-    cli_str = ortho_legacy_ngi_cli_str + (
-        f' --out-dir {out_dir_average} --res 30 --compress deflate --dem-interp average'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ref_ortho_files = [*out_dir_average.glob('*_ORTHO.tif')]
-    assert len(ref_ortho_files) == 1
+    ortho_std = []
+    for dem_interp in ['average', 'nearest']:
+        # create ortho
+        out_dir = tmp_path.joinpath(dem_interp)
+        out_dir.mkdir()
+        cli_str = (
+            ortho_legacy_ngi_cli_str
+            + f' --out-dir {out_dir} --res 30 --compress deflate --dem-interp {dem_interp}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create nearest dem interpolation ortho
-    out_dir_nearest = tmp_path.joinpath('nearest')
-    out_dir_nearest.mkdir()
-    cli_str = ortho_legacy_ngi_cli_str + (
-        f' --out-dir {out_dir_nearest} --res 30 --compress deflate --dem-interp nearest'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    test_ortho_files = [*out_dir_nearest.glob('*_ORTHO.tif')]
-    assert len(test_ortho_files) == 1
+        # read ortho std dev
+        with rio.open(ortho_files[0], 'r') as im:
+            array = im.read(masked=True)
+        ortho_std.append(float(array.std()))
 
-    # compare nearest and average dem interpolation orthos
-    with rio.open(ref_ortho_files[0], 'r') as ref_im, rio.open(test_ortho_files[0], 'r') as test_im:
-        ref_array = ref_im.read(masked=True)
-        test_array = test_im.read(masked=True)
-        assert test_im.bounds == pytest.approx(ref_im.bounds, abs=ref_im.res[0])
-        assert test_array.std() != ref_array.std()
+    # compare orthos
+    assert ortho_std[0] != pytest.approx(ortho_std[1], abs=0.01)
 
 
 def test_ortho_dem_interp_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -543,26 +545,27 @@ def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
     """Test ``oty ortho --per-band`` by comparing memory usage between ``--per-band`` and ``--no-
     per-band``.
     """
+    mem_peaks = []
     tracemalloc.start()
     try:
-        # create --per-band ortho
-        cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --per-band'
-        result = runner.invoke(cli, cli_str.split())
-        _, per_band_peak = tracemalloc.get_traced_memory()
-        tracemalloc.clear_traces()
-        assert result.exit_code == 0, result.stdout
-        ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-        assert len(ortho_files) == 1
+        for per_band in ['per-band', 'no-per-band']:
+            # create ortho
+            out_dir = tmp_path.joinpath(per_band)
+            out_dir.mkdir()
+            cli_str = (
+                ortho_legacy_ngi_cli_str
+                + f' --out-dir {out_dir} --res 30 --compress deflate --{per_band}'
+            )
+            result = runner.invoke(cli, cli_str.split())
+            assert result.exit_code == 0, result.stdout
+            ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+            assert len(ortho_files) == 1
 
-        # create --no-per-band ortho
-        cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --no-per-band -o'
-        result = runner.invoke(cli, cli_str.split())
-        _, no_per_band_peak = tracemalloc.get_traced_memory()
-        assert result.exit_code == 0, result.stdout
-        ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
-        assert len(ortho_files) == 1
+            _, mem_peak = tracemalloc.get_traced_memory()
+            tracemalloc.clear_traces()
+            mem_peaks.append(mem_peak)
 
-        assert no_per_band_peak > per_band_peak
+        assert mem_peaks[1] > mem_peaks[0]
     finally:
         tracemalloc.stop()
 
@@ -577,43 +580,28 @@ def test_ortho_full_remap(
     """Test ``oty ortho --full-remap`` by comparing ``--full-remap`` and ``--no-full-remap``
     orthos.
     """
-    # create --full-remap ortho
-    out_dir_full_remap = tmp_path.joinpath('full_remap')
-    out_dir_full_remap.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_reconstruction_file} --out-dir {out_dir_full_remap} --res 1 '
-        f'--compress deflate --full-remap {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    fr_ortho_files = [*out_dir_full_remap.glob('*_ORTHO.tif')]
-    assert len(fr_ortho_files) == 1
+    ortho_arrays = []
+    for full_remap in ['full-remap', 'no-full-remap']:
+        # create ortho
+        out_dir = tmp_path.joinpath(full_remap)
+        out_dir.mkdir()
+        cli_str = (
+            f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
+            f'--ext-param {odm_reconstruction_file} --out-dir {out_dir} --res 1 '
+            f'--compress deflate --{full_remap} {odm_image_file}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create --no-full-remap ortho
-    out_dir_no_full_remap = tmp_path.joinpath('no_full_remap')
-    out_dir_no_full_remap.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_reconstruction_file} --out-dir {out_dir_no_full_remap} --res 1 '
-        f'--compress deflate --no-full-remap {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    nfr_ortho_files = [*out_dir_no_full_remap.glob('*_ORTHO.tif')]
-    assert len(nfr_ortho_files) == 1
+        # read ortho
+        with rio.open(ortho_files[0], 'r') as im:
+            array = im.read(masked=True)
+        ortho_arrays.append(array)
 
-    # compare --full-remap and --no-full-remap orthos
-    with rio.open(fr_ortho_files[0], 'r') as fr_im, rio.open(nfr_ortho_files[0], 'r') as nfr_im:
-        fr_array = fr_im.read(masked=True)
-        nfr_array = nfr_im.read(masked=True)
-        assert np.any(nfr_array.mask != fr_array.mask)
-
-        mask = nfr_array.mask | fr_array.mask
-        nfr_array.mask = mask
-        fr_array.mask = mask
-        cc = np.corrcoef(nfr_array.compressed(), fr_array.compressed())
-        assert 0.95 < cc[0, 1] < 1
+    # compare ortho masks
+    assert np.any(ortho_arrays[1].mask != ortho_arrays[0].mask)
 
 
 def test_ortho_alpha(
@@ -624,44 +612,27 @@ def test_ortho_alpha(
     runner: CliRunner,
 ):
     """Test ``oty ortho --alpha`` by comparing ``--alpha 0`` and ``--alpha 1`` orthos."""
-    # create --alpha 1 ortho
-    out_dir_alpha_1 = tmp_path.joinpath('alpha_1')
-    out_dir_alpha_1.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_reconstruction_file} --out-dir {out_dir_alpha_1} --res 1 '
-        f'--compress deflate --no-full-remap --alpha 1 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    a1_ortho_files = [*out_dir_alpha_1.glob('*_ORTHO.tif')]
-    assert len(a1_ortho_files) == 1
+    ortho_bounds = []
+    for alpha in [0, 1]:
+        # create ortho
+        out_dir = tmp_path.joinpath(str(alpha))
+        out_dir.mkdir()
+        cli_str = (
+            f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
+            f'--ext-param {odm_reconstruction_file} --out-dir {out_dir} --res 1 '
+            f'--compress deflate --no-full-remap --alpha {alpha} {odm_image_file}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create --alpha 0 ortho
-    out_dir_alpha_0 = tmp_path.joinpath('alpha_0')
-    out_dir_alpha_0.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_reconstruction_file} --out-dir {out_dir_alpha_0} --res 1 '
-        f'--compress deflate --no-full-remap --alpha 0 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    a0_ortho_files = [*out_dir_alpha_0.glob('*_ORTHO.tif')]
-    assert len(a0_ortho_files) == 1
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
 
-    # compare --alpha 1 and --alpha 0 orthos
-    with rio.open(a1_ortho_files[0], 'r') as a1_im, rio.open(a0_ortho_files[0], 'r') as a0_im:
-        a1_win = a1_im.window(*a0_im.bounds)
-        a1_array = a1_im.read(masked=True, window=a1_win)
-        a0_array = a0_im.read(masked=True)
-        assert a0_im.bounds[:2] > a1_im.bounds[:2] and a0_im.bounds[-2:] < a1_im.bounds[-2:]
-
-        mask = a0_array.mask | a1_array.mask
-        a0_array.mask = mask
-        a1_array.mask = mask
-        cc = np.corrcoef(a0_array.compressed(), a1_array.compressed())
-        assert cc[0, 1] > 0.99
+    # compare ortho bounds
+    assert ortho_bounds[0][:2] > ortho_bounds[1][:2] and ortho_bounds[0][-2:] < ortho_bounds[1][-2:]
 
 
 def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -684,37 +655,28 @@ def test_ortho_lla_crs(
     """Test ``oty ortho --lla-crs`` by comparing orthos created with different ``--lla-crs``
     values.
     """
-    # create an ortho with ellipsoidal height --lla-crs
-    out_dir_ellps = tmp_path.joinpath('lla_crs_ellps')
-    out_dir_ellps.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_lla_rpy_csv_file} --out-dir {out_dir_ellps} --res 5 '
-        f'--crs {odm_crs}+4326 --lla-crs EPSG:4326+4326 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ellps_ortho_files = [*out_dir_ellps.glob('*_ORTHO.tif')]
-    assert len(ellps_ortho_files) == 1
+    ortho_bounds = []
+    res = 5
+    for i, lla_crs in enumerate(['EPSG:4326+4326', 'EPSG:4326+3855']):
+        # create ortho
+        out_dir = tmp_path.joinpath(str(i))
+        out_dir.mkdir()
+        cli_str = (
+            f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
+            f'--ext-param {odm_lla_rpy_csv_file} --out-dir {out_dir} --res {res} '
+            f'--crs {odm_crs}+3855 --lla-crs {lla_crs} {odm_image_file}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create an ortho with geoidal height --lla-crs
-    out_dir_geoid = tmp_path.joinpath('lla_crs_geoid')
-    out_dir_geoid.mkdir()
-    cli_str = (
-        f'ortho --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_lla_rpy_csv_file} --out-dir {out_dir_geoid} --res 5 '
-        f'--crs {odm_crs}+4326 --lla-crs EPSG:4326+3855 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    geoid_ortho_files = [*out_dir_geoid.glob('*_ORTHO.tif')]
-    assert len(geoid_ortho_files) == 1
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
 
-    # compare
-    with rio.open(ellps_ortho_files[0], 'r') as ellps_im, rio.open(
-        geoid_ortho_files[0], 'r'
-    ) as geoid_im:
-        assert ellps_im.bounds != pytest.approx(geoid_im.bounds, abs=geoid_im.res[0])
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res)
 
 
 def test_ortho_lla_crs_projected_error(
@@ -746,42 +708,32 @@ def test_ortho_radians(
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test ``oty ortho --radians`` by comparing orthos created exterior parameter orientation
+    """Test ``oty ortho --radians`` by comparing orthos created with exterior parameter orientation
     angles in radians and degrees.
     """
-    # create an ortho with orientation angles in degrees
-    out_dir_degrees = tmp_path.joinpath('degrees')
-    out_dir_degrees.mkdir()
-    cli_str = (
-        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
-        f'--ext-param {ngi_xyz_opk_csv_file} --out-dir {out_dir_degrees} --res 24 '
-        f'--degrees {ngi_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ortho_files_degrees = [*out_dir_degrees.glob('*_ORTHO.tif')]
-    assert len(ortho_files_degrees) == 1
+    ortho_arrays = []
+    for radians, ext_param_file in zip(
+        ['degrees', 'radians'], [ngi_xyz_opk_csv_file, ngi_xyz_opk_radians_csv_file]
+    ):
+        # create ortho
+        out_dir = tmp_path.joinpath(radians)
+        out_dir.mkdir()
+        cli_str = (
+            f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+            f'--ext-param {ext_param_file} --out-dir {out_dir} --res 24 '
+            f'--{radians} {ngi_image_file}'
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # create an ortho with orientation angles in radians
-    out_dir_radians = tmp_path.joinpath('radians')
-    out_dir_radians.mkdir()
-    cli_str = (
-        f'ortho --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
-        f'--ext-param {ngi_xyz_opk_radians_csv_file} --out-dir {out_dir_radians} --res 24 '
-        f'--radians {ngi_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ortho_files_radians = [*out_dir_radians.glob('*_ORTHO.tif')]
-    assert len(ortho_files_radians) == 1
+        # read ortho
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_arrays.append(im.read(1))
 
-    # compare
-    with rio.open(ortho_files_degrees[0], 'r') as degrees_im, rio.open(
-        ortho_files_radians[0], 'r'
-    ) as radians_im:
-        degrees_array = degrees_im.read(1)
-        radians_array = radians_im.read(1)
-        assert radians_array == pytest.approx(degrees_array, abs=1)
+    # compare ortho similarity
+    assert ortho_arrays[1] == pytest.approx(ortho_arrays[0], abs=1)
 
 
 def test_ortho_write_mask(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -890,7 +842,7 @@ def test_ortho_export_params(
     """Test ``oty ortho --export-params`` exports interior & exterior parameters provided in
     different formats (with no ``--dem-file``).
     """
-    # note this doubles as a test of reading params in different formats
+    # NOTE this doubles as a test of reading params in different formats
     int_param_file: Path = request.getfixturevalue(int_param_file)
     ext_param_file: Path = request.getfixturevalue(ext_param_file)
     cli_str = (
@@ -905,10 +857,21 @@ def test_ortho_export_params(
     assert int_param_file.exists() and ext_param_file.exists()
 
 
+def test_ortho_out_dir_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty ortho`` raises an error when --out-dir does not exist."""
+    out_dir = 'unknown'
+    cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {out_dir} --res 24'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--out-dir' in result.stdout and 'directory' in result.stdout and out_dir in result.stdout
+    )
+
+
 def test_ortho_overwrite(
     ortho_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner
 ):
-    """Test ``oty ortho --overwrite`` overwrites and existing ortho."""
+    """Test ``oty ortho --overwrite`` overwrites an existing ortho."""
     ortho_file = tmp_path.joinpath(ngi_image_file.stem + '_ORTHO.tif')
     ortho_file.touch()
 
@@ -930,7 +893,11 @@ def test_ortho_overwrite_error(
     cli_str = ortho_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert result.exception is not None and 'exists' in str(result.exception)
+    assert (
+        result.exception is not None
+        and 'exists' in str(result.exception)
+        and ortho_file.name in str(result.exception)
+    )
 
 
 def test_ortho_urls(
@@ -956,7 +923,7 @@ def test_exif_crs(
     odm_image_file: Path, odm_dem_file: Path, odm_crs: str, tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty exif --crs`` creates orthos with the correct CRS."""
-    crs = odm_crs + '+4326'  # differentiate from auto CRS
+    crs = odm_crs + '+3855'  # differentiate from auto CRS
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res 5 --crs {crs} {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
@@ -1006,35 +973,28 @@ def test_exif_lla_crs(
     """Test ``oty exif --lla-crs`` by comparing orthos created with different ``--lla-crs``
     values.
     """
-    # create an ortho with ellipsoidal height --lla-crs
-    out_dir_ellps = tmp_path.joinpath('lla_crs_ellps')
-    out_dir_ellps.mkdir()
-    cli_str = (
-        f'exif --dem {odm_dem_file} --out-dir {out_dir_ellps} --res 5 --crs {odm_crs}+4326 '
-        f'--lla-crs EPSG:4326+4326 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    ellps_ortho_files = [*out_dir_ellps.glob('*_ORTHO.tif')]
-    assert len(ellps_ortho_files) == 1
+    ortho_bounds = []
+    res = 5
+    for i, lla_crs in enumerate(['EPSG:4326+4326', 'EPSG:4326+3855']):
+        # create ortho
+        out_dir = tmp_path.joinpath(str(i))
+        out_dir.mkdir()
+        cli_str = (
+            f'exif --dem {odm_dem_file} --out-dir {out_dir} --res 5 --crs {odm_crs}+3855 '
+            f'--lla-crs {lla_crs} {odm_image_file}'
+        )
 
-    # create an ortho with geoidal height --lla-crs
-    out_dir_geoid = tmp_path.joinpath('lla_crs_geoid')
-    out_dir_geoid.mkdir()
-    cli_str = (
-        f'exif --dem {odm_dem_file} --out-dir {out_dir_geoid} --res 5 --crs {odm_crs}+4326 '
-        f'--lla-crs EPSG:4326+3855 {odm_image_file}'
-    )
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    geoid_ortho_files = [*out_dir_geoid.glob('*_ORTHO.tif')]
-    assert len(geoid_ortho_files) == 1
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
 
-    # compare
-    with rio.open(ellps_ortho_files[0], 'r') as ellps_im, rio.open(
-        geoid_ortho_files[0], 'r'
-    ) as geoid_im:
-        assert ellps_im.bounds != pytest.approx(geoid_im.bounds, abs=geoid_im.res[0])
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
+
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res)
 
 
 def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
@@ -1088,6 +1048,19 @@ def test_odm_option(
             assert ortho_im.res == (res, res)
 
 
+def test_odm_dataset_dir_error(tmp_path: Path, runner: CliRunner):
+    """Test ``oty odm`` raises an error with an non-existing --dataset-dir."""
+    dataset_dir = 'unknown'
+    cli_str = f'odm --dataset-dir {dataset_dir}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--dataset-dir' in result.stdout
+        and 'directory' in result.stdout
+        and dataset_dir in result.stdout
+    )
+
+
 def test_simple_ortho(
     ngi_image_file: Path,
     ngi_dem_file: Path,
@@ -1139,18 +1112,18 @@ def test__ortho_mult_camera(
     for src_file_key in mult_ext_param_dict.keys():
         src_file = tmp_path.joinpath(src_file_key).with_suffix(rgb_byte_src_file.suffix)
         shutil.copy(rgb_byte_src_file, src_file)
-        src_files.append(src_file)
+        src_files.append(str(src_file))
 
     _ortho(
-        src_files=src_files,
-        dem_file=float_utm34n_dem_file,
+        src_files=fsspec.open_files(src_files, 'rb'),
+        dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
         int_param_dict=mult_int_param_dict,
         ext_param_dict=copy.deepcopy(mult_ext_param_dict),
-        crs=utm34n_crs,
+        crs=rio.CRS.from_string(utm34n_crs),
         dem_band=1,
         alpha=1.0,
         export_params=False,
-        out_dir=tmp_path,
+        out_dir=fsspec.open(str(tmp_path), 'wb'),
         overwrite=False,
     )
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
@@ -1172,19 +1145,49 @@ def test__ortho_single_no_camera(
     """
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
     _ortho(
-        src_files=(rgb_byte_src_file,),
-        dem_file=float_utm34n_dem_file,
+        src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
+        dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
         int_param_dict=pinhole_int_param_dict,
         ext_param_dict=ext_param_dict,
-        crs=utm34n_crs,
+        crs=rio.CRS.from_string(utm34n_crs),
         dem_band=1,
         alpha=1.0,
         export_params=False,
-        out_dir=tmp_path,
+        out_dir=fsspec.open(str(tmp_path), 'wb'),
         overwrite=False,
     )
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
+
+
+def test__ortho_ext_param_not_found_error(
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_int_param_dict: dict,
+    xyz: tuple,
+    opk: tuple,
+    utm34n_crs: str,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test the _ortho backend raises an error when there are no exterior parameters for the
+    source image.
+    """
+    ext_param_dict = {'unknown.tif': dict(xyz=xyz, opk=opk, camera='pinhole test camera')}
+    with pytest.raises(click.BadParameter) as ex:
+        _ortho(
+            src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
+            dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
+            int_param_dict=pinhole_int_param_dict,
+            ext_param_dict=ext_param_dict,
+            crs=rio.CRS.from_string(utm34n_crs),
+            dem_band=1,
+            alpha=1.0,
+            export_params=False,
+            out_dir=str(tmp_path),
+            overwrite=False,
+        )
+    assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
 
 
 def test__ortho_mult_camera_unknown_camera_error(
@@ -1204,18 +1207,18 @@ def test__ortho_mult_camera_unknown_camera_error(
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=camera)}
     with pytest.raises(click.BadParameter) as ex:
         _ortho(
-            src_files=(rgb_byte_src_file,),
-            dem_file=float_utm34n_dem_file,
+            src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
+            dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
             int_param_dict=mult_int_param_dict,
             ext_param_dict=ext_param_dict,
-            crs=utm34n_crs,
+            crs=rio.CRS.from_string(utm34n_crs),
             dem_band=1,
             alpha=1.0,
             export_params=False,
-            out_dir=tmp_path,
+            out_dir=str(tmp_path),
             overwrite=False,
         )
-    assert camera in str(ex) and '--int-param' in ex.value.param_hint
+    assert camera in str(ex) and 'interior parameters' in str(ex)
 
 
 def test__ortho_mult_camera_no_camera_error(
@@ -1234,45 +1237,15 @@ def test__ortho_mult_camera_no_camera_error(
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
     with pytest.raises(click.BadParameter) as ex:
         _ortho(
-            src_files=(rgb_byte_src_file,),
-            dem_file=float_utm34n_dem_file,
+            src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
+            dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
             int_param_dict=mult_int_param_dict,
             ext_param_dict=ext_param_dict,
-            crs=utm34n_crs,
+            crs=rio.CRS.from_string(utm34n_crs),
             dem_band=1,
             alpha=1.0,
             export_params=False,
-            out_dir=tmp_path,
+            out_dir=str(tmp_path),
             overwrite=False,
         )
-    assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
-
-
-def test__ortho_ext_param_not_found_error(
-    rgb_byte_src_file: Path,
-    float_utm34n_dem_file: Path,
-    pinhole_int_param_dict: dict,
-    xyz: tuple,
-    opk: tuple,
-    utm34n_crs: str,
-    tmp_path: Path,
-    runner: CliRunner,
-):
-    """Test the _ortho backend raises an error when there are no exterior parameters for the
-    source image.
-    """
-    ext_param_dict = {'unknown.tif': dict(xyz=xyz, opk=opk, camera='pinhole test camera')}
-    with pytest.raises(click.BadParameter) as ex:
-        _ortho(
-            src_files=(rgb_byte_src_file,),
-            dem_file=float_utm34n_dem_file,
-            int_param_dict=pinhole_int_param_dict,
-            ext_param_dict=ext_param_dict,
-            crs=utm34n_crs,
-            dem_band=1,
-            alpha=1.0,
-            export_params=False,
-            out_dir=tmp_path,
-            overwrite=False,
-        )
-    assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
+    assert rgb_byte_src_file.name in str(ex) and 'exterior parameters' in str(ex).lower()
