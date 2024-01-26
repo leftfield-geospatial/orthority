@@ -1,5 +1,5 @@
 name: Tests (conda-forge)
-
+# TODO: use libmamba solver and cache packages
 on:
 #  push:
 #    branches: [main, feature_pytest_click]
@@ -26,13 +26,14 @@ jobs:
         channels: conda-forge
         channel-priority: true
         activate-environment: test
-        miniforge-variant: Mambaforge
+        auto-update-conda: true
+        conda-solver: libmamba
+#        miniforge-variant: Mambaforge
     - name: Install dependencies
       run: |
-        mamba info
-        mamba list
-        mamba install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
-        mamba list
+        conda info
+        conda install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        conda list
     - name: Run unit tests
       run: |
         python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
