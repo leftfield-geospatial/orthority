@@ -10,42 +10,52 @@ on:
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash -el {0}
+
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: ['3.9', '3.10', '3.11']
+
     steps:
-    - uses: actions/checkout@v4  # for the test data
+    - uses: actions/checkout@v4  # get the test data
 
-    - name: Get Date
-      id: get-date
-      run: echo "week=$(/bin/date -u '+%Y%U')" >> $GITHUB_OUTPUT
-      shell: bash
+#    - name: Get date
+#      id: get-date
+#      run: echo "week=$(/bin/date -u '+%Y%U')" >> $GITHUB_OUTPUT
+#      shell: bash
 
-    - name: Cache conda
-      uses: actions/cache@v4
-      with:
-        path: ~/conda_pkgs_dir
-        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ steps.get-date.outputs.week }}-${{ hashFiles('pyproject.toml') }}
+#    - name: Cache conda
+#      uses: actions/cache@v4
+#      id: cache
+#      with:
+#        path: ~/conda_pkgs_dir
+##        path: ${{ env.CONDA }}
+#        key:
+#          ${{ runner.os }}-${{ runner.arch }}-${{ matrix.python-version }}-${{
+#          steps.get-date.outputs.week }}-${{ hashFiles('pyproject.toml') }}-v2
 
     - uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: ${{ matrix.python-version }}
+#        miniforge-version: latest
         channels: conda-forge
-        channel-priority: true
-        activate-environment: test
-        auto-update-conda: true
+        channel-priority: strict
+        activate-environment: orthority-test
+#        auto-update-conda: false
         conda-solver: libmamba
 
     - name: Install dependencies
+#      if: steps.cache.outputs.cache-hit != 'true'
       run: |
         conda info
         conda install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
         conda list
+
     - name: Run unit tests
       run: |
         python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
