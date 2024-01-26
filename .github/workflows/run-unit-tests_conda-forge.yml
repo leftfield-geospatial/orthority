@@ -1,5 +1,5 @@
 name: Tests (conda-forge)
-# TODO: use libmamba solver and cache packages
+
 on:
 #  push:
 #    branches: [main, feature_pytest_click]
@@ -20,6 +20,18 @@ jobs:
         python-version: ['3.9', '3.10', '3.11']
     steps:
     - uses: actions/checkout@v4  # for the test data
+
+    - name: Get Date
+      id: get-date
+      run: echo "week=$(/bin/date -u '+%Y%U')" >> $GITHUB_OUTPUT
+      shell: bash
+
+    - name: Cache conda
+      uses: actions/cache@v4
+      with:
+        path: ~/conda_pkgs_dir
+        key: ${{ runner.os }}-${{ matrix.python-version }}-${{ steps.get-date.outputs.week }}-${{ hashFiles('pyproject.toml') }}
+
     - uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: ${{ matrix.python-version }}
@@ -28,7 +40,7 @@ jobs:
         activate-environment: test
         auto-update-conda: true
         conda-solver: libmamba
-#        miniforge-variant: Mambaforge
+
     - name: Install dependencies
       run: |
         conda info
