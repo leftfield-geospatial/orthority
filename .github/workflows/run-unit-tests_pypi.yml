@@ -1,12 +1,12 @@
 name: Tests
-# TODO: cache dependencies and create regular cron scheduled tests
-
 on:
   push:
     branches: [main, feature_pytest_click]
   pull_request:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'
 
 jobs:
   test:
@@ -22,7 +22,9 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: 'pip'
     - name: Install dependencies
+      # TODO: list dependencies and test dependencies in one place
       run: |
         python -m pip install --upgrade pip
         python -m pip install flake8 pytest pytest-cov
