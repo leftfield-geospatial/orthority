@@ -633,6 +633,26 @@ def test_undistort(
     assert cc[0, 1] > 0.95
 
 
+def test_create_ortho_profile_12bit_jpeg(rgb_pinhole_utm34n_ortho: Ortho):
+    """Test _create_ortho_profile correctly configures a 12bit jpeg ortho profile."""
+    # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
+    # jpeg compression.  This test just checks the ortho profile is correct.
+    with rio.open(rgb_pinhole_utm34n_ortho._src_file, 'r') as src_im:
+        ortho_profile, write_mask = rgb_pinhole_utm34n_ortho._create_ortho_profile(
+            src_im,
+            (1, 1),
+            rio.Affine.identity(),
+            dtype='uint16',
+            compress=Compress.jpeg,
+            write_mask=None,
+        )
+
+    assert write_mask
+    assert ortho_profile['dtype'] == 'uint16'
+    assert ortho_profile['compress'] == 'jpeg'
+    assert 'nbits' in ortho_profile and ortho_profile['nbits'] == 12
+
+
 @pytest.mark.parametrize('resolution', [(30.0, 30.0), (60.0, 60.0), (60.0, 30.0)])
 def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: tuple, tmp_path: Path):
     """Test ortho ``resolution`` is set correctly."""
@@ -1057,7 +1077,9 @@ def test_process_compress_jpeg_error(
     utm34n_crs: str,
     tmp_path: Path,
 ):
-    """Test that jpeg compresssion raises an error when the source image dtype is not uint8."""
+    """Test that jpeg compression raises an error when the source image dtype is not uint8 or
+    uint16.
+    """
     ortho = Ortho(float_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
