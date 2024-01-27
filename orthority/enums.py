@@ -106,9 +106,9 @@ class Compress(str, Enum):
     """Compression types."""
 
     jpeg = 'jpeg'
-    """Jpeg (lossy) compression."""
+    """Jpeg compression."""
     deflate = 'deflate'
-    """Deflate (lossless) compression."""
+    """Deflate compression."""
 
     def __repr__(self):
         return self._name_

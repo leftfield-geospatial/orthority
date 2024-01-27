@@ -309,6 +309,7 @@ def _ortho(
                 src_file_path.name, ext_param_dict.get(src_file_path.stem, None)
             )
             if not ext_param:
+                # TODO: should matching be case sensitive?
                 raise click.BadParameter(
                     f"Could not find exterior parameters for '{src_file_path.name}'.",
                     param_hint="'-ep' / '--ext-param'",

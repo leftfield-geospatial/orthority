@@ -430,6 +430,7 @@ class Ortho:
         # Determine dtype, check dtype support
         # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with
         # nearest interp so these dtypes are excluded).
+        ortho_profile = {}
         dtype = dtype or src_im.profile.get('dtype', None)
         if dtype not in Ortho._nodata_vals:
             raise ValueError(f"Data type '{dtype}' is not supported.")
@@ -439,10 +440,17 @@ class Ortho:
             compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
         else:
             compress = Compress(compress)
-            if compress == Compress.jpeg and dtype != 'uint8':
-                # TODO: enable 12bit jpeg input and output support with dtype==uint16 & add unit
-                #  test
-                raise ValueError(f"JPEG compression is supported for the 'uint8' data type only.")
+            if compress == Compress.jpeg:
+                if dtype == 'uint16':
+                    logger.warning(
+                        'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
+                        'dependent.'
+                    )
+                    ortho_profile.update(nbits=12)
+                elif dtype != 'uint8':
+                    raise ValueError(
+                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
+                    )
 
         if compress == Compress.jpeg:
             interleave, photometric = (
@@ -460,7 +468,7 @@ class Ortho:
         nodata = None if write_mask else Ortho._nodata_vals[dtype]
 
         # create ortho profile
-        ortho_profile = dict(
+        ortho_profile.update(
             driver='GTiff',
             dtype=dtype,
             crs=self._crs,
@@ -735,8 +743,11 @@ class Ortho:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (
             the default), the source image dtype is used.
         :param compress:
-            Ortho image compression type.  If set to None (the default), jpeg compression is used
-            for the uint8 ``dtype``, and deflate compression otherwise.
+            Ortho image compression type ('jpeg' or 'deflate').  Deflate can be used with all
+            ``dtype``s, and JPEG with the uint8 ``dtype``.  With supporting ``rasterio`` builds,
+            JPEG can also be used with uint16, in which case the ortho is 12 bit JPEG compressed.
+            If ``compress`` is set to None (the default), JPEG is used for the uint8 ``dtype``,
+            and Deflate otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param overwrite:
