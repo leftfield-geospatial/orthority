@@ -1,20 +1,18 @@
 name: Tests (conda-forge)
 
 on:
-#  push:
-#    branches: [main, feature_pytest_click]
-#  pull_request:
-#    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # run weekly
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
-
     defaults:
       run:
         shell: bash -el {0}
-
     strategy:
       fail-fast: false
       matrix:
@@ -22,35 +20,19 @@ jobs:
         python-version: ['3.9', '3.10', '3.11']
 
     steps:
-    - uses: actions/checkout@v4  # get the test data
+    - name: Check out repository
+      uses: actions/checkout@v4
 
-#    - name: Get date
-#      id: get-date
-#      run: echo "week=$(/bin/date -u '+%Y%U')" >> $GITHUB_OUTPUT
-#      shell: bash
-
-#    - name: Cache conda
-#      uses: actions/cache@v4
-#      id: cache
-#      with:
-#        path: ~/conda_pkgs_dir
-##        path: ${{ env.CONDA }}
-#        key:
-#          ${{ runner.os }}-${{ runner.arch }}-${{ matrix.python-version }}-${{
-#          steps.get-date.outputs.week }}-${{ hashFiles('pyproject.toml') }}-v2
-
-    - uses: conda-incubator/setup-miniconda@v3
+    - name: Set up conda
+      uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: ${{ matrix.python-version }}
-#        miniforge-version: latest
         channels: conda-forge
         channel-priority: strict
         activate-environment: orthority-test
-#        auto-update-conda: false
         conda-solver: libmamba
 
     - name: Install dependencies
-#      if: steps.cache.outputs.cache-hit != 'true'
       run: |
         conda info
         conda install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
