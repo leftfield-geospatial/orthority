@@ -763,11 +763,19 @@ class Ortho:
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
             with env, utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
+                # warn if source dimensions don't match camera
+                if src_im.shape[::-1] != self._camera._im_size:
+                    logger.warning(
+                        f"Source image '{self._src_name}' size: {src_im.shape[::-1]} does not "
+                        f"match camera image size: {self._camera._im_size}."
+                    )
+
                 # get dem array covering ortho extents in world / ortho crs and ortho resolution
                 dem_interp = Interp(dem_interp)
                 dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
                 # TODO: don't mask dem if pinhole camera, or make dem masking an option which
-                #  defaults to not masking with pinhole camera.
+                #  defaults to not masking with pinhole camera.  note though that dem masking is
+                #  like occlusion masking for image edges, which still applies to pinhole camera.
                 dem_array, dem_transform = self._mask_dem(
                     dem_array, dem_transform, dem_interp, full_remap=full_remap
                 )
