@@ -33,7 +33,7 @@ from fsspec.core import OpenFile
 from orthority import param_io, root_path, utils
 from orthority.camera import create_camera
 from orthority.enums import CameraType, Compress, Interp
-from orthority.errors import CrsMissingError, DemBandError, ParamFileError
+from orthority.errors import CrsMissingError, ParamFileError
 from orthority.ortho import Ortho
 from orthority.version import __version__
 
@@ -302,6 +302,14 @@ def _ortho(
 
     cameras = {}
     with dem_ctx as dem_im:
+        # validate dem_band
+        if dem_band <= 0 or dem_band > dem_im.count:
+            raise click.BadParameter(
+                f"DEM band {dem_band} is invalid for '{dem_im.filename}' with {dem_im.count} "
+                f"band(s).",
+                param_hint="'-db' / '--dem-band'",
+            )
+
         for src_i, src_file in enumerate(src_files):
             # get exterior params for src_file
             src_file_path = Path(src_file.path)
@@ -342,15 +350,13 @@ def _ortho(
                 raise click.BadParameter(str(ex), param_hint='SOURCE...')
 
             with src_ctx as src_im:
-                # create ortho object
-                try:
-                    ortho = Ortho(src_im, dem_im, cameras[cam_id], crs, dem_band=dem_band)
-                except DemBandError as ex:
-                    raise click.BadParameter(str(ex), param_hint="'-db' / '--dem-band'")
-                except CrsMissingError:
+                # finalise and validate world / ortho crs
+                crs = crs or src_im.crs
+                if not crs:
                     raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
                 # orthorectify
+                ortho = Ortho(src_im, dem_im, cameras[cam_id], crs, dem_band=dem_band)
                 # TODO: make another attempt at nested progress bars
                 logger.info(
                     f"Orthorectifying '{src_file_path.name}' ({src_i + 1} of {len(src_files)}):"
