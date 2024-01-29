@@ -36,7 +36,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from orthority import utils
 from orthority.camera import Camera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsMissingError, DemBandError
+from orthority.errors import CrsMissingError
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,6 @@ class Ortho:
         Index of the DEM band to use (1-based).
     """
 
-    # TODO: what happens if the source image size does not match the camera configuration?
     # default configuration values for Ortho.process()
     _default_config = dict(
         dem_band=1,
@@ -165,7 +164,7 @@ class Ortho:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 dem_name = utils.get_filename(dem_file)
-                raise DemBandError(
+                raise ValueError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here, and return result for use

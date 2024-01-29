@@ -133,7 +133,7 @@ def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
     """Test Ortho initialisation with incorrect ``dem_band`` raises an error."""
-    with pytest.raises(errors.DemBandError) as ex:
+    with pytest.raises(ValueError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
     assert 'DEM band' in str(ex)
 
