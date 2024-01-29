@@ -26,9 +26,5 @@ class CrsMissingError(OrthorityError):
     """Raised when a required CRS was not specified."""
 
 
-class DemBandError(OrthorityError):
-    """Raised when the DEM band parameter is out of range."""
-
-
 class CameraInitError(OrthorityError):
     """Raised when a camera's exterior parameters have not been initialised."""
