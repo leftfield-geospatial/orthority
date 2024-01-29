@@ -108,7 +108,7 @@ def test_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz: tuple
 
 @pytest.mark.parametrize('cam_type', [*CameraType])
 def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple):
-    """Test an error is raised if the camera is used before intialising exterior parameters."""
+    """Test an error is raised if the camera is used before initialising exterior parameters."""
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
     with pytest.raises(CameraInitError):
@@ -205,7 +205,7 @@ def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
 @pytest.mark.parametrize('cam_type', [CameraType.brown, CameraType.opencv])
 def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: dict):
     """Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs (
-    Fisheye is exlcuded as the model distorts with zero distortion coeffs).
+    Fisheye is excluded as the model distorts with zero distortion coeffs).
     """
     camera: Camera = create_camera(cam_type, **camera_args)
 
@@ -343,7 +343,7 @@ def test_intrinsic_equivalence(
     # normalised focal length (x, y) tuple and sensor size
     test_camera = PinholeCamera(
         im_size,
-        np.ones(2) * focal_len,
+        (focal_len, focal_len),
         sensor_size=sensor_size,
         cx=cxy[0],
         cy=cxy[1],
@@ -353,17 +353,16 @@ def test_intrinsic_equivalence(
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
 
-def test_instrinsic_nonsquare_pixels(
-    im_size: tuple,
+def test_intrinsic_nonsquare_pixels(
+    im_size: tuple[int, int],
     focal_len: float,
-    sensor_size: tuple,
-    xyz: tuple,
-    opk: tuple,
+    sensor_size: tuple[float, float],
+    xyz: tuple[float, float, float],
+    opk: tuple[float, float, float],
 ):
     """Test intrinsic matrix validity for non-square pixels."""
-    sensor_size = np.array(sensor_size)
-    sensor_size[0] *= 2
-    camera = PinholeCamera(im_size, focal_len, sensor_size=sensor_size, xyz=xyz, opk=opk)
+    _sensor_size = (sensor_size[0] * 2, sensor_size[1])
+    camera = PinholeCamera(im_size, focal_len, sensor_size=_sensor_size, xyz=xyz, opk=opk)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
 
 

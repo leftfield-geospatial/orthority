@@ -28,12 +28,14 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 from collections.abc import Iterable
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from csv import Dialect, DictReader, Sniffer
-from io import StringIO, TextIOBase
+from io import StringIO
+from os import PathLike
 from pathlib import Path
-from typing import Any
+from typing import Any, IO, Sequence
 
 import cv2
 import fsspec
@@ -58,6 +60,8 @@ logger = logging.getLogger(__name__)
 #  files
 # TODO: specify the dict formats with examples (maybe in its own doc)?
 # TODO: could dataclasses be a better way of defining the int / ext parameter dicts?
+# TODO: define custom file types for e.g. str | Path | OpenFile | IO[str] once sphinx bug with
+#  linking to external type defs in __init__ type hints is fixed
 
 _optional_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
@@ -145,10 +149,9 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
     """Read camera interior parameters from an Exif object."""
     # TODO: might there be cases where XMP tags CalibratedFocalLength, CalibratedOpticalCenter* are
     #  present but not DewarpData, and better than equiv EXIF tags?
-    exif_name = Path(exif.filename).name
     if exif.dewarp:
         if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
-            logger.debug(f"Cannot interpret dewarp data for '{exif_name}'.")
+            logger.debug(f"Cannot interpret dewarp data for '{exif.filename}'.")
         else:
             # construct brown camera parameters from dewarp data and return
             cam_dict = dict(
@@ -171,7 +174,9 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
         cam_dict['focal_len'] = exif.focal_len
         cam_dict['sensor_size'] = exif.sensor_size
     elif exif.focal_len_35:
-        logger.debug(f"Approximating the focal length for '{exif_name}' from the 35mm equivalent.")
+        logger.debug(
+            f"Approximating the focal length for '{exif.filename}' from the 35mm equivalent."
+        )
         if exif.sensor_size:
             # scale 35mm focal length to actual focal length in mm, assuming "35mm" = 36mm max
             # sensor dimension
@@ -183,7 +188,7 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
             cam_dict['focal_len'] = exif.focal_len_35 / 36.0
     else:
         raise ParamFileError(
-            f"No focal length & sensor size, or 35mm focal length tags in '{exif_name}'."
+            f"No focal length & sensor size, or 35mm focal length tags in '{exif.filename}'."
         )
 
     return {_create_exif_cam_id(exif): cam_dict}
@@ -193,20 +198,19 @@ def _read_exif_ext_param(
     exif: Exif, crs: str | CRS, lla_crs: str | CRS
 ) -> dict[str, dict[str, Any]]:
     """Read camera exterior parameters from an Exif object."""
-    exif_name = Path(exif.filename).name
     if not exif.lla:
-        raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif_name}'.")
+        raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif.filename}'.")
     if not exif.rpy:
-        raise ParamFileError(f"No camera / gimbal roll, pitch & yaw tags in '{exif_name}'.")
+        raise ParamFileError(f"No camera / gimbal roll, pitch & yaw tags in '{exif.filename}'.")
     rpy = tuple(np.radians(exif.rpy).tolist())
     opk = _rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
     xyz = tuple([coord[0] for coord in xyz])
     ext_param = dict(xyz=xyz, opk=opk, camera=_create_exif_cam_id(exif))
-    return {exif_name: ext_param}
+    return {exif.filename: ext_param}
 
 
-def read_oty_int_param(file: str | Path | OpenFile | TextIOBase) -> dict[str, dict[str, Any]]:
+def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for one or more cameras from an :doc:`Orthority format YAML file
     <../file_formats/yaml>`.
@@ -271,7 +275,7 @@ def read_oty_int_param(file: str | Path | OpenFile | TextIOBase) -> dict[str, di
     return int_param_dict
 
 
-def read_osfm_int_param(file: str | Path | OpenFile | TextIOBase) -> dict[str, dict[str, Any]]:
+def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for one or more camera, from an OpenDroneMap :file:`cameras.json` or
     OpenSfM :file:`reconstruction.json` file.
@@ -289,7 +293,7 @@ def read_osfm_int_param(file: str | Path | OpenFile | TextIOBase) -> dict[str, d
 
 
 def read_exif_int_param(
-    file: str | Path | OpenFile | rio.DatasetReader,
+    file: str | PathLike | OpenFile | rio.DatasetReader,
 ) -> dict[str, dict[str, Any]]:
     """
     Read interior parameters for a camera from an image file with EXIF / XMP tags.
@@ -304,7 +308,7 @@ def read_exif_int_param(
 
 
 def write_int_param(
-    file: str | Path | OpenFile | TextIOBase,
+    file: str | PathLike | OpenFile | IO[str],
     int_param_dict: dict[str, dict[str, Any]],
     overwrite: bool = False,
 ) -> None:
@@ -333,7 +337,7 @@ def write_int_param(
 
 
 def write_ext_param(
-    file: str | Path | OpenFile | TextIOBase,
+    file: str | PathLike | OpenFile | IO[str],
     ext_param_dict: dict[str, dict[str, Any]],
     crs: str | CRS,
     overwrite: bool = False,
@@ -426,7 +430,7 @@ def _rpy_to_opk(
     lla: tuple[float, float, float],
     crs: CRS,
     lla_crs: CRS,
-    C_bB: list[list[float]] | np.ndarray | None = None,
+    C_bB: Sequence[float] | np.ndarray | None = None,
 ) -> tuple[float, float, float]:
     """
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
@@ -518,7 +522,7 @@ class Reader:
         self._crs, self._lla_crs = self._parse_crss(crs, lla_crs)
 
     @staticmethod
-    def _parse_crss(crs: str | CRS, lla_crs: str | CRS) -> tuple:
+    def _parse_crss(crs: str | CRS, lla_crs: str | CRS) -> tuple[CRS, CRS]:
         """Validate and convert CRSs."""
         if crs:
             crs = CRS.from_string(crs) if isinstance(crs, str) else crs
@@ -561,7 +565,7 @@ class CsvReader(Reader):
     :param crs:
         CRS of the world coordinate system.  If set to None (the default), and the file contains
         :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined.  If
-        set to None, and the file contains (x, y, z) world coordinate positions, a CRS can
+        set to None, and the file contains (x, y, z) world coordinate positions, a CRS can be
         provided via a '.prj' file (i.e. a text file defining the CRS with a WKT, proj4 or EPSG
         string, and having the same path & stem as ``file``, but a '.prj' extension).  In all
         other situations, ``crs`` should be supplied.
@@ -600,10 +604,10 @@ class CsvReader(Reader):
 
     def __init__(
         self,
-        file: str | Path | OpenFile | TextIOBase,
+        file: str | PathLike | OpenFile | IO[str],
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
-        fieldnames: list[str] = None,
+        fieldnames: Sequence[str] = None,
         dialect: Dialect = None,
         radians: bool = False,
     ) -> None:
@@ -616,8 +620,8 @@ class CsvReader(Reader):
         self._ofile = None
         if isinstance(file, OpenFile):
             self._ofile = file
-        elif isinstance(file, (str, Path)):
-            self._ofile = fsspec.open(file, 'rt')
+        elif isinstance(file, (str, PathLike)):
+            self._ofile = fsspec.open(os.fspath(file), 'rt')
 
         # read file once into a buffer (newline=None works around some delimiter detection problems
         # with newline='')
@@ -630,7 +634,7 @@ class CsvReader(Reader):
         self._crs = self._crs or self._get_crs()
 
     @staticmethod
-    def _parse_fieldnames(fieldnames: list[str]) -> CsvFormat:
+    def _parse_fieldnames(fieldnames: Sequence[str]) -> CsvFormat:
         """Validate a list of header or user field names, and return the corresponding
         :class:`CsvFormat`.
         """
@@ -662,11 +666,11 @@ class CsvReader(Reader):
 
     @staticmethod
     def _parse_file(
-        buffer: StringIO, fieldnames: list[str] = None, dialect: Dialect = None
-    ) -> tuple[list[str], Dialect, bool, CsvFormat]:
+        buffer: StringIO, fieldnames: Sequence[str] = None, dialect: Dialect = None
+    ) -> tuple[Sequence[str], Dialect, bool, CsvFormat]:
         """Determine and validate the CSV file format."""
 
-        def strip_lower_strlist(str_list: list[str]) -> list[str]:
+        def strip_lower_strlist(str_list: Sequence[str]) -> list[str]:
             """Strip and lower the case of a string list."""
             return [str_item.strip().lower() for str_item in str_list]
 
@@ -814,7 +818,7 @@ class OsfmReader(Reader):
     #  can be reprojected to UTM.
     def __init__(
         self,
-        file: str | Path | OpenFile | TextIOBase,
+        file: str | PathLike | OpenFile | IO[str],
         crs: str | CRS = None,
         lla_crs: str | CRS = CRS.from_epsg(4326),
     ) -> None:
@@ -825,7 +829,7 @@ class OsfmReader(Reader):
             logger.debug(f"Using auto UTM CRS: '{self._crs.to_proj4()}'")
 
     @staticmethod
-    def _read_json_dict(file: str | Path | OpenFile | TextIOBase) -> dict[str, dict]:
+    def _read_json_dict(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict]:
         """Read and validate the reconstruction JSON file."""
         with utils.Open(file, 'rt') as f:
             json_data = json.load(f)
@@ -906,7 +910,7 @@ class ExifReader(Reader):
 
     def __init__(
         self,
-        files: tuple[str | Path | OpenFile | rio.DatasetReader, ...],
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
     ) -> None:
@@ -918,7 +922,10 @@ class ExifReader(Reader):
             self._crs = self._find_utm_crs()
             logger.debug(f"Using auto UTM CRS: '{self._crs.to_proj4()}'")
 
-    def _read_exif(self, files: list[str | Path | OpenFile | rio.DatasetReader]) -> dict[str, Exif]:
+    @staticmethod
+    def _read_exif(
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+    ) -> dict[str, Exif]:
         """Return a dictionary of Exif objects for the given image paths."""
         exif_dict = {}
         bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]'
@@ -934,7 +941,7 @@ class ExifReader(Reader):
                 total=len(files),
             ):
                 exif_obj = future.result()
-                exif_dict[Path(exif_obj.filename).name] = exif_obj
+                exif_dict[exif_obj.filename] = exif_obj
 
         return exif_dict
 
@@ -944,9 +951,7 @@ class ExifReader(Reader):
         llas = []
         for e in self._exif_dict.values():
             if not e.lla:
-                raise ParamFileError(
-                    f"No latitude, longitude & altitude tags in '{Path(e.filename).name}'."
-                )
+                raise ParamFileError(f"No latitude, longitude & altitude tags in '{e.filename}'.")
             llas.append(e.lla)
 
         mean_latlon = np.array(llas)[:, :2].mean(axis=0)
@@ -978,12 +983,12 @@ class OtyReader(Reader):
         object or a file object, opened in text mode ('rt').
     """
 
-    def __init__(self, file: str | Path | OpenFile | TextIOBase) -> None:
+    def __init__(self, file: str | PathLike | OpenFile | IO[str]) -> None:
         Reader.__init__(self)
         self._crs, self._json_dict = self._read_json_dict(file, self._crs)
 
     @staticmethod
-    def _read_json_dict(file: str | Path | OpenFile | TextIOBase, crs: CRS) -> tuple[CRS, dict]:
+    def _read_json_dict(file: str | PathLike | OpenFile | IO[str], crs: CRS) -> tuple[CRS, dict]:
         """Read and validate the GeoJSON file."""
         with utils.Open(file, 'rt') as f:
             json_dict = json.load(f)

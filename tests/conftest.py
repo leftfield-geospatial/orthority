@@ -74,7 +74,7 @@ def ortho_bounds(
     xyz = camera.pixel_to_world_z(ji, dem_min)
     if include_camera:
         xyz = np.column_stack((xyz, camera._T))
-    return (*xyz[:2].min(axis=1), *xyz[:2].max(axis=1))
+    return *xyz[:2].min(axis=1), *xyz[:2].max(axis=1)
 
 
 def create_dem(
@@ -518,7 +518,7 @@ def float_utm34n_partial_dem_file(
 def rgb_pinhole_utm34n_ortho(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ) -> Ortho:
-    """An Ortho object initialised with with RGB byte source image, float DEM in UTM zone 34N (no
+    """An Ortho object initialised with RGB byte source image, float DEM in UTM zone 34N (no
     vertical CRS), pinhole camera, and UTM zone 34N CRS (no vertical CRS).
     """
     return Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs)

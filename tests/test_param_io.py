@@ -18,6 +18,7 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
+from typing import Collection
 
 import cv2
 import numpy as np
@@ -55,7 +56,7 @@ def _validate_int_param_dict(int_param_dict: dict):
         assert set(optional_keys).issubset(param_io._optional_schema[cam_type])
 
 
-def _validate_ext_param_dict(ext_param_dict: dict, cameras: list[str] = None):
+def _validate_ext_param_dict(ext_param_dict: dict, cameras: Collection[str | None] = None):
     """Basic validation of an exterior parameter dictionary."""
     assert len(ext_param_dict) > 0
     for filename, ext_params in ext_param_dict.items():
@@ -63,9 +64,9 @@ def _validate_ext_param_dict(ext_param_dict: dict, cameras: list[str] = None):
         opk, xyz = np.array(ext_params['opk']), np.array(ext_params['xyz'])
         assert len(opk) == 3 and len(xyz) == 3
         # rough check for radians
-        assert all(np.abs(opk) <= 2 * np.pi) and any(opk != 0.0)
+        assert all(np.abs(opk) <= 2 * np.pi) and np.any(opk != 0.0)
         # rough check for not latitude, longitude, & altitude > 0
-        assert all(xyz != 0) and np.abs(xyz[0]) > 180.0 and np.abs(xyz[1]) > 90.0 and xyz[2] > 0
+        assert np.all(xyz != 0) and np.abs(xyz[0]) > 180.0 and np.abs(xyz[1]) > 90.0 and xyz[2] > 0
         if cameras:
             assert ext_params['camera'] in cameras
 
@@ -710,7 +711,7 @@ def test_exif_reader_lla_crs(
 
 
 def test_exif_reader_empty():
-    """Test ExifReader with empty list of of files."""
+    """Test ExifReader with empty list of files."""
     reader = param_io.ExifReader([], crs=None)
     assert reader.crs is None
     assert reader.read_int_param() == {}

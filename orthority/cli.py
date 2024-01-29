@@ -21,6 +21,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Sequence
 from urllib.parse import urlparse
 
 import click
@@ -117,7 +118,7 @@ class CondReqOption(click.Option):
     """
 
     # adapted from https://stackoverflow.com/questions/44247099/click-command-line-interfaces-make-options-required-if-other-optional-option-is
-    def __init__(self, *args, not_required: list[str] | None = None, **kwargs):
+    def __init__(self, *args, not_required: Sequence[str] | None = None, **kwargs):
         self.not_required = not_required or []
         click.Option.__init__(self, *args, **kwargs)
 
@@ -172,8 +173,8 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
 
 
 def _src_files_cb(
-    ctx: click.Context, param: click.Parameter, src_files: tuple[str, ...]
-) -> tuple[OpenFile, ...]:
+    ctx: click.Context, param: click.Parameter, src_files: Sequence[str]
+) -> Sequence[OpenFile]:
     """Click callback to form a list of source file OpenFile instances. ``src_files`` can be a
     list of file paths / URIs, or a list of path / URI glob patterns.
     """
@@ -265,7 +266,7 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
 
 
 def _ortho(
-    src_files: tuple[OpenFile, ...],
+    src_files: Sequence[OpenFile],
     dem_file: OpenFile,
     int_param_dict: dict[str, dict],
     ext_param_dict: dict[str, dict],
@@ -304,9 +305,9 @@ def _ortho(
     with dem_ctx as dem_im:
         # validate dem_band
         if dem_band <= 0 or dem_band > dem_im.count:
+            dem_name = utils.get_filename(dem_im)
             raise click.BadParameter(
-                f"DEM band {dem_band} is invalid for '{dem_im.filename}' with {dem_im.count} "
-                f"band(s).",
+                f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
             )
 
@@ -570,7 +571,7 @@ overwrite_option = click.option(
 @click.option('--quiet', '-q', count=True, help='Decrease verbosity.')
 @click.version_option(version=__version__, message='%(version)s')
 @click.pass_context
-def cli(ctx: click.Context, verbose, quiet):
+def cli(ctx: click.Context, verbose, quiet) -> None:
     """Orthorectification toolkit."""
     verbosity = verbose - quiet
     _configure_logging(verbosity)
@@ -614,7 +615,7 @@ def ortho(
     lla_crs: rio.CRS,
     radians: bool,
     **kwargs,
-):
+) -> None:
     """
     Orthorectify SOURCE images with camera model(s) defined by interior and exterior parameter
     files.
@@ -643,7 +644,7 @@ def ortho(
     """
     # read interior params
     try:
-        int_param_suffix = Path(int_param_file.full_name).suffix.lower()
+        int_param_suffix = Path(int_param_file.path).suffix.lower()
         if int_param_suffix in ['.yaml', '.yml']:
             int_param_dict = param_io.read_oty_int_param(int_param_file)
         elif int_param_suffix == '.json':
@@ -655,7 +656,7 @@ def ortho(
 
     # read exterior params
     try:
-        ext_param_suffix = Path(ext_param_file.full_name).suffix.lower()
+        ext_param_suffix = Path(ext_param_file.path).suffix.lower()
         if ext_param_suffix in ['.csv', '.txt']:
             reader = param_io.CsvReader(ext_param_file, crs=crs, lla_crs=lla_crs, radians=radians)
         elif ext_param_suffix == '.json':
@@ -706,7 +707,7 @@ def ortho(
 @export_params_option
 @out_dir_option
 @overwrite_option
-def exif(src_files: tuple[OpenFile, ...], crs: rio.CRS, lla_crs: rio.CRS, **kwargs):
+def exif(src_files: Sequence[OpenFile], crs: rio.CRS, lla_crs: rio.CRS, **kwargs) -> None:
     """
     Orthorectify SOURCE images with camera model(s) defined by image EXIF / XMP tags.
 
@@ -795,7 +796,7 @@ def odm(
     resolution: tuple[float, float],
     out_dir: OpenFile,
     **kwargs,
-):
+) -> None:
     """
     Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 

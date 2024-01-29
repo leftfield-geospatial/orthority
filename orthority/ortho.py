@@ -13,14 +13,15 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Orthrectification using DEM and camera model input."""
+"""Orthorectification using DEM and camera model input."""
 from __future__ import annotations
 
 import logging
 import os
 import threading
 from concurrent.futures import as_completed, ThreadPoolExecutor
-from pathlib import Path
+from os import PathLike
+from typing import Sequence
 
 import cv2
 import numpy as np
@@ -99,8 +100,8 @@ class Ortho:
 
     def __init__(
         self,
-        src_file: str | Path | OpenFile | rio.DatasetReader,
-        dem_file: str | Path | OpenFile | rio.DatasetReader,
+        src_file: str | PathLike | OpenFile | rio.DatasetReader,
+        dem_file: str | PathLike | OpenFile | rio.DatasetReader,
         camera: Camera,
         crs: str | CRS | None = None,
         dem_band: int = 1,
@@ -154,7 +155,7 @@ class Ortho:
         return crs
 
     def _get_init_dem(
-        self, dem_file: str | rio.DatasetReader, dem_band: int
+        self, dem_file: str | PathLike | rio.DatasetReader, dem_band: int
     ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
         """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
         DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
@@ -419,7 +420,7 @@ class Ortho:
     def _create_ortho_profile(
         self,
         src_im: rio.DatasetReader,
-        shape: tuple[int, ...],
+        shape: Sequence[int],
         transform: rio.Affine,
         dtype: str,
         compress: str | Compress | None,
@@ -630,7 +631,7 @@ class Ortho:
         # in _remap_tile (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world coordinates for e.g. high
         # resolution drone imagery.
-        # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc
+        # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc.
         # integer pixel coords refer to pixel centers, so the (x, y) coords are offset by half a
         # pixel to account for this.
 
@@ -692,7 +693,7 @@ class Ortho:
 
     def process(
         self,
-        ortho_file: str | Path | OpenFile,
+        ortho_file: str | PathLike | OpenFile,
         resolution: tuple[float, float] = _default_config['resolution'],
         interp: str | Interp = _default_config['interp'],
         dem_interp: str | Interp = _default_config['dem_interp'],

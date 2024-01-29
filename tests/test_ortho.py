@@ -16,8 +16,9 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 import tracemalloc
+from pathlib import Path
+from typing import Sequence
 
 import cv2
 import numpy as np
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_ortho_files(
-    files: tuple[Path, ...], cc_thresh: float = 0.75, num_ovl_thresh: int = None
+    files: Sequence[Path], cc_thresh: float = 0.75, num_ovl_thresh: int = None
 ):
     """Validate the similarity of overlapping areas in ortho files."""
     cc_array = np.full((len(files),) * 2, fill_value=np.nan)
@@ -587,8 +588,7 @@ def test_mask_dem_above_camera_error(
     camera: Camera = PinholeCamera(**camera_args)
 
     # move the camera below the DEM
-    _xyz = list(camera_args['xyz'])
-    _xyz[2] -= 1000
+    _xyz = (*camera_args['xyz'][:2], camera_args['xyz'][2] - 1000)
     camera.update(_xyz, camera_args['opk'])
 
     # init & reproject

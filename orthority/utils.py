@@ -18,14 +18,16 @@ from __future__ import annotations
 
 import cProfile
 import logging
+import os
 import posixpath
 import pstats
 import tracemalloc
 import warnings
 from contextlib import contextmanager, ExitStack
 from io import IOBase
+from os import PathLike
 from pathlib import Path
-from typing import Iterable
+from typing import IO, Iterable
 
 import cv2
 import fsspec
@@ -70,7 +72,7 @@ def nan_equals(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray:
     return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
-def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest):
+def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) -> np.ndarray:
     """Return a distorted image given a camera model and source image."""
 
     if not np.all(np.array(image.shape[::-1]) == camera._im_size):
@@ -166,7 +168,7 @@ def validate_collection(template: Iterable, coll: Iterable):
             raise ValueError(f"'{coll}' does not equal '{template}'.")
 
 
-def get_filename(file: str | Path | OpenFile | DatasetReaderBase | IOBase) -> str:
+def get_filename(file: str | PathLike | OpenFile | DatasetReaderBase | IO) -> str:
     """Return a source filename for the given ``file`` object.  If ``file`` is an
     :class:`~fsspec.core.OpenFile` instance, a :class:`~rasterio.io.DatasetReaderBase` instance
     or file object, it should have a ``filename`` attribute i.e. have been created by either
@@ -179,7 +181,7 @@ def get_filename(file: str | Path | OpenFile | DatasetReaderBase | IOBase) -> st
     elif isinstance(file, IOBase):
         filename = getattr(file, 'filename', Path(getattr(file, 'name', '<file object>')).name)
     else:
-        filename = Path(str(file)).name
+        filename = Path(os.fspath(file)).name
     return filename
 
 
@@ -210,7 +212,7 @@ class OpenRaster:
 
     def __init__(
         self,
-        file: str | Path | DatasetReaderBase | OpenFile,
+        file: str | PathLike | DatasetReaderBase | OpenFile,
         mode: str = 'r',
         overwrite: bool = False,
         **kwargs,
@@ -229,20 +231,20 @@ class OpenRaster:
                 )
             self._dataset = file
 
-        elif isinstance(file, (str, Path, OpenFile)):
+        elif isinstance(file, (str, PathLike, OpenFile)):
             # TODO: use the opener arg to rio.open() when that rasterio version is released,
             #  rather than passing an open file object.  test that files are not buffered in
             #  memory with this option, and currently problematic fsspec protocols (e.g. github)
             #  no longer cause a seg fault.
-            if isinstance(file, (str, Path)):
-                ofile = fsspec.open(file, mode + 'b')
-            else:
+            if isinstance(file, OpenFile):
                 if mode + 'b' != file.mode:
                     raise IOError(
                         f"OpenFile object mode: '{file.mode}' should be a binary mode matching the "
                         f"mode argument: '{mode}'."
                     )
                 ofile = file
+            else:
+                ofile = fsspec.open(os.fspath(file), mode + 'b')
 
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
                 raise FileExistsError(f"File exists: '{ofile.path}'")
@@ -287,7 +289,7 @@ class Open:
 
     def __init__(
         self,
-        file: str | Path | IOBase | OpenFile,
+        file: str | PathLike | IO | OpenFile,
         mode='rt',
         overwrite: bool = False,
         **kwargs,
@@ -302,22 +304,19 @@ class Open:
                 raise IOError('File object is closed.')
             if getattr(file, 'mode', mode) != mode:
                 # note: fsspec text mode file objects do not have a mode property
-                raise IOError(
-                    f"File object mode: '{file.mode}', should match the mode argument:"
-                    f" '{mode}'."
-                )
+                raise IOError(f"File object mode should match the mode argument: '{mode}'.")
             self._file_obj = file
 
-        elif isinstance(file, (OpenFile, str, Path)):
-            if isinstance(file, (str, Path)):
-                ofile = fsspec.open(file, mode, **kwargs)
-            else:
+        elif isinstance(file, (OpenFile, str, PathLike)):
+            if isinstance(file, OpenFile):
                 if mode != file.mode:
                     raise IOError(
                         f"OpenFile object mode: '{file.mode}', should match the mode argument:"
                         f" '{mode}'."
                     )
                 ofile = file
+            else:
+                ofile = fsspec.open(os.fspath(file), mode, **kwargs)
 
             # overwrite could be prevented with 'x' modes, but is done this way for consistency
             # with OpenRaster & rasterio which doesn't support 'x'
@@ -330,7 +329,7 @@ class Open:
         else:
             raise TypeError(f"Unsupported 'file' type: {type(file)}")
 
-    def __enter__(self) -> IOBase:
+    def __enter__(self) -> IO:
         return self._file_obj
 
     def __exit__(self, exc_type, exc_val, exc_tb):

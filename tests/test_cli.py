@@ -274,7 +274,7 @@ def test_ortho_crs_src(
 
 
 def test_ortho_crs_auto(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_lla_rpy_csv_file: Path,
@@ -297,7 +297,7 @@ def test_ortho_crs_auto(
 
 
 def test_ortho_crs_cli(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -322,7 +322,7 @@ def test_ortho_crs_cli(
 
 
 def test_ortho_crs_file(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -350,7 +350,7 @@ def test_ortho_crs_file(
 
 
 def test_ortho_crs_prj(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -380,7 +380,7 @@ def test_ortho_crs_prj(
 
 
 def test_ortho_crs_missing_error(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_xyz_opk_csv_file: Path,
@@ -571,7 +571,7 @@ def test_ortho_per_band(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
 
 
 def test_ortho_full_remap(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     tmp_path: Path,
@@ -605,7 +605,7 @@ def test_ortho_full_remap(
 
 
 def test_ortho_alpha(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     tmp_path: Path,
@@ -644,7 +644,7 @@ def test_ortho_alpha_error(ortho_legacy_ngi_cli_str: str, tmp_path: Path, runner
 
 
 def test_ortho_lla_crs(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_lla_rpy_csv_file: Path,
@@ -700,7 +700,7 @@ def test_ortho_lla_crs_invalid_error(
 
 
 def test_ortho_radians(
-    ngi_image_file: tuple[Path, ...],
+    ngi_image_file: Path,
     ngi_dem_file: Path,
     ngi_oty_int_param_file: Path,
     ngi_xyz_opk_csv_file: Path,
@@ -964,7 +964,7 @@ def test_exif_option(
 
 
 def test_exif_lla_crs(
-    odm_image_file: tuple[Path, ...],
+    odm_image_file: Path,
     odm_dem_file: Path,
     odm_crs: str,
     tmp_path: Path,
@@ -994,7 +994,7 @@ def test_exif_lla_crs(
             ortho_bounds.append(im.bounds)
 
     # compare ortho bounds
-    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res/2)
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res / 2)
 
 
 def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
@@ -1049,7 +1049,7 @@ def test_odm_option(
 
 
 def test_odm_dataset_dir_error(tmp_path: Path, runner: CliRunner):
-    """Test ``oty odm`` raises an error with an non-existing --dataset-dir."""
+    """Test ``oty odm`` raises an error with a non-existing --dataset-dir."""
     dataset_dir = 'unknown'
     cli_str = f'odm --dataset-dir {dataset_dir}'
     result = runner.invoke(cli, cli_str.split())
@@ -1184,7 +1184,7 @@ def test__ortho_ext_param_not_found_error(
             dem_band=1,
             alpha=1.0,
             export_params=False,
-            out_dir=str(tmp_path),
+            out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
         )
     assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
@@ -1215,7 +1215,7 @@ def test__ortho_mult_camera_unknown_camera_error(
             dem_band=1,
             alpha=1.0,
             export_params=False,
-            out_dir=str(tmp_path),
+            out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
         )
     assert camera in str(ex) and 'interior parameters' in str(ex)
@@ -1245,7 +1245,7 @@ def test__ortho_mult_camera_no_camera_error(
             dem_band=1,
             alpha=1.0,
             export_params=False,
-            out_dir=str(tmp_path),
+            out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
         )
     assert rgb_byte_src_file.name in str(ex) and 'exterior parameters' in str(ex).lower()

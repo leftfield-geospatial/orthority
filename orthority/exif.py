@@ -17,7 +17,8 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
+from os import PathLike
+from typing import Sequence
 from xml.etree import cElementTree as ET
 
 import numpy as np
@@ -32,7 +33,7 @@ _xmp_schemas = dict(
     dji=dict(
         lla_keys=[
             '{http://www.dji.com/drone-dji/1.0/}GpsLatitude',
-            '{http://www.dji.com/drone-dji/1.0/}GpsLongtitude',
+            '{http://www.dji.com/drone-dji/1.0/}GpsLongitude',
             '{http://www.dji.com/drone-dji/1.0/}AbsoluteAltitude',
         ],
         rpy_keys=[
@@ -105,7 +106,7 @@ class Exif:
         object in binary mode ('rb'), or a dataset reader.
     """
 
-    def __init__(self, file: str | Path | OpenFile | rio.DatasetReader):
+    def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):
         self._filename = utils.get_filename(file)
         with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
             file, 'r'
@@ -121,7 +122,7 @@ class Exif:
                 xmp_str = xmp_dict['xml:XMP'].strip('xml:XMP=')
                 xmp_dict = _xml_to_flat_dict(xmp_str)
             else:
-                logger.debug(f"'{Path(self._filename).name}' contains no XMP metadata")
+                logger.debug(f"'{self._filename}' contains no XMP metadata")
 
         self._make, self._model, self._serial = self._get_make_model_serial(exif_dict)
         self._tag_im_size = self._get_tag_im_size(exif_dict)
@@ -213,12 +214,12 @@ class Exif:
         return self._rpy
 
     @property
-    def dewarp(self) -> tuple[float] | None:
+    def dewarp(self) -> Sequence[float] | None:
         """Dewarp parameters."""
         return self._dewarp
 
     @staticmethod
-    def _get_exif_float(exif_dict: dict[str, str], key: str) -> float | tuple[float] | None:
+    def _get_exif_float(exif_dict: dict[str, str], key: str) -> float | tuple[float, ...] | None:
         """Convert numeric EXIF tag to float(s)."""
         if key not in exif_dict:
             return None
@@ -295,7 +296,7 @@ class Exif:
 
     @staticmethod
     def _get_lla(exif_dict: dict[str, str]) -> tuple[float, float, float] | None:
-        """Return the (latitutde, longitude, altitude) EXIF image location with latitude, longitude
+        """Return the (latitude, longitude, altitude) EXIF image location with latitude, longitude
         in decimal degrees, and altitude in meters.
         """
         lat_ref_key = 'EXIF_GPSLatitudeRef'
@@ -306,7 +307,7 @@ class Exif:
             return None
 
         # get latitude, longitude
-        def dms_to_decimal(dms: tuple[float], ref: str):
+        def dms_to_decimal(dms: Sequence[float], ref: str):
             """Convert (degrees, minutes, seconds) tuple to decimal degrees, applying reference
             sign.
             """
@@ -345,7 +346,7 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> tuple[float] | None:
+    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> Sequence[float] | None:
         """Return the camera dewarp parameters if they exist."""
         for schema_name, xmp_schema in _xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)

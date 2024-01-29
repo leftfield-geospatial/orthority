@@ -16,8 +16,9 @@
 """Orthorectification toolkit."""
 import os
 import pathlib
+
 from orthority.camera import create_camera
-from orthority.enums import CameraType, Interp, Compress
+from orthority.enums import CameraType, Compress, Interp
 from orthority.ortho import Ortho
 
 # enable on-demand download and caching of proj transformation grids
