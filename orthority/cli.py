@@ -143,10 +143,15 @@ def _configure_logging(verbosity: int):
         # adapted from https://discuss.python.org/t/some-easy-and-pythonic-way-to-bind-warnings-to-loggers/14009/2
         package_root = Path(__file__).parents[1]
         file_path = Path(filename)
-        if file is not None or not file_path.is_relative_to(package_root):
+        try:
+            module_path = file_path.relative_to(package_root)
+            is_relative_to = True
+        except ValueError:
+            is_relative_to = False
+
+        if file is not None or not is_relative_to:
             orig_show_warning(message, category, filename, lineno, file, line)
         else:
-            module_path = file_path.relative_to(package_root)
             module_name = module_path.with_suffix('').as_posix().replace('/', '.')
             logger = logging.getLogger(module_name)
             logger.warning(str(message))
