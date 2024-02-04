@@ -29,8 +29,10 @@ import csv
 import json
 import logging
 import os
+import warnings
 from collections.abc import Iterable
 from concurrent.futures import as_completed, ThreadPoolExecutor
+from contextlib import ExitStack
 from csv import Dialect, DictReader, Sniffer
 from io import StringIO
 from os import PathLike
@@ -46,8 +48,7 @@ from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.errors import CRSError as RioCrsError
 from rasterio.warp import transform
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm.std import tqdm, tqdm as std_tqdm
 
 from orthority import utils
 from orthority.enums import CameraType, CsvFormat
@@ -256,7 +257,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
 
     # flatten if in original simple-ortho format
     if 'camera' in yaml_dict:
-        logger.warning(
+        warnings.warn(
             "Support for the 'config.yaml' format is deprecated and will be removed in future. "
             "Please switch to the Orthority YAML format for interior parameters."
         )
@@ -906,17 +907,29 @@ class ExifReader(Reader):
         auto-determined.
     :param lla_crs:
         CRS of geographic camera coordinates in the EXIF / XMP tags.
+    :param progress:
+        Whether to display a progress bar monitoring the portion of files read.  Can be set to a
+        custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this case, the bar's
+        ``total`` attribute is set internally, and the ``iterable`` attribute is not used.
     """
+
+    # default progress bar kwargs
+    _default_tqdm_kwargs = dict(
+        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]',
+        dynamic_ncols=True,
+        leave=True,
+    )
 
     def __init__(
         self,
         files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
+        progress: bool | std_tqdm = False,
     ) -> None:
         Reader.__init__(self, crs, lla_crs)
         files = files if isinstance(files, Iterable) else [files]
-        self._exif_dict = self._read_exif(files)
+        self._exif_dict = self._read_exif(files, progress)
 
         if not self._crs and len(self._exif_dict) > 0:
             self._crs = self._find_utm_crs()
@@ -924,24 +937,26 @@ class ExifReader(Reader):
 
     @staticmethod
     def _read_exif(
-        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader], progress: bool | std_tqdm
     ) -> dict[str, Exif]:
-        """Return a dictionary of Exif objects for the given image paths."""
+        """Return a dictionary of Exif objects for the given images."""
         exif_dict = {}
-        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]'
-        with logging_redirect_tqdm(
-            [logging.getLogger(__package__)], tqdm_class=tqdm
-        ), ThreadPoolExecutor() as executor:
-            futures = [executor.submit(Exif, file) for file in files]
+        with ExitStack() as exit_stack:
+            # create / set up progress bar
+            if progress is True:
+                progress = exit_stack.enter_context(tqdm(**ExifReader._default_tqdm_kwargs))
+            elif progress is False:
+                progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
+            progress.total = len(files)
 
-            for future in tqdm(
-                as_completed(futures),
-                bar_format=bar_format,
-                dynamic_ncols=True,
-                total=len(files),
-            ):
+            # read tags from image files
+            executor = exit_stack.enter_context(ThreadPoolExecutor())
+            futures = [executor.submit(Exif, file) for file in files]
+            for future in as_completed(futures):
                 exif_obj = future.result()
                 exif_dict[exif_obj.filename] = exif_obj
+                progress.update()
+            progress.refresh()
 
         return exif_dict
 
