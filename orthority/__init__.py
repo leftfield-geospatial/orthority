@@ -16,10 +16,16 @@
 """Orthorectification toolkit."""
 import os
 import pathlib
+import logging
 
 from orthority.camera import create_camera
 from orthority.enums import CameraType, Compress, Interp
 from orthority.ortho import Ortho
+
+# Add a NullHandler to the package logger to hide logs by default.  Applications can then add
+# their own handler(s).
+log = logging.getLogger(__name__)
+log.addHandler(logging.NullHandler())
 
 # enable on-demand download and caching of proj transformation grids
 os.environ.update(PROJ_NETWORK='ON')
