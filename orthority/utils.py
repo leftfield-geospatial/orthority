@@ -21,6 +21,7 @@ import logging
 import os
 import posixpath
 import pstats
+import sys
 import tracemalloc
 import warnings
 from contextlib import contextmanager, ExitStack
@@ -34,6 +35,7 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from tqdm.contrib import DummyTqdmFile
 from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.io import DatasetReaderBase, DatasetWriter
@@ -102,7 +104,7 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) ->
 
 
 @contextmanager
-def profiler() -> None:
+def profiler():
     """Context manager for profiling in DEBUG log level."""
     if logger.getEffectiveLevel() <= logging.DEBUG:
         proc_profile = cProfile.Profile()

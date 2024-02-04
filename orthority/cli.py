@@ -19,7 +19,9 @@ import argparse
 import csv
 import logging
 import re
-import sys
+import shutil
+import warnings
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Sequence
 from urllib.parse import urlparse
@@ -30,6 +32,8 @@ import numpy as np
 import rasterio as rio
 import yaml
 from fsspec.core import OpenFile
+from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm.std import tqdm
 
 from orthority import param_io, root_path, utils
 from orthority.camera import create_camera
@@ -129,17 +133,37 @@ class CondReqOption(click.Option):
 
 def _configure_logging(verbosity: int):
     """Configure python logging level."""
-    # adapted from rasterio: https://github.com/rasterio/rasterio
-    log_level = max(10, 20 - 10 * verbosity)
+    # TODO: change logger.warning to warnings.warn where a client may want to respond to a warning.
+    # TODO: lose PlainInfoFormatter if not needed
 
-    # apply config to package logger, rather than root logger
-    pkg_logger = logging.getLogger('orthority')
-    formatter = PlainInfoFormatter()
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(formatter)
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        """Redirect orthority warnings to the source module's logger, otherwise show warning as
+        usual.
+        """
+        # adapted from https://discuss.python.org/t/some-easy-and-pythonic-way-to-bind-warnings-to-loggers/14009/2
+        package_root = Path(__file__).parents[1]
+        file_path = Path(filename)
+        if file is not None or not file_path.is_relative_to(package_root):
+            orig_show_warning(message, category, filename, lineno, file, line)
+        else:
+            module_path = file_path.relative_to(package_root)
+            module_name = module_path.with_suffix('').as_posix().replace('/', '.')
+            logger = logging.getLogger(module_name)
+            logger.warning(str(message))
+
+    # redirect orthority warnings to module logger
+    orig_show_warning = warnings.showwarning
+    warnings.showwarning = showwarning
+
+    # Configure the package logger, leaving logs from dependencies on their defaults (e.g. for
+    # rasterio, they stay hidden).
+    # Adapted from rasterio: https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py.
+    log_level = max(10, 20 - 10 * verbosity)
+    pkg_logger = logging.getLogger(__package__)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(levelname)s:%(name)s: %(message)s'))
     pkg_logger.addHandler(handler)
     pkg_logger.setLevel(log_level)
-    logging.captureWarnings(True)
 
 
 def _read_crs(crs: str):
@@ -265,6 +289,20 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
     return ofile
 
 
+def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int = None) -> str:
+    """Return a ``tqdm`` ``bar_format`` for the given arguments."""
+    # pad or truncate desc to desc_width
+    lbar = f"{{desc:<{desc_width}.{desc_width}}}:" + "{percentage:3.0f}%|"
+    rbar = '|{n_fmt}/{total_fmt} ' + units + ' [{elapsed}<{remaining}]'
+    # find a bar width that gives enough space for rhs stats with 3 digit n_fmt / total_fmt and
+    # elapsed / remaining as hh:mm:ss
+    if not units_width:
+        units_width = len(units)
+    bar_width = max(shutil.get_terminal_size()[0] - (desc_width + 6 + (10 + units_width + 20)), 10)
+    bar = f"{{bar:{bar_width}}}"
+    return lbar + bar + rbar
+
+
 def _ortho(
     src_files: Sequence[OpenFile],
     dem_file: OpenFile,
@@ -283,6 +321,9 @@ def _ortho(
 
     Backend function for orthorectification sub-commands.
     """
+    # TODO: consider processing >1 file concurrently
+    # TODO: investigate simplifying progress bars with rich
+
     if export_params:
         # convert interior / exterior params to oty format files & exit
         logger.info('Writing parameter files...')
@@ -294,6 +335,13 @@ def _ortho(
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
 
+    # set up progress bar formats
+    src_name_lens = [len(Path(src_file.path).name) for src_file in src_files]
+    desc_width = min(max(src_name_lens), 40)
+    # units_width = max(len('files'), len('blocks'))
+    outer_bar_format = _get_bar_format(units='files', desc_width=desc_width, units_width=6)
+    inner_bar_format = _get_bar_format(units='blocks', desc_width=desc_width, units_width=6)
+
     # open & validate dem_file (open it once here so it is not opened repeatedly in
     # orthorectification below)
     try:
@@ -301,7 +349,6 @@ def _ortho(
     except FileNotFoundError as ex:
         raise click.BadParameter(str(ex), param_hint="'-d' / '--dem'")
 
-    cameras = {}
     with dem_ctx as dem_im:
         # validate dem_band
         if dem_band <= 0 or dem_band > dem_im.count:
@@ -310,47 +357,52 @@ def _ortho(
                 f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
             )
-
-        for src_i, src_file in enumerate(src_files):
-            # get exterior params for src_file
+        cameras = {}
+        for src_file in tqdm(src_files, desc='Total', bar_format=outer_bar_format):
+            # create progress bar for the current src_file
             src_file_path = Path(src_file.path)
-            ext_param = ext_param_dict.get(
-                src_file_path.name, ext_param_dict.get(src_file_path.stem, None)
-            )
-            if not ext_param:
-                # TODO: should matching be case sensitive?
-                raise click.BadParameter(
-                    f"Could not find exterior parameters for '{src_file_path.name}'.",
-                    param_hint="'-ep' / '--ext-param'",
+            with ExitStack() as inner_stack:
+                src_file_bar = inner_stack.enter_context(
+                    tqdm(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
                 )
 
-            # get interior params for ext_param
-            cam_id = ext_param.pop('camera')
-            if cam_id:
-                if cam_id not in int_param_dict:
+                # get exterior params for src_file
+                ext_param = ext_param_dict.get(
+                    src_file_path.name, ext_param_dict.get(src_file_path.stem, None)
+                )
+                if not ext_param:
+                    # TODO: should matching be case sensitive?
                     raise click.BadParameter(
-                        f"Could not find interior parameters for camera '{cam_id}'."
+                        f"Could not find exterior parameters for '{src_file_path.name}'.",
+                        param_hint="'-ep' / '--ext-param'",
                     )
-                int_param = int_param_dict[cam_id]
-            elif len(int_param_dict) == 1:
-                int_param = list(int_param_dict.values())[0]
-            else:
-                raise click.BadParameter(
-                    f"Exterior parameters for '{src_file_path.name}' should define a 'camera' ID."
-                )
 
-            # create camera on first use and update exterior parameters
-            if cam_id not in cameras:
-                cameras[cam_id] = create_camera(**int_param, alpha=alpha)
-            cameras[cam_id].update(**ext_param)
+                # get interior params for ext_param
+                cam_id = ext_param.pop('camera')
+                if cam_id:
+                    if cam_id not in int_param_dict:
+                        raise click.BadParameter(
+                            f"Could not find interior parameters for camera '{cam_id}'."
+                        )
+                    int_param = int_param_dict[cam_id]
+                elif len(int_param_dict) == 1:
+                    int_param = list(int_param_dict.values())[0]
+                else:
+                    raise click.BadParameter(
+                        f"Exterior parameters for '{src_file_path.name}' should define a 'camera' ID."
+                    )
 
-            # open & validate src_file (open it once here so it is not opened repeatedly)
-            try:
-                src_ctx = utils.OpenRaster(src_file, 'r')
-            except FileNotFoundError as ex:
-                raise click.BadParameter(str(ex), param_hint='SOURCE...')
+                # create camera on first use and update exterior parameters
+                if cam_id not in cameras:
+                    cameras[cam_id] = create_camera(**int_param, alpha=alpha)
+                cameras[cam_id].update(**ext_param)
 
-            with src_ctx as src_im:
+                # open & validate src_file (open it once here so it is not opened repeatedly)
+                try:
+                    src_im = inner_stack.enter_context(utils.OpenRaster(src_file, 'r'))
+                except FileNotFoundError as ex:
+                    raise click.BadParameter(str(ex), param_hint='SOURCE...')
+
                 # finalise and validate world / ortho crs
                 crs = crs or src_im.crs
                 if not crs:
@@ -358,14 +410,10 @@ def _ortho(
 
                 # orthorectify
                 ortho = Ortho(src_im, dem_im, cameras[cam_id], crs, dem_band=dem_band)
-                # TODO: make another attempt at nested progress bars
-                logger.info(
-                    f"Orthorectifying '{src_file_path.name}' ({src_i + 1} of {len(src_files)}):"
-                )
                 ortho_ofile = utils.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
-                ortho.process(ortho_ofile, overwrite=overwrite, **kwargs)
+                ortho.process(ortho_ofile, overwrite=overwrite, progress=src_file_bar, **kwargs)
 
 
 # Define click options that are common to more than one command
@@ -573,6 +621,7 @@ overwrite_option = click.option(
 @click.pass_context
 def cli(ctx: click.Context, verbose, quiet) -> None:
     """Orthorectification toolkit."""
+    # configure logging
     verbosity = verbose - quiet
     _configure_logging(verbosity)
 
@@ -580,6 +629,9 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
     env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
     ctx.with_resource(utils.suppress_no_georef())
     ctx.with_resource(env)
+
+    # redirect logs through tqdm.write, so they do not interfere with progress bars
+    ctx.with_resource(logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm))
 
 
 @cli.command(
@@ -732,12 +784,17 @@ def exif(src_files: Sequence[OpenFile], crs: rio.CRS, lla_crs: rio.CRS, **kwargs
     Ortho images and parameter files are placed in the current working directory by
     default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
+    # create progress bar
+    desc = 'Reading parameters'
+    bar_format = _get_bar_format(units='files', desc_width=len(desc))
+    reader_bar = tqdm(desc=desc, bar_format=bar_format, leave=False)
+
     # read interior & exterior params
     try:
-        logger.info('Reading camera parameters:')
-        reader = param_io.ExifReader(src_files, crs=crs, lla_crs=lla_crs)
-        int_param_dict = reader.read_int_param()
-        ext_param_dict = reader.read_ext_param()
+        with reader_bar:
+            reader = param_io.ExifReader(src_files, crs=crs, lla_crs=lla_crs, progress=reader_bar)
+            int_param_dict = reader.read_int_param()
+            ext_param_dict = reader.read_ext_param()
     except (FileNotFoundError, ParamFileError) as ex:
         raise click.BadParameter(str(ex), param_hint='SOURCE...')
 
