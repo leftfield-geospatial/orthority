@@ -19,6 +19,7 @@ import logging
 import tracemalloc
 from pathlib import Path
 from typing import Sequence
+from tqdm.auto import tqdm
 
 import cv2
 import numpy as np
@@ -412,6 +413,7 @@ def test_mask_dem(
                 per_band=False,
                 full_remap=True,
                 write_mask=False,
+                progress=tqdm(disable=True, leave=False),
             )
 
     # create the dem mask
