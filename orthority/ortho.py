@@ -19,7 +19,9 @@ from __future__ import annotations
 import logging
 import os
 import threading
+import warnings
 from concurrent.futures import as_completed, ThreadPoolExecutor
+from contextlib import ExitStack
 from os import PathLike
 from typing import Sequence
 
@@ -31,8 +33,7 @@ from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
 from rasterio.warp import reproject, Resampling, transform_bounds
 from rasterio.windows import Window
-from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm.std import tqdm, tqdm as std_tqdm
 
 from orthority import utils
 from orthority.camera import Camera
@@ -96,6 +97,13 @@ class Ortho:
         int16=np.iinfo('int16').min,
         float32=float('nan'),
         float64=float('nan'),
+    )
+
+    # default progress bar kwargs
+    _default_tqdm_kwargs = dict(
+        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]',
+        dynamic_ncols=True,
+        leave=True,
     )
 
     def __init__(
@@ -623,6 +631,7 @@ class Ortho:
         per_band: bool,
         full_remap: bool,
         write_mask: bool,
+        progress: bool | std_tqdm,
     ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
@@ -650,11 +659,9 @@ class Ortho:
 
         # create a list of ortho tile windows (assumes all bands configured to same tile shape)
         tile_wins = [tile_win for _, tile_win in ortho_im.block_windows(1)]
+        progress.total = len(tile_wins) * len(index_list)
 
-        bar_format = '{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]'
-        with logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm), tqdm(
-            bar_format=bar_format, total=len(tile_wins) * len(index_list), dynamic_ncols=True
-        ) as bar:
+        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:
                 # read source image band(s) (ortho dtype is required for cv2.remap() to set
@@ -670,26 +677,26 @@ class Ortho:
                 # remap ortho tiles concurrently (tiles are written as they are completed in a
                 # possibly non-sequential order, this saves queueing up completed tiles in
                 # memory, and is much the same speed as sequential writes)
-                with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-                    futures = [
-                        executor.submit(
-                            self._remap_tile,
-                            ortho_im,
-                            src_array,
-                            dem_array,
-                            tile_win,
-                            indexes,
-                            init_xgrid,
-                            init_ygrid,
-                            interp,
-                            full_remap,
-                            write_mask,
-                        )
-                        for tile_win in tile_wins
-                    ]
-                    for future in as_completed(futures):
-                        future.result()
-                        bar.update()
+                futures = [
+                    executor.submit(
+                        self._remap_tile,
+                        ortho_im,
+                        src_array,
+                        dem_array,
+                        tile_win,
+                        indexes,
+                        init_xgrid,
+                        init_ygrid,
+                        interp,
+                        full_remap,
+                        write_mask,
+                    )
+                    for tile_win in tile_wins
+                ]
+                for future in as_completed(futures):
+                    future.result()
+                    progress.update()
+                progress.refresh()
 
     def process(
         self,
@@ -704,6 +711,7 @@ class Ortho:
         compress: str | Compress | None = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],
         overwrite: bool = _default_config['overwrite'],
+        progress: bool | std_tqdm = False,
     ) -> None:
         """
         Orthorectify the source image.
@@ -752,62 +760,82 @@ class Ortho:
             Whether to build overviews for the ortho image.
         :param overwrite:
             Whether to overwrite the ortho image if it exists.
+        :param progress:
+            Whether to display a progress bar monitoring the portion of ortho tiles written.  Can
+            be set to a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this
+            case, the bar's ``total`` attribute is set internally, and the ``iterable`` attribute
+            is not used.
         """
-        with utils.profiler():  # run utils.profiler in DEBUG log level
+        exit_stack = ExitStack()
+        with exit_stack:
+            # create / set up progress bar
+            if progress is True:
+                progress = exit_stack.enter_context(tqdm(**Ortho._default_tqdm_kwargs))
+            elif progress is False:
+                progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
+
+            exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
+
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
                 resolution = (self._gsd, self._gsd)
                 logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
+            # open source image
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
-            with env, utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
-                # warn if source dimensions don't match camera
-                if src_im.shape[::-1] != self._camera._im_size:
-                    logger.warning(
-                        f"Source image '{self._src_name}' size: {src_im.shape[::-1]} does not "
-                        f"match camera image size: {self._camera._im_size}."
-                    )
+            exit_stack.enter_context(env)
+            exit_stack.enter_context(utils.suppress_no_georef())
+            src_im = exit_stack.enter_context(utils.OpenRaster(self._src_file, 'r'))
 
-                # get dem array covering ortho extents in world / ortho crs and ortho resolution
-                dem_interp = Interp(dem_interp)
-                dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
-                # TODO: don't mask dem if pinhole camera, or make dem masking an option which
-                #  defaults to not masking with pinhole camera.  note though that dem masking is
-                #  like occlusion masking for image edges, which still applies to pinhole camera.
-                dem_array, dem_transform = self._mask_dem(
-                    dem_array, dem_transform, dem_interp, full_remap=full_remap
+            # warn if source dimensions don't match camera
+            if src_im.shape[::-1] != self._camera._im_size:
+                warnings.warn(
+                    f"Source image '{self._src_name}' size: {src_im.shape[::-1]} does not "
+                    f"match camera image size: {self._camera._im_size}."
                 )
 
-                # create ortho profile & set write_mask
-                ortho_profile, write_mask = self._create_ortho_profile(
-                    src_im,
-                    dem_array.shape,
-                    dem_transform,
-                    dtype=dtype,
-                    compress=compress,
-                    write_mask=write_mask,
-                )
-                # TODO: any existing PAM or other sidecar file will not be removed / overwritten
-                #  as utils.OpenRaster works currently
-                with utils.OpenRaster(
-                    ortho_file, 'w', overwrite=overwrite, **ortho_profile
-                ) as ortho_im:
-                    # orthorectify
-                    self._remap(
-                        src_im,
-                        ortho_im,
-                        dem_array,
-                        interp=Interp(interp),
-                        per_band=per_band,
-                        full_remap=full_remap,
-                        write_mask=write_mask,
-                    )
+            # get dem array covering ortho extents in world / ortho crs and ortho resolution
+            dem_interp = Interp(dem_interp)
+            dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
+            # TODO: don't mask dem if pinhole camera, or make dem masking an option which
+            #  defaults to not masking with pinhole camera.  note though that dem masking is
+            #  like occlusion masking for image edges, which still applies to pinhole camera.
+            dem_array, dem_transform = self._mask_dem(
+                dem_array, dem_transform, dem_interp, full_remap=full_remap
+            )
 
-                    if build_ovw:
-                        # TODO: is it possible to convert to COG here?
-                        self._build_overviews(ortho_im)
+            # open the ortho image & set write_mask
+            ortho_profile, write_mask = self._create_ortho_profile(
+                src_im,
+                dem_array.shape,
+                dem_transform,
+                dtype=dtype,
+                compress=compress,
+                write_mask=write_mask,
+            )
+            # TODO: any existing PAM or other sidecar file will not be removed / overwritten
+            #  as utils.OpenRaster works currently
+            ortho_im = exit_stack.enter_context(
+                utils.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
+            )
+
+            # orthorectify
+            self._remap(
+                src_im,
+                ortho_im,
+                dem_array,
+                interp=Interp(interp),
+                per_band=per_band,
+                full_remap=full_remap,
+                write_mask=write_mask,
+                progress=progress,
+            )
+
+            if build_ovw:
+                # TODO: is it possible to convert to COG here?
+                self._build_overviews(ortho_im)
 
 
 ##
