@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from os import PathLike
 from typing import Sequence
 from xml.etree import cElementTree as ET
@@ -272,7 +273,7 @@ class Exif:
         }
         mm_per_unit = mm_per_unit_dict.get(unit_code, None)
         if not mm_per_unit:
-            logger.warning(f'Unknown focal plane resolution unit: {unit_code}')
+            warnings.warn(f'Unknown focal plane resolution unit: {unit_code}')
             return None
 
         # return sensor size in mm

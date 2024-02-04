@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 
 import cv2
 import numpy as np
@@ -103,7 +104,7 @@ class Camera:
 
         # find the xy focal lengths in pixels
         if sensor_size is None:
-            logger.warning(
+            warnings.warn(
                 "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by "
                 "sensor width."
             )
