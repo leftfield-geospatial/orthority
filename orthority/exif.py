@@ -27,6 +27,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 
 from orthority import utils
+from orthority.errors import OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -273,7 +274,9 @@ class Exif:
         }
         mm_per_unit = mm_per_unit_dict.get(unit_code, None)
         if not mm_per_unit:
-            warnings.warn(f'Unknown focal plane resolution unit: {unit_code}')
+            warnings.warn(
+                f'Unknown focal plane resolution unit: {unit_code}', category=OrthorityWarning
+            )
             return None
 
         # return sensor size in mm

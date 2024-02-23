@@ -38,7 +38,7 @@ from tqdm.std import tqdm, tqdm as std_tqdm
 from orthority import utils
 from orthority.camera import Camera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsMissingError
+from orthority.errors import CrsMissingError, OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -407,8 +407,9 @@ class Ortho:
             np.any(np.min(poly_ji, axis=1) < (0, 0))
             or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
-            logger.warning(
-                f"Ortho boundary for '{self._src_name}' is not fully covered by the DEM."
+            warnings.warn(
+                f"Ortho boundary for '{self._src_name}' is not fully covered by the DEM.",
+                category=OrthorityWarning,
             )
 
         if crop:
@@ -450,9 +451,10 @@ class Ortho:
             compress = Compress(compress)
             if compress == Compress.jpeg:
                 if dtype == 'uint16':
-                    logger.warning(
+                    warnings.warn(
                         'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
-                        'dependent.'
+                        'dependent.',
+                        category=OrthorityWarning,
                     )
                     ortho_profile.update(nbits=12)
                 elif dtype != 'uint8':

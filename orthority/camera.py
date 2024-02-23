@@ -23,7 +23,7 @@ import cv2
 import numpy as np
 
 from orthority.enums import CameraType
-from orthority.errors import CameraInitError
+from orthority.errors import CameraInitError, OrthorityWarning
 from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,8 @@ class Camera:
         if sensor_size is None:
             warnings.warn(
                 "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by "
-                "sensor width."
+                "sensor width.",
+                category=OrthorityWarning,
             )
             sigma_xy = (focal_len * im_size[0]) * np.ones(2)
         else:
@@ -206,7 +207,7 @@ class Camera:
             w, h = np.array(im_size) - 1
             n = 9
             scale_j, scale_i = np.meshgrid(range(0, n), range(0, n))
-            scale_j, scale_i = scale_j.flatten(), scale_i.flatten()
+            scale_j, scale_i = scale_j.ravel(), scale_i.ravel()
             ji = np.row_stack([scale_j * w / (n - 1), scale_i * h / (n - 1)])
             xy = self._pixel_to_camera(ji)[:2]
             outer = xy.min(axis=1), xy.max(axis=1) - xy.min(axis=1)
