@@ -1,5 +1,5 @@
 Running examples
-----------------
+================
 
 Examples that follow use Orthority's test data.  You can get this by downloading the repository directly:
 

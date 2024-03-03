@@ -1,5 +1,5 @@
 Algorithm configuration
------------------------
+=======================
 
 Various options allow configuration of the orthorectification algorithm.  Again, these are common to all |oty|_ sub-commands.  For most use cases, these options can be left on their defaults.
 

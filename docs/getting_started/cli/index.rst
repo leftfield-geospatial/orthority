@@ -27,3 +27,6 @@ and help on an ``oty`` sub-command with:
 
 .. |oty| replace:: ``oty``
 .. _oty: ../../cli/oty.html
+
+
+.. TODO: include a note about logging verbosity
