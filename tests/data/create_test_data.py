@@ -22,6 +22,8 @@ odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River'
 odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
 
 io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
+# TODO: save images as COGs to optimise URL tests and doc egs
+# TODO: rename NGI images from 3324c -> 3324C, and modify param files accordingly
 
 
 def downsample_rgb(

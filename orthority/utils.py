@@ -21,7 +21,6 @@ import logging
 import os
 import posixpath
 import pstats
-import sys
 import tracemalloc
 import warnings
 from contextlib import contextmanager, ExitStack
@@ -35,7 +34,6 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
-from tqdm.contrib import DummyTqdmFile
 from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning
 from rasterio.io import DatasetReaderBase, DatasetWriter
@@ -212,6 +210,13 @@ class OpenRaster:
         Keyword arguments to pass to :func:`rasterio.open`.
     """
 
+    # TODO: using rio.open() with file objects or fsspec OpenFile objects means that sidecar
+    #  files are not written or read. We know this is an issue for writing PAM files of projected
+    #  CRSs with ellipsoidal height. It is also an issue for reading RPC coefficients from .RPB
+    #  or .XML sidecar files.  This should be confirmed and tested with an updated rasterio.  If
+    #  necessary, local files should be opened with the native GDAL opener, at least this way,
+    #  the sidecar files can be RW locally. This may need a re-work of the CLI's current use of
+    #  OpenFile.
     def __init__(
         self,
         file: str | PathLike | DatasetReaderBase | OpenFile,

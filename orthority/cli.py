@@ -376,7 +376,6 @@ def _ortho(
                     src_file_path.name, ext_param_dict.get(src_file_path.stem, None)
                 )
                 if not ext_param:
-                    # TODO: should matching be case sensitive?
                     raise click.BadParameter(
                         f"Could not find exterior parameters for '{src_file_path.name}'.",
                         param_hint="'-ep' / '--ext-param'",
@@ -1135,7 +1134,5 @@ if __name__ == '__main__':
     cli()
 
 # TODO: test CLI exceptions are meaningful
-# TODO: a lot of args are spec'd as Tuples, is this correct or would Sequence, or Iterable be more
-#  appropriate?
 
 ##

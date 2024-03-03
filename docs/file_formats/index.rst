@@ -1,7 +1,7 @@
 File formats
 ============
 
-This section describes camera model file formats supported by Orthority.  Reading is supported for all formats, and writing for :doc:`YAML interior <yaml>` and :doc:`GeoJSON exterior parameter <geojson>` format files.  Files are read when orthorectifying, and optionally written with the ``oty`` :doc:`command line <../cli/index>`.  In the API, parameter file IO is implemented in the :mod:`~orthority.io` module.
+This section describes camera model file formats supported by Orthority.  Reading is supported for all formats, and writing for :doc:`YAML interior <yaml>` and :doc:`GeoJSON exterior parameter <geojson>` format files.  Files are read when orthorectifying, and optionally written with the ``oty`` :doc:`command line <../cli/index>`.  In the API, parameter file IO is implemented in the :mod:`~orthority.param_io` module.
 
 .. toctree::
     :maxdepth: 1
@@ -12,3 +12,5 @@ This section describes camera model file formats supported by Orthority.  Readin
     exif_xmp
     opensfm
     legacy
+
+.. TODO: note that files define one or both of digital frame camera interior and or exterior parameters. and make better sense of the statement above.

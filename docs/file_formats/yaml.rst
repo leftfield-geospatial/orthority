@@ -17,7 +17,7 @@ This is the native Orthority format for interior parameters.  It is a YAML file 
         # ...
         name N: value N
 
-Camera IDs can be used in exterior parameters to refer to a specific camera in multi-camera set ups (e.g. with the ``camera`` field in :doc:`CSV <csv>` and :doc:`GeoJSON <geojson>` files), and should be unique.  Parameter names and value descriptions are as follows:
+Camera IDs can be used in exterior parameters to refer to a specific camera in multi-camera setups (e.g. with the ``camera`` field in :doc:`CSV <csv>` and :doc:`GeoJSON <geojson>` files), and should be unique.  Parameter names and value descriptions are as follows:
 
 .. list-table::
     :widths: auto
@@ -62,7 +62,7 @@ Available camera types and their distortion coefficients are detailed below:
       - ``k1``, ``k2``, ``p1``, ``p2``, ``k3``, ``k4``, ``k5``, ``k6``, ``s1``, ``s2``, ``s3``, ``s4``, ``tx``, ``ty``
       - `OpenCV general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__. Partial or special cases of the model can be specified by omitting some or all of the coefficients. E.g. if no distortion coefficients are specified, this model corresponds to ``pinhole``, or if the first 5 distortion coefficients are specified, this model corresponds to ``brown``.
 
-From the API perspective, the ``type`` parameter specifies which :class:`~orthority.camera.Camera` subclass to use.  The remaining parameters correspond to the ``__init__()`` arguments for that class.
+From the API perspective, the ``type`` parameter specifies which :class:`~orthority.camera.Camera` subclass to use.  The remaining parameters correspond to ``__init__()`` arguments for that class.
 
 An example of a valid YAML file defining two cameras:
 

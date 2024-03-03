@@ -311,6 +311,8 @@ class Camera:
             3D world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the first
             dimension.
         """
+        # TODO: consider only returning (x, y).  the z dimension is redundant, and it is used this
+        #  way in most (all?) places.
         self._check_init()
         self._check_pixel_coordinates(ji)
 

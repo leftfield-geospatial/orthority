@@ -32,7 +32,7 @@ extensions = [
 
 templates_path = ['_templates']
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
-
+# nitpicky = True
 
 # -- Options for HTML output -------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
@@ -52,6 +52,7 @@ intersphinx_mapping = {
     'numpy': ('https://numpy.org/doc/stable', None),
     'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
     'gdal': ('https://gdal.org/', None),
+    'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
 }
 
 # -- Options for pygments -----------------------------------------------------

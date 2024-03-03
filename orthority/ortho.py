@@ -207,7 +207,7 @@ class Ortho:
                 return utils.expand_window_to_grid(dem_win)
 
             # get a dem window corresponding to ortho world bounds at min possible altitude,
-            # read the window from the dem & convert to float32 with nodata=nan
+            # read the window from the dem
             dem_win = get_win_at_z_min(self._egm96_min)
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
@@ -549,6 +549,8 @@ class Ortho:
         # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
+        # TODO: should we work in float32 internally, and then clip and round (as in homonim) to
+        #  the ortho dtype?  it would only be a tile stored in this way.
         tile_array = np.full(
             (src_array.shape[0], tile_win.height, tile_win.width),
             dtype=ortho_im.profile['dtype'],
@@ -784,6 +786,7 @@ class Ortho:
                 logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
 
             # open source image
+            # TODO: would GTIFF_REPORT_COMPD_CS=True help avoid PAM files with ellipsoidal height
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )

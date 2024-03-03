@@ -9,5 +9,7 @@ DEM and camera position heights may have different vertical coordinate systems e
 
 As a brief introduction to defining 3D or 2D+1D CRSs with vertical coordinate systems, it is easiest to use `EPSG codes <https://epsg.io>`__  when they exist for the CRS.  The basic form for an EPSG CRS string is ``EPSG:<code>``.  Compound 2D+1D CRSs can be defined with ``EPSG:<horizontal code>+<vertical code>``.  CRSs can be specified in this way with the Orthority command line and API, or with third party tools for editing a raster's metadata e.g. Rasterio's |rio edit-info|_ command line utility.  Equivalent proj4 or WKT strings can also be used.
 
+.. TODO: refer to path_uri with a note about CRSs requiring PAM files not being supported
+
 .. |rio edit-info| replace:: ``rio edit-info``
 .. _rio edit-info: https://rasterio.readthedocs.io/en/stable/cli.html#edit-info
