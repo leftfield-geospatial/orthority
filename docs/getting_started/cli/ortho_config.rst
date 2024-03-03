@@ -1,9 +1,17 @@
 Ortho image configuration
--------------------------
+=========================
 
 Ortho images are created as GeoTIFFs.  Options for configuring image resolution and format (data type, compression, nodata / internal mask and overviews) are common to all |oty|_ sub-commands.  These options default to sensible values when not supplied.
 
-The ortho resolution defaults to an estimate of the `ground sampling distance <https://en.wikipedia.org/wiki/Ground_sample_distance>`__.  This can be changed with ``--res``.  The ortho data type defaults to the source image data type, and can be changed with ``--dtype``.  When the ortho data type is ``uint8``, compression defaults to ``jpeg``, otherwise it defaults to ``deflate``.  Compression can be changed from its default changed with ``--compress``.  In the next example, we orthorectify an image (using its EXIF / XMP tags), configuring the ortho image with a 0.2m resolution, the ``uint8`` data type, and ``deflate`` compression:
+The ortho resolution defaults to an estimate of the `ground sampling distance <https://en.wikipedia.org/wiki/Ground_sample_distance>`__.  This can be changed with ``--res``.  The ortho data type defaults to the source image data type, and can be changed with ``--dtype``.
+
+Compression can be configured with ``--compress`` as either ``deflate`` (with any ortho data type) or ``jpeg`` (with the ``uint8`` or ``uint16`` ortho data types).  When the ortho data type is ``uint8``, it defaults to ``jpeg``, otherwise it defaults to ``deflate``.  When ``jpeg`` compression is used with the ``uint16`` data type, the ortho is 12 bit ``jpeg`` compressed.
+
+.. note::
+
+    Support for 12 bit JPEG compression is `Rasterio <https://rasterio.readthedocs.io>`__ build / package dependent.
+
+In the next example, we orthorectify an image (using its EXIF / XMP tags), configuring the ortho image with a 0.2m resolution, the ``uint8`` data type, and ``deflate`` compression:
 
 .. code-block:: bash
 
