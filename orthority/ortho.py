@@ -352,25 +352,33 @@ class Ortho:
             raise ValueError('The DEM is higher than the camera.')
         # limit dem_max to camera height so that rays go forwards only
         dem_max = min(np.nanmax(dem_array), self._camera._T[2, 0])
+
+        # find ortho boundary at dem_min and dem_max
+        min_xyz = self._camera.pixel_to_world_z(src_ji, dem_min, distort=full_remap)
+        max_xyz = self._camera.pixel_to_world_z(src_ji, dem_max, distort=full_remap)
+
         # heuristic limit on ray length to conserve memory
         max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape, dtype='int64').sum()).astype('int')
         poly_xy = np.zeros((2, src_ji.shape[1]))
 
         # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in
         # src_ji
-        for pi in range(src_ji.shape[1]):
-            src_pt = src_ji[:, pi].reshape(-1, 1)
+        for pi in range(0, src_ji.shape[1]):
+            src_pt, start_xyz, stop_xyz = src_ji[:, pi], max_xyz[:, pi], min_xyz[:, pi]
 
             # create world points along the src_pt ray with (x, y) stepsize <= dem resolution,
             # if num points <= max_ray_steps, else max_ray_steps points
-            start_xyz = self._camera.pixel_to_world_z(src_pt, dem_min, distort=full_remap)
-            stop_xyz = self._camera.pixel_to_world_z(src_pt, dem_max, distort=full_remap)
+            # TODO: rescale start/stop_xy to be inside dem bounds to reduce ray_steps
             ray_steps = np.abs(
                 (stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4])
             )
             ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
             ray_z = np.linspace(dem_max, dem_min, ray_steps)
-            ray_xyz = self._camera.pixel_to_world_z(src_pt, ray_z, distort=full_remap)
+            # TODO: for frame cameras, linspace rather than pixel_to_world_z can be used to form
+            #  the ray
+            ray_xyz = self._camera.pixel_to_world_z(
+                src_pt.reshape(-1, 1), ray_z, distort=full_remap
+            )
 
             # find the dem z values corresponding to the ray (dem_z will be nan outside the dem
             # bounds and for already masked / nan dem pixels)
@@ -549,8 +557,6 @@ class Ortho:
         # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
 
         # initialise ortho tile array
-        # TODO: should we work in float32 internally, and then clip and round (as in homonim) to
-        #  the ortho dtype?  it would only be a tile stored in this way.
         tile_array = np.full(
             (src_array.shape[0], tile_win.height, tile_win.width),
             dtype=ortho_im.profile['dtype'],
@@ -571,6 +577,8 @@ class Ortho:
             )
 
         # mask of invalid ortho pixels
+        # TODO: it would be better to use the dem (tile_zgrid) mask to avoid masking valid pixels
+        #  == nodata, but this mask would then need to be exact which currently it is not
         tile_mask = np.all(utils.nan_equals(tile_array, dtype_nodata), axis=0)
 
         # remove cv2.remap blurring with undistort nodata when full_remap=False...
