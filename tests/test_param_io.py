@@ -27,7 +27,7 @@ import rasterio as rio
 from rasterio.warp import transform
 
 from orthority import param_io
-from orthority.camera import Camera
+from orthority.camera import FrameCamera
 from orthority.enums import CameraType, CsvFormat, Interp
 from orthority.errors import CrsMissingError, ParamFileError
 from tests.conftest import oty_to_osfm_int_param
@@ -240,7 +240,7 @@ def test_read_exif_int_param_error(ngi_image_file: Path):
 
 def test_aa_to_opk(xyz: tuple, opk: tuple):
     """Test _aa_to_opk()."""
-    R, _ = Camera._get_extrinsic(xyz, opk)
+    R, _ = FrameCamera._get_extrinsic(xyz, opk)
     aa = cv2.Rodrigues(R.T)[0]
     test_opk = param_io._aa_to_opk(aa)
     assert test_opk == pytest.approx(opk, 1e-6)

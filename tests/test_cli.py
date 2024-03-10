@@ -1125,6 +1125,7 @@ def test__ortho_mult_camera(
         export_params=False,
         out_dir=fsspec.open(str(tmp_path), 'wb'),
         overwrite=False,
+        full_remap=True,
     )
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == len(src_files)
@@ -1155,6 +1156,7 @@ def test__ortho_single_no_camera(
         export_params=False,
         out_dir=fsspec.open(str(tmp_path), 'wb'),
         overwrite=False,
+        full_remap=True,
     )
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
@@ -1186,6 +1188,7 @@ def test__ortho_ext_param_not_found_error(
             export_params=False,
             out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
+            full_remap=True,
         )
     assert rgb_byte_src_file.name in str(ex) and '--ext-param' in ex.value.param_hint
 
@@ -1217,6 +1220,7 @@ def test__ortho_mult_camera_unknown_camera_error(
             export_params=False,
             out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
+            full_remap=True,
         )
     assert camera in str(ex) and 'interior parameters' in str(ex)
 
@@ -1247,5 +1251,6 @@ def test__ortho_mult_camera_no_camera_error(
             export_params=False,
             out_dir=fsspec.open(str(tmp_path)),
             overwrite=False,
+            full_remap=True,
         )
     assert rgb_byte_src_file.name in str(ex) and 'exterior parameters' in str(ex).lower()

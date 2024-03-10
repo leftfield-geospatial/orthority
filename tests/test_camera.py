@@ -23,6 +23,7 @@ from orthority.camera import (
     Camera,
     create_camera,
     FisheyeCamera,
+    FrameCamera,
     OpenCVCamera,
     PinholeCamera,
 )
@@ -31,15 +32,18 @@ from orthority.errors import CameraInitError
 
 
 @pytest.mark.parametrize(
-    'cam_type, dist_param, exp_type',
+    'cam_type, dist_param, distort, alpha, exp_type',
     [
-        (CameraType.pinhole, None, PinholeCamera),
-        (CameraType.brown, 'brown_dist_param', BrownCamera),
-        (CameraType.opencv, 'opencv_dist_param', OpenCVCamera),
-        (CameraType.fisheye, 'fisheye_dist_param', FisheyeCamera),
+        (CameraType.pinhole, None, True, 1.0, PinholeCamera),
+        (CameraType.brown, 'brown_dist_param', True, 1.0, BrownCamera),
+        (CameraType.brown, 'brown_dist_param', False, 0.5, BrownCamera),
+        (CameraType.opencv, 'opencv_dist_param', True, 1.0, OpenCVCamera),
+        (CameraType.opencv, 'opencv_dist_param', False, 0.5, OpenCVCamera),
+        (CameraType.fisheye, 'fisheye_dist_param', True, 1.0, FisheyeCamera),
+        (CameraType.fisheye, 'fisheye_dist_param', False, 0.5, FisheyeCamera),
     ],
 )
-def test_init(
+def test_frame_init(
     cam_type: CameraType,
     dist_param: str,
     exp_type: type,
@@ -49,12 +53,16 @@ def test_init(
     focal_len: float,
     sensor_size: tuple,
     cxy: tuple,
+    distort: bool,
+    alpha: float,
     request: pytest.FixtureRequest,
 ):
-    """Test camera creation."""
+    """Test frame camera creation."""
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
-
-    camera = create_camera(
+    # TODO: add distort and alpha?  or are they tested elsewhere
+    distort = True
+    alpha = 0.0
+    camera: FrameCamera = create_camera(
         cam_type,
         im_size,
         focal_len,
@@ -64,13 +72,18 @@ def test_init(
         **dist_param,
         xyz=xyz,
         opk=opk,
+        distort=distort,
+        alpha=alpha,
     )
 
     im_size = np.array(im_size)
     cxy_pixel = (im_size - 1) / 2 + np.array(cxy) * im_size.max()
 
-    assert isinstance(camera, exp_type)
-    assert np.all(camera._T.flatten() == xyz)
+    assert type(camera) == exp_type
+
+    assert np.all(camera.pos == xyz)
+    assert np.all(camera.im_size == im_size)
+
     assert camera._K.diagonal()[:2] == pytest.approx(
         np.array(focal_len) * im_size / sensor_size, abs=1e-3
     )
@@ -78,37 +91,42 @@ def test_init(
     if dist_param:
         assert np.all(camera._dist_param == [*dist_param.values()])
 
+    assert camera.distort == distort
+    assert camera.alpha == alpha
+
 
 @pytest.mark.parametrize(
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
-def test_undistort_maps(camera: str, request: pytest.FixtureRequest):
-    """Test undistort_maps property."""
-    camera: Camera = request.getfixturevalue(camera)
-
-    if isinstance(camera, PinholeCamera):
-        assert camera.undistort_maps is None
+def test_frame_get_undistort_maps(camera: str, request: pytest.FixtureRequest):
+    """Test FrameCamera._get_undistort_maps()."""
+    camera: FrameCamera = request.getfixturevalue(camera)
+    undistort_maps = camera._get_undistort_maps()
+    if type(camera) is PinholeCamera:
+        assert undistort_maps is None
     else:
-        assert camera.undistort_maps is not None
+        assert undistort_maps is not None
         im_shape = np.array(camera._im_size[::-1])
         for i in range(2):
-            assert all(camera.undistort_maps[i].shape[:2] == im_shape)
+            assert all(undistort_maps[i].shape[:2] == im_shape)
 
 
-def test_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz: tuple, opk: tuple):
-    """Test exterior parameter update."""
+def test_frame_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz: tuple, opk: tuple):
+    """Test frame camera exterior parameter update."""
     camera = PinholeCamera(
         im_size, focal_len, sensor_size=sensor_size, xyz=(0, 0, 0), opk=(0, 0, 0)
     )
     camera.update(xyz, opk)
 
-    assert np.all(camera._T.flatten() == xyz)
+    assert np.all(camera.pos == xyz)
     assert np.all(camera._R != 0)
 
 
 @pytest.mark.parametrize('cam_type', [*CameraType])
-def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple):
-    """Test an error is raised if the camera is used before initialising exterior parameters."""
+def test_frame_update_error(
+    cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
+):
+    """Test an error is raised if a frame camera is used before initialising exterior parameters."""
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
     with pytest.raises(CameraInitError):
@@ -118,14 +136,23 @@ def test_update_error(cam_type: CameraType, im_size: tuple, focal_len: float, se
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
+    'camera',
+    [
+        'pinhole_camera',
+        'brown_camera',
+        'brown_camera_und',
+        'opencv_camera',
+        'opencv_camera_und',
+        'fisheye_camera',
+        'fisheye_camera_und',
+    ],
 )
 def test_project_points(camera: str, request: pytest.FixtureRequest):
     """Test projection of multiple points between pixel & world coordinates."""
     camera: Camera = request.getfixturevalue(camera)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
-    z = np.random.rand(1000) * (camera._T[2] * 0.8)
+    z = np.random.rand(1000) * (camera.pos[2] * 0.8)
     xyz = camera.pixel_to_world_z(ji, z)
     ji_ = camera.world_to_pixel(xyz)
 
@@ -139,26 +166,26 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
 
 
 @pytest.mark.parametrize(
-    'camera, distort',
+    'camera',
     [
-        ('pinhole_camera', True),
-        ('brown_camera', True),
-        ('brown_camera', False),
-        ('opencv_camera', True),
-        ('opencv_camera', False),
-        ('fisheye_camera', True),
-        ('fisheye_camera', False),
+        'pinhole_camera',
+        'brown_camera',
+        'brown_camera_und',
+        'opencv_camera',
+        'opencv_camera_und',
+        'fisheye_camera',
+        'fisheye_camera_und',
     ],
 )
-def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest):
+def test_project_dims(camera: str, request: pytest.FixtureRequest):
     """Test projection with different pixel & world coordinate dimensionality."""
     camera: Camera = request.getfixturevalue(camera)
 
     # single point to single z
     ji = np.reshape(camera._im_size, (-1, 1)) / 2
-    z = camera._T[2] * 0.5
-    xyz = camera.pixel_to_world_z(ji, z, distort=distort)
-    ji_ = camera.world_to_pixel(xyz, distort=distort)
+    z = camera.pos[2] * 0.5
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert xyz.shape == (3, 1)
     assert ji_.shape == (2, 1)
@@ -166,9 +193,9 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert ji_ == pytest.approx(ji, abs=1)
 
     # single point to multiple z
-    z = camera._T[2] * np.linspace(0.1, 0.8, 10)
-    xyz = camera.pixel_to_world_z(ji, z, distort=distort)
-    ji_ = camera.world_to_pixel(xyz, distort=distort)
+    z = camera.pos[2] * np.linspace(0.1, 0.8, 10)
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert xyz.shape == (3, z.shape[0])
     assert ji_.shape == (2, z.shape[0])
@@ -177,9 +204,9 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
 
     # multiple points to single z
     ji = np.random.rand(2, 10) * np.reshape(camera._im_size, (-1, 1))
-    z = camera._T[2] * 0.5
-    xyz = camera.pixel_to_world_z(ji, z, distort=distort)
-    ji_ = camera.world_to_pixel(xyz, distort=distort)
+    z = camera.pos[2] * 0.5
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert xyz.shape == (3, ji.shape[1])
     assert ji_.shape == ji.shape
@@ -187,45 +214,45 @@ def test_project_dims(camera: str, distort: bool, request: pytest.FixtureRequest
     assert ji_ == pytest.approx(ji, abs=1)
 
 
-@pytest.mark.parametrize('camera', ['brown_camera', 'opencv_camera', 'fisheye_camera'])
-def test_project_points_nodistort(camera: str, request: pytest.FixtureRequest):
-    """Test projected points with distort==False match pinhole camera."""
-    camera: Camera = request.getfixturevalue(camera)
+@pytest.mark.parametrize('camera', ['brown_camera_und', 'opencv_camera_und', 'fisheye_camera_und'])
+def test_frame_project_nodistort(camera: str, request: pytest.FixtureRequest):
+    """Test frame camera projected points with ``distort=False`` match pinhole camera."""
+    camera: FrameCamera = request.getfixturevalue(camera)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
-    z = np.random.rand(1000) * (camera._T[2] * 0.8)
-    pinhole_xyz = PinholeCamera.pixel_to_world_z(camera, ji, z, distort=False)
-    xyz = camera.pixel_to_world_z(ji, z, distort=False)
-    ji_ = camera.world_to_pixel(xyz, distort=False)
+    z = np.random.rand(1000) * (camera.pos[2] * 0.8)
+    pinhole_xyz = PinholeCamera.pixel_to_world_z(camera, ji, z)
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
 @pytest.mark.parametrize('cam_type', [CameraType.brown, CameraType.opencv])
-def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, camera_args: dict):
+def test_brown_opencv_zerocoeff(pinhole_camera: Camera, cam_type: CameraType, frame_args: dict):
     """Test Brown & OpenCV cameras match pinhole camera with zero distortion coeffs (
     Fisheye is excluded as the model distorts with zero distortion coeffs).
     """
-    camera: Camera = create_camera(cam_type, **camera_args)
+    camera = create_camera(cam_type, **frame_args, distort=True)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
-    z = np.random.rand(1000) * (camera._T[2] * 0.8)
+    z = np.random.rand(1000) * (camera.pos[2] * 0.8)
     pinhole_xyz = pinhole_camera.pixel_to_world_z(ji, z)
-    xyz = camera.pixel_to_world_z(ji, z, distort=True)
-    ji_ = camera.world_to_pixel(xyz, distort=True)
+    xyz = camera.pixel_to_world_z(ji, z)
+    ji_ = camera.world_to_pixel(xyz)
 
     assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
     assert ji_ == pytest.approx(ji, abs=1e-3)
 
 
-def test_brown_opencv_equiv(camera_args: dict, brown_dist_param: dict):
+def test_brown_opencv_equiv(frame_args: dict, brown_dist_param: dict):
     """Test OpenCV and Brown cameras are equivalent for the Brown distortion parameter set."""
-    brown_camera = BrownCamera(**camera_args, **brown_dist_param)
-    opencv_camera = OpenCVCamera(**camera_args, **brown_dist_param)
+    brown_camera = BrownCamera(**frame_args, **brown_dist_param)
+    opencv_camera = OpenCVCamera(**frame_args, **brown_dist_param)
 
     ji = np.random.rand(2, 1000) * np.reshape(brown_camera._im_size, (-1, 1))
-    z = np.random.rand(1000) * (brown_camera._T[2] * 0.8)
+    z = np.random.rand(1000) * (brown_camera.pos[2] * 0.8)
     cv_xyz = opencv_camera.pixel_to_world_z(ji, z)
     brown_xyz = brown_camera.pixel_to_world_z(ji, z)
 
@@ -245,20 +272,20 @@ def test_brown_opencv_equiv(camera_args: dict, brown_dist_param: dict):
         (CameraType.fisheye, 'fisheye_dist_param', 2),
     ],
 )
-def test_project_im_size(
-    camera_args: dict,
+def test_frame_project_im_size(
+    frame_args: dict,
     cam_type: CameraType,
     dist_param: str,
     scale: float,
     request: pytest.FixtureRequest,
 ):
-    """Test camera coordinate equivalence for different image sizes."""
+    """Test frame camera coordinate equivalence for different image sizes."""
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
-    ref_camera = create_camera(cam_type, **camera_args, **dist_param)
+    ref_camera: FrameCamera = create_camera(cam_type, **frame_args, **dist_param)
 
-    test_camera_args = camera_args.copy()
+    test_camera_args = frame_args.copy()
     test_camera_args['im_size'] = tuple(np.array(test_camera_args['im_size']) * scale)
-    test_camera = create_camera(cam_type, **test_camera_args, **dist_param)
+    test_camera: FrameCamera = create_camera(cam_type, **test_camera_args, **dist_param)
 
     # find reference and test camera coords for world pts corresponding to reference image
     # boundary pts
@@ -309,7 +336,7 @@ def test_pixel_to_world_z_error(pinhole_camera: Camera):
     assert "'z'" in str(ex)
 
 
-def test_intrinsic_equivalence(
+def test_frame_intrinsic_equivalence(
     im_size: tuple,
     focal_len: float,
     sensor_size: tuple,
@@ -317,7 +344,9 @@ def test_intrinsic_equivalence(
     xyz: tuple,
     opk: tuple,
 ):
-    """Test intrinsic matrix validity for equivalent focal_len & sensor_size options."""
+    """Test frame camera intrinsic matrix validity for equivalent focal_len & sensor_size
+    options.
+    """
     ref_camera = PinholeCamera(
         im_size, focal_len, sensor_size=sensor_size, cx=cxy[0], cy=cxy[1], xyz=xyz, opk=opk
     )
@@ -353,14 +382,14 @@ def test_intrinsic_equivalence(
     assert test_camera._K == pytest.approx(ref_camera._K, abs=1e-3)
 
 
-def test_intrinsic_nonsquare_pixels(
+def test_frame_intrinsic_nonsquare_pixels(
     im_size: tuple[int, int],
     focal_len: float,
     sensor_size: tuple[float, float],
     xyz: tuple[float, float, float],
     opk: tuple[float, float, float],
 ):
-    """Test intrinsic matrix validity for non-square pixels."""
+    """Test frame camera intrinsic matrix validity for non-square pixels."""
     _sensor_size = (sensor_size[0] * 2, sensor_size[1])
     camera = PinholeCamera(im_size, focal_len, sensor_size=_sensor_size, xyz=xyz, opk=opk)
     assert camera._K[0, 0] == pytest.approx(camera._K[1, 1] / 2, abs=1e-3)
@@ -377,16 +406,16 @@ def test_intrinsic_nonsquare_pixels(
         (CameraType.fisheye, 'fisheye_dist_param'),
     ],
 )
-def test_horizon_fov(
+def test_frame_horizon_fov(
     cam_type: CameraType,
     dist_param: str,
-    camera_args: dict,
+    frame_args: dict,
     xyz: tuple,
     request: pytest.FixtureRequest,
 ):
-    """Test Camera._horizon_fov() validity."""
+    """Test FrameCamera._horizon_fov() validity."""
     dist_param: dict = request.getfixturevalue(dist_param)
-    camera = create_camera(cam_type, **camera_args, **dist_param)
+    camera: FrameCamera = create_camera(cam_type, **frame_args, **dist_param)
     assert not camera._horizon_fov()
 
     camera.update(xyz, (np.pi / 2, 0, 0))
@@ -396,17 +425,28 @@ def test_horizon_fov(
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
+    'camera, camera_und',
+    [
+        ('pinhole_camera', 'pinhole_camera_und'),
+        ('brown_camera', 'brown_camera_und'),
+        ('opencv_camera', 'opencv_camera_und'),
+        ('fisheye_camera', 'fisheye_camera_und'),
+    ],
 )
-def test_undistort(camera: str, request: pytest.FixtureRequest):
-    """Test undistort + pixel_to_world_z(distort=False) matches pixel_to_world_z(distort=True)."""
-    camera: Camera = request.getfixturevalue(camera)
+def test_frame_undistort(camera: str, camera_und: str, request: pytest.FixtureRequest):
+    """Test frame camera undistort() + pixel_to_world_z() with ``distort=False`` matches
+    pixel_to_world_z() with ``distort=True``.
+    """
+    camera: FrameCamera = request.getfixturevalue(camera)
+    camera_und: FrameCamera = request.getfixturevalue(camera_und)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera._im_size, (-1, 1))
-    z = np.random.rand(1000) * (camera._T[2] * 0.8)
-    ji_undistort = camera.undistort(ji)
-    xyz_undistort = camera.pixel_to_world_z(ji_undistort, z, distort=False)
+    z = np.random.rand(1000) * (camera.pos[2] * 0.8)
     xyz = camera.pixel_to_world_z(ji, z)
+
+    ji_undistort = camera_und.undistort_pixel(ji)
+    xyz_undistort = camera_und.pixel_to_world_z(ji_undistort, z)
+
     assert xyz_undistort == pytest.approx(xyz, abs=1e-3)
 
 
@@ -421,25 +461,25 @@ def test_undistort(camera: str, request: pytest.FixtureRequest):
         (CameraType.fisheye, 'fisheye_dist_param', 1.0),
     ],
 )
-def test_undistort_alpha(
-    camera_args: dict,
+def test_frame_undistort_alpha(
+    frame_args: dict,
     cam_type: CameraType,
     dist_param: str,
     alpha: float,
     request: pytest.FixtureRequest,
 ):
-    """Test alpha=0 gives undistorted image boundaries outside, and alpha=1 gives undistorted image
-    boundaries inside the source image.
+    """Test ``alpha=0`` gives undistorted image boundaries outside, and ``alpha=1`` gives
+    undistorted image boundaries inside the source image, for frame cameras.
     """
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
-    camera = create_camera(cam_type, **camera_args, **dist_param, alpha=alpha)
+    camera: FrameCamera = create_camera(cam_type, **frame_args, **dist_param, alpha=alpha)
 
     # create boundary coordinates and undistort
     w, h = np.array(camera._im_size) - 1
     ji = np.array(
         [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2], [0, 0]]
     ).T
-    undistort_ji = np.round(camera.undistort(ji), 3)
+    undistort_ji = np.round(camera.undistort_pixel(ji), 3)
 
     def inside_outside(ji: np.array, undistort_ji: np.array, inside=True):
         """Test if ``undistort_ji`` lies inside (``inside=True``) or outside (``inside=False``)
@@ -472,13 +512,15 @@ def test_undistort_alpha(
         inside_outside(ji, undistort_ji, inside=False)
 
 
-@pytest.mark.parametrize('cam_type', [*CameraType])
-def test_undistort_no_ext_init(
+@pytest.mark.parametrize(
+    'cam_type', [CameraType.pinhole, CameraType.opencv, CameraType.brown, CameraType.fisheye]
+)
+def test_frame_undistort_no_ext_init(
     cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
 ):
-    """Test undistorting without exterior initialisation."""
+    """Test frame camera undistorting without exterior initialisation."""
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
     ji = (np.array([im_size]).T - 1) / 2
-    ji_ = camera.undistort(ji)
+    ji_ = camera.undistort_pixel(ji)
     assert ji_ == pytest.approx(ji, 1e-3)

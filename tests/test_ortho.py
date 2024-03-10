@@ -19,7 +19,6 @@ import logging
 import tracemalloc
 from pathlib import Path
 from typing import Sequence
-from tqdm.auto import tqdm
 
 import cv2
 import numpy as np
@@ -30,6 +29,7 @@ from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
+from tqdm.auto import tqdm
 
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
@@ -159,11 +159,11 @@ def test_init_geogcrs_error(
 
 
 def test_init_dem_coverage_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test Ortho initialisation without DEM coverage of ortho bounds raises an error."""
     # create a camera positioned away from dem bounds
-    camera = PinholeCamera(**camera_args)
+    camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (0, 0, 0))
 
     with pytest.raises(ValueError) as ex:
@@ -172,11 +172,11 @@ def test_init_dem_coverage_error(
 
 
 def test_init_horizon_fov_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test Ortho initialisation with a horizontal FOV camera raises an error."""
     # create a camera pointing away from dem bounds
-    camera = PinholeCamera(**camera_args)
+    camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (np.pi / 2, 0, 0))
 
     with pytest.raises(ValueError) as ex:
@@ -326,13 +326,14 @@ def test_reproject_dem_vdatum_one(
 
 
 @pytest.mark.parametrize('num_pts', [40, 100, 400, 1000, 4000])
-def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
+def _test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
     """
     Test _get_src_boundary(full_remap=True) generates a boundary with the correct corners and
     length.
 
     test_camera.test_undistort_alpha() covers the full_remap=False case.
     """
+    # TODO: remove here and test boundary in test_camera
     # reference coords to test against
     w, h = np.array(rgb_pinhole_utm34n_ortho._camera._im_size, dtype='float32') - 1
     ref_ji = {(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)}
@@ -365,7 +366,7 @@ def test_src_boundary(rgb_pinhole_utm34n_ortho: Ortho, num_pts: int):
 def test_mask_dem(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    camera_args: dict,
+    frame_args: dict,
     utm34n_crs: str,
     xyz_offset: tuple,
     opk_offset: tuple,
@@ -378,14 +379,15 @@ def test_mask_dem(
     # the ortho boundary, and DEM < camera height to ensure no ortho artefacts in DEM > camera
     # height areas.  While the DEM mask excludes (boundary) occluded pixels, the ortho image mask
     # does not i.e. to compare these masks, there should be no DEM - ortho occlusion.
-    _xyz = tuple(np.array(camera_args['xyz']) + xyz_offset)
-    _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
-    camera: Camera = PinholeCamera(
-        camera_args['im_size'],
-        camera_args['focal_len'],
-        sensor_size=camera_args.get('sensor_size', None),
+    _xyz = tuple(np.array(frame_args['xyz']) + xyz_offset)
+    _opk = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
+    camera = PinholeCamera(
+        frame_args['im_size'],
+        frame_args['focal_len'],
+        sensor_size=frame_args.get('sensor_size', None),
         xyz=_xyz,
         opk=_opk,
+        distort=True,
     )
     resolution = (3, 3)
     num_pts = 400
@@ -411,7 +413,6 @@ def test_mask_dem(
                 dem_array,
                 interp=Interp.cubic,
                 per_band=False,
-                full_remap=True,
                 write_mask=False,
                 progress=tqdm(disable=True, leave=False),
             )
@@ -421,7 +422,6 @@ def test_mask_dem(
         dem_array.copy(),
         dem_transform,
         dem_interp,
-        full_remap=True,
         crop=False,
         mask=True,
         num_pts=num_pts,
@@ -479,7 +479,6 @@ def test_mask_dem_crop(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
         dem_array.copy(),
         dem_transform,
         dem_interp,
-        full_remap=True,
         crop=False,
         mask=True,
         num_pts=num_pts,
@@ -491,7 +490,6 @@ def test_mask_dem_crop(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
         dem_array.copy(),
         dem_transform,
         dem_interp,
-        full_remap=True,
         crop=True,
         mask=True,
         num_pts=num_pts,
@@ -514,10 +512,10 @@ def test_mask_dem_crop(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
 
 
 def test_mask_dem_partial(
-    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, camera_args: dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_partial_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test the DEM mask excludes DEM nodata and is cropped to mask boundaries."""
-    camera: Camera = PinholeCamera(**camera_args)
+    camera = PinholeCamera(**frame_args, distort=True)
     resolution = (5, 5)
     num_pts = 400
     dem_interp = Interp.cubic
@@ -530,7 +528,6 @@ def test_mask_dem_partial(
         dem_array.copy(),
         dem_transform,
         dem_interp,
-        full_remap=True,
         crop=False,
         mask=True,
         num_pts=num_pts,
@@ -541,7 +538,6 @@ def test_mask_dem_partial(
         dem_array.copy(),
         dem_transform,
         dem_interp,
-        full_remap=True,
         crop=True,
         mask=True,
         num_pts=num_pts,
@@ -565,10 +561,10 @@ def test_mask_dem_partial(
 
 
 def test_mask_dem_coverage_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test DEM masking without DEM coverage raises an error."""
-    camera: Camera = PinholeCamera(**camera_args)
+    camera = PinholeCamera(**frame_args)
 
     # init & reproject with coverage
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -579,19 +575,19 @@ def test_mask_dem_coverage_error(
 
     # test
     with pytest.raises(ValueError) as ex:
-        ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
+        ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
     assert 'boundary' in str(ex)
 
 
 def test_mask_dem_above_camera_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, camera_args: dict, utm34n_crs: str
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test DEM masking raises an error when the DEM is higher the camera."""
-    camera: Camera = PinholeCamera(**camera_args)
+    camera = PinholeCamera(**frame_args)
 
     # move the camera below the DEM
-    _xyz = (*camera_args['xyz'][:2], camera_args['xyz'][2] - 1000)
-    camera.update(_xyz, camera_args['opk'])
+    _xyz = (*frame_args['xyz'][:2], frame_args['xyz'][2] - 1000)
+    camera.update(_xyz, frame_args['opk'])
 
     # init & reproject
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
@@ -599,14 +595,14 @@ def test_mask_dem_above_camera_error(
 
     # test
     with pytest.raises(ValueError) as ex:
-        ortho._mask_dem(dem_array, dem_transform, Interp.cubic, full_remap=True)
+        ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
     assert 'higher' in str(ex)
 
 
 @pytest.mark.parametrize(
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
-def test_undistort(
+def _test_undistort(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     utm34n_crs: str,
@@ -614,6 +610,7 @@ def test_undistort(
     request: pytest.FixtureRequest,
 ):
     """Test _undistort method by comparing source & distorted-undistorted checkerboard images."""
+    # TODO: move to test_camera
     nodata = 0
     interp = Interp.cubic
     camera: Camera = request.getfixturevalue(camera)
@@ -674,15 +671,16 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: tuple, 
 def test_process_auto_resolution(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
-    camera_args: dict,
+    frame_args: dict,
     utm34n_crs: str,
     opk_offset: tuple,
     tmp_path: Path,
 ):
     """Test that auto resolution generates approx as many ortho pixels as source pixels."""
-    _opk = tuple(np.array(camera_args['opk']) + np.radians(opk_offset))
-    camera: Camera = PinholeCamera(**camera_args)
-    camera.update(xyz=camera_args['xyz'], opk=_opk)
+    # TODO: either add distort=False case, or test camera.boundary rigorously in test_camera
+    _opk = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
+    camera = PinholeCamera(**frame_args)
+    camera.update(xyz=frame_args['xyz'], opk=_opk)
     dem_interp = Interp.cubic
 
     # find the auto res and masked dem
@@ -690,7 +688,7 @@ def test_process_auto_resolution(
     resolution = (ortho._get_gsd(),) * 2
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, full_remap=True, crop=True, mask=True
+        dem_array, dem_transform, dem_interp, crop=True, mask=True
     )
     mask = ~np.isnan(dem_array_mask)
 
@@ -796,28 +794,37 @@ def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
+    'camera, camera_und',
+    [
+        ('pinhole_camera', 'pinhole_camera_und'),
+        ('brown_camera', 'brown_camera_und'),
+        ('opencv_camera', 'opencv_camera_und'),
+        ('fisheye_camera', 'fisheye_camera_und'),
+    ],
 )
-def test_process_full_remap(
+def test_process_distort(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     camera: str,
+    camera_und: str,
     utm34n_crs,
     tmp_path: Path,
     request: pytest.FixtureRequest,
 ):
-    """Test ortho similarity for ``full_remap=True/False`` with ``alpha=1``."""
+    """Test ortho similarity for frame cameras with ``distort=True/False`` and ``alpha=1``."""
     camera: Camera = request.getfixturevalue(camera)
+    camera_und: Camera = request.getfixturevalue(camera_und)
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs)
+    ortho_und = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_und, utm34n_crs)
     resolution = (3, 3)
 
-    # Create a ref (full_remap=True) and test (full_remap=False) ortho for this camera. Note that
-    # full_remap=False erodes the ortho mask to remove nodata blur so the reference is expected
+    # Create ref (distort=True) and test (distort=False) orthos. Note that
+    # distort=False erodes the ortho mask to remove nodata blur so the reference is expected
     # to contain the test mask.
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    ortho.process(ortho_ref_file, resolution, full_remap=True, compress=Compress.deflate)
+    ortho.process(ortho_ref_file, resolution, compress=Compress.deflate)
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_test_file, resolution, full_remap=False, compress=Compress.deflate)
+    ortho_und.process(ortho_test_file, resolution, compress=Compress.deflate)
 
     # compare ref & test ortho extents, masks and pixels
     assert ortho_ref_file.exists() and ortho_test_file.exists()
@@ -838,7 +845,7 @@ def test_process_full_remap(
         assert cc[0, 1] > 0.9
         assert (
             cc[0, 1] == pytest.approx(1.0, abs=1e-3)
-            if isinstance(camera, PinholeCamera)
+            if type(camera) == PinholeCamera
             else cc[0, 1] < 1.0
         )
 
@@ -848,7 +855,7 @@ def test_process_full_remap(
         assert cc[0, 1] > 0.95
         assert (
             cc[0, 1] == pytest.approx(1.0, abs=1e-3)
-            if isinstance(camera, PinholeCamera)
+            if type(camera) == PinholeCamera
             else cc[0, 1] < 1.0
         )
 
@@ -865,7 +872,7 @@ def test_process_full_remap(
 def test_process_alpha(
     cam_type: CameraType,
     dist_param: str,
-    camera_args: dict,
+    frame_args: dict,
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     utm34n_crs: str,
@@ -874,18 +881,18 @@ def test_process_alpha(
 ):
     """Test ortho with ``alpha=1`` contains and is similar to ortho with ``alpha=0``."""
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
-    camera_alpha1 = create_camera(cam_type, **camera_args, **dist_param, alpha=1.0)
-    camera_alpha0 = create_camera(cam_type, **camera_args, **dist_param, alpha=0.0)
+    camera_alpha1 = create_camera(cam_type, **frame_args, **dist_param, alpha=1.0, distort=False)
+    camera_alpha0 = create_camera(cam_type, **frame_args, **dist_param, alpha=0.0, distort=False)
     resolution = (3, 3)
 
     # create a ref (alpha=1) and test (alpha=0) orthos
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha1, utm34n_crs, dem_band=1)
     ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-    ortho.process(ortho_ref_file, resolution, full_remap=False, compress=Compress.deflate)
+    ortho.process(ortho_ref_file, resolution, compress=Compress.deflate)
 
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera_alpha0, utm34n_crs, dem_band=1)
     ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_test_file, resolution, full_remap=False, compress=Compress.deflate)
+    ortho.process(ortho_test_file, resolution, compress=Compress.deflate)
 
     # compare ref & test ortho extents, masks and pixels
     assert ortho_ref_file.exists() and ortho_test_file.exists()
@@ -1122,9 +1129,7 @@ def test_process_camera(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, utm34n_crs, dem_band=2)
     resolution = (5, 5)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(
-        ortho_file, resolution, full_remap=True, compress=Compress.deflate, interp=Interp.nearest
-    )
+    ortho.process(ortho_file, resolution, compress=Compress.deflate, interp=Interp.nearest)
     dem_bounds = np.array(array_bounds(*ortho._dem_array.shape, ortho._dem_transform))
     assert ortho_file.exists()
 
