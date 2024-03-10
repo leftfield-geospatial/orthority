@@ -75,7 +75,6 @@ class Ortho:
         interp=Interp.cubic,
         dem_interp=Interp.cubic,
         per_band=False,
-        full_remap=True,
         write_mask=None,
         dtype=None,
         compress=None,
@@ -117,6 +116,7 @@ class Ortho:
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
         if camera._horizon_fov():
+            # TODO: remove or generalise to non-frame cameras
             raise ValueError(
                 "'camera' has a field of view that includes, or is above, the horizon."
             )
@@ -190,10 +190,11 @@ class Ortho:
             def get_win_at_z_min(z_min: float) -> Window:
                 """Return a DEM window corresponding to the ortho bounds at z=z_min."""
                 world_xyz = self._camera.pixel_to_world_z(src_ji, z_min)
-                # ensure the camera position is included in bounds so that oblique view
+                # include the camera position in the bounds if possible so that oblique view
                 # bounds at z=z_min will include bounds at higher altitudes (z>z_min)
-                world_xyz_T = np.column_stack((world_xyz, self._camera._T))
-                world_bounds = [*np.min(world_xyz_T[:2], axis=1), *np.max(world_xyz_T[:2], axis=1)]
+                if self._camera.pos:
+                    world_xyz = np.column_stack((world_xyz, self._camera.pos))
+                world_bounds = [*np.min(world_xyz[:2], axis=1), *np.max(world_xyz[:2], axis=1)]
                 dem_bounds = (
                     transform_bounds(self._crs, dem_im.crs, *world_bounds)
                     if not crs_equal
@@ -291,41 +292,11 @@ class Ortho:
         )
         return dem_array.squeeze(), dem_transform
 
-    def _get_src_boundary(self, full_remap: bool, num_pts: int) -> np.ndarray:
-        """Return a pixel coordinate boundary of the source image with ``num_pts`` points."""
-
-        def im_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
-            """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
-            for the given image size ``im_size``.
-            """
-            br = im_size - 1
-            perim = 2 * br.sum()
-            cnr_ji = np.array([[0, 0], [br[0], 0], br, [0, br[1]], [0, 0]])
-            dist = np.sum(np.abs(np.diff(cnr_ji, axis=0)), axis=1)
-            return np.row_stack(
-                [
-                    np.linspace(
-                        cnr_ji[i],
-                        cnr_ji[i + 1],
-                        np.round(num_pts * dist[i] / perim).astype('int'),
-                        endpoint=False,
-                    )
-                    for i in range(0, 4)
-                ]
-            ).T
-
-        ji = im_boundary(np.array(self._camera._im_size), num_pts=num_pts)
-        if not full_remap:
-            # undistort ji to match the boundary of the self._undistort() image
-            ji = self._camera.undistort(ji, clip=True)
-        return ji
-
     def _mask_dem(
         self,
         dem_array: np.ndarray,
         dem_transform: rio.Affine,
         dem_interp: Interp,
-        full_remap: bool,
         crop: bool = True,
         mask: bool = True,
         num_pts: int = 400,
@@ -344,18 +315,20 @@ class Ortho:
             return dem_array, dem_transform
 
         # get polygon of source boundary with 'num_pts' points
-        src_ji = self._get_src_boundary(full_remap=full_remap, num_pts=num_pts)
+        src_ji = self._camera.boundary(num_pts=num_pts)
 
         # find / test dem minimum and maximum, and initialise
         dem_min = np.nanmin(dem_array)
-        if dem_min > self._camera._T[2]:
-            raise ValueError('The DEM is higher than the camera.')
-        # limit dem_max to camera height so that rays go forwards only
-        dem_max = min(np.nanmax(dem_array), self._camera._T[2, 0])
+        dem_max = np.nanmax(dem_array)
+        if self._camera.pos:
+            if dem_min > self._camera.pos[2]:
+                raise ValueError('The DEM is higher than the camera.')
+            # limit dem_max to camera height so that rays go forwards only
+            dem_max = min(dem_max, self._camera.pos[2])
 
         # find ortho boundary at dem_min and dem_max
-        min_xyz = self._camera.pixel_to_world_z(src_ji, dem_min, distort=full_remap)
-        max_xyz = self._camera.pixel_to_world_z(src_ji, dem_max, distort=full_remap)
+        min_xyz = self._camera.pixel_to_world_z(src_ji, dem_min)
+        max_xyz = self._camera.pixel_to_world_z(src_ji, dem_max)
 
         # heuristic limit on ray length to conserve memory
         max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape, dtype='int64').sum()).astype('int')
@@ -376,9 +349,7 @@ class Ortho:
             ray_z = np.linspace(dem_max, dem_min, ray_steps)
             # TODO: for frame cameras, linspace rather than pixel_to_world_z can be used to form
             #  the ray
-            ray_xyz = self._camera.pixel_to_world_z(
-                src_pt.reshape(-1, 1), ray_z, distort=full_remap
-            )
+            ray_xyz = self._camera.pixel_to_world_z(src_pt.reshape(-1, 1), ray_z)
 
             # find the dem z values corresponding to the ray (dem_z will be nan outside the dem
             # bounds and for already masked / nan dem pixels)
@@ -515,7 +486,6 @@ class Ortho:
         init_xgrid: np.ndarray,
         init_ygrid: np.ndarray,
         interp: Interp,
-        full_remap: bool,
         write_mask: bool,
     ) -> None:
         """Thread safe method to map the source image to an ortho tile.  Returns the tile array
@@ -539,62 +509,21 @@ class Ortho:
             tile_win.col_off : (tile_win.col_off + tile_win.width),
         ]
 
-        # find the source (j, i) pixel coords corresponding to ortho image (x, y, z) world coords
-        # fmt: off
-        tile_ji = self._camera.world_to_pixel(
-            np.array([tile_xgrid.reshape(-1,), tile_ygrid.reshape(-1,), tile_zgrid.reshape(-1,)]),
-            distort=full_remap,
+        # find mask dilation kernel size for remove blurring with nodata (when needed)
+        src_res = np.array((self._gsd, self._gsd))
+        ortho_res = np.abs((tile_transform.a, tile_transform.e))
+        kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
+
+        # remap source, or undistorted source, to ortho band(s)
+        tile_array, tile_mask = self._camera.remap(
+            src_array,
+            tile_xgrid,
+            tile_ygrid,
+            tile_zgrid,
+            nodata=dtype_nodata,
+            interp=interp,
+            kernel_size=kernel_size,
         )
-        # fmt: on
-
-        # separate tile_ji into (j, i) grids, converting to float32 for compatibility with
-        # cv2.remap (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
-        # on some packages/platforms see
-        # https://answers.opencv.org/question/1057/behavior-of-not-a-number-nan-values-in-remap/)
-        tile_ji[np.isnan(tile_ji)] = -1
-        tile_jgrid = tile_ji[0].reshape(tile_win.height, tile_win.width).astype('float32')
-        tile_igrid = tile_ji[1].reshape(tile_win.height, tile_win.width).astype('float32')
-        # tile_jgrid, tile_igrid = cv2.convertMaps(tile_jgrid, tile_igrid, cv2.CV_16SC2)
-
-        # initialise ortho tile array
-        tile_array = np.full(
-            (src_array.shape[0], tile_win.height, tile_win.width),
-            dtype=ortho_im.profile['dtype'],
-            fill_value=dtype_nodata,
-        )
-
-        # remap source image to ortho tile, looping over band(s) (cv2.remap execution time
-        # depends on array ordering)
-        # TODO: test speed if src and tile are in cv ordering and this done all bands at once
-        for oi in range(0, src_array.shape[0]):
-            cv2.remap(
-                src_array[oi],
-                tile_jgrid,
-                tile_igrid,
-                interp.to_cv(),
-                dst=tile_array[oi],
-                borderMode=cv2.BORDER_TRANSPARENT,
-            )
-
-        # mask of invalid ortho pixels
-        # TODO: it would be better to use the dem (tile_zgrid) mask to avoid masking valid pixels
-        #  == nodata, but this mask would then need to be exact which currently it is not
-        tile_mask = np.all(utils.nan_equals(tile_array, dtype_nodata), axis=0)
-
-        # remove cv2.remap blurring with undistort nodata when full_remap=False...
-        if (
-            not full_remap
-            and interp != Interp.nearest
-            and not np.isnan(dtype_nodata)
-            and self._camera.undistort_maps is not None
-        ):
-            src_res = np.array((self._gsd, self._gsd))
-            ortho_res = np.abs((tile_transform.a, tile_transform.e))
-            kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
-            kernel = np.ones(kernel_size[::-1], np.uint8)
-            tile_mask = cv2.dilate(tile_mask.astype(np.uint8, copy=False), kernel)
-            tile_mask = tile_mask.astype(bool, copy=False)
-            tile_array[:, tile_mask] = dtype_nodata
 
         # write tile_array to the ortho image
         with self._write_lock:
@@ -603,37 +532,6 @@ class Ortho:
             if write_mask and (indexes == [1] or len(indexes) == ortho_im.count):
                 ortho_im.write_mask(~tile_mask, window=tile_win)
 
-    def _undistort(
-        self, image: np.ndarray, nodata: float | int, interp: str | Interp
-    ) -> np.ndarray:
-        """Undistort an image using ``interp`` interpolation and setting invalid pixels to
-        ``nodata``.
-        """
-        if self._camera.undistort_maps is None:
-            return image
-
-        def undistort_band(src_array: np.ndarray, dst_array: np.ndarray):
-            """Undistort a 2D band array."""
-            # equivalent without stored _undistort_maps:
-            # return cv2.undistort(band_array, self._K, self._dist_param)
-            cv2.remap(
-                src_array,
-                *self._camera.undistort_maps,
-                Interp[interp].to_cv(),
-                dst=dst_array,
-                borderMode=cv2.BORDER_TRANSPARENT,
-            )
-
-        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
-        if image.ndim > 2:
-            # undistort by band so that output data stays in the rasterio ordering
-            for bi in range(image.shape[0]):
-                undistort_band(image[bi], out_image[bi])
-        else:
-            undistort_band(image, out_image)
-
-        return out_image
-
     def _remap(
         self,
         src_im: rio.DatasetReader,
@@ -641,7 +539,6 @@ class Ortho:
         dem_array: np.ndarray,
         interp: Interp,
         per_band: bool,
-        full_remap: bool,
         write_mask: bool,
         progress: bool | std_tqdm,
     ) -> None:
@@ -676,15 +573,16 @@ class Ortho:
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:
-                # read source image band(s) (ortho dtype is required for cv2.remap() to set
-                # invalid ortho areas to ortho nodata value)
-                src_array = src_im.read(indexes, out_dtype=ortho_im.profile['dtype'])
-
-                if not full_remap:
-                    # undistort the source image so the distortion model can be excluded from
-                    # self._camera.world_to_pixel() in self._remap_tile()
-                    dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
-                    src_array = self._undistort(src_array, nodata=dtype_nodata, interp=interp)
+                # read source, and optionally undistort, image band(s) (ortho dtype is
+                # required for cv2.remap() to set invalid ortho areas to ortho nodata value)
+                dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
+                src_array = self._camera.read(
+                    src_im,
+                    indexes=indexes,
+                    dtype=ortho_im.profile['dtype'],
+                    nodata=dtype_nodata,
+                    interp=interp,
+                )
 
                 # remap ortho tiles concurrently (tiles are written as they are completed in a
                 # possibly non-sequential order, this saves queueing up completed tiles in
@@ -700,7 +598,6 @@ class Ortho:
                         init_xgrid,
                         init_ygrid,
                         interp,
-                        full_remap,
                         write_mask,
                     )
                     for tile_win in tile_wins
@@ -717,7 +614,6 @@ class Ortho:
         interp: str | Interp = _default_config['interp'],
         dem_interp: str | Interp = _default_config['dem_interp'],
         per_band: bool = _default_config['per_band'],
-        full_remap: bool = _default_config['full_remap'],
         write_mask: bool | None = _default_config['write_mask'],
         dtype: str = _default_config['dtype'],
         compress: str | Compress | None = _default_config['compress'],
@@ -815,9 +711,7 @@ class Ortho:
             # TODO: don't mask dem if pinhole camera, or make dem masking an option which
             #  defaults to not masking with pinhole camera.  note though that dem masking is
             #  like occlusion masking for image edges, which still applies to pinhole camera.
-            dem_array, dem_transform = self._mask_dem(
-                dem_array, dem_transform, dem_interp, full_remap=full_remap
-            )
+            dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & set write_mask
             ortho_profile, write_mask = self._create_ortho_profile(
@@ -841,7 +735,6 @@ class Ortho:
                 dem_array,
                 interp=Interp(interp),
                 per_band=per_band,
-                full_remap=full_remap,
                 write_mask=write_mask,
                 progress=progress,
             )
