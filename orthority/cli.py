@@ -36,7 +36,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm.std import tqdm
 
 from orthority import param_io, root_path, utils
-from orthority.camera import create_camera
+from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp
 from orthority.errors import CrsMissingError, ParamFileError
 from orthority.ortho import Ortho
@@ -319,6 +319,7 @@ def _ortho(
     export_params: bool,
     out_dir: OpenFile,
     overwrite: bool,
+    full_remap: bool,  # TODO: to be removed and passed in calling sub-command
     **kwargs,
 ):
     """
@@ -398,7 +399,7 @@ def _ortho(
 
                 # create camera on first use and update exterior parameters
                 if cam_id not in cameras:
-                    cameras[cam_id] = create_camera(**int_param, alpha=alpha)
+                    cameras[cam_id] = create_camera(**int_param, alpha=alpha, distort=full_remap)
                 cameras[cam_id].update(**ext_param)
 
                 # open & validate src_file (open it once here so it is not opened repeatedly)
@@ -538,7 +539,7 @@ full_remap_option = click.option(
     '-fr/-nfr',
     '--full-remap/--no-full-remap',
     type=click.BOOL,
-    default=Ortho._default_config['full_remap'],
+    default=FrameCamera._default_distort,
     show_default=True,
     help='Orthorectify the source image with full camera model (``--full-remap``), '
     'or an undistorted source image with pinhole camera model (``--no-full-remap``).  '
@@ -1021,6 +1022,7 @@ def _simple_ortho(
                     f"'cubic_spline' interpolation is deprecated, using '{key}'='cubic'."
                 )
                 ortho_config[key] = 'cubic'
+        distort = ortho_config.pop('full_remap', True)
 
         # prepare camera config
         camera = None
@@ -1063,7 +1065,9 @@ def _simple_ortho(
 
                 if not camera:
                     # create a new camera
-                    camera = create_camera(camera_type, **camera_config, xyz=xyz, opk=opk)
+                    camera = create_camera(
+                        camera_type, **camera_config, xyz=xyz, opk=opk, distort=distort
+                    )
                 else:
                     # update existing camera
                     camera.update(xyz, opk)
