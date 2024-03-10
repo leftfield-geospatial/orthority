@@ -29,7 +29,14 @@ from click.testing import CliRunner
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import transform_bounds
 
-from orthority.camera import BrownCamera, Camera, FisheyeCamera, OpenCVCamera, PinholeCamera
+from orthority.camera import (
+    BrownCamera,
+    Camera,
+    FisheyeCamera,
+    FrameCamera,
+    OpenCVCamera,
+    PinholeCamera,
+)
 from orthority.enums import CameraType
 from orthority.ortho import Ortho
 
@@ -72,13 +79,13 @@ def ortho_bounds(
     size = camera._im_size
     ji = np.array([[0, 0], [0, size[1]], [*size], [size[0], 0]]).T
     xyz = camera.pixel_to_world_z(ji, dem_min)
-    if include_camera:
-        xyz = np.column_stack((xyz, camera._T))
+    if include_camera and camera.pos:
+        xyz = np.column_stack((xyz, camera.pos))
     return *xyz[:2].min(axis=1), *xyz[:2].max(axis=1)
 
 
 def create_dem(
-    camera: Camera,
+    camera: FrameCamera,
     camera_crs: str,
     dem_crs: str = None,
     resolution: tuple = _dem_resolution,
@@ -94,8 +101,8 @@ def create_dem(
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / resolution).astype('int')
     array = np.stack(
         (
-            sinusoidal(size[::-1]) * 50 + camera._T[2] - 200,
-            np.ones(size[::-1]) * (50 / 2) + camera._T[2] - 200,
+            sinusoidal(size[::-1]) * 50 + camera.pos[2] - 200,
+            np.ones(size[::-1]) * (50 / 2) + camera.pos[2] - 200,
         ),
         axis=0,
     ).astype(dtype)
@@ -126,7 +133,7 @@ def create_src(
     size: tuple,
     dtype: str = 'uint8',
     count: int = 3,
-    camera: Camera = None,
+    camera: FrameCamera = None,
     crs: str = None,
 ):
     """Create a source checkerboard file with optional CRS where ``camera`` & ``crs`` are
@@ -139,7 +146,7 @@ def create_src(
     if camera is not None:
         # find bounds & transform
         size = camera._im_size
-        bounds = ortho_bounds(camera, dem_min=camera._T[2] - 100)
+        bounds = ortho_bounds(camera, dem_min=camera.pos[2] - 100)
         transform = from_bounds(*bounds, *size)
         profile.update(crs=crs, transform=transform)
 
@@ -222,7 +229,7 @@ def cxy() -> tuple[float, float]:
 
 @pytest.fixture(scope='session')
 def interior_args(focal_len, im_size, sensor_size, cxy) -> dict:
-    """A dictionary of interior parameters for ``Camera.__init__()``."""
+    """A dictionary of interior parameters for ``FrameCamera.__init__()``."""
     return dict(
         im_size=im_size,
         focal_len=focal_len / sensor_size[0],
@@ -234,13 +241,15 @@ def interior_args(focal_len, im_size, sensor_size, cxy) -> dict:
 
 @pytest.fixture(scope='session')
 def exterior_args(xyz: tuple, opk: tuple) -> dict:
-    """A dictionary of exterior parameters for ``Camera.__init__()`` / ``Camera.update()``."""
+    """A dictionary of exterior parameters for ``FrameCamera.__init__()`` /
+    ``FrameCamera.update()``.
+    """
     return dict(xyz=xyz, opk=opk)
 
 
 @pytest.fixture(scope='session')
-def camera_args(interior_args: dict, exterior_args: dict) -> dict:
-    """A dictionary of interior and exterior parameters for ``Camera.__init__()``."""
+def frame_args(interior_args: dict, exterior_args: dict) -> dict:
+    """A dictionary of interior and exterior parameters for ``FrameCamera.__init__()``."""
     return dict(**interior_args, **exterior_args)
 
 
@@ -263,27 +272,51 @@ def fisheye_dist_param() -> dict:
 
 
 @pytest.fixture(scope='session')
-def pinhole_camera(camera_args: dict) -> Camera:
+def pinhole_camera(frame_args: dict) -> FrameCamera:
     """Example ``PinholeCamera`` object with near-nadir orientation."""
-    return PinholeCamera(**camera_args)
+    return PinholeCamera(**frame_args)
 
 
 @pytest.fixture(scope='session')
-def brown_camera(camera_args: dict, brown_dist_param: dict) -> Camera:
+def pinhole_camera_und(frame_args: dict) -> FrameCamera:
+    """Example ``PinholeCamera`` object with near-nadir orientation and ``distort=False``."""
+    return PinholeCamera(**frame_args, distort=False)
+
+
+@pytest.fixture(scope='session')
+def brown_camera(frame_args: dict, brown_dist_param: dict) -> FrameCamera:
     """Example ``BrownCamera`` object with near-nadir orientation."""
-    return BrownCamera(**camera_args, **brown_dist_param)
+    return BrownCamera(**frame_args, **brown_dist_param)
 
 
 @pytest.fixture(scope='session')
-def opencv_camera(camera_args: dict, opencv_dist_param: dict) -> Camera:
+def brown_camera_und(frame_args: dict, brown_dist_param: dict) -> FrameCamera:
+    """Example ``BrownCamera`` object with near-nadir orientation and ``distort=False``."""
+    return BrownCamera(**frame_args, **brown_dist_param, distort=False)
+
+
+@pytest.fixture(scope='session')
+def opencv_camera(frame_args: dict, opencv_dist_param: dict) -> FrameCamera:
     """Example ``OpenCVCamera`` object with near-nadir orientation."""
-    return OpenCVCamera(**camera_args, **opencv_dist_param)
+    return OpenCVCamera(**frame_args, **opencv_dist_param)
 
 
 @pytest.fixture(scope='session')
-def fisheye_camera(camera_args: dict, fisheye_dist_param: dict) -> Camera:
+def opencv_camera_und(frame_args: dict, opencv_dist_param: dict) -> FrameCamera:
+    """Example ``OpenCVCamera`` object with near-nadir orientation and ``distort=False``."""
+    return OpenCVCamera(**frame_args, **opencv_dist_param, distort=False)
+
+
+@pytest.fixture(scope='session')
+def fisheye_camera(frame_args: dict, fisheye_dist_param: dict) -> FrameCamera:
     """Example ``FisheyeCamera`` object with near-nadir orientation."""
-    return FisheyeCamera(**camera_args, **fisheye_dist_param)
+    return FisheyeCamera(**frame_args, **fisheye_dist_param)
+
+
+@pytest.fixture(scope='session')
+def fisheye_camera_und(frame_args: dict, fisheye_dist_param: dict) -> FrameCamera:
+    """Example ``FisheyeCamera`` object with near-nadir orientation and ``distort=False``."""
+    return FisheyeCamera(**frame_args, **fisheye_dist_param, distort=False)
 
 
 @pytest.fixture(scope='session')
@@ -516,7 +549,10 @@ def float_utm34n_partial_dem_file(
 
 @pytest.fixture(scope='session')
 def rgb_pinhole_utm34n_ortho(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_camera: FrameCamera,
+    utm34n_crs: str,
 ) -> Ortho:
     """An Ortho object initialised with RGB byte source image, float DEM in UTM zone 34N (no
     vertical CRS), pinhole camera, and UTM zone 34N CRS (no vertical CRS).
