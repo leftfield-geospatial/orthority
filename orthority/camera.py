@@ -18,24 +18,315 @@ from __future__ import annotations
 
 import logging
 import warnings
+from abc import ABC, abstractmethod
+from os import PathLike
+from typing import Sequence
 
 import cv2
 import numpy as np
+import rasterio as rio
+from fsspec.core import OpenFile
+from rasterio.crs import CRS
+from rasterio.transform import GCPTransformer, GroundControlPoint, RPC, RPCTransformer
+from rasterio.warp import transform
 
-from orthority.enums import CameraType
+from orthority import utils
+from orthority.enums import CameraType, Interp
 from orthority.errors import CameraInitError, OrthorityWarning
 from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
 
 
-class Camera:
+class Camera(ABC):
+    """Base camera class."""
+
+    _valid_dtypes = ['uint8', 'uint16', 'int16', 'float32', 'float64']
+
+    @abstractmethod
+    def __init__(
+        self,
+        **kwargs,
+    ):
+        self._pos = None
+        self._im_size = None
+
+    @property
+    def im_size(self) -> tuple[int, int]:
+        """Image (width, height) in pixels."""
+        return self._im_size
+
+    @property
+    def pos(self) -> tuple[float, float, float] | None:
+        """Camera (x, y, z) position in units of the world / ortho CRS."""
+        return self._pos
+
+    @staticmethod
+    def _validate_world_coords(xyz: np.ndarray) -> None:
+        """Utility function to validate world coordinate dimensions."""
+        if not (xyz.ndim == 2 and xyz.shape[0] == 3):
+            raise ValueError(f"'xyz' should be a 3xN 2D array.")
+        if xyz.dtype != np.float64:
+            raise ValueError(f"'xyz' should have float64 data type.")
+
+    @staticmethod
+    def _validate_pixel_coords(ji: np.ndarray) -> None:
+        """Utility function to validate pixel coordinate dimensions."""
+        if not (ji.ndim == 2 and ji.shape[0] == 2):
+            raise ValueError(f"'ji' should be a 2xN 2D array.")
+
+    @staticmethod
+    def _validate_image(image: np.ndarray) -> None:
+        """Utility function to validate an image dtype and dimensions for remapping."""
+        if str(image.dtype) not in Camera._valid_dtypes:
+            raise ValueError(f"'image' data type '{image.dtype}' not supported.")
+        if not image.ndim == 3:
+            raise ValueError("'image' should have 3 dimensions.")
+
+    @staticmethod
+    def _get_dtype_nodata(dtype: str) -> float | int:
+        """Return a sensible nodata value for the given ``dtype``."""
+        return np.nan if np.issubdtype(dtype, np.floating) else np.iinfo(dtype).min
+
+    @abstractmethod
+    def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
+        """
+        Transform from 3D world to 2D pixel coordinates.
+
+        :param xyz:
+            3D world (x, y, z) coordinates to transform, as a 3-by-N array, with (x, y, z) along
+            the first dimension.
+
+        :return:
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
+            dimension.
+        """
+
+    @abstractmethod
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
+        """
+        Transform from 2D pixel to 3D world coordinates at a specified z.
+
+        Allows broadcasting of the pixel coordinate(s) and z value(s) i.e. can transform multiple
+        pixel coordinates to a single z value, or a single pixel coordinate to multiple z values.
+
+        :param ji:
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
+            dimension.
+        :param z:
+            Z values(s) to project to as a 1-by-N array.
+
+        :return:
+            3D world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the first
+            dimension.
+        """
+
+    def boundary(self, num_pts: int = None) -> np.ndarray:
+        """
+        A rectangle of 2D pixel coordinates along the image boundary.
+
+        :param num_pts:
+            Number of boundary points to include in the rectangle.  If set to None (the default),
+            eight points are included, with points at the image corners and mid-points of the sides.
+
+        :return:
+            Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
+            first dimension.
+        """
+
+        def _boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
+            """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
+            for the given image size ``im_size``.
+            """
+            br = im_size - 1
+            perim = 2 * br.sum()
+            cnr_ji = np.array([[0, 0], [br[0], 0], br, [0, br[1]], [0, 0]])
+            dist = np.sum(np.abs(np.diff(cnr_ji, axis=0)), axis=1)
+            return np.row_stack(
+                [
+                    np.linspace(
+                        cnr_ji[i],
+                        cnr_ji[i + 1],
+                        np.round(num_pts * dist[i] / perim).astype('int'),
+                        endpoint=False,
+                    )
+                    for i in range(0, 4)
+                ]
+            ).T
+
+        im_size = np.array(self._im_size)
+        if not num_pts:
+            w, h = im_size - 1
+            ji = np.array(
+                [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
+            ).T
+        else:
+            ji = _boundary(im_size, num_pts=num_pts)
+
+        return ji
+
+    def read(
+        self,
+        im_file: str | PathLike | OpenFile | rio.DatasetReader,
+        indexes: Sequence[int] | int = None,
+        dtype: str = None,
+        **kwargs,
+    ) -> np.ndarray:
+        """
+        Read image band(s) from a given file.  Sub-classes may add a processing
+
+        :param im_file:
+            Image file to read from.
+        :param indexes:
+            Band index(es) to read (1 based).
+        :param dtype:
+            Data type of the returned array.  If set to None (the default), the ``im_file``
+            dtype is used.
+        :param kwargs:
+            Not used.
+
+        :return:
+            Image as 3D array with band(s) along the first dimension (Rasterio ordering).
+        """
+        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
+        with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
+            dtype = dtype or im.dtypes[0]
+            return im.read(indexes, out_dtype=dtype)
+
+    def remap(
+        self,
+        im_array: np.ndarray,
+        x: np.ndarray,
+        y: np.ndarray,
+        z: np.ndarray,
+        nodata: float | int = None,
+        interp: str | Interp = Interp.cubic,
+        **kwargs,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Remap image to ortho image at given world / ortho coordinates.
+
+        :param im_array:
+            Image to remap as a 3D array with band(s) along the first dimension (Rasterio
+            ordering).  Typically, this should be the image returned by :meth:`Camera.read`.
+        :param x:
+            X world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param y:
+            Y world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param z:
+            Z world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param nodata:
+            Value to use for masking invalid pixels in the remapped image.  If set to None
+            (the default), a value based on the ``image`` data type is chosen automatically.
+        :param interp:
+            Interpolation method to use for remapping.
+        :param kwargs:
+            Not used.
+
+        :return:
+            - Remapped image, as a 3D array with band(s) along the first dimension (Rasterio
+              ordering).
+            - Nodata mask of the remapped image, as a 2D boolean array.
+        """
+        # TODO: is there a neater or more efficient way to package x, y & z?
+        self._validate_image(im_array)
+        if not (x.shape == y.shape == z.shape) or (x.ndim != 2):
+            raise ValueError("'x', 'y' and 'z' should have 2 dimensions, and the same shape.")
+        if nodata is None:
+            nodata = self._get_dtype_nodata(im_array.dtype)
+
+        # find (j, i) image pixel coords corresponding to (x, y, z) world coords
+        ji = self.world_to_pixel(np.row_stack((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
+
+        # separate ji into (j, i) grids, converting to float32 for compatibility with
+        # cv2.remap (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
+        # on some packages/platforms see
+        # https://answers.opencv.org/question/1057/behavior-of-not-a-number-nan-values-in-remap/)
+        ji[np.isnan(ji)] = -1
+        j = ji[0].reshape(*x.shape).astype('float32')
+        i = ji[1].reshape(*x.shape).astype('float32')
+        # j, i = cv2.convertMaps(j, i, cv2.CV_16SC2)
+
+        # initialise ortho / remapped array
+        remap_array = np.full(
+            (im_array.shape[0], *x.shape), dtype=im_array.dtype, fill_value=nodata
+        )
+
+        # remap image to ortho, looping over band(s) (cv2.remap execution time depends on array
+        # ordering)
+        # TODO: test speed if src and tile are in cv ordering and this done all bands at once
+        for oi in range(0, im_array.shape[0]):
+            cv2.remap(
+                im_array[oi],
+                j,
+                i,
+                Interp[interp].to_cv(),
+                dst=remap_array[oi],
+                borderMode=cv2.BORDER_TRANSPARENT,
+            )
+
+        # find nodata mask
+        remap_mask = np.all(utils.nan_equals(remap_array, nodata), axis=0)
+        return remap_array, remap_mask
+
+
+class RpcCamera(Camera):
+    def __init__(self, rpc: RPC | dict, rpc_options: dict | None = None, crs: str | CRS = None):
+        super().__init__()
+        self._rpc_crs = CRS.from_epsg(4979)
+        self._crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+        self._transformer = RPCTransformer(rpc, **rpc_options)
+
+    @property
+    def crs(self) -> CRS | None:
+        return self._crs or self._rpc_crs
+
+    def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
+        self._validate_world_coords(xyz)
+        if self._crs:
+            xyz = transform(self._crs, self._rpc_crs, [xyz[0]], [xyz[1]], [xyz[2]])
+        return np.array(self._transformer.rowcol(*xyz))
+
+    @abstractmethod
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
+        self._validate_pixel_coords(ji)
+        # TODO: sort out pixel offset here and in world_to_pixel
+        xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
+        xyz = np.row_stack([xy, z * np.ones(xy.shape[1])])
+        if self._crs:
+            xyz = np.array(transform(self._rpc_crs, self._crs, *xyz))
+        return xyz
+
+
+class GcpCamera(Camera):
+    def __init__(
+        self,
+        gcps: Sequence[GroundControlPoint, dict],
+    ):
+        super().__init__()
+        gcps = [GroundControlPoint(gcp) if isinstance(gcp, dict) else gcp for gcp in gcps]
+        self._transformer = GCPTransformer(gcps)
+
+    def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
+        self._validate_world_coords(xyz)
+        return np.array(self._transformer.rowcol(*xyz))
+
+    @abstractmethod
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
+        self._validate_pixel_coords(ji)
+        # TODO: sort out pixel offset here and in world_to_pixel
+        xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
+        xyz = np.row_stack([xy, z * np.ones(xy.shape[1])])
+        return xyz
+
+
+class FrameCamera(Camera):
     # TODO: make principal point offsets a x,y tuple
     """
     Pinhole camera with no distortion.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
     :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
@@ -56,29 +347,73 @@ class Camera:
     :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
+    :param distort:
+        Not used for the pinhole camera model.
     :param alpha:
         Not used for the pinhole camera model.
     """
 
     _default_alpha: float = 1.0
+    _default_distort: bool = True
 
     # TODO: make externally used params properties or public methods
     def __init__(
         self,
-        im_size: tuple[int, int],
+        im_size: tuple[int, int],  # TODO: remove
         focal_len: float | tuple[float, float],
         sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
         cy: float = 0.0,
         xyz: tuple[float, float, float] | None = None,
         opk: tuple[float, float, float] | None = None,
+        distort: bool = _default_distort,
         alpha: float = _default_alpha,
     ) -> None:
+        super().__init__()
         self._im_size = (int(im_size[0]), int(im_size[1]))
-        self._K = self._get_intrinsic(im_size, focal_len, sensor_size, cx, cy)
+        self._K = self._get_intrinsic(self._im_size, focal_len, sensor_size, cx, cy)
         self._R, self._T = self._get_extrinsic(xyz, opk)
+        self._K_undistort, self._K_undistort_inv = self._K, np.linalg.inv(self._K)
+
         self._undistort_maps = None
-        self._K_undistort = self._K
+        self._distort = distort
+        self._alpha = alpha
+
+    @property
+    def pos(self) -> tuple[float, float, float] | None:
+        """Camera (x, y, z) position in units of the world / ortho CRS."""
+        return tuple(self._T.reshape(-1)) if self._T is not None else None
+
+    @property
+    def distort(self) -> bool:
+        """Include distortion in the camera model, and return the original (distorted) image from
+        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
+        undistorted image from :meth:`read` (False).
+        """
+        return self._distort
+
+    @distort.setter
+    def distort(self, value: bool) -> None:
+        if value:
+            self._undistort_maps = None
+        self._distort = value
+
+    @property
+    def alpha(self) -> float:
+        """Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        :attr:`~FrameCamera.distort` is False.  0 includes the largest portion of the source
+        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
+        the undistorted image. Affects scaling of the camera model intrinsic matrix.  No effect
+        when :attr:`~FrameCamera.distort` is True.
+        """
+        return self._alpha
+
+    @alpha.setter
+    def alpha(self, value: float) -> None:
+        if type(self) is not PinholeCamera and value != self._alpha:
+            self._K_undistort, self._K_undistort_inv = self._get_undistort_intrinsic(value)
+            self._undistort_maps = None
+        self._alpha = value
 
     @staticmethod
     def _get_intrinsic(
@@ -88,7 +423,7 @@ class Camera:
         cx: float,
         cy: float,
     ) -> np.ndarray:
-        """Return the intrinsic matrix for the given interior parameters."""
+        """Return the intrinsic matrix and its inverse, for the given interior parameters."""
         # Adapted from https://support.pix4d.com/hc/en-us/articles/202559089-How-are-the-Internal-and-External-Camera-Parameters-defined
         # and https://en.wikipedia.org/wiki/Camera_resectioning
         # TODO: incorporate orientation from exif
@@ -145,35 +480,14 @@ class Camera:
         R = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
         return R, T
 
-    @staticmethod
-    def _check_world_coordinates(xyz: np.ndarray) -> None:
-        """Utility function to check world coordinate dimensions."""
-        if not (xyz.ndim == 2 and xyz.shape[0] == 3):
-            raise ValueError(f"'xyz' should be a 3xN 2D array.")
-        if xyz.dtype != np.float64:
-            raise ValueError(f"'xyz' should have float64 data type.")
-
-    @staticmethod
-    def _check_pixel_coordinates(ji: np.ndarray) -> None:
-        """Utility function to check pixel coordinate dimensions."""
-        if not (ji.ndim == 2 and ji.shape[0] == 2):
-            raise ValueError(f"'ji' should be a 2xN 2D array.")
-
-    @property
-    def undistort_maps(self) -> tuple[np.ndarray, np.ndarray] | None:
-        """Undistort (x, y) maps for use in cv2.remap."""
-        if self._undistort_maps is None:
-            self._undistort_maps = self._get_undistort_maps()
-        return self._undistort_maps
-
-    def _check_init(self) -> None:
-        """Utility function to check if exterior parameters are initialised."""
+    def _test_init(self) -> None:
+        """Utility function to test if exterior parameters are initialised."""
         if self._R is None or self._T is None:
             raise CameraInitError(f'Exterior parameters not initialised.')
 
     def _horizon_fov(self) -> bool:
         """Whether this camera's field of view includes, or is above, the horizon."""
-        self._check_init()
+        self._test_init()
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
         src_ji = np.array(
@@ -185,10 +499,10 @@ class Camera:
         xyz_r = self._R.dot(xyz_)
         return np.any(xyz_r[2] >= 0)
 
-    def _get_undistort_intrinsic(self, alpha: float):
+    def _get_undistort_intrinsic(self, alpha: float) -> tuple[np.ndarray, np.ndarray]:
         """
-        Return a new camera intrinsic matrix for an undistorted image that is the same size as the
-        source image.
+        Return a new camera intrinsic matrix, and its inverse, for an undistorted image that is
+        the same size as the source image.
 
         ``alpha`` (0-1) controls the portion of the source included in the distorted image. 0
         includes the largest portion of the source image that allows all undistorted pixels to be
@@ -230,7 +544,7 @@ class Camera:
         K_undistort = np.eye(3)
         K_undistort[[0, 1], [0, 1]] = f
         K_undistort[:2, 2] = c
-        return K_undistort
+        return K_undistort, np.linalg.inv(K_undistort)
 
     def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray] | None:
         """Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted
@@ -246,8 +560,42 @@ class Camera:
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """Transform 2D pixel to homogenous 3D camera coordinates."""
         ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
-        xyz_ = np.linalg.inv(self._K_undistort).dot(ji_)
+        xyz_ = self._K_undistort_inv.dot(ji_)
         return xyz_
+
+    def _undistort_im(
+        self, image: np.ndarray, nodata: float | int, interp: str | Interp
+    ) -> np.ndarray:
+        """Undistort an image using ``interp`` interpolation and setting invalid pixels to
+        ``nodata``.
+        """
+        self._validate_image(image)
+
+        # find undistort maps once on first use
+        self._undistort_maps = self._undistort_maps or self._get_undistort_maps()
+
+        if self._undistort_maps is None:
+            return image
+
+        def undistort_band(src_array: np.ndarray, dst_array: np.ndarray):
+            """Undistort a 2D band array."""
+            # equivalent without stored _undistort_maps:
+            # return cv2.undistort(band_array, self._K, self._dist_param)
+            cv2.remap(
+                src_array,
+                *self._undistort_maps,
+                Interp[interp].to_cv(),
+                dst=dst_array,
+                borderMode=cv2.BORDER_TRANSPARENT,
+            )
+
+        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
+        # TODO: see if using cv ordering throughout (read, undistort, remap) speeds things
+        #  up, and or undistort bands concurrently in thread pool
+        for bi in range(image.shape[0]):
+            undistort_band(image[bi], out_image[bi])
+
+        return out_image
 
     def update(
         self,
@@ -265,34 +613,34 @@ class Camera:
         """
         self._R, self._T = self._get_extrinsic(xyz, opk)
 
-    def world_to_pixel(self, xyz: np.ndarray, distort: bool = True) -> np.ndarray:
+    def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         """
         Transform from 3D world to 2D pixel coordinates.
 
         :param xyz:
             3D world (x, y, z) coordinates to transform, as a 3-by-N array, with (x, y, z) along
             the first dimension.
-        :param distort:
-            Whether to include the distortion model.
 
         :return:
             Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
             dimension.
         """
-        self._check_init()
-        self._check_world_coordinates(xyz)
+        self._test_init()
+        self._validate_world_coords(xyz)
 
         # transform from world to camera coordinates & scale to origin
         xyz_ = self._R.T.dot(xyz - self._T)
         xyz_ = xyz_ / xyz_[2]
         # transform from camera to pixel coordinates, including the distortion model if
         # distort==True
-        ji = self._camera_to_pixel(xyz_) if distort else Camera._camera_to_pixel(self, xyz_)
+        ji = (
+            self._camera_to_pixel(xyz_)
+            if self._distort
+            else FrameCamera._camera_to_pixel(self, xyz_)
+        )
         return ji
 
-    def pixel_to_world_z(
-        self, ji: np.ndarray, z: float | np.ndarray, distort: bool = True
-    ) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
         """
         Transform from 2D pixel to 3D world coordinates at a specified z.
 
@@ -304,8 +652,6 @@ class Camera:
             dimension.
         :param z:
             Z values(s) to project to as a 1-by-N array.
-        :param distort:
-            Whether to include the distortion model.
 
         :return:
             3D world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the first
@@ -313,8 +659,8 @@ class Camera:
         """
         # TODO: consider only returning (x, y).  the z dimension is redundant, and it is used this
         #  way in most (all?) places.
-        self._check_init()
-        self._check_pixel_coordinates(ji)
+        self._test_init()
+        self._validate_pixel_coords(ji)
 
         if isinstance(z, np.ndarray) and (
             z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1])
@@ -324,14 +670,16 @@ class Camera:
             )
 
         # transform pixel coordinates to camera coordinates
-        xyz_ = self._pixel_to_camera(ji) if distort else Camera._pixel_to_camera(self, ji)
+        xyz_ = (
+            self._pixel_to_camera(ji) if self._distort else FrameCamera._pixel_to_camera(self, ji)
+        )
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         xyz_r = self._R.dot(xyz_)
         # scale to z (offset for camera z) with origin on camera, then offset to world
         xyz = (xyz_r * (z - self._T[2]) / xyz_r[2]) + self._T
         return xyz
 
-    def undistort(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
+    def undistort_pixel(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
         """
         Undistort pixel coordinates.
 
@@ -345,21 +693,139 @@ class Camera:
             Undistorted pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along
             the first dimension.
         """
-        self._check_pixel_coordinates(ji)
+        self._validate_pixel_coords(ji)
 
         xyz_ = self._pixel_to_camera(ji)
-        ji = Camera._camera_to_pixel(self, xyz_)
+        ji = FrameCamera._camera_to_pixel(self, xyz_)
 
         if clip:
             ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
         return ji
 
+    def boundary(self, num_pts: int = None) -> np.ndarray:
+        """
+        A polygon of 2D pixel coordinates along the image boundary.  If
+        :attr:`~FrameCamera.distort` is False, coordinates will be along the boundary of the
+        valid area in the undistorted image returned by :meth:`~FrameCamera.read`.
 
-class PinholeCamera(Camera):
-    __doc__ = Camera.__doc__
+        :param num_pts:
+            Number of boundary points to include in the polygon.  If set to None (the default),
+            eight points are included, with points at the image corners and mid-points of the sides.
+
+        :return:
+            Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
+            first dimension.
+        """
+        ji = super().boundary(num_pts=num_pts)
+
+        if not self._distort:
+            ji = self.undistort_pixel(ji, clip=True)
+            # TODO: decide whether we need undistort_pixel, just do it inline below
+            # # undistort ji and clip to image bounds
+            # xyz_ = self._pixel_to_camera(ji)
+            # ji = FrameCamera._camera_to_pixel(self, xyz_)
+            # ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
+        return ji
+
+    def read(
+        self,
+        im_file: str | PathLike | OpenFile | rio.DatasetReader,
+        indexes: Sequence[int] = None,
+        dtype: str = None,
+        nodata: float | int = None,
+        interp: str | Interp = Interp.cubic,
+    ) -> np.ndarray:
+        """
+        Read image band(s) from a given file, undistorting when :attr:`~FrameCamera.distort` is
+        False.
+
+        :param im_file:
+            Image file to read from.
+        :param indexes:
+            Band index(es) to read (1 based).
+        :param dtype:
+            Data type of the returned array.  If set to None (the default), the ``im_file``
+            dtype is used.
+        :param nodata:
+            Value to use for masking invalid pixels in the undistorted image.  If set to None
+            (the default), a value based on ``dtype`` is chosen automatically.  Not used if
+            :attr:`~FrameCamera.distort` is True.
+        :param interp:
+            Interpolation method to use when undistorting the image.  Not used if
+            :attr:`~FrameCamera.distort` is True.
+
+        :return:
+            Image as 3D array with band(s) along the first dimension (Rasterio ordering).
+        """
+        image = super().read(im_file, indexes=indexes, dtype=dtype)
+
+        if not self._distort:
+            if nodata is None:
+                nodata = self._get_dtype_nodata(image.dtype)
+            image = self._undistort_im(image, nodata=nodata, interp=interp)
+        return image
+
+    def remap(
+        self,
+        image: np.ndarray,
+        x: np.ndarray,
+        y: np.ndarray,
+        z: np.ndarray,
+        nodata: float | int | None = None,
+        interp: str | Interp = Interp.cubic,
+        kernel_size: tuple[int, int] = (3, 3),
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Remap image to ortho image at given world / ortho coordinates.
+
+        :param image:
+            Image to remap as a 3D array with band(s) along the first dimension (Rasterio
+            ordering).  Typically, this should be the image returned by :meth:`FrameCamera.read`.
+        :param x:
+            X world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param y:
+            Y world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param z:
+            Z world / ortho coordinates to remap to, as a M-by-N 2D array.
+        :param nodata:
+            Value to use for masking invalid pixels in the remapped image.  If set to None
+            (the default), a value based on the ``image`` data type is chosen automatically.
+        :param interp:
+            Interpolation method to use for remapping.
+        :param kernel_size:
+            Kernel (width, height) size in pixels, used for dilating the nodata mask.  Removes
+            blurring of boundary pixels with nodata areas in an undistorted ``image``.  Not used
+            if blurring could not have occurred (e.g. if :attr:`~FrameCamera.distort` is True).
+
+        :return:
+            - Remapped image, as a 3D array with band(s) along the first dimension (Rasterio
+              ordering).
+            - Nodata mask of the remapped image, as a 2D boolean array.
+        """
+        remap, mask = super().remap(image, x, y, z, nodata=nodata, interp=interp)
+
+        # remove blurring with nodata pixels when necessary
+        if (
+            not self.distort
+            and Interp[interp] != Interp.nearest
+            and not np.isnan(nodata)
+            and not type(self) == PinholeCamera
+        ):
+            kernel = np.ones(kernel_size[::-1], np.uint8)
+            mask = cv2.dilate(mask.astype(np.uint8, copy=False), kernel)
+            mask = mask.astype(bool, copy=False)
+            if nodata is None:
+                nodata = self._get_dtype_nodata(image.dtype)
+            remap[:, mask] = nodata
+
+        return remap, mask
 
 
-class OpenCVCamera(Camera):
+# alias FrameCamera as PinholeCamera
+PinholeCamera = FrameCamera
+
+
+class OpenCVCamera(FrameCamera):
     """
     OpenCV camera model.
 
@@ -370,7 +836,7 @@ class OpenCVCamera(Camera):
     distortion coefficients are specified, this model corresponds to :class:`BrownCamera`.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
     :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
@@ -407,11 +873,17 @@ class OpenCVCamera(Camera):
     :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
+    :param distort:
+        Include distortion in the camera model, and return the original (distorted) image from
+        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
+        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
+        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
+        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
     :param alpha:
-        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
-        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
-        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
-        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
+        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        ``distort`` is False.  0 includes the largest portion of the source image that allows all
+        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
+        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
     """
 
     def __init__(
@@ -437,10 +909,10 @@ class OpenCVCamera(Camera):
         ty: float = 0.0,
         xyz: tuple[float, float, float] | None = None,
         opk: tuple[float, float, float] | None = None,
-        alpha: float = Camera._default_alpha,
+        distort: bool = FrameCamera._default_distort,
+        alpha: float = FrameCamera._default_alpha,
     ):
-        Camera.__init__(
-            self,
+        super().__init__(
             im_size,
             focal_len,
             sensor_size=sensor_size,
@@ -449,6 +921,7 @@ class OpenCVCamera(Camera):
             xyz=xyz,
             opk=opk,
             alpha=alpha,
+            distort=distort,
         )
 
         # order _dist_param & truncate zeros according to OpenCV docs
@@ -458,7 +931,7 @@ class OpenCVCamera(Camera):
             if np.all(self._dist_param[dist_len:] == 0.0):
                 self._dist_param = self._dist_param[:dist_len]
                 break
-        self._K_undistort = self._get_undistort_intrinsic(alpha)
+        self._K_undistort, self._K_undistort_inv = self._get_undistort_intrinsic(alpha)
 
     def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
@@ -491,7 +964,7 @@ class BrownCamera(OpenCVCamera):
     `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
     :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
@@ -518,11 +991,17 @@ class BrownCamera(OpenCVCamera):
     :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
+    :param distort:
+        Include distortion in the camera model, and return the original (distorted) image from
+        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
+        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
+        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
+        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
     :param alpha:
-        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
-        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
-        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
-        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
+        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        ``distort`` is False.  0 includes the largest portion of the source image that allows all
+        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
+        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
     """
 
     def __init__(
@@ -539,12 +1018,13 @@ class BrownCamera(OpenCVCamera):
         k3: float = 0.0,
         xyz: tuple[float, float, float] | None = None,
         opk: tuple[float, float, float] | None = None,
-        alpha: float = Camera._default_alpha,
+        distort: bool = FrameCamera._default_distort,
+        alpha: float = FrameCamera._default_alpha,
     ):
         # fmt: off
-        OpenCVCamera.__init__(
-            self, im_size, focal_len, sensor_size=sensor_size, k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
-            cx=cx, cy=cy, xyz=xyz, opk=opk, alpha=alpha,
+        super().__init__(
+            im_size, focal_len, sensor_size=sensor_size, k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
+            cx=cx, cy=cy, xyz=xyz, opk=opk, alpha=alpha, distort=distort
         )
         # fmt: on
         # overwrite possibly truncated _dist_param for use in _camera_to_pixel
@@ -571,7 +1051,7 @@ class BrownCamera(OpenCVCamera):
         return ji
 
 
-class FisheyeCamera(Camera):
+class FisheyeCamera(FrameCamera):
     """
     Fisheye camera model.
 
@@ -581,7 +1061,7 @@ class FisheyeCamera(Camera):
     parameters.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~Camera.update`, before calling :meth:`~Camera.world_to_pixel` or
+    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
     :meth:`~Camera.pixel_to_world_z`.
 
     :param im_size:
@@ -607,11 +1087,17 @@ class FisheyeCamera(Camera):
     :param opk:
         Camera (omega, phi, kappa) angles in radians to rotate from camera (PATB convention) to
         world coordinates.
+    :param distort:
+        Include distortion in the camera model, and return the original (distorted) image from
+        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
+        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
+        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
+        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
     :param alpha:
-        Scaling (0-1) of the undistorted image.  0 includes the largest portion of the source
-        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
-        the undistorted image.  Affects scaling of the undistort maps, and intrinsic matrix used in
-        :meth:`~Camera.world_to_pixel` and :meth:`~Camera.pixel_to_world_z` with ``distort=False``.
+        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        ``distort`` is False.  0 includes the largest portion of the source image that allows all
+        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
+        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
     """
 
     def __init__(
@@ -627,14 +1113,23 @@ class FisheyeCamera(Camera):
         k4: float = 0.0,
         xyz: tuple[float, float, float] | None = None,
         opk: tuple[float, float, float] | None = None,
-        alpha: float = Camera._default_alpha,
+        distort: bool = FrameCamera._default_distort,
+        alpha: float = FrameCamera._default_alpha,
     ):
-        Camera.__init__(
-            self, im_size, focal_len, sensor_size=sensor_size, cx=cx, cy=cy, xyz=xyz, opk=opk
+        super().__init__(
+            im_size,
+            focal_len,
+            sensor_size=sensor_size,
+            cx=cx,
+            cy=cy,
+            xyz=xyz,
+            opk=opk,
+            distort=distort,
+            alpha=alpha,
         )
 
         self._dist_param = np.array([k1, k2, k3, k4])
-        self._K_undistort = self._get_undistort_intrinsic(alpha)
+        self._K_undistort, self._K_undistort_inv = self._get_undistort_intrinsic(alpha)
 
     def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
@@ -680,7 +1175,7 @@ class FisheyeCamera(Camera):
         return xyz_
 
 
-def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera:
+def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera | FrameCamera:
     """
     Create a camera object given a camera type and parameters.
 
