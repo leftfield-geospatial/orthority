@@ -27,7 +27,12 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
-from rasterio.transform import GCPTransformer, GroundControlPoint, RPC, RPCTransformer
+from rasterio.transform import (
+    GCPTransformer,
+    GroundControlPoint,
+    RPC,
+    RPCTransformer,
+)
 from rasterio.warp import transform
 
 from orthority import utils
@@ -48,18 +53,12 @@ class Camera(ABC):
         self,
         **kwargs,
     ):
-        self._pos = None
         self._im_size = None
 
     @property
     def im_size(self) -> tuple[int, int]:
         """Image (width, height) in pixels."""
         return self._im_size
-
-    @property
-    def pos(self) -> tuple[float, float, float] | None:
-        """Camera (x, y, z) position in units of the world / ortho CRS."""
-        return self._pos
 
     @staticmethod
     def _validate_world_coords(xyz: np.ndarray) -> None:
@@ -87,6 +86,63 @@ class Camera(ABC):
     def _get_dtype_nodata(dtype: str) -> float | int:
         """Return a sensible nodata value for the given ``dtype``."""
         return np.nan if np.issubdtype(dtype, np.floating) else np.iinfo(dtype).min
+
+    def _pixel_to_world_surf(
+        self,
+        ji: np.ndarray,
+        z: float | np.ndarray,
+        transform: rio.Affine,
+        interp: str | Interp = Interp.cubic,
+        min_z: float = None,
+        max_z: float = None,
+    ) -> np.ndarray:
+        """Return the world coordinate intersections of rays defined by pixel coordinates ``ji``,
+        with the height array (DEM) ``z``.
+        """
+        # create a transform from world (x, y) to center (j, i) pixel coordinates
+        inv_transform = ~(transform * rio.Affine.translation(0.5, 0.5))
+
+        # find / initialise z surface minimum and maximum
+        min_z = min_z if min_z is not None else np.nanmin(z)
+        max_z = max_z if max_z is not None else np.nanmax(z)
+
+        # find world boundary at z_min and z_max
+        min_xyz = self.pixel_to_world_z(ji, min_z)
+        max_xyz = self.pixel_to_world_z(ji, max_z)
+
+        # heuristic limit on ray length to conserve memory
+        max_ray_steps = 2 * np.sqrt(np.square(z.shape, dtype='int64').sum()).astype('int')
+        xyz = np.zeros((3, ji.shape[1]))
+
+        # find z surface (x, y, z) world coordinate intersections for each (j, i) pixel
+        # coordinate in ji
+        for pi in range(0, ji.shape[1]):
+            src_pt, start_xyz, stop_xyz = ji[:, pi], max_xyz[:, pi], min_xyz[:, pi]
+
+            # create world points along the src_pt ray with (x, y) stepsize <= z resolution,
+            # if num points <= max_ray_steps, else max_ray_steps points
+            ray_steps = np.abs((stop_xyz - start_xyz)[:2].squeeze() / (transform[0], transform[4]))
+            ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
+            ray_z = np.linspace(max_z, min_z, ray_steps)
+            # TODO: for frame cameras, linspace rather than pixel_to_world_z can be used to form
+            #  the ray
+            ray_xyz = self.pixel_to_world_z(src_pt.reshape(-1, 1), ray_z)
+
+            # find the z surface values corresponding to the ray (the remapped surface will be
+            # nan outside its bounds and for already masked / nan pixels)
+            zsurf_ji = np.array(inv_transform * ray_xyz[:2]).astype('float32', copy=False)
+            zsurf_z = np.full((zsurf_ji.shape[1],), dtype=z.dtype, fill_value=float('nan'))
+            # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
+            cv2.remap(z, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
+
+            # store the first ray-z intersection point if it exists, otherwise the z_min point
+            zsurf_min_xyz = ray_xyz[:, -1]
+            intersection_i = np.nonzero(ray_xyz[2] <= zsurf_z)[0]
+            if len(intersection_i) > 0:
+                xyz[:, pi] = ray_xyz[:, intersection_i[0]]
+            else:
+                xyz[:, pi] = zsurf_min_xyz
+        return xyz
 
     @abstractmethod
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
@@ -121,20 +177,20 @@ class Camera(ABC):
             dimension.
         """
 
-    def boundary(self, num_pts: int = None) -> np.ndarray:
+    def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
         A rectangle of 2D pixel coordinates along the image boundary.
 
         :param num_pts:
-            Number of boundary points to include in the rectangle.  If set to None (the default),
-            eight points are included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include.  If set to None (the default), eight points are
+            included, with points at the image corners and mid-points of the sides.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
             first dimension.
         """
 
-        def _boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
+        def rect_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
             """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
             for the given image size ``im_size``.
             """
@@ -161,9 +217,51 @@ class Camera(ABC):
                 [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
             ).T
         else:
-            ji = _boundary(im_size, num_pts=num_pts)
+            ji = rect_boundary(im_size, num_pts=num_pts)
 
         return ji
+
+    def world_boundary(
+        self,
+        z: float | np.ndarray,
+        transform: rio.Affine = None,
+        interp: str | Interp = Interp.cubic,
+        num_pts: int = None,
+        **kwargs,
+    ) -> np.ndarray:
+        """
+        A polygon of (x, y, z) world coordinates along the image boundary, at a specified z value
+        or surface (DEM).
+
+        :param z:
+            Z value(s) as a scalar float or a 2D array (surface).
+        :param transform:
+            Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
+            is an array and not used otherwise.
+        :param interp:
+            Interpolation method to use for finding boundary intersections with ``z`` when it is an
+            array.  Not used when ``z`` is scalar.
+        :param num_pts:
+            Number of boundary points to include.  If set to None (the default), eight points are
+            included, with points at the image corners and mid-points of the sides.
+        :param kwargs:
+            Not used.
+
+        :return:
+            Boundary world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the
+            first dimension.  Boundary points that lie outside ``z`` bounds, when ``z`` is an
+            array, are given at the minimum of ``z``.
+        """
+        ji = self.pixel_boundary(num_pts=num_pts)
+        if np.isscalar(z):
+            xyz = self.pixel_to_world_z(ji, z)
+        elif isinstance(z, np.ndarray) and z.ndim == 2:
+            if transform is None:
+                raise ValueError("'transform' should be supplied when 'z' is an array.")
+            xyz = self._pixel_to_world_surf(ji, z, transform, interp=interp, num_pts=num_pts)
+        else:
+            raise ValueError("'z' should be a scalar float or 2D array.")
+        return xyz
 
     def read(
         self,
@@ -288,7 +386,7 @@ class RpcCamera(Camera):
         return np.array(self._transformer.rowcol(*xyz))
 
     @abstractmethod
-    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray, **kwargs) -> np.ndarray:
         self._validate_pixel_coords(ji)
         # TODO: sort out pixel offset here and in world_to_pixel
         xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
@@ -312,7 +410,7 @@ class GcpCamera(Camera):
         return np.array(self._transformer.rowcol(*xyz))
 
     @abstractmethod
-    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray) -> np.ndarray:
+    def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray, **kwargs) -> np.ndarray:
         self._validate_pixel_coords(ji)
         # TODO: sort out pixel offset here and in world_to_pixel
         xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
@@ -321,7 +419,6 @@ class GcpCamera(Camera):
 
 
 class FrameCamera(Camera):
-    # TODO: make principal point offsets a x,y tuple
     """
     Pinhole camera with no distortion.
 
@@ -356,10 +453,9 @@ class FrameCamera(Camera):
     _default_alpha: float = 1.0
     _default_distort: bool = True
 
-    # TODO: make externally used params properties or public methods
     def __init__(
         self,
-        im_size: tuple[int, int],  # TODO: remove
+        im_size: tuple[int, int],
         focal_len: float | tuple[float, float],
         sensor_size: tuple[float, float] | None = None,
         cx: float = 0.0,
@@ -675,8 +771,12 @@ class FrameCamera(Camera):
         )
         # rotate first (camera to world) to get world aligned axes with origin on the camera
         xyz_r = self._R.dot(xyz_)
-        # scale to z (offset for camera z) with origin on camera, then offset to world
-        xyz = (xyz_r * (z - self._T[2]) / xyz_r[2]) + self._T
+
+        # find scales to reach z (offset for camera z)
+        scales = (z - self.pos[2]) / xyz_r[2]
+
+        # scale to z with origin on camera, then offset to world
+        xyz = (xyz_r * scales) + self._T
         return xyz
 
     def undistort_pixel(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
@@ -702,7 +802,7 @@ class FrameCamera(Camera):
             ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
         return ji
 
-    def boundary(self, num_pts: int = None) -> np.ndarray:
+    def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
         A polygon of 2D pixel coordinates along the image boundary.  If
         :attr:`~FrameCamera.distort` is False, coordinates will be along the boundary of the
@@ -716,16 +816,76 @@ class FrameCamera(Camera):
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
             first dimension.
         """
-        ji = super().boundary(num_pts=num_pts)
+        ji = super().pixel_boundary(num_pts=num_pts)
 
         if not self._distort:
-            ji = self.undistort_pixel(ji, clip=True)
-            # TODO: decide whether we need undistort_pixel, just do it inline below
-            # # undistort ji and clip to image bounds
-            # xyz_ = self._pixel_to_camera(ji)
-            # ji = FrameCamera._camera_to_pixel(self, xyz_)
-            # ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
+            ji = self.undistort_pixel(
+                ji, clip=True
+            )  # TODO: decide whether we need undistort_pixel, or just do it inline below  # #
+            # undistort ji and clip to image bounds  # xyz_ = self._pixel_to_camera(ji)  # ji =
+            # FrameCamera._camera_to_pixel(self, xyz_)  # ji = np.clip(ji.T, a_min=(0, 0),
+            # a_max=np.array(self._im_size) - 1).T
         return ji
+
+    def world_boundary(
+        self,
+        z: float | np.ndarray,
+        num_pts: int = None,
+        transform: rio.Affine = None,
+        interp: str | Interp = Interp.cubic,
+        clip: bool = True,
+    ) -> np.ndarray:
+        """
+        A polygon of (x, y, z) world coordinates along the image boundary, at a specified z value
+        or surface (DEM).
+
+        :param z:
+            Z value(s) as a scalar float or a 2D array (surface).
+        :param transform:
+            Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
+            is an array and not used otherwise.
+        :param interp:
+            Interpolation method to use for finding boundary intersections with ``z`` when it is an
+            array.  Not used when ``z`` is scalar.
+        :param num_pts:
+            Number of boundary points to include.  If set to None (the default), eight points are
+            included, with points at the image corners and mid-points of the sides.
+        :param clip:
+            Clip the z coordinate of boundary points to the camera height.
+
+        :return:
+            Boundary world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the
+            first dimension.  Boundary points that lie outside ``z`` bounds, when ``z`` is an
+            array, are given at the minimum of ``z``.
+        """
+        self._test_init()
+        # TODO: is this check too restrictive?  this would prevent horizontal views e.g. inside
+        #  rugged terrain being orthorectified
+        if self._horizon_fov():
+            raise ValueError("Camera has a field of view that includes, or is above, the horizon.")
+
+        ji = self.pixel_boundary(num_pts=num_pts)
+        if np.isscalar(z):
+            # clip z to camera height
+            z = z if not clip else min(z, self.pos[2])
+            xyz = self.pixel_to_world_z(ji, z)
+        elif isinstance(z, np.ndarray) and z.ndim == 2:
+            if transform is None:
+                raise ValueError("'transform' should be supplied when 'z' is an array.")
+
+            # find / test / clip dem minimum and maximum
+            min_z = np.nanmin(z)
+            max_z = np.nanmax(z)
+            if min_z > self.pos[2]:
+                raise ValueError('The DEM is higher than the camera.')
+            max_z = max_z if not clip else min(max_z, self.pos[2])
+
+            xyz = self._pixel_to_world_surf(
+                ji, z, transform, interp=interp, min_z=min_z, max_z=max_z
+            )
+        else:
+            raise ValueError("'z' should be a scalar float or 2D array.")
+        return xyz
 
     def read(
         self,
@@ -1023,8 +1183,8 @@ class BrownCamera(OpenCVCamera):
     ):
         # fmt: off
         super().__init__(
-            im_size, focal_len, sensor_size=sensor_size, k1=k1, k2=k2, p1=p1, p2=p2, k3=k3,
-            cx=cx, cy=cy, xyz=xyz, opk=opk, alpha=alpha, distort=distort
+            im_size, focal_len, sensor_size=sensor_size, k1=k1, k2=k2, p1=p1, p2=p2, k3=k3, cx=cx,
+            cy=cy, xyz=xyz, opk=opk, alpha=alpha, distort=distort
         )
         # fmt: on
         # overwrite possibly truncated _dist_param for use in _camera_to_pixel
