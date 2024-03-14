@@ -253,6 +253,7 @@ class OpenRaster:
             else:
                 ofile = fsspec.open(os.fspath(file), mode + 'b')
 
+            # TODO: delete sidecar files if overwriting
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
                 raise FileExistsError(f"File exists: '{ofile.path}'")
 

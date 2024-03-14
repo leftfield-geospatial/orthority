@@ -73,7 +73,7 @@ def sinusoidal(shape: tuple):
 
 
 def ortho_bounds(
-    camera: Camera, dem_min: float = Ortho._egm96_min, include_camera: bool = False
+    camera: Camera, dem_min: float = Ortho._egm_minmax[0], include_camera: bool = False
 ) -> tuple:
     """Return ortho bounds for the given ``camera`` at z=``dem_min``."""
     size = camera._im_size
@@ -97,6 +97,7 @@ def create_dem(
 
     Band 1 is a sinusoidal surface, and band 2, a planar surface.
     """
+    # TODO: remove dependency on camera.pos?  instead specify mean height and sin amplitude
     bounds = np.array(ortho_bounds(camera, include_camera=include_camera))
     size = 1 + np.ceil((bounds[2:] - bounds[:2]) / resolution).astype('int')
     array = np.stack(
