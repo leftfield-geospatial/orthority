@@ -31,7 +31,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
-from rasterio.warp import reproject, Resampling, transform_bounds
+from rasterio.warp import reproject, Resampling, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
 
@@ -85,9 +85,12 @@ class Ortho:
     # default ortho (x, y) block size
     _default_blocksize = (512, 512)
 
-    # Minimum EGM96 geoid altitude i.e. minimum possible vertical difference with the WGS84
-    # ellipsoid
-    _egm96_min = -106.71
+    # EGM96/EGM2008 geoid altitude range i.e. minimum and maximum possible vertical difference with
+    # the WGS84 ellipsoid (meters)
+    _egm_minmax = [-106.71, 82.28]
+
+    # Maximum possible ellipsoidal height i.e. approx. that of Everest (meters)
+    _z_max = 8850.0
 
     # nodata values for supported ortho data types
     _nodata_vals = dict(
@@ -115,11 +118,6 @@ class Ortho:
     ) -> None:
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
-        if camera._horizon_fov():
-            # TODO: remove or generalise to non-frame cameras
-            raise ValueError(
-                "'camera' has a field of view that includes, or is above, the horizon."
-            )
 
         self._src_file = src_file
         self._src_name = utils.get_filename(src_file)
@@ -127,9 +125,7 @@ class Ortho:
         self._write_lock = threading.Lock()
 
         self._crs = self._parse_crs(crs)
-        self._dem_array, self._dem_transform, self._dem_crs, self._crs_equal = self._get_init_dem(
-            dem_file, dem_band
-        )
+        self._dem_array, self._dem_transform, self._dem_crs = self._get_init_dem(dem_file, dem_band)
         self._gsd = self._get_gsd()
 
     @staticmethod
@@ -164,12 +160,10 @@ class Ortho:
 
     def _get_init_dem(
         self, dem_file: str | PathLike | rio.DatasetReader, dem_band: int
-    ) -> tuple[np.ndarray, rio.Affine, CRS, bool]:
+    ) -> tuple[np.ndarray, rio.Affine, CRS]:
         """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
         DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
         """
-
-        # TODO: can vertical datums be extracted so we know initial z_min and subsequent offset
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 dem_name = utils.get_filename(dem_file)
@@ -179,21 +173,23 @@ class Ortho:
             # crs comparison is time-consuming - perform it once here, and return result for use
             # elsewhere
             crs_equal = self._crs == dem_im.crs
+
+            # find the scale from meters to ortho crs z units
+            # TODO: add test where ortho crs z units are not meters
+            zs = []
+            ref_crs = rio.CRS.from_epsg(4979)
+            for z in [0, 1]:
+                world_xyz = transform(ref_crs, self._crs, [0], [0], [z])
+                zs.append(world_xyz[2][0])
+            z_scale = zs[1] - zs[0]
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
 
-            # boundary pixel coordinates of source image
-            w, h = np.array(self._camera._im_size) - 1
-            src_ji = np.array(
-                [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
-            ).T
-
-            def get_win_at_z_min(z_min: float) -> Window:
-                """Return a DEM window corresponding to the ortho bounds at z=z_min."""
-                world_xyz = self._camera.pixel_to_world_z(src_ji, z_min)
-                # include the camera position in the bounds if possible so that oblique view
-                # bounds at z=z_min will include bounds at higher altitudes (z>z_min)
-                if self._camera.pos:
-                    world_xyz = np.column_stack((world_xyz, self._camera.pos))
+            def get_win_at_zs(zs: Sequence[float]) -> Window:
+                """Return a DEM window that contains the ortho bounds at z values in ``zs``."""
+                world_xyz = []
+                for z in zs:
+                    world_xyz.append(self._camera.world_boundary(z))
+                world_xyz = np.column_stack(world_xyz)
                 world_bounds = [*np.min(world_xyz[:2], axis=1), *np.max(world_xyz[:2], axis=1)]
                 dem_bounds = (
                     transform_bounds(self._crs, dem_im.crs, *world_bounds)
@@ -204,19 +200,28 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise ValueError(f"Ortho boundary for '{self._src_name}' lies outside the DEM.")
+                    raise ValueError(
+                        f"Ortho for '{self._src_name}' lies outside, or underneath the DEM."
+                    )
                 return utils.expand_window_to_grid(dem_win)
 
-            # get a dem window corresponding to ortho world bounds at min possible altitude,
-            # read the window from the dem
-            dem_win = get_win_at_z_min(self._egm96_min)
+            # get a dem window containing the ortho bounds at min & max possible altitude, read the
+            # window from the dem
+            zs = np.array([self._egm_minmax[0], self._z_max + self._egm_minmax[1]]) * z_scale
+            dem_win = get_win_at_zs(zs)
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
 
-            # reduce the dem window to correspond to the ortho world bounds at min dem altitude,
-            # accounting for worst case dem-ortho vertical datum offset
-            dem_min = dem_array.min()
-            dem_win = get_win_at_z_min(dem_min if crs_equal else max(dem_min, 0) + self._egm96_min)
+            # reduce the dem window to contain the ortho bounds at min & max dem altitude,
+            # accounting for dem-ortho vertical datum offset & z unit scaling
+            zs = []
+            for index in [dem_array.argmin(), dem_array.argmax()]:
+                ij = np.unravel_index(index, dem_array.shape)
+                dem_xyz = (*(dem_im.window_transform(dem_win) * ij[::-1]), dem_array[ij])
+                world_xyz = transform(dem_im.crs, self._crs, *[[coord] for coord in dem_xyz])
+                zs.append(world_xyz[2][0])
+
+            dem_win = get_win_at_zs(zs)
             dem_win = dem_win.intersection(dem_array_win)  # ensure sub window of dem_array_win
 
             # crop dem_array to the dem window and find the corresponding transform
@@ -232,8 +237,7 @@ class Ortho:
 
             # cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
             dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
-
-            return dem_array, dem_transform, dem_im.crs, crs_equal
+            return dem_array, dem_transform, dem_im.crs
 
     def _get_gsd(self) -> float:
         """Return a GSD estimate that gives approx as many valid ortho pixels as valid source
@@ -248,17 +252,14 @@ class Ortho:
                 - np.roll(coords[:, 0], -1).dot(coords[:, 1])
             )
 
-        # find (x, y) coords of image boundary in world CRS at z=median(DEM) (note: ignores
-        # vertical datum shifts)
-        w, h = np.array(self._camera._im_size) - 1
-        src_ji = np.array(
-            [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
-        ).T
-        world_xy = self._camera.pixel_to_world_z(src_ji, np.nanmedian(self._dem_array))[:2].T
+        # find image boundary in pixel coordinates, and world coordinates at z=median(DEM) (note:
+        # ignores vertical datum shifts)
+        ji = self._camera.pixel_boundary()
+        xy = self._camera.pixel_to_world_z(ji, np.nanmedian(self._dem_array))[:2]
 
-        # return the average pixel resolution inside the world CRS boundary
-        pixel_area = np.array(self._camera._im_size).prod()
-        world_area = area_poly(world_xy)
+        # return the average pixel resolution inside the world boundary
+        pixel_area = area_poly(ji.T)
+        world_area = area_poly(xy.T)
         return np.sqrt(world_area / pixel_area)
 
     def _reproject_dem(
@@ -272,7 +273,7 @@ class Ortho:
         """
         # return if dem in world / ortho crs and ortho resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
-        if self._crs_equal and np.all(resolution == dem_res):
+        if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
 
         # reproject dem_array to world / ortho crs and ortho resolution
@@ -304,75 +305,17 @@ class Ortho:
         """Crop and mask the given DEM to the ortho polygon bounds, returning the adjusted DEM and
         corresponding transform.
         """
-
-        def inv_transform(transform: rio.Affine, xy: np.ndarray) -> np.ndarray:
-            """Return the center (j, i) pixel coords for the given transform and world (x, y)
-            coordinates.
-            """
-            return np.array(~(transform * rio.Affine.translation(0.5, 0.5)) * xy)
-
-        if not crop and not mask:
-            return dem_array, dem_transform
-
-        # get polygon of source boundary with 'num_pts' points
-        src_ji = self._camera.boundary(num_pts=num_pts)
-
-        # find / test dem minimum and maximum, and initialise
-        dem_min = np.nanmin(dem_array)
-        dem_max = np.nanmax(dem_array)
-        if self._camera.pos:
-            if dem_min > self._camera.pos[2]:
-                raise ValueError('The DEM is higher than the camera.')
-            # limit dem_max to camera height so that rays go forwards only
-            dem_max = min(dem_max, self._camera.pos[2])
-
-        # find ortho boundary at dem_min and dem_max
-        min_xyz = self._camera.pixel_to_world_z(src_ji, dem_min)
-        max_xyz = self._camera.pixel_to_world_z(src_ji, dem_max)
-
-        # heuristic limit on ray length to conserve memory
-        max_ray_steps = 2 * np.sqrt(np.square(dem_array.shape, dtype='int64').sum()).astype('int')
-        poly_xy = np.zeros((2, src_ji.shape[1]))
-
-        # find dem (x, y, z) world coordinate intersections for each (j, i) pixel coordinate in
-        # src_ji
-        for pi in range(0, src_ji.shape[1]):
-            src_pt, start_xyz, stop_xyz = src_ji[:, pi], max_xyz[:, pi], min_xyz[:, pi]
-
-            # create world points along the src_pt ray with (x, y) stepsize <= dem resolution,
-            # if num points <= max_ray_steps, else max_ray_steps points
-            # TODO: rescale start/stop_xy to be inside dem bounds to reduce ray_steps
-            ray_steps = np.abs(
-                (stop_xyz - start_xyz)[:2].squeeze() / (dem_transform[0], dem_transform[4])
-            )
-            ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
-            ray_z = np.linspace(dem_max, dem_min, ray_steps)
-            # TODO: for frame cameras, linspace rather than pixel_to_world_z can be used to form
-            #  the ray
-            ray_xyz = self._camera.pixel_to_world_z(src_pt.reshape(-1, 1), ray_z)
-
-            # find the dem z values corresponding to the ray (dem_z will be nan outside the dem
-            # bounds and for already masked / nan dem pixels)
-            dem_ji = inv_transform(dem_transform, ray_xyz[:2]).astype('float32', copy=False)
-            dem_z = np.full((dem_ji.shape[1],), dtype=dem_array.dtype, fill_value=float('nan'))
-            # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
-            cv2.remap(
-                dem_array, *dem_ji, dem_interp.to_cv(), dst=dem_z, borderMode=cv2.BORDER_TRANSPARENT
-            )
-
-            # store the first ray-dem intersection point if it exists, otherwise the dem_min point
-            valid_mask = ~np.isnan(dem_z)
-            dem_z = dem_z[valid_mask]
-            dem_min_xy = ray_xyz[:2, -1]
-            ray_xyz = ray_xyz[:, valid_mask]
-            intersection_i = np.nonzero(ray_xyz[2] <= dem_z)[0]
-            if len(intersection_i) > 0:
-                poly_xy[:, pi] = ray_xyz[:2, intersection_i[0]]
-            else:
-                poly_xy[:, pi] = dem_min_xy
+        # find ortho boundary polygon
+        poly_xy = self._camera.world_boundary(
+            dem_array,
+            transform=dem_transform,
+            interp=dem_interp,
+            num_pts=num_pts,
+        )[:2, :]
 
         # find intersection of poly_xy and dem mask, and check dem coverage
-        poly_ji = np.round(inv_transform(dem_transform, poly_xy)).astype('int')
+        inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
+        poly_ji = np.round(inv_transform * poly_xy).astype('int')
         poly_mask = np.zeros(dem_array.shape, dtype='uint8')
         poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).astype('bool', copy=False)
         dem_mask = poly_mask & ~np.isnan(dem_array)
