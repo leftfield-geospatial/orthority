@@ -90,7 +90,6 @@ def test_init(
 
     assert ortho._crs == rio.CRS.from_string(utm34n_crs)
     assert ortho._dem_crs == dem_crs
-    assert ortho._crs_equal == (ortho._crs == dem_crs)
     assert ortho._dem_array is not None
     assert ortho._dem_transform is not None
 
@@ -107,7 +106,6 @@ def test_init_src_crs(
 
     assert ortho._crs == src_crs
     assert ortho._dem_crs == dem_crs
-    assert ortho._crs_equal == (ortho._crs == dem_crs)
     assert ortho._dem_array is not None
     assert ortho._dem_transform is not None
 
@@ -168,7 +166,7 @@ def test_init_dem_coverage_error(
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'boundary' in str(ex)
+    assert 'DEM' in str(ex)
 
 
 def test_init_horizon_fov_error(
@@ -182,6 +180,22 @@ def test_init_horizon_fov_error(
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'horizon' in str(ex)
+
+
+def test_dem_above_camera_error(
+    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
+):
+    """Test reading the DEM raises an error when it is higher than the (frame) camera."""
+    camera = PinholeCamera(**frame_args)
+
+    # move the camera below the DEM
+    _xyz = (*frame_args['xyz'][:2], frame_args['xyz'][2] - 1000)
+    camera.update(_xyz, frame_args['opk'])
+
+    # init & reproject
+    with pytest.raises(ValueError) as ex:
+        _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
+    assert 'DEM' in str(ex)
 
 
 @pytest.mark.parametrize(
@@ -273,7 +287,7 @@ def test_reproject_dem_vdatum_both(
     test_array = array[dem_win.toslices()]
     test_transform = rio.windows.transform(dem_win, transform)
 
-    assert not ortho._crs_equal
+    assert ortho._dem_crs != ortho._crs
     assert test_transform.almost_equals(ortho._dem_transform, precision=1e-6)
     assert test_array.shape == ortho._dem_array.shape
 
@@ -316,7 +330,7 @@ def test_reproject_dem_vdatum_one(
     test_array = array[dem_win.toslices()]
     test_transform = rio.windows.transform(dem_win, transform)
 
-    assert not ortho._crs_equal
+    assert ortho._dem_crs != ortho._crs
     assert test_transform.almost_equals(ortho._dem_transform, precision=1e-6)
     assert test_array.shape == ortho._dem_array.shape
 
@@ -577,26 +591,6 @@ def test_mask_dem_coverage_error(
     with pytest.raises(ValueError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
     assert 'boundary' in str(ex)
-
-
-def test_mask_dem_above_camera_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
-):
-    """Test DEM masking raises an error when the DEM is higher the camera."""
-    camera = PinholeCamera(**frame_args)
-
-    # move the camera below the DEM
-    _xyz = (*frame_args['xyz'][:2], frame_args['xyz'][2] - 1000)
-    camera.update(_xyz, frame_args['opk'])
-
-    # init & reproject
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    dem_array, dem_transform = ortho._reproject_dem(Interp.cubic, (30.0, 30.0))
-
-    # test
-    with pytest.raises(ValueError) as ex:
-        ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
-    assert 'higher' in str(ex)
 
 
 @pytest.mark.parametrize(
