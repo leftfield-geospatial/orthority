@@ -66,7 +66,7 @@ class Camera(ABC):
         if not (xyz.ndim == 2 and xyz.shape[0] == 3):
             raise ValueError(f"'xyz' should be a 3xN 2D array.")
         if xyz.dtype != np.float64:
-            raise ValueError(f"'xyz' should have float64 data type.")
+            raise ValueError(f"'xyz' should have 'float64' data type.")
 
     @staticmethod
     def _validate_pixel_coords(ji: np.ndarray) -> None:
@@ -286,6 +286,10 @@ class Camera(ABC):
         :return:
             Image as 3D array with band(s) along the first dimension (Rasterio ordering).
         """
+        # TODO: don't read alpha channel by default (?)
+        # add an empty dimension to indexes if it is scalar so that image is read as 3D
+        indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
+
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
         with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
             dtype = dtype or im.dtypes[0]
@@ -308,11 +312,14 @@ class Camera(ABC):
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
             ordering).  Typically, this should be the image returned by :meth:`Camera.read`.
         :param x:
-            X world / ortho coordinates to remap to, as a M-by-N 2D array.
+            X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world / ortho coordinates to remap to, as a M-by-N 2D array.
+            Y world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world / ortho coordinates to remap to, as a M-by-N 2D array.
+            Z world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param nodata:
             Value to use for masking invalid pixels in the remapped image.  If set to None
             (the default), a value based on the ``image`` data type is chosen automatically.
@@ -323,13 +330,17 @@ class Camera(ABC):
 
         :return:
             - Remapped image, as a 3D array with band(s) along the first dimension (Rasterio
-              ordering).
+              ordering) and the same data type as ``im_array``.
             - Nodata mask of the remapped image, as a 2D boolean array.
         """
         # TODO: is there a neater or more efficient way to package x, y & z?
         self._validate_image(im_array)
         if not (x.shape == y.shape == z.shape) or (x.ndim != 2):
             raise ValueError("'x', 'y' and 'z' should have 2 dimensions, and the same shape.")
+        if not (x.dtype == y.dtype == 'float64'):
+            raise ValueError("'x' and 'y' should have 'float64' data type.")
+        if not np.issubdtype(z.dtype, np.floating):
+            raise ValueError("'z' should have 'float64' or 'float32' data type.")
         if nodata is None:
             nodata = self._get_dtype_nodata(im_array.dtype)
 
@@ -350,9 +361,9 @@ class Camera(ABC):
             (im_array.shape[0], *x.shape), dtype=im_array.dtype, fill_value=nodata
         )
 
-        # remap image to ortho, looping over band(s) (cv2.remap execution time depends on array
-        # ordering)
-        # TODO: test speed if src and tile are in cv ordering and this done all bands at once
+        # remap image to ortho, looping over band(s) (cv2.remap does not support rasterio
+        # band ordering, does not support 3D images with >4 bands, and is slower on a re-ordered
+        # 3D image than in a loop over bands)
         for oi in range(0, im_array.shape[0]):
             cv2.remap(
                 im_array[oi],
@@ -646,6 +657,8 @@ class FrameCamera(Camera):
         """Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted
         image.
         """
+        # TODO: construct maps using orthority camera code rather than opencv, e.g. as in
+        #  utils.distort_image() - is this faster / clearer?
         return None
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
@@ -658,40 +671,6 @@ class FrameCamera(Camera):
         ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
         xyz_ = self._K_undistort_inv.dot(ji_)
         return xyz_
-
-    def _undistort_im(
-        self, image: np.ndarray, nodata: float | int, interp: str | Interp
-    ) -> np.ndarray:
-        """Undistort an image using ``interp`` interpolation and setting invalid pixels to
-        ``nodata``.
-        """
-        self._validate_image(image)
-
-        # find undistort maps once on first use
-        self._undistort_maps = self._undistort_maps or self._get_undistort_maps()
-
-        if self._undistort_maps is None:
-            return image
-
-        def undistort_band(src_array: np.ndarray, dst_array: np.ndarray):
-            """Undistort a 2D band array."""
-            # equivalent without stored _undistort_maps:
-            # return cv2.undistort(band_array, self._K, self._dist_param)
-            cv2.remap(
-                src_array,
-                *self._undistort_maps,
-                Interp[interp].to_cv(),
-                dst=dst_array,
-                borderMode=cv2.BORDER_TRANSPARENT,
-            )
-
-        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
-        # TODO: see if using cv ordering throughout (read, undistort, remap) speeds things
-        #  up, and or undistort bands concurrently in thread pool
-        for bi in range(image.shape[0]):
-            undistort_band(image[bi], out_image[bi])
-
-        return out_image
 
     def update(
         self,
@@ -801,6 +780,52 @@ class FrameCamera(Camera):
         if clip:
             ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
         return ji
+
+    def undistort_im(
+        self, image: np.ndarray, nodata: float | int = None, interp: str | Interp = Interp.cubic
+    ) -> np.ndarray:
+        """
+        Undistort an image.
+
+        :param image:
+            Image to undistort as a 3D array with bands along the first dimension (Rasterio
+            ordering).
+        :param nodata:
+            Value to use for masking invalid pixels in the undistorted image.  If set to None
+            (the default), a value based on the ``image`` data type is chosen automatically.
+        :param interp:
+            Interpolation method to use.
+
+        :return:
+            Undistorted image as 3D array with band(s) along the first dimension (Rasterio
+            ordering).
+        """
+        # TODO: does this work with image < im_size
+        self._validate_image(image)
+
+        # find undistort maps once on first use
+        self._undistort_maps = self._undistort_maps or self._get_undistort_maps()
+
+        if self._undistort_maps is None:
+            return image
+
+        # remap image, looping over band(s) (cv2.remap does not support rasterio band ordering,
+        # does not support 3D images with >4 bands, and is slower on a re-ordered 3D image than
+        # in a loop over bands)
+        if nodata is None:
+            nodata = self._get_dtype_nodata(image.dtype)
+        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
+
+        for bi in range(image.shape[0]):
+            cv2.remap(
+                image[bi],
+                *self._undistort_maps,
+                Interp[interp].to_cv(),
+                dst=out_image[bi],
+                borderMode=cv2.BORDER_TRANSPARENT,
+            )
+
+        return out_image
 
     def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
@@ -922,7 +947,7 @@ class FrameCamera(Camera):
         if not self._distort:
             if nodata is None:
                 nodata = self._get_dtype_nodata(image.dtype)
-            image = self._undistort_im(image, nodata=nodata, interp=interp)
+            image = self.undistort_im(image, nodata=nodata, interp=interp)
         return image
 
     def remap(
@@ -938,15 +963,18 @@ class FrameCamera(Camera):
         """
         Remap image to ortho image at given world / ortho coordinates.
 
-        :param image:
+        :param im_array:
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
-            ordering).  Typically, this should be the image returned by :meth:`FrameCamera.read`.
+            ordering).  Typically, this should be the image returned by :meth:`Camera.read`.
         :param x:
-            X world / ortho coordinates to remap to, as a M-by-N 2D array.
+            X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world / ortho coordinates to remap to, as a M-by-N 2D array.
+            Y world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world / ortho coordinates to remap to, as a M-by-N 2D array.
+            Z world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
+            NaN coordinate pixels are mapped to ``nodata``.
         :param nodata:
             Value to use for masking invalid pixels in the remapped image.  If set to None
             (the default), a value based on the ``image`` data type is chosen automatically.
@@ -959,7 +987,7 @@ class FrameCamera(Camera):
 
         :return:
             - Remapped image, as a 3D array with band(s) along the first dimension (Rasterio
-              ordering).
+              ordering) and the same data type as ``im_array``.
             - Nodata mask of the remapped image, as a 2D boolean array.
         """
         remap, mask = super().remap(image, x, y, z, nodata=nodata, interp=interp)
