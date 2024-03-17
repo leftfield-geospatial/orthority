@@ -255,7 +255,7 @@ class Ortho:
         # find image boundary in pixel coordinates, and world coordinates at z=median(DEM) (note:
         # ignores vertical datum shifts)
         ji = self._camera.pixel_boundary()
-        xy = self._camera.pixel_to_world_z(ji, np.nanmedian(self._dem_array))[:2]
+        xy = self._camera.world_boundary(np.nanmedian(self._dem_array))[:2]
 
         # return the average pixel resolution inside the world boundary
         pixel_area = area_poly(ji.T)
@@ -642,10 +642,10 @@ class Ortho:
             src_im = exit_stack.enter_context(utils.OpenRaster(self._src_file, 'r'))
 
             # warn if source dimensions don't match camera
-            if src_im.shape[::-1] != self._camera._im_size:
+            if src_im.shape[::-1] != self._camera.im_size:
                 warnings.warn(
                     f"Source image '{self._src_name}' size: {src_im.shape[::-1]} does not "
-                    f"match camera image size: {self._camera._im_size}."
+                    f"match camera image size: {self._camera.im_size}."
                 )
 
             # get dem array covering ortho extents in world / ortho crs and ortho resolution

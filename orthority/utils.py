@@ -73,14 +73,14 @@ def nan_equals(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray:
 
 
 def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) -> np.ndarray:
-    """Return a distorted image given a camera model and source image."""
+    """Return a distorted image given a frame camera model and source image."""
 
-    if not np.all(np.array(image.shape[::-1]) == camera._im_size):
+    if not np.all(np.array(image.shape[-2:][::-1]) == camera.im_size):
         raise ValueError("'image' shape should be the same as the 'camera' image size.")
 
     # create (j, i) pixel coords for distorted image
-    j_range = np.arange(0, camera._im_size[0])
-    i_range = np.arange(0, camera._im_size[1])
+    j_range = np.arange(0, camera.im_size[0])
+    i_range = np.arange(0, camera.im_size[1])
     j_grid, i_grid = np.meshgrid(j_range, i_range, indexing='xy')
     ji = np.row_stack((j_grid.reshape(1, -1), i_grid.reshape(1, -1)))
 
@@ -88,16 +88,21 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) ->
     camera_xyz = camera._pixel_to_camera(ji)
     undist_ji = camera._K_undistort.dot(camera_xyz)[:2].astype('float32')
 
-    # remap the distorted image from the source image
-    dist_image = np.full_like(image, fill_value=nodata)
-    cv2.remap(
-        image,
-        undist_ji[0].reshape(image.shape),
-        undist_ji[1].reshape(image.shape),
-        interp.to_cv(),
-        dst=dist_image,
-        borderMode=cv2.BORDER_TRANSPARENT,
-    )
+    def distort_band(src_array: np.ndarray, dst_array: np.ndarray):
+        """Distort a 2D band array."""
+        cv2.remap(
+            src_array,
+            undist_ji[0].reshape(image.shape[-2:]),
+            undist_ji[1].reshape(image.shape[-2:]),
+            Interp[interp].to_cv(),
+            dst=dst_array,
+            borderMode=cv2.BORDER_TRANSPARENT,
+        )
+
+    dist_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
+    for bi in range(image.shape[0]):
+        distort_band(image[bi], dist_image[bi])
+
     return dist_image
 
 
