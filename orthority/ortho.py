@@ -36,7 +36,7 @@ from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
 
 from orthority import utils
-from orthority.camera import Camera
+from orthority.camera import Camera, FrameCamera
 from orthority.enums import Compress, Interp
 from orthority.errors import CrsMissingError, OrthorityWarning
 
@@ -127,6 +127,11 @@ class Ortho:
         self._crs = self._parse_crs(crs)
         self._dem_array, self._dem_transform, self._dem_crs = self._get_init_dem(dem_file, dem_band)
         self._gsd = self._get_gsd()
+
+    @property
+    def camera(self) -> Camera | FrameCamera:
+        """Source image camera model."""
+        return self._camera
 
     @staticmethod
     def _build_overviews(
@@ -276,6 +281,9 @@ class Ortho:
         if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
 
+        # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie inside the
+        #  source dem bounds.  This seems suspect, but is unlikely to affect ortho bounds (source
+        #  dem will typically contain the ortho with room to spare), so am leaving as is for now.
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
             self._dem_array,
@@ -317,7 +325,7 @@ class Ortho:
         inv_transform = ~(dem_transform * rio.Affine.translation(0.5, 0.5))
         poly_ji = np.round(inv_transform * poly_xy).astype('int')
         poly_mask = np.zeros(dem_array.shape, dtype='uint8')
-        poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).astype('bool', copy=False)
+        poly_mask = cv2.fillPoly(poly_mask, [poly_ji.T], color=(255,)).view(bool)
         dem_mask = poly_mask & ~np.isnan(dem_array)
         dem_mask_sum = dem_mask.sum()
 
@@ -651,9 +659,10 @@ class Ortho:
             # get dem array covering ortho extents in world / ortho crs and ortho resolution
             dem_interp = Interp(dem_interp)
             dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
-            # TODO: don't mask dem if pinhole camera, or make dem masking an option which
-            #  defaults to not masking with pinhole camera.  note though that dem masking is
-            #  like occlusion masking for image edges, which still applies to pinhole camera.
+            # TODO: don't mask dem if pinhole camera or frame camera with distort=False. Or make
+            #  dem masking an option which defaults to not masking with pinhole camera /
+            #  distort=False camera. note though that dem masking is like occlusion masking for
+            #  image edges, which still applies to pinhole camera.
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & set write_mask
