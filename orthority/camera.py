@@ -33,7 +33,7 @@ from rasterio.transform import (
     RPC,
     RPCTransformer,
 )
-from rasterio.warp import transform
+from rasterio.warp import transform as warp
 
 from orthority import utils
 from orthority.enums import CameraType, Interp
@@ -75,12 +75,12 @@ class Camera(ABC):
             raise ValueError(f"'ji' should be a 2xN 2D array.")
 
     @staticmethod
-    def _validate_image(image: np.ndarray) -> None:
+    def _validate_image(im_array: np.ndarray) -> None:
         """Utility function to validate an image dtype and dimensions for remapping."""
-        if str(image.dtype) not in Camera._valid_dtypes:
-            raise ValueError(f"'image' data type '{image.dtype}' not supported.")
-        if not image.ndim == 3:
-            raise ValueError("'image' should have 3 dimensions.")
+        if str(im_array.dtype) not in Camera._valid_dtypes:
+            raise ValueError(f"'im_array' data type '{im_array.dtype}' not supported.")
+        if not im_array.ndim == 3:
+            raise ValueError("'im_array' should have 3 dimensions.")
 
     @staticmethod
     def _get_dtype_nodata(dtype: str) -> float | int:
@@ -132,7 +132,6 @@ class Camera(ABC):
             # nan outside its bounds and for already masked / nan pixels)
             zsurf_ji = np.array(inv_transform * ray_xyz[:2]).astype('float32', copy=False)
             zsurf_z = np.full((zsurf_ji.shape[1],), dtype=z.dtype, fill_value=float('nan'))
-            # dem_ji = cv2.convertMaps(*dem_ji, cv2.CV_16SC2)
             cv2.remap(z, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
 
             # store the first ray-z intersection point if it exists, otherwise the z_min point
@@ -224,9 +223,9 @@ class Camera(ABC):
     def world_boundary(
         self,
         z: float | np.ndarray,
+        num_pts: int = None,
         transform: rio.Affine = None,
         interp: str | Interp = Interp.cubic,
-        num_pts: int = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -235,15 +234,15 @@ class Camera(ABC):
 
         :param z:
             Z value(s) as a scalar float or a 2D array (surface).
+        :param num_pts:
+            Number of boundary points to include.  If set to None (the default), eight points are
+            included, with points at the image corners and mid-points of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
             is an array and not used otherwise.
         :param interp:
             Interpolation method to use for finding boundary intersections with ``z`` when it is an
             array.  Not used when ``z`` is scalar.
-        :param num_pts:
-            Number of boundary points to include.  If set to None (the default), eight points are
-            included, with points at the image corners and mid-points of the sides.
         :param kwargs:
             Not used.
 
@@ -258,7 +257,7 @@ class Camera(ABC):
         elif isinstance(z, np.ndarray) and z.ndim == 2:
             if transform is None:
                 raise ValueError("'transform' should be supplied when 'z' is an array.")
-            xyz = self._pixel_to_world_surf(ji, z, transform, interp=interp, num_pts=num_pts)
+            xyz = self._pixel_to_world_surf(ji, z, transform, interp=interp)
         else:
             raise ValueError("'z' should be a scalar float or 2D array.")
         return xyz
@@ -310,7 +309,8 @@ class Camera(ABC):
 
         :param im_array:
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
-            ordering).  Typically, this should be the image returned by :meth:`Camera.read`.
+            ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
+            same size as the camera :attr:`~Camera.im_size`.
         :param x:
             X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
             NaN coordinate pixels are mapped to ``nodata``.
@@ -354,7 +354,6 @@ class Camera(ABC):
         ji[np.isnan(ji)] = -1
         j = ji[0].reshape(*x.shape).astype('float32')
         i = ji[1].reshape(*x.shape).astype('float32')
-        # j, i = cv2.convertMaps(j, i, cv2.CV_16SC2)
 
         # initialise ortho / remapped array
         remap_array = np.full(
@@ -393,7 +392,7 @@ class RpcCamera(Camera):
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
         if self._crs:
-            xyz = transform(self._crs, self._rpc_crs, [xyz[0]], [xyz[1]], [xyz[2]])
+            xyz = warp(self._crs, self._rpc_crs, [xyz[0]], [xyz[1]], [xyz[2]])
         return np.array(self._transformer.rowcol(*xyz))
 
     @abstractmethod
@@ -403,7 +402,7 @@ class RpcCamera(Camera):
         xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
         xyz = np.row_stack([xy, z * np.ones(xy.shape[1])])
         if self._crs:
-            xyz = np.array(transform(self._rpc_crs, self._crs, *xyz))
+            xyz = np.array(warp(self._rpc_crs, self._crs, *xyz))
         return xyz
 
 
@@ -657,8 +656,6 @@ class FrameCamera(Camera):
         """Return cv2.remap() maps for undistorting an image, and intrinsic matrix for undistorted
         image.
         """
-        # TODO: construct maps using orthority camera code rather than opencv, e.g. as in
-        #  utils.distort_image() - is this faster / clearer?
         return None
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
@@ -758,6 +755,29 @@ class FrameCamera(Camera):
         xyz = (xyz_r * scales) + self._T
         return xyz
 
+    def distort_pixel(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
+        """
+        Distort pixel coordinates.
+
+        :param ji:
+            Pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the first
+            dimension.
+        :param clip:
+            Whether to clip the distorted coordinates to the image dimensions.
+
+        :return:
+            Distorted pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along
+            the first dimension.
+        """
+        self._validate_pixel_coords(ji)
+
+        xyz_ = FrameCamera._pixel_to_camera(self, ji)
+        ji = self._camera_to_pixel(xyz_)
+
+        if clip:
+            ji = np.clip(ji.T, a_min=(0, 0), a_max=np.array(self._im_size) - 1).T
+        return ji
+
     def undistort_pixel(self, ji: np.ndarray, clip: bool = False) -> np.ndarray:
         """
         Undistort pixel coordinates.
@@ -782,14 +802,14 @@ class FrameCamera(Camera):
         return ji
 
     def undistort_im(
-        self, image: np.ndarray, nodata: float | int = None, interp: str | Interp = Interp.cubic
+        self, im_array: np.ndarray, nodata: float | int = None, interp: str | Interp = Interp.cubic
     ) -> np.ndarray:
         """
         Undistort an image.
 
-        :param image:
+        :param im_array:
             Image to undistort as a 3D array with bands along the first dimension (Rasterio
-            ordering).
+            ordering).  Typically with the same size as the camera :attr:`~Camera.im_size`.
         :param nodata:
             Value to use for masking invalid pixels in the undistorted image.  If set to None
             (the default), a value based on the ``image`` data type is chosen automatically.
@@ -800,32 +820,36 @@ class FrameCamera(Camera):
             Undistorted image as 3D array with band(s) along the first dimension (Rasterio
             ordering).
         """
-        # TODO: does this work with image < im_size
-        self._validate_image(image)
+        self._validate_image(im_array)
+        if im_array.shape[-2:] != self.im_size[::-1]:
+            warnings.warn(
+                "'im_array' does not have the same size as the camera 'im_size'.",
+                category=OrthorityWarning,
+            )
 
         # find undistort maps once on first use
         self._undistort_maps = self._undistort_maps or self._get_undistort_maps()
 
         if self._undistort_maps is None:
-            return image
+            return im_array
 
         # remap image, looping over band(s) (cv2.remap does not support rasterio band ordering,
         # does not support 3D images with >4 bands, and is slower on a re-ordered 3D image than
         # in a loop over bands)
         if nodata is None:
-            nodata = self._get_dtype_nodata(image.dtype)
-        out_image = np.full(image.shape, dtype=image.dtype, fill_value=nodata)
+            nodata = self._get_dtype_nodata(im_array.dtype)
+        und_array = np.full(im_array.shape, dtype=im_array.dtype, fill_value=nodata)
 
-        for bi in range(image.shape[0]):
+        for bi in range(im_array.shape[0]):
             cv2.remap(
-                image[bi],
+                im_array[bi],
                 *self._undistort_maps,
                 Interp[interp].to_cv(),
-                dst=out_image[bi],
+                dst=und_array[bi],
                 borderMode=cv2.BORDER_TRANSPARENT,
             )
 
-        return out_image
+        return und_array
 
     def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
@@ -844,12 +868,7 @@ class FrameCamera(Camera):
         ji = super().pixel_boundary(num_pts=num_pts)
 
         if not self._distort:
-            ji = self.undistort_pixel(
-                ji, clip=True
-            )  # TODO: decide whether we need undistort_pixel, or just do it inline below  # #
-            # undistort ji and clip to image bounds  # xyz_ = self._pixel_to_camera(ji)  # ji =
-            # FrameCamera._camera_to_pixel(self, xyz_)  # ji = np.clip(ji.T, a_min=(0, 0),
-            # a_max=np.array(self._im_size) - 1).T
+            ji = self.undistort_pixel(ji, clip=True)
         return ji
 
     def world_boundary(
@@ -866,15 +885,15 @@ class FrameCamera(Camera):
 
         :param z:
             Z value(s) as a scalar float or a 2D array (surface).
+        :param num_pts:
+            Number of boundary points to include.  If set to None (the default), eight points are
+            included, with points at the image corners and mid-points of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
             is an array and not used otherwise.
         :param interp:
             Interpolation method to use for finding boundary intersections with ``z`` when it is an
             array.  Not used when ``z`` is scalar.
-        :param num_pts:
-            Number of boundary points to include.  If set to None (the default), eight points are
-            included, with points at the image corners and mid-points of the sides.
         :param clip:
             Clip the z coordinate of boundary points to the camera height.
 
@@ -965,7 +984,8 @@ class FrameCamera(Camera):
 
         :param im_array:
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
-            ordering).  Typically, this should be the image returned by :meth:`Camera.read`.
+            ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
+            same size as the camera :attr:`~Camera.im_size`.
         :param x:
             X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
             NaN coordinate pixels are mapped to ``nodata``.
@@ -990,6 +1010,7 @@ class FrameCamera(Camera):
               ordering) and the same data type as ``im_array``.
             - Nodata mask of the remapped image, as a 2D boolean array.
         """
+        # TODO: standardise masks as either valid or invalid pixels (e.g. Ortho._mask_dem)
         remap, mask = super().remap(image, x, y, z, nodata=nodata, interp=interp)
 
         # remove blurring with nodata pixels when necessary
@@ -997,11 +1018,11 @@ class FrameCamera(Camera):
             not self.distort
             and Interp[interp] != Interp.nearest
             and not np.isnan(nodata)
-            and not type(self) == PinholeCamera
+            and type(self) is not PinholeCamera
         ):
             kernel = np.ones(kernel_size[::-1], np.uint8)
-            mask = cv2.dilate(mask.astype(np.uint8, copy=False), kernel)
-            mask = mask.astype(bool, copy=False)
+            mask = cv2.dilate(mask.view(np.uint8), kernel).view(bool)
+
             if nodata is None:
                 nodata = self._get_dtype_nodata(image.dtype)
             remap[:, mask] = nodata
@@ -1123,11 +1144,28 @@ class OpenCVCamera(FrameCamera):
 
     def _get_undistort_maps(self) -> tuple[np.ndarray, np.ndarray]:
         im_size = np.array(self._im_size)
-        # TODO: experiment with different map types and undistort speed
+        # Note: float32 maps should be used (here and throughout) for cv2.remap.  The map type
+        # can be specified as cv2.CV_16SC2 below, or in as a conversion step with cv2.convertMaps
+        # to reduce map memory.  But CV_16SC2 maps create artefacts with nearest interpolation.
+        # (The OpenCV docs say CV_16SC2 maps also speed up remapping, but tests don't support this).
         undistort_maps = cv2.initUndistortRectifyMap(
-            self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_16SC2
+            self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_32FC1
         )
-        # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
+        # equivalent to the above, but using Camera methods (works out slower):
+        # TODO: could this be speeded up by optimising _camera_to_pixel and pixel_to_camera?
+        # j = np.arange(0, self.im_size[0], dtype='int32')
+        # i = np.zeros(self.im_size[0], dtype='int32')
+        # ji = np.row_stack((j, i))
+        # undistort_maps = (
+        #     np.zeros(self.im_size[::-1], dtype='float32'),
+        #     np.zeros(self.im_size[::-1], dtype='float32'),
+        # )
+        # for ii in range(0, self.im_size[1]):
+        #     ji[1].fill(ii)
+        #     ji_ = self.distort_pixel(ji, clip=False).astype('float32')
+        #     undistort_maps[0][ii] = ji_[0]
+        #     undistort_maps[1][ii] = ji_[1]
+        #
         return undistort_maps
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
@@ -1136,6 +1174,7 @@ class OpenCVCamera(FrameCamera):
         return ji[:, 0, :].T
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
+        # TODO: avoid cast to float64 if float32?
         ji_cv = ji.T.astype('float64', copy=False)
         xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_param)
         xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
@@ -1324,9 +1363,8 @@ class FisheyeCamera(FrameCamera):
         # unlike cv2.initUndistortRectifyMap(), cv2.fisheye.initUndistortRectifyMap() requires
         # default R & P (new camera matrix) params to be specified
         undistort_maps = cv2.fisheye.initUndistortRectifyMap(
-            self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_16SC2
+            self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_32FC1
         )
-        # undistort_maps = cv2.convertMaps(*undistort_maps, cv2.CV_16SC2)
         return undistort_maps
 
     def _camera_to_pixel(self, xyz_: np.ndarray) -> np.ndarray:
