@@ -190,10 +190,11 @@ def get_filename(file: str | PathLike | OpenFile | DatasetReaderBase | IO) -> st
     return filename
 
 
-def join_ofile(base: OpenFile, rel: str, mode: str = None, **kwargs) -> OpenFile:
-    """Return an fsspec OpenFile whose path is a join of the ``base`` OpenFile path with the
-    ``rel`` path.
-    """
+def join_ofile(base: str | PathLike | OpenFile, rel: str, mode: str = None, **kwargs) -> OpenFile:
+    """Return an fsspec OpenFile whose path is a join of the ``base`` path with the ``rel`` path."""
+    if not isinstance(base, OpenFile):
+        base = fsspec.open(os.fspath(base), mode or 'rt')
+
     joined_path = posixpath.join(base.path, rel)
     return OpenFile(base.fs, joined_path, mode=mode or base.mode, **kwargs)
 

@@ -43,19 +43,25 @@ def test_get_filename(file: str, request: pytest.FixtureRequest):
 
 @pytest.mark.parametrize('file', ['odm_image_file', 'odm_image_url'])
 def test_join_ofile(file: str, request: pytest.FixtureRequest):
-    """Test join_ofile() returns valid OpenFile instances for existing paths / URIs, with and
-    without trailing slashes on the base path / URI.
+    """Test join_ofile() returns valid OpenFile instances for existing paths / URIs,
+    with different base path / URI types, and with and without trailing slashes on the base path
+    / URI.
     """
-    file = str(request.getfixturevalue(file))
-    parts = file.replace('\\', '/').split('/')
-    for pidx in [1, 2]:
-        _base_path = '/'.join(parts[:-pidx])
-        rel_path = '/'.join(parts[-pidx:])
-        for base_path in [_base_path, _base_path + '/']:
-            base_ofile = fsspec.open(base_path)
-            join_ofile = utils.join_ofile(base_ofile, rel_path)
-            assert Path(join_ofile.path).name == Path(file).name
-            assert join_ofile.fs.exists(join_ofile.path)
+    file = request.getfixturevalue(file)
+    ofile = fsspec.open(file)
+    parts = str(file).replace('\\', '/').split('/')
+
+    path_types = [str, fsspec.open, Path] if isinstance(file, Path) else [str, fsspec.open]
+    for path_type in path_types:
+        for pidx in [1, 2]:
+            _base_path = '/'.join(parts[:-pidx])
+            rel_path = '/'.join(parts[-pidx:])
+
+            for base_path in map(path_type, [_base_path, _base_path + '/']):
+                join_ofile = utils.join_ofile(base_path, rel_path)
+                assert isinstance(join_ofile, fsspec.core.OpenFile)
+                assert join_ofile.path == ofile.path
+                assert join_ofile.fs.exists(join_ofile.path)
 
 
 @pytest.mark.parametrize('raster_file', ['odm_image_file', 'odm_image_url'])
