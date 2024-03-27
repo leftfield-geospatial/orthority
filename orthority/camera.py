@@ -500,8 +500,6 @@ class FrameCamera(Camera):
 
     @distort.setter
     def distort(self, value: bool) -> None:
-        if value:
-            self._undistort_maps = None
         self._distort = value
 
     @property
