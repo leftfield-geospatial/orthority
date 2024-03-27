@@ -231,10 +231,7 @@ def test_frame_ext_param_not_found_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert (
-        'No such file' in result.stdout
-        and ext_param_file in result.stdout
-    )
+    assert 'No such file' in result.stdout and ext_param_file in result.stdout
 
 
 def test_frame_ext_param_ext_error(

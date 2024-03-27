@@ -594,7 +594,7 @@ def odm_image_file(odm_dataset_dir: Path) -> Path:
 @pytest.fixture(scope='session')
 def odm_image_url(github_root_url: str, odm_image_file: Path) -> str:
     """ODM drone image URL."""
-    return github_root_url + str(odm_image_file.relative_to(root_path).as_posix())
+    return github_root_url + odm_image_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -612,7 +612,7 @@ def odm_reconstruction_file(odm_dataset_dir: Path) -> Path:
 @pytest.fixture(scope='session')
 def odm_reconstruction_url(github_root_url: str, odm_reconstruction_file: Path) -> str:
     """ODM reconstruction URL."""
-    return github_root_url + str(odm_reconstruction_file.relative_to(root_path).as_posix())
+    return github_root_url + odm_reconstruction_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -638,7 +638,7 @@ def ngi_image_file() -> Path:
 @pytest.fixture(scope='session')
 def ngi_image_url(github_root_url: str, ngi_image_file: Path) -> str:
     """NGI aerial image URL."""
-    return github_root_url + str(ngi_image_file.relative_to(root_path).as_posix())
+    return github_root_url + ngi_image_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -650,7 +650,7 @@ def ngi_dem_file() -> Path:
 @pytest.fixture(scope='session')
 def ngi_dem_url(github_root_url: str, ngi_dem_file: Path) -> str:
     """NGI DEM URL."""
-    return github_root_url + str(ngi_dem_file.relative_to(root_path).as_posix())
+    return github_root_url + ngi_dem_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -676,7 +676,7 @@ def ngi_oty_int_param_file() -> Path:
 @pytest.fixture(scope='session')
 def ngi_oty_int_param_url(github_root_url: str, ngi_oty_int_param_file: Path) -> str:
     """Orthority format interior parameter URL for NGI test data."""
-    return github_root_url + str(ngi_oty_int_param_file.relative_to(root_path).as_posix())
+    return github_root_url + ngi_oty_int_param_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -694,7 +694,7 @@ def ngi_oty_ext_param_file() -> Path:
 @pytest.fixture(scope='session')
 def ngi_oty_ext_param_url(github_root_url: str, ngi_oty_ext_param_file: Path) -> str:
     """Orthority format exterior parameter URL for NGI test data."""
-    return github_root_url + str(ngi_oty_ext_param_file.relative_to(root_path).as_posix())
+    return github_root_url + ngi_oty_ext_param_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
@@ -714,7 +714,7 @@ def ngi_xyz_opk_csv_url(github_root_url: str, ngi_xyz_opk_csv_file: Path) -> str
 
     Includes a header and .proj file.
     """
-    return github_root_url + str(ngi_xyz_opk_csv_file.relative_to(root_path).as_posix())
+    return github_root_url + ngi_xyz_opk_csv_file.relative_to(root_path).as_posix()
 
 
 @pytest.fixture(scope='session')
