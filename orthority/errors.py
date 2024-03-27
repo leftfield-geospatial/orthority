@@ -18,8 +18,8 @@ class OrthorityError(Exception):
     """Base exception class."""
 
 
-class ParamFileError(OrthorityError):
-    """Raised when there is a problem reading interior or exterior parameter file."""
+class ParamError(OrthorityError):
+    """Raised when there is a problem reading camera parameters."""
 
 
 class CrsMissingError(OrthorityError):
