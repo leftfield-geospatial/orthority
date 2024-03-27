@@ -52,7 +52,7 @@ from tqdm.std import tqdm, tqdm as std_tqdm
 
 from orthority import utils
 from orthority.enums import CameraType, CsvFormat
-from orthority.errors import CrsMissingError, ParamFileError
+from orthority.errors import CrsMissingError, ParamError
 from orthority.exif import Exif
 
 logger = logging.getLogger(__name__)
@@ -89,14 +89,14 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         int_param = {}
         for req_key in ['projection_type', 'width', 'height']:
             if req_key not in json_param:
-                raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
+                raise ParamError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
         # set 'cam_type' from 'projection_type'
         proj_type = json_param.pop('projection_type').lower()
         try:
             int_param['cam_type'] = CameraType.from_odm(proj_type)
         except ValueError:
-            raise ParamFileError(f"Unsupported projection type '{proj_type}'.")
+            raise ParamError(f"Unsupported projection type '{proj_type}'.")
 
         im_size = (json_param.pop('width'), json_param.pop('height'))
         int_param['im_size'] = im_size
@@ -108,7 +108,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
             focal_x, focal_y = json_param.pop('focal_x'), json_param.pop('focal_y')
             int_param['focal_len'] = focal_x if focal_x == focal_y else (focal_x, focal_y)
         else:
-            raise ParamFileError(
+            raise ParamError(
                 f"'focal', or 'focal_x' and 'focal_y' are missing for camera '{cam_id}'."
             )
 
@@ -120,7 +120,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         # validate any remaining optional params, update param_dict & return
         err_keys = set(json_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
-            raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
+            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
         int_param.update(**json_param)
         return int_param
 
@@ -188,7 +188,7 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
             # a normalised sensor size in same units, assuming square pixels
             cam_dict['focal_len'] = exif.focal_len_35 / 36.0
     else:
-        raise ParamFileError(
+        raise ParamError(
             f"No focal length & sensor size, or 35mm focal length tags in '{exif.filename}'."
         )
 
@@ -200,9 +200,9 @@ def _read_exif_ext_param(
 ) -> dict[str, dict[str, Any]]:
     """Read camera exterior parameters from an Exif object."""
     if not exif.lla:
-        raise ParamFileError(f"No latitude, longitude & altitude tags in '{exif.filename}'.")
+        raise ParamError(f"No latitude, longitude & altitude tags in '{exif.filename}'.")
     if not exif.rpy:
-        raise ParamFileError(f"No camera / gimbal roll, pitch & yaw tags in '{exif.filename}'.")
+        raise ParamError(f"No camera / gimbal roll, pitch & yaw tags in '{exif.filename}'.")
     rpy = tuple(np.radians(exif.rpy).tolist())
     opk = _rpy_to_opk(rpy, exif.lla, crs, lla_crs=lla_crs)
     xyz = transform(lla_crs, crs, [exif.lla[1]], [exif.lla[0]], [exif.lla[2]])
@@ -228,14 +228,14 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         # test required keys for all cameras
         for req_key in ['type', 'im_size', 'focal_len']:
             if req_key not in yaml_param:
-                raise ParamFileError(f"'{req_key}' is missing for camera '{cam_id}'.")
+                raise ParamError(f"'{req_key}' is missing for camera '{cam_id}'.")
 
         # convert type -> cam_type
         cam_type = yaml_param.pop('type').lower()
         try:
             int_param = dict(cam_type=CameraType(cam_type))
         except ValueError:
-            raise ParamFileError(f"Unsupported camera type '{cam_type}'.")
+            raise ParamError(f"Unsupported camera type '{cam_type}'.")
 
         int_param['im_size'] = tuple(yaml_param.pop('im_size'))
 
@@ -251,7 +251,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         # validate any remaining distortion params, update param_dict & return
         err_keys = set(yaml_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
-            raise ParamFileError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
+            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
         int_param.update(**yaml_param)
         return int_param
 
@@ -612,6 +612,7 @@ class CsvReader(Reader):
         fieldnames: Sequence[str] = None,
         dialect: Dialect = None,
         radians: bool = False,
+        **kwargs,
     ) -> None:
         # TODO: allow other coordinate conventions for opk / rpy (bluh, odm, patb)
         Reader.__init__(self, crs, lla_crs=lla_crs)
@@ -641,7 +642,7 @@ class CsvReader(Reader):
         :class:`CsvFormat`.
         """
         if 'filename' not in fieldnames:
-            raise ParamFileError(f"Fields should include 'filename'.")
+            raise ParamError(f"Fields should include 'filename'.")
 
         has_xyz = {'x', 'y', 'z'}.issubset(fieldnames)
         has_lla = {'latitude', 'longitude', 'altitude'}.issubset(fieldnames)
@@ -649,11 +650,11 @@ class CsvReader(Reader):
         has_rpy = {'roll', 'pitch', 'yaw'}.issubset(fieldnames)
 
         if not (has_xyz or has_lla):
-            raise ParamFileError(
+            raise ParamError(
                 f"Fields should include 'x', 'y' & 'z', or 'latitude', 'longitude' & 'altitude'."
             )
         if not (has_opk or has_rpy):
-            raise ParamFileError(
+            raise ParamError(
                 f"Fields should include 'omega', 'phi' & 'kappa', or 'roll', 'pitch' & 'yaw'."
             )
 
@@ -823,6 +824,7 @@ class OsfmReader(Reader):
         file: str | PathLike | OpenFile | IO[str],
         crs: str | CRS = None,
         lla_crs: str | CRS = CRS.from_epsg(4326),
+        **kwargs,
     ) -> None:
         Reader.__init__(self, crs=crs, lla_crs=lla_crs)
         self._json_dict = self._read_json_dict(file)
@@ -846,7 +848,7 @@ class OsfmReader(Reader):
         try:
             utils.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamFileError(
+            raise ParamError(
                 f"'{utils.get_filename(file)}' is not a valid OpenSfM reconstruction file: {str(ex)}"
             )
 
@@ -927,6 +929,7 @@ class ExifReader(Reader):
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
         progress: bool | std_tqdm = False,
+        **kwargs,
     ) -> None:
         Reader.__init__(self, crs, lla_crs)
         files = files if isinstance(files, Iterable) else [files]
@@ -967,7 +970,7 @@ class ExifReader(Reader):
         llas = []
         for e in self._exif_dict.values():
             if not e.lla:
-                raise ParamFileError(f"No latitude, longitude & altitude tags in '{e.filename}'.")
+                raise ParamError(f"No latitude, longitude & altitude tags in '{e.filename}'.")
             llas.append(e.lla)
 
         mean_latlon = np.array(llas)[:, :2].mean(axis=0)
@@ -999,7 +1002,7 @@ class OtyReader(Reader):
         object or a file object, opened in text mode ('rt').
     """
 
-    def __init__(self, file: str | PathLike | OpenFile | IO[str]) -> None:
+    def __init__(self, file: str | PathLike | OpenFile | IO[str], **kwargs) -> None:
         Reader.__init__(self)
         self._crs, self._json_dict = self._read_json_dict(file, self._crs)
 
@@ -1025,7 +1028,7 @@ class OtyReader(Reader):
         try:
             utils.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamFileError(
+            raise ParamError(
                 f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}"
             )
 
@@ -1033,7 +1036,7 @@ class OtyReader(Reader):
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamFileError(f"Could not interpret CRS in '{filename}': {str(ex)}")
+                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}")
 
         return crs, json_dict
 

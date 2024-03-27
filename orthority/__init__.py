@@ -14,9 +14,9 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Orthorectification toolkit."""
+import logging
 import os
 import pathlib
-import logging
 
 from orthority.camera import create_camera
 from orthority.enums import CameraType, Compress, Interp
