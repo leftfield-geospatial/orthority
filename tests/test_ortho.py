@@ -134,7 +134,7 @@ def test_init_dem_band_error(
     """Test Ortho initialisation with incorrect ``dem_band`` raises an error."""
     with pytest.raises(ValueError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
-    assert 'DEM band' in str(ex)
+    assert 'DEM band' in str(ex.value)
 
 
 def test_init_nocrs_error(
@@ -143,7 +143,7 @@ def test_init_nocrs_error(
     """Test Ortho initialisation without a CRS raises an error."""
     with pytest.raises(errors.CrsMissingError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=None)
-    assert 'crs' in str(ex)
+    assert 'crs' in str(ex.value)
 
 
 def test_init_geogcrs_error(
@@ -152,7 +152,7 @@ def test_init_geogcrs_error(
     """Test Ortho initialisation with a geographic CRS raises an error."""
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs='EPSG:4326')
-    assert 'projected' in str(ex)
+    assert 'projected' in str(ex.value)
 
 
 def test_init_dem_coverage_error(
@@ -165,7 +165,7 @@ def test_init_dem_coverage_error(
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'DEM' in str(ex)
+    assert 'DEM' in str(ex.value)
 
 
 def test_init_horizon_fov_error(
@@ -178,7 +178,7 @@ def test_init_horizon_fov_error(
 
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'horizon' in str(ex)
+    assert 'horizon' in str(ex.value)
 
 
 def test_dem_above_camera_error(
@@ -194,7 +194,7 @@ def test_dem_above_camera_error(
     # init & reproject
     with pytest.raises(ValueError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'DEM' in str(ex)
+    assert 'DEM' in str(ex.value)
 
 
 def test_get_init_dem(rgb_pinhole_utm34n_ortho: Ortho):
@@ -530,7 +530,7 @@ def test_mask_dem_coverage_error(
     # test
     with pytest.raises(ValueError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
-    assert 'boundary' in str(ex)
+    assert 'boundary' in str(ex.value)
 
 
 def test_create_ortho_profile_12bit_jpeg(rgb_pinhole_utm34n_ortho: Ortho):
@@ -926,7 +926,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
 
     with pytest.raises(ValueError) as ex:
         rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype)
-    assert dtype in str(ex)
+    assert dtype in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -1002,7 +1002,7 @@ def test_process_compress_jpeg_error(
 
     with pytest.raises(ValueError) as ex:
         ortho.process(ortho_file, (5, 5), compress=Compress.jpeg)
-    assert 'uint8' in str(ex)
+    assert 'uint8' in str(ex.value)
 
 
 @pytest.mark.parametrize('build_ovw', [True, False])

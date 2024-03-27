@@ -318,30 +318,30 @@ def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
 
     with pytest.raises(ValueError) as ex:
         camera.world_to_pixel(np.zeros(2))
-    assert "'xyz'" in str(ex)
+    assert "'xyz'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
         camera.world_to_pixel(np.zeros((2, 1)))
-    assert "'xyz'" in str(ex)
+    assert "'xyz'" in str(ex.value)
 
 
 def test_pixel_to_world_z_error(pinhole_camera: Camera):
     """Test ``Camera.pixel_to_world_z()`` raises a ValueError with invalid coordinate shapes."""
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
-    assert "'ji'" in str(ex)
+    assert "'ji'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
-    assert "'ji'" in str(ex)
+    assert "'ji'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
-    assert "'z'" in str(ex)
+    assert "'z'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
         pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
-    assert "'z'" in str(ex)
+    assert "'z'" in str(ex.value)
 
 
 def test_frame_intrinsic_equivalence(
