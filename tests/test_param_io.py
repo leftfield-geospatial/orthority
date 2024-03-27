@@ -29,7 +29,7 @@ from rasterio.warp import transform
 from orthority import param_io
 from orthority.camera import FrameCamera
 from orthority.enums import CameraType, CsvFormat, Interp
-from orthority.errors import CrsMissingError, ParamFileError
+from orthority.errors import CrsMissingError, ParamError
 from tests.conftest import oty_to_osfm_int_param
 
 
@@ -90,9 +90,9 @@ def test_read_oty_int_param_missing_error(
     int_params.pop(missing_key)
     filename = tmp_path.joinpath('int_param.yaml')
     param_io.write_int_param(filename, dict(default=int_params))
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert missing_key in str(ex)
+    assert missing_key in str(ex.value)
 
 
 def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -103,9 +103,9 @@ def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path
     int_params['other'] = 0.0
     filename = tmp_path.joinpath('int_param.yaml')
     param_io.write_int_param(filename, dict(default=int_params))
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert 'other' in str(ex)
+    assert 'other' in str(ex.value)
 
 
 def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -116,9 +116,9 @@ def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_pat
     int_params['cam_type'] = Interp.cubic
     filename = tmp_path.joinpath('int_param.yaml')
     param_io.write_int_param(filename, dict(default=int_params))
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert 'camera type' in str(ex)
+    assert 'camera type' in str(ex.value)
 
 
 @pytest.mark.parametrize('filename', ['osfm_int_param_file', 'odm_int_param_file'])
@@ -152,9 +152,9 @@ def test_read_osfm_int_param_missing_error(
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params.pop(missing_key)
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io._read_osfm_int_param(osfm_dict)
-    assert missing_key in str(ex)
+    assert missing_key in str(ex.value)
 
 
 def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -164,9 +164,9 @@ def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_pat
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['other'] = 0.0
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io._read_osfm_int_param(osfm_dict)
-    assert 'other' in str(ex)
+    assert 'other' in str(ex.value)
 
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -176,9 +176,9 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_p
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['projection_type'] = 'other'
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io._read_osfm_int_param(osfm_dict)
-    assert 'projection type' in str(ex)
+    assert 'projection type' in str(ex.value)
 
 
 def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_file: Path):
@@ -233,9 +233,9 @@ def test_read_exif_int_param_values(
 
 def test_read_exif_int_param_error(ngi_image_file: Path):
     """Test reading EXIF tag interior parameters from a non EXIF image raises an error."""
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.read_exif_int_param(ngi_image_file)
-    assert 'focal length' in str(ex)
+    assert 'focal length' in str(ex.value)
 
 
 def test_aa_to_opk(xyz: tuple, opk: tuple):
@@ -479,7 +479,7 @@ def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: list):
     """
     with pytest.raises(CrsMissingError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert 'crs' in str(ex).lower()
+    assert 'crs' in str(ex.value).lower()
 
 
 def test_csv_reader_lla_rpy_lla_crs(odm_lla_rpy_csv_file, odm_crs: str, wgs84_egm2008_crs: str):
@@ -526,9 +526,9 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
     """Test that CsvReader initialised with a missing fieldname raises an error."""
     fieldnames = param_io.CsvReader._legacy_fieldnames.copy()
     fieldnames.remove(missing_field)
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert missing_field in str(ex)
+    assert missing_field in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -649,9 +649,9 @@ def test_osfm_reader_auto_crs(odm_reconstruction_file: Path, odm_crs: str):
 
 def test_osfm_reader_validity_error(ngi_oty_ext_param_file: Path):
     """Test OsfmReader raises an error with an invalid file format."""
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.OsfmReader(ngi_oty_ext_param_file, crs=None)
-    assert 'valid' in str(ex)
+    assert 'valid' in str(ex.value)
 
 
 def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
@@ -732,9 +732,9 @@ def test_oty_rw_ext_param(mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: 
 
 def test_oty_reader_validity_error(odm_reconstruction_file: Path):
     """Test OtyReader raises an error with an invalid file format."""
-    with pytest.raises(ParamFileError) as ex:
+    with pytest.raises(ParamError) as ex:
         _ = param_io.OtyReader(odm_reconstruction_file)
-    assert 'valid' in str(ex)
+    assert 'valid' in str(ex.value)
 
 
 def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
