@@ -35,10 +35,11 @@ from fsspec.core import OpenFile
 from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm.std import tqdm
 
-from orthority import param_io, root_path, utils
+from orthority import root_path, utils
 from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp
-from orthority.errors import CrsMissingError, ParamFileError
+from orthority.errors import CrsMissingError, ParamError
+from orthority.factory import Cameras, ExifCameras, FrameCameras
 from orthority.ortho import Ortho
 from orthority.version import __version__
 
@@ -311,19 +312,16 @@ def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int 
 def _ortho(
     src_files: Sequence[OpenFile],
     dem_file: OpenFile,
-    int_param_dict: dict[str, dict],
-    ext_param_dict: dict[str, dict],
+    cameras: Cameras,
     crs: rio.CRS,
     dem_band: int,
-    alpha: float,
     export_params: bool,
     out_dir: OpenFile,
     overwrite: bool,
-    full_remap: bool,  # TODO: to be removed and passed in calling sub-command
     **kwargs,
 ):
     """
-    Orthorectify images given a DEM filename, and interior & exterior parameter dictionaries.
+    Orthorectify images given a DEM filename and camera factory.
 
     Backend function for orthorectification sub-commands.
     """
@@ -333,10 +331,7 @@ def _ortho(
     if export_params:
         # convert interior / exterior params to oty format files & exit
         logger.info('Writing parameter files...')
-        int_param_ofile = utils.join_ofile(out_dir, 'int_param.yaml', mode='wt')
-        param_io.write_int_param(int_param_ofile, int_param_dict, overwrite=overwrite)
-        ext_param_ofile = utils.join_ofile(out_dir, 'ext_param.geojson', mode='wt')
-        param_io.write_ext_param(ext_param_ofile, ext_param_dict, crs, overwrite=overwrite)
+        cameras.write_param(out_dir, overwrite=overwrite)
         return
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
@@ -363,7 +358,6 @@ def _ortho(
                 f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
             )
-        cameras = {}
         for src_file in tqdm(src_files, desc='Total', bar_format=outer_bar_format):
             # create progress bar for the current src_file
             src_file_path = Path(src_file.path)
@@ -372,35 +366,11 @@ def _ortho(
                     tqdm(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
                 )
 
-                # get exterior params for src_file
-                ext_param = ext_param_dict.get(
-                    src_file_path.name, ext_param_dict.get(src_file_path.stem, None)
-                )
-                if not ext_param:
-                    raise click.BadParameter(
-                        f"Could not find exterior parameters for '{src_file_path.name}'.",
-                        param_hint="'-ep' / '--ext-param'",
-                    )
-
-                # get interior params for ext_param
-                cam_id = ext_param.pop('camera')
-                if cam_id:
-                    if cam_id not in int_param_dict:
-                        raise click.BadParameter(
-                            f"Could not find interior parameters for camera '{cam_id}'."
-                        )
-                    int_param = int_param_dict[cam_id]
-                elif len(int_param_dict) == 1:
-                    int_param = list(int_param_dict.values())[0]
-                else:
-                    raise click.BadParameter(
-                        f"Exterior parameters for '{src_file_path.name}' should define a 'camera' ID."
-                    )
-
-                # create camera on first use and update exterior parameters
-                if cam_id not in cameras:
-                    cameras[cam_id] = create_camera(**int_param, alpha=alpha, distort=full_remap)
-                cameras[cam_id].update(**ext_param)
+                # create camera for src_file
+                try:
+                    camera = cameras.get(src_file)
+                except ParamError as ex:
+                    raise click.BadParameter(str(ex))
 
                 # open & validate src_file (open it once here so it is not opened repeatedly)
                 try:
@@ -414,7 +384,7 @@ def _ortho(
                     raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
                 # orthorectify
-                ortho = Ortho(src_im, dem_im, cameras[cam_id], crs, dem_band=dem_band)
+                ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
                 ortho_ofile = utils.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
@@ -641,7 +611,7 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 
 @cli.command(
     cls=RstCommand,
-    short_help='Orthorectify with camera parameter files.',
+    short_help='Orthorectify with interior and exterior parameter files.',
     epilog='See https://orthority.readthedocs.io/ for more detail on file formats and usage.',
 )
 @src_files_arg
@@ -665,17 +635,19 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 @export_params_option
 @out_dir_option
 @overwrite_option
-def ortho(
+def frame(
     int_param_file: OpenFile,
     ext_param_file: OpenFile,
     crs: rio.CRS,
+    full_remap: bool,
+    alpha: float,
     lla_crs: rio.CRS,
     radians: bool,
     **kwargs,
 ) -> None:
     """
-    Orthorectify SOURCE images with camera model(s) defined by interior and exterior parameter
-    files.
+    Orthorectify SOURCE images with frame camera model(s) defined by interior and exterior
+    parameter files.
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
@@ -684,58 +656,38 @@ def ortho(
     Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Note that
     parameter file extensions are used to distinguish their format.
 
-    The :option:`--dem <oty-ortho --dem>`, :option:`--int-param <oty-ortho --int-param>` and
-    :option:`--ext-param <oty-ortho --ext-param>` options are required.  Depending on the input
-    file formats, :option:`--crs <oty-ortho --crs>` may also be required::
+    The :option:`--dem <oty-frame --dem>`, :option:`--int-param <oty-frame --int-param>` and
+    :option:`--ext-param <oty-frame --ext-param>` options are required.  Depending on the input
+    file formats, :option:`--crs <oty-frame --crs>` may also be required::
 
-        oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
+        oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
 
     Camera parameters can be converted into Orthority format files with :option:`--export-params
-    <oty-ortho --export-params>`.  With this option, :option:`--dem <oty-ortho --dem>` is not
+    <oty-frame --export-params>`.  With this option, :option:`--dem <oty-frame --dem>` is not
     required::
 
-        oty ortho --int-param reconstruction.json --ext-param reconstruction.json --export-params
+        oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
     Ortho images and parameter files are placed in the current working directory by default.
     This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
-    # read interior params
+    # create camera factory
     try:
-        int_param_suffix = Path(int_param_file.path).suffix.lower()
-        if int_param_suffix in ['.yaml', '.yml']:
-            int_param_dict = param_io.read_oty_int_param(int_param_file)
-        elif int_param_suffix == '.json':
-            int_param_dict = param_io.read_osfm_int_param(int_param_file)
-        else:
-            raise ParamFileError(f"'{int_param_suffix}' file type not supported.")
-    except (FileNotFoundError, ParamFileError) as ex:
-        raise click.BadParameter(str(ex), param_hint="'-ip' / '--int-param'")
-
-    # read exterior params
-    try:
-        ext_param_suffix = Path(ext_param_file.path).suffix.lower()
-        if ext_param_suffix in ['.csv', '.txt']:
-            reader = param_io.CsvReader(ext_param_file, crs=crs, lla_crs=lla_crs, radians=radians)
-        elif ext_param_suffix == '.json':
-            reader = param_io.OsfmReader(ext_param_file, crs=crs, lla_crs=lla_crs)
-        elif ext_param_suffix == '.geojson':
-            reader = param_io.OtyReader(ext_param_file)
-        else:
-            raise ParamFileError(f"'{ext_param_suffix}' file type not supported.")
-    except (FileNotFoundError, ParamFileError) as ex:
-        raise click.BadParameter(str(ex), param_hint="'-ep' / '--ext-param'")
+        cameras = FrameCameras(
+            int_param_file,
+            ext_param_file,
+            io_kwargs=dict(crs=crs, lla_crs=lla_crs, radians=radians),
+            cam_kwargs=dict(distort=full_remap, alpha=alpha),
+        )
+    except (FileNotFoundError, ParamError) as ex:
+        raise click.BadParameter(str(ex))
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
-
-    ext_param_dict = reader.read_ext_param()
-
-    # get any parameter CRS if no user CRS is supplied
-    crs = crs or reader.crs
+    crs = crs or cameras.crs
 
     # orthorectify
     _ortho(
-        int_param_dict=int_param_dict,
-        ext_param_dict=ext_param_dict,
+        cameras=cameras,
         crs=crs,
         **kwargs,
     )
@@ -764,9 +716,16 @@ def ortho(
 @export_params_option
 @out_dir_option
 @overwrite_option
-def exif(src_files: Sequence[OpenFile], crs: rio.CRS, lla_crs: rio.CRS, **kwargs) -> None:
+def exif(
+    src_files: Sequence[OpenFile],
+    crs: rio.CRS,
+    full_remap: bool,
+    alpha: float,
+    lla_crs: rio.CRS,
+    **kwargs,
+) -> None:
     """
-    Orthorectify SOURCE images with camera model(s) defined by image EXIF / XMP tags.
+    Orthorectify SOURCE images with frame camera model(s) defined by image EXIF / XMP tags.
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
@@ -794,23 +753,24 @@ def exif(src_files: Sequence[OpenFile], crs: rio.CRS, lla_crs: rio.CRS, **kwargs
     bar_format = _get_bar_format(units='files', desc_width=len(desc))
     reader_bar = tqdm(desc=desc, bar_format=bar_format, leave=False)
 
-    # read interior & exterior params
+    # create camera factory
     try:
         with reader_bar:
-            reader = param_io.ExifReader(src_files, crs=crs, lla_crs=lla_crs, progress=reader_bar)
-            int_param_dict = reader.read_int_param()
-            ext_param_dict = reader.read_ext_param()
-    except (FileNotFoundError, ParamFileError) as ex:
+            cameras = ExifCameras(
+                src_files,
+                io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=reader_bar),
+                cam_kwargs=dict(distort=full_remap, alpha=alpha),
+            )
+    except (FileNotFoundError, ParamError) as ex:
         raise click.BadParameter(str(ex), param_hint='SOURCE...')
 
     # get auto UTM CRS, if CRS not set already
-    crs = crs or reader.crs
+    crs = crs or cameras.crs
 
     # orthorectify
     _ortho(
         src_files=src_files,
-        int_param_dict=int_param_dict,
-        ext_param_dict=ext_param_dict,
+        cameras=cameras,
         crs=crs,
         **kwargs,
     )
@@ -856,6 +816,8 @@ def odm(
     dataset_dir: OpenFile,
     crs: rio.CRS,
     resolution: tuple[float, float],
+    full_remap: bool,
+    alpha: float,
     out_dir: OpenFile,
     **kwargs,
 ) -> None:
@@ -901,24 +863,28 @@ def odm(
     with dem_ctx as dem_im:
         crs = crs or dem_im.crs
 
-    # read interior and exterior params from OpenSfM reconstruction file
+    # create camera factory
     rec_ofile = utils.join_ofile(dataset_dir, 'opensfm/reconstruction.json', mode='rt')
     try:
-        reader = param_io.OsfmReader(rec_ofile, crs=crs)
+        cameras = FrameCameras(
+            int_param=rec_ofile,
+            ext_param=rec_ofile,
+            io_kwargs=dict(crs=crs),
+            cam_kwargs=dict(distort=full_remap, alpha=alpha),
+        )
     except FileNotFoundError as ex:
         raise click.BadParameter(
             f"No 'reconstruction.json' file found in '<--dataset-dir>/opensfm/'. {str(ex)}",
             param_hint="'-dd' / '--dataset-dir'",
         )
-    int_param_dict = reader.read_int_param()
-    ext_param_dict = reader.read_ext_param()
+    except ParamError as ex:
+        raise click.BadParameter(str(ex))
 
     # orthorectify
     _ortho(
         src_files=tuple(src_files),
         dem_file=dem_ofile,
-        int_param_dict=int_param_dict,
-        ext_param_dict=ext_param_dict,
+        cameras=cameras,
         crs=crs,
         resolution=resolution,
         dem_band=1,
