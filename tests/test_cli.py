@@ -1100,6 +1100,8 @@ def test__frame_mult_camera(
     runner: CliRunner,
 ):
     """Test the _ortho backend with multiple camera ID interior & exterior parameters."""
+    # note that this test, and those below, basically duplicate similarly named tests in
+    # test_factory
     src_files = []
     for src_file_key in mult_ext_param_dict.keys():
         src_file = tmp_path.joinpath(src_file_key).with_suffix(rgb_byte_src_file.suffix)
@@ -1122,7 +1124,7 @@ def test__frame_mult_camera(
     assert len(ortho_files) == len(src_files)
 
 
-def test__frame_single_no_camera(
+def test__frame_single_camera(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     pinhole_int_param_dict: dict,
@@ -1152,7 +1154,7 @@ def test__frame_single_no_camera(
     assert len(ortho_files) == 1
 
 
-def test__frame_ext_param_not_found_error(
+def test__frame_filename_not_found_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     pinhole_int_param_dict: dict,
@@ -1182,7 +1184,7 @@ def test__frame_ext_param_not_found_error(
     assert rgb_byte_src_file.name in str(ex.value) and 'exterior parameters' in str(ex.value)
 
 
-def test__frame_mult_camera_unknown_camera_error(
+def test__frame_camera_not_found_error(
     rgb_byte_src_file: Path,
     float_utm34n_dem_file: Path,
     mult_int_param_dict: dict,
