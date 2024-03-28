@@ -36,6 +36,12 @@ class Cameras(ABC):
     def __init__(self, **kwargs):
         pass
 
+    @property
+    @abstractmethod
+    def filenames(self) -> set[str]:
+        """Filenames for which there are cameras."""
+        pass
+
     @abstractmethod
     def get(self, filename: str | PathLike | OpenFile) -> Camera:
         """
@@ -104,6 +110,10 @@ class FrameCameras(Cameras):
     def crs(self) -> rio.CRS | None:
         """CRS of the world coordinate system."""
         return self._crs
+
+    @property
+    def filenames(self) -> set[str]:
+        return set(self._ext_param_dict.keys())
 
     @staticmethod
     def _read_param(
@@ -228,7 +238,8 @@ class ExifCameras(FrameCameras):
     ):
         # TODO: read exif tags and create cameras as needed rather than upfront (would
         #  complicate exporting which needs upfront params)?
-        reader = param_io.ExifReader(files, **(io_kwargs or {}))
+        io_kwargs = io_kwargs or {}
+        reader = param_io.ExifReader(files, **io_kwargs)
         int_param_dict = reader.read_int_param()
         ext_param_dict = reader.read_ext_param()
         io_kwargs.update(crs=reader.crs)
