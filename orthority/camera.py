@@ -28,10 +28,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.transform import (
-    GCPTransformer,
-    GroundControlPoint,
-    RPC,
-    RPCTransformer,
+    GCPTransformer, GroundControlPoint, RPC, RPCTransformer,
 )
 from rasterio.warp import transform as warp
 
@@ -305,24 +302,24 @@ class Camera(ABC):
         **kwargs,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Remap image to ortho image at given world / ortho coordinates.
+        Remap image to ortho image at given world coordinates.
 
         :param im_array:
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
-            X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            X world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            Y world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            Z world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param nodata:
-            Value to use for masking invalid pixels in the remapped image.  If set to None
-            (the default), a value based on the ``image`` data type is chosen automatically.
+            Value to use for masking invalid pixels in the remapped image.  If set to None (the
+            default), a value based on the ``image`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
         :param kwargs:
@@ -433,8 +430,8 @@ class FrameCamera(Camera):
     Pinhole camera with no distortion.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
-    :meth:`~Camera.pixel_to_world_z`.
+    :meth:`~FrameCamera.update`, before calling any methods that generate or require world
+    coordinates.
 
     :param im_size:
         Image (width, height) in pixels.
@@ -978,24 +975,24 @@ class FrameCamera(Camera):
         kernel_size: tuple[int, int] = (3, 3),
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Remap image to ortho image at given world / ortho coordinates.
+        Remap image to ortho image at given world coordinates.
 
         :param im_array:
             Image to remap as a 3D array with band(s) along the first dimension (Rasterio
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
-            X world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            X world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            Y world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world / ortho coordinates to remap to, as a M-by-N 2D array with 'float64' data type.
-            NaN coordinate pixels are mapped to ``nodata``.
+            Z world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            coordinate pixels are mapped to ``nodata``.
         :param nodata:
-            Value to use for masking invalid pixels in the remapped image.  If set to None
-            (the default), a value based on the ``image`` data type is chosen automatically.
+            Value to use for masking invalid pixels in the remapped image.  If set to None (the
+            default), a value based on the ``image`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
         :param kernel_size:
@@ -1043,8 +1040,8 @@ class OpenCVCamera(FrameCamera):
     distortion coefficients are specified, this model corresponds to :class:`BrownCamera`.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
-    :meth:`~Camera.pixel_to_world_z`.
+    :meth:`~FrameCamera.update`, before calling any methods that generate or require world
+    coordinates.
 
     :param im_size:
         Image (width, height) in pixels.
@@ -1189,8 +1186,8 @@ class BrownCamera(OpenCVCamera):
     `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
-    :meth:`~Camera.pixel_to_world_z`.
+    :meth:`~FrameCamera.update`, before calling any methods that generate or require world
+    coordinates.
 
     :param im_size:
         Image (width, height) in pixels.
@@ -1286,8 +1283,8 @@ class FisheyeCamera(FrameCamera):
     parameters.
 
     The ``xyz`` and ``opk`` exterior parameters must be supplied here, or via
-    :meth:`~FrameCamera.update`, before calling :meth:`~Camera.world_to_pixel` or
-    :meth:`~Camera.pixel_to_world_z`.
+    :meth:`~FrameCamera.update`, before calling any methods that generate or require world
+    coordinates.
 
     :param im_size:
         Image (width, height) in pixels.
