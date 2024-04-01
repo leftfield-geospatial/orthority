@@ -20,7 +20,6 @@ import tracemalloc
 from pathlib import Path
 from typing import Sequence
 
-import cv2
 import numpy as np
 import pytest
 import rasterio as rio
@@ -197,16 +196,106 @@ def test_dem_above_camera_error(
     assert 'DEM' in str(ex.value)
 
 
-def test_get_init_dem(rgb_pinhole_utm34n_ortho: Ortho):
-    """Test the bounds of the initial DEM contain the world boundary at z=min(DEM)."""
-    ortho = rgb_pinhole_utm34n_ortho
-    test_bounds = array_bounds(*ortho._dem_array.shape, ortho._dem_transform)
-    min_z = np.nanmin(ortho._dem_array)
+@pytest.mark.parametrize(
+    'dem_file, crs',
+    [
+        ('float_utm34n_dem_file', 'utm34n_crs'),
+        ('float_utm34n_msl_dem_file', 'utm34n_egm2008_crs'),
+        ('float_wgs84_wgs84_dem_file', 'utm34n_egm2008_crs'),
+    ],
+)
+def test_get_init_dem(
+    rgb_byte_src_file: Path,
+    pinhole_camera: Camera,
+    dem_file: str,
+    crs: str,
+    request: pytest.FixtureRequest,
+):
+    """Test the bounds of the initial DEM contain the world / ortho boundary at z=min(DEM),
+    with different DEM and world / ortho CRSs, some including vertical CRSs.
+    """
+    dem_file: Path = request.getfixturevalue(dem_file)
+    crs: str = request.getfixturevalue(crs)
+    dem_interp = Interp.cubic
+    resolution = _dem_resolution
+
+    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs)
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    test_bounds = array_bounds(*dem_array.shape, dem_transform)
+    min_z = np.nanmin(dem_array)
     xyz = ortho.camera.world_boundary(min_z)
     ref_bounds = *xyz[:2].min(axis=1), *xyz[:2].max(axis=1)
 
     assert test_bounds[:2] <= ref_bounds[:2]
     assert test_bounds[2:] >= ref_bounds[2:]
+
+
+@pytest.mark.parametrize(
+    # varying rotations starting at ``rotation`` fixture value & keeping full DEM coverage
+    'opk_offset',
+    [(0, 0, 0), (-15, 10, 0), (-30, 20, 0)],
+)
+def test_get_gsd_opk(
+    rgb_byte_src_file: Path,
+    float_utm34n_dem_file: Path,
+    frame_args: dict,
+    utm34n_crs: str,
+    opk_offset: tuple,
+    tmp_path: Path,
+):
+    """Test the GSD as ortho resolution generates approx as many ortho pixels as source pixels
+    with different camera orientations.
+    """
+    _opk = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
+    camera = PinholeCamera(**frame_args)
+    camera.update(xyz=frame_args['xyz'], opk=_opk)
+    dem_interp = Interp.cubic
+
+    # find the gsd resolution and masked dem
+    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
+    resolution = (ortho._get_gsd(),) * 2
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    dem_array_mask, dem_transform_mask = ortho._mask_dem(
+        dem_array, dem_transform, dem_interp, crop=False, mask=True
+    )
+    mask = ~np.isnan(dem_array_mask)
+
+    assert np.array(camera.im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
+
+
+@pytest.mark.parametrize(
+    'dem_file, crs',
+    [
+        ('float_utm34n_dem_file', 'utm34n_crs'),
+        ('float_utm34n_msl_dem_file', 'utm34n_egm2008_crs'),
+        ('float_wgs84_wgs84_dem_file', 'utm34n_egm2008_crs'),
+    ],
+)
+def test_get_gsd_vert_crs(
+    rgb_byte_src_file: Path,
+    pinhole_camera: Camera,
+    dem_file: str,
+    crs: str,
+    request: pytest.FixtureRequest,
+):
+    """Test the GSD as ortho resolution generates approx as many ortho pixels as source pixels
+    with different DEM and world / ortho CRSs, some with vertical CRSs.
+    """
+    dem_file: Path = request.getfixturevalue(dem_file)
+    crs: str = request.getfixturevalue(crs)
+    dem_interp = Interp.cubic
+
+    ortho = Ortho(rgb_byte_src_file, dem_file, pinhole_camera, crs=crs, dem_band=2)
+
+    # find the gsd resolution and masked dem
+    resolution = (ortho._get_gsd(),) * 2
+    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
+    dem_array_mask, dem_transform_mask = ortho._mask_dem(
+        dem_array, dem_transform, dem_interp, crop=True, mask=True
+    )
+    mask = ~np.isnan(dem_array_mask)
+
+    assert np.array(ortho.camera.im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
 
 
 @pytest.mark.parametrize(
@@ -270,14 +359,14 @@ def test_reproject_dem_crs_equal(
         # ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
     ],
 )
-def test_reproject_dem_vdatum_both(
+def test_reproject_dem_vert_crs_both(
     rgb_byte_src_file: Path,
     dem_file: str,
     pinhole_camera: Camera,
     crs: str,
     request: pytest.FixtureRequest,
 ):
-    """Test DEM reprojection altitude adjustment when both DEM and ortho vertical datums are
+    """Test DEM reprojection altitude adjustment when both DEM and ortho vertical CRSs are
     specified.
     """
     dem_file: Path = request.getfixturevalue(dem_file)
@@ -304,6 +393,7 @@ def test_reproject_dem_vdatum_both(
 
     mask = ~np.isnan(test_array) & ~np.isnan(ortho._dem_array)
     assert test_array[mask] != pytest.approx(ortho._dem_array[mask], abs=0.1)
+    assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=abs(Ortho._egm_minmax[0]))
 
 
 @pytest.mark.parametrize(
@@ -311,14 +401,14 @@ def test_reproject_dem_vdatum_both(
     [('float_utm34n_dem_file', 'utm34n_egm96_crs'), ('float_utm34n_egm96_dem_file', 'utm34n_crs')],
 )
 @pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
-def test_reproject_dem_vdatum_one(
+def test_reproject_dem_vert_crs_one(
     rgb_byte_src_file: Path,
     dem_file: str,
     pinhole_camera: Camera,
     crs: str,
     request: pytest.FixtureRequest,
 ):
-    """Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical datums
+    """Test DEM reprojection does no altitude adjustment when one of DEM and ortho vertical CRSs
     are specified.
     """
     dem_file: Path = request.getfixturevalue(dem_file)
@@ -348,6 +438,24 @@ def test_reproject_dem_vdatum_one(
     mask = ~np.isnan(test_array) & ~np.isnan(ortho._dem_array)
     # prior proj versions promote 2D->3D with ellipsoidal height
     assert test_array[mask] == pytest.approx(ortho._dem_array[mask], abs=1e-3)
+
+
+def test_reproject_dem_vert_crs_scale(
+    rgb_byte_src_file: Path,
+    float_utm34n_msl_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_egm2008_crs: str,
+):
+    """Test DEM reprojection z scaling when DEM height is in feet."""
+    ortho = Ortho(
+        rgb_byte_src_file,
+        float_utm34n_msl_dem_file,
+        pinhole_camera,
+        crs=utm34n_egm2008_crs,
+        dem_band=2,
+    )
+    array, transform = ortho._reproject_dem(Interp.cubic, _dem_resolution)
+    assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array) / 3.28084, abs=1e-3)
 
 
 def test_mask_dem(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
@@ -562,38 +670,6 @@ def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: tuple, 
 
     with rio.open(ortho_file, 'r') as ortho_im:
         assert ortho_im.res == resolution
-
-
-@pytest.mark.parametrize(
-    # varying rotations starting at ``rotation`` fixture value & keeping full DEM coverage
-    'opk_offset',
-    [(0, 0, 0), (-15, 10, 0)],
-)
-def test_process_auto_resolution(
-    rgb_byte_src_file: Path,
-    float_utm34n_dem_file: Path,
-    frame_args: dict,
-    utm34n_crs: str,
-    opk_offset: tuple,
-    tmp_path: Path,
-):
-    """Test that auto resolution generates approx as many ortho pixels as source pixels."""
-    # TODO: either add distort=False case, or test camera.boundary rigorously in test_camera
-    _opk = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
-    camera = PinholeCamera(**frame_args)
-    camera.update(xyz=frame_args['xyz'], opk=_opk)
-    dem_interp = Interp.cubic
-
-    # find the auto res and masked dem
-    ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
-    resolution = (ortho._get_gsd(),) * 2
-    dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
-    dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, crop=True, mask=True
-    )
-    mask = ~np.isnan(dem_array_mask)
-
-    assert np.array(camera.im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
 
 
 @pytest.mark.parametrize('interp', [Interp.average, Interp.bilinear, Interp.cubic, Interp.lanczos])
@@ -1113,6 +1189,4 @@ def test_process_odm(
 # TODO: add test with dem that includes occlusion
 # TODO: add tests for other CRSs, spec'd in proj4 string, with vertical CRS & with ortho & DEM in
 #  different CRSs
-# TODO: add a test with nadir pinhole camera and test for proper pixel alignment and similarity
-#  with source (as far as possible make the ortho identical to the source)
 ##
