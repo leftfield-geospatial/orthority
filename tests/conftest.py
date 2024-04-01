@@ -27,7 +27,7 @@ import pytest
 import rasterio as rio
 from click.testing import CliRunner
 from rasterio.transform import from_bounds, from_origin
-from rasterio.warp import transform_bounds, array_bounds
+from rasterio.warp import array_bounds, transform_bounds
 
 from orthority.camera import (
     BrownCamera,
@@ -316,7 +316,7 @@ def utm34n_crs() -> str:
 
 @pytest.fixture(scope='session')
 def utm34n_wgs84_crs() -> str:
-    """CRS string for UTM zone 34N with WGS84 ellipsoid vertical CRS."""
+    """CRS string for UTM zone 34N with height above WGS84 ellipsoid vertical CRS."""
     # TODO: GDAL/rasterio implements this CRS as a sidecar PAM file which cannot be written to /
     #   read from with rio.open(<python file object>).  Perhaps this be fixed with when rio.open(
     #   opener=) when it is implemented.
@@ -326,14 +326,20 @@ def utm34n_wgs84_crs() -> str:
 
 @pytest.fixture(scope='session')
 def utm34n_egm96_crs() -> str:
-    """CRS string for UTM zone 34N with EGM96 geoid vertical CRS."""
+    """CRS string for UTM zone 34N with height above EGM96 geoid vertical CRS."""
     return 'EPSG:32634+5773'
 
 
 @pytest.fixture(scope='session')
 def utm34n_egm2008_crs() -> str:
-    """CRS string for UTM zone 34N with EGM2008 geoid vertical CRS."""
+    """CRS string for UTM zone 34N with height above EGM2008 geoid vertical CRS."""
     return 'EPSG:32634+3855'
+
+
+@pytest.fixture(scope='session')
+def utm34n_msl_crs() -> str:
+    """CRS string for UTM zone 34N with height above MSL (feet) vertical CRS."""
+    return 'EPSG:32634+8050'
 
 
 @pytest.fixture(scope='session')
@@ -344,7 +350,7 @@ def webmerc_crs() -> str:
 
 @pytest.fixture(scope='session')
 def webmerc_wgs84_crs() -> str:
-    """CRS string for web mercator with WGS84 ellipsoid vertical CRS."""
+    """CRS string for web mercator with height above WGS84 ellipsoid vertical CRS."""
     # return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
     # see utm34n_wgs84_crs note above
     raise NotImplementedError()
@@ -352,13 +358,13 @@ def webmerc_wgs84_crs() -> str:
 
 @pytest.fixture(scope='session')
 def webmerc_egm96_crs() -> str:
-    """CRS string for web mercator with EGM96 geoid vertical CRS."""
+    """CRS string for web mercator with height above EGM96 geoid vertical CRS."""
     return '+proj=webmerc +datum=WGS84 +geoidgrids=egm96_15.gtx +vunits=m'
 
 
 @pytest.fixture(scope='session')
 def webmerc_egm2008_crs() -> str:
-    """CRS string for web mercator with EGM2008 geoid vertical CRS."""
+    """CRS string for web mercator with height above EGM2008 geoid vertical CRS."""
     return '+proj=webmerc +datum=WGS84 +geoidgrids=egm08_25.gtx +vunits=m'
 
 
@@ -370,19 +376,19 @@ def wgs84_crs() -> str:
 
 @pytest.fixture(scope='session')
 def wgs84_wgs84_crs() -> str:
-    """CRS string for WGS84 with WGS84 ellipsoid vertical CRS."""
+    """CRS string for WGS84 with height above WGS84 ellipsoid vertical CRS."""
     return 'EPSG:4979'
 
 
 @pytest.fixture(scope='session')
 def wgs84_egm96_crs() -> str:
-    """CRS string for WGS84 with EGM96 geoid vertical CRS."""
+    """CRS string for WGS84 with height above EGM96 geoid vertical CRS."""
     return 'EPSG:4326+5773'
 
 
 @pytest.fixture(scope='session')
 def wgs84_egm2008_crs() -> str:
-    """CRS string for WGS84 with EGM2008 geoid vertical CRS."""
+    """CRS string for WGS84 with height above EGM2008 geoid vertical CRS."""
     return 'EPSG:4326+3855'
 
 
@@ -451,7 +457,7 @@ def float_utm34n_wgs84_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera: Camera, utm34n_wgs84_crs: str
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with WGS84 ellipsoid vertical CRS.
+    A 2 band float DEM file in UTM zone 34N with height above WGS84 ellipsoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a horizontal plane.
     """
@@ -470,7 +476,7 @@ def float_utm34n_egm96_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera: Camera, utm34n_egm96_crs: str
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with EGM96 geoid vertical CRS.
+    A 2 band float DEM file in UTM zone 34N with height above EGM96 geoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a horizontal plane.
     """
@@ -489,7 +495,7 @@ def float_utm34n_egm2008_dem_file(
     tmp_path_factory: pytest.TempPathFactory, pinhole_camera: Camera, utm34n_egm2008_crs: str
 ) -> Path:
     """
-    A 2 band float DEM file in UTM zone 34N with EGM2008 geoid vertical CRS.
+    A 2 band float DEM file in UTM zone 34N with height above EGM2008 geoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a horizontal plane.
     """
@@ -513,7 +519,7 @@ def float_wgs84_wgs84_dem_file(
     wgs84_wgs84_crs: str,
 ) -> Path:
     """
-    A 2 band float DEM file in WGS84 with WGS84 ellipsoid vertical CRS.
+    A 2 band float DEM file in WGS84 with height above WGS84 ellipsoid vertical CRS.
 
     Band 1 is a sinusoidal surface, and band 2, a horizontal plane.
     """
@@ -521,10 +527,34 @@ def float_wgs84_wgs84_dem_file(
     array, transform = create_zsurf(bounds)
     bounds = array_bounds(*array.shape[-2:], transform)
     bounds = transform_bounds(utm34n_crs, wgs84_wgs84_crs, *bounds)
-    transform = from_bounds(*bounds, *array.shape[-2::-1])
+    transform = from_bounds(*bounds, *array.shape[1:][::-1])
     profile = create_profile(array, transform=transform, crs=wgs84_wgs84_crs, nodata=float('nan'))
 
     filename = tmp_path_factory.mktemp('data').joinpath('float_wgs84_wgs84_dem.tif')
+    with rio.open(filename, 'w', **profile) as im:
+        im.write(array)
+    return filename
+
+
+@pytest.fixture(scope='session')
+def float_utm34n_msl_dem_file(
+    tmp_path_factory: pytest.TempPathFactory,
+    pinhole_camera: Camera,
+    utm34n_msl_crs: str,
+) -> Path:
+    """
+    A 2 band float DEM file in UTM zone 34N with height above MSL (feet) vertical CRS.
+
+    Band 1 is a sinusoidal surface, and band 2, a horizontal plane.
+    """
+    bounds = ortho_bounds(pinhole_camera)
+    array, transform = create_zsurf(bounds)
+    array *= 3.28084  # meters to feet
+    profile = create_profile(
+        array, transform=transform, crs=utm34n_msl_crs, nodata=float('nan')
+    )
+
+    filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_msl_dem.tif')
     with rio.open(filename, 'w', **profile) as im:
         im.write(array)
     return filename
