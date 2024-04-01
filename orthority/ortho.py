@@ -31,6 +31,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
+from rasterio.transform import array_bounds, from_origin
 from rasterio.warp import reproject, Resampling, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
@@ -116,6 +117,8 @@ class Ortho:
         crs: str | CRS | None = None,
         dem_band: int = 1,
     ) -> None:
+        # TODO: allow dem_file to be specified as a constant height value (in world / ortho
+        #  vertical CRS)
         if not isinstance(camera, Camera):
             raise TypeError("'camera' is not a Camera instance.")
 
@@ -175,8 +178,7 @@ class Ortho:
                 raise ValueError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
-            # crs comparison is time-consuming - perform it once here, and return result for use
-            # elsewhere
+            # crs comparison is time-consuming - perform it once here
             crs_equal = self._crs == dem_im.crs
 
             # find the scale from meters to ortho crs z units
@@ -245,8 +247,8 @@ class Ortho:
             return dem_array, dem_transform, dem_im.crs
 
     def _get_gsd(self) -> float:
-        """Return a GSD estimate that gives approx as many valid ortho pixels as valid source
-        pixels.
+        """Return a GSD estimate in units of the world / ortho CRS, that gives approx as many valid
+        ortho pixels as valid source pixels.
         """
 
         def area_poly(coords: np.ndarray) -> float:
@@ -257,14 +259,18 @@ class Ortho:
                 - np.roll(coords[:, 0], -1).dot(coords[:, 1])
             )
 
-        # find image boundary in pixel coordinates, and world coordinates at z=median(DEM) (note:
-        # ignores vertical datum shifts)
+        # find image boundary in pixel coordinates, and world coordinates at z=median(DEM),
+        # accounting (approximately) for dem-ortho vertical datum offset & z unit scaling
         ji = self._camera.pixel_boundary()
-        xy = self._camera.world_boundary(np.nanmedian(self._dem_array))[:2]
+        dem_z = np.nanmedian(self._dem_array)
+        dem_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
+        dem_xyz = (*(self._dem_transform * dem_ji), dem_z)
+        world_z = transform(self._dem_crs, self._crs, *[[coord] for coord in dem_xyz])[2][0]
+        world_xy = self._camera.world_boundary(world_z)[:2]
 
         # return the average pixel resolution inside the world boundary
         pixel_area = area_poly(ji.T)
-        world_area = area_poly(xy.T)
+        world_area = area_poly(world_xy.T)
         return np.sqrt(world_area / pixel_area)
 
     def _reproject_dem(
@@ -280,6 +286,16 @@ class Ortho:
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
+
+        # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
+        # (rasterio does not set it automatically, as GDAL does)
+        dem_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
+        dem_xy = self._dem_transform * dem_ji
+        world_zs = []
+        for z in [0, 1]:
+            world_xyz = transform(self._dem_crs, self._crs, [dem_xy[0]], [dem_xy[1]], [z])
+            world_zs.append(world_xyz[2][0])
+        z_scale = world_zs[1] - world_zs[0]
 
         # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie inside the
         #  source dem bounds.  This seems suspect, but is unlikely to affect ortho bounds (source
@@ -297,6 +313,7 @@ class Ortho:
             dst_nodata=float('nan'),
             init_dest_nodata=True,
             apply_vertical_shift=True,
+            mult_factor_vertical_shift=z_scale,
             num_threads=os.cpu_count(),
         )
         return dem_array.squeeze(), dem_transform
