@@ -1,7 +1,7 @@
 YAML interior parameters
 ========================
 
-This is the native Orthority format for interior parameters.  It is a YAML file containing a nested dictionary that is based on the OpenDroneMap / OpenSfM :file:`cameras.json` format.  The root level consists of one or more camera ID keys and the corresponding parameter dictionary values.  Parameter dictionaries define parameter name - value pairs for a camera.  The basic layout is:
+This is the native Orthority format for frame camera :ref:`interior parameters <background/camera_models:interior parameters>`.  It is a YAML file containing a nested dictionary that is based on the OpenDroneMap / OpenSfM :file:`cameras.json` format.  The root level consists of one or more camera ID keys and the corresponding parameter dictionary values.  Parameter dictionaries define parameter name - value pairs for a camera.  The basic layout is:
 
 .. code-block:: yaml
 
@@ -38,8 +38,6 @@ Camera IDs can be used in exterior parameters to refer to a specific camera in m
     * - ``k1``, ``k2``, …
       - Optional distortion coefficients for the camera ``type``.  Values default to zero if not supplied.
 
-.. From the API perspective, the ``type`` parameter specifies which :class:`~orthority.camera.Camera` subclass to use.  See the :mod:`camera module docs <orthority.camera>` for details of distortion coefficients for each camera ``type``.
-
 Available camera types and their distortion coefficients are detailed below:
 
 .. list-table::
@@ -62,7 +60,7 @@ Available camera types and their distortion coefficients are detailed below:
       - ``k1``, ``k2``, ``p1``, ``p2``, ``k3``, ``k4``, ``k5``, ``k6``, ``s1``, ``s2``, ``s3``, ``s4``, ``tx``, ``ty``
       - `OpenCV general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__. Partial or special cases of the model can be specified by omitting some or all of the coefficients. E.g. if no distortion coefficients are specified, this model corresponds to ``pinhole``, or if the first 5 distortion coefficients are specified, this model corresponds to ``brown``.
 
-From the API perspective, the ``type`` parameter specifies which :class:`~orthority.camera.Camera` subclass to use.  The remaining parameters correspond to ``__init__()`` arguments for that class.
+From the API perspective, the ``type`` parameter specifies which :class:`~orthority.camera.FrameCamera` subclass to use.  The remaining parameters correspond to ``__init__()`` arguments for that class.
 
 An example of a valid YAML file defining two cameras:
 

@@ -1,7 +1,7 @@
 EXIF / XMP tags
 ===============
 
-Interior and exterior parameters can be read from image EXIF / XMP tags.  The tables below list required tag sets for different parameters.  If more than one set is present, the first complete set is used.
+:ref:`Frame camera parameters <background/camera_models:frame cameras>` can be read from image EXIF / XMP tags.  The tables below list required tag sets for interior and exterior parameters.  If more than one set is present, the first complete set is used.
 
 Interior parameters
 -------------------
@@ -77,6 +77,14 @@ Camera orientation
       - XMP
       - - ``http://ns.sensefly.com/Camera/1.0/``
         - ``http://pix4d.com/camera/1.0/``
+
+.. note::
+
+    Conversion from (*roll*, *pitch*, *yaw*) camera orientation is approximate and relies on the :ref:`world <background/coordinates:world coordinates>` CRS having minimal distortion in the imaged area.
+
+.. note::
+
+    See the `test data <https://github.com/leftfield-geospatial/simple-ortho/tree/main/tests/data/odm/images>`__ for examples of images with valid EXIF / XMP tags.
 
 .. TODO: add an oty info subcommand and refer to it here
 
