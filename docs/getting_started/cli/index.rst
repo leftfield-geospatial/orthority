@@ -23,6 +23,7 @@ and help on an ``oty`` sub-command with:
     basic_orthorectification
     model_export
     ortho_config
+    camera_config
     algorithm_config
 
 .. |oty| replace:: ``oty``
@@ -30,3 +31,8 @@ and help on an ``oty`` sub-command with:
 
 
 .. TODO: include a note about logging verbosity
+.. TODO:
+ - link to background sections
+ - notes on test data
+ - vertical CRS and --crs with eg
+
