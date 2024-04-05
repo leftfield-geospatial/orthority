@@ -116,22 +116,6 @@ class RstCommand(click.Command):
         return click.Command.get_help(self, ctx)
 
 
-class CondReqOption(click.Option):
-    """
-    click.Option subclass whose ``required`` attribute is turned off when any the ``not_required``
-    options are present.
-    """
-
-    # adapted from https://stackoverflow.com/questions/44247099/click-command-line-interfaces-make-options-required-if-other-optional-option-is
-    def __init__(self, *args, not_required: Sequence[str] | None = None, **kwargs):
-        self.not_required = not_required or []
-        click.Option.__init__(self, *args, **kwargs)
-
-    def handle_parse_result(self, ctx, opts, args):
-        self.required = not any([opt in self.not_required for opt in opts])
-        return click.Option.handle_parse_result(self, ctx, opts, args)
-
-
 def _configure_logging(verbosity: int):
     """Configure python logging level."""
     # TODO: change logger.warning to warnings.warn where a client may want to respond to a warning.
@@ -404,12 +388,9 @@ dem_file_option = click.option(
     '--dem',
     'dem_file',
     type=click.Path(dir_okay=False),
-    required=True,
     default=None,
     callback=_raster_file_cb,
     help='Path / URI of a DEM image covering the source image(s).',
-    cls=CondReqOption,
-    not_required=['export_params'],
 )
 int_param_file_option = click.option(
     '-ip',
@@ -567,7 +548,7 @@ export_params_option = click.option(
     type=click.BOOL,
     default=False,
     show_default=True,
-    help='Export interior & exterior parameters to orthority format files, and exit.',
+    help='Export camera parameters to orthority format file(s), and exit.',
 )
 out_dir_option = click.option(
     '-od',
@@ -656,15 +637,16 @@ def frame(
     Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Note that
     parameter file extensions are used to distinguish their format.
 
-    The :option:`--dem <oty-frame --dem>`, :option:`--int-param <oty-frame --int-param>` and
-    :option:`--ext-param <oty-frame --ext-param>` options are required.  Depending on the input
-    file formats, :option:`--crs <oty-frame --crs>` may also be required::
+    The :option:`--int-param <oty-frame --int-param>` and :option:`--ext-param <oty-frame
+    --ext-param>` options are required.  The :option:`--dem <oty-frame --dem>` option is
+    required, except when exporting camera parameters with :option:`--export-params <oty-frame
+    --export-params>`.  Depending on the input file formats, :option:`--crs <oty-frame --crs>`
+    may also be required::
 
         oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
 
     Camera parameters can be converted into Orthority format files with :option:`--export-params
-    <oty-frame --export-params>`.  With this option, :option:`--dem <oty-frame --dem>` is not
-    required::
+    <oty-frame --export-params>`::
 
         oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
@@ -734,14 +716,15 @@ def exif(
     Brown model if it is present, otherwise a pinhole model is used.  Pinhole approximation and
     tag value accuracy affect ortho image accuracy.
 
-    The :option:`--dem <oty-exif --dem>` option is required.  If :option:`--crs <oty-exif --crs>`
-    is not supplied, a UTM world / ortho CRS is auto-determined from the camera positions::
+    The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
+    parameters with :option:`--export-params <oty-exif --export-params>`.  If :option:`--crs
+    <oty-exif --crs>` is not supplied, a UTM world / ortho CRS is auto-determined from the camera
+    positions::
 
         oty exif --dem dem.tif source*.tif
 
     Camera parameters can be converted into Orthority format files with :option:`--export-params
-    <oty-exif --export-params>`.  With this option, :option:`--dem <oty-exif --dem>` is not
-    required::
+    <oty-exif --export-params>`::
 
         oty exif ---export-params
 
@@ -846,7 +829,7 @@ def odm(
     src_files = [OpenFile(images_ofile.fs, sf, 'rb') for sf in src_files]
     if len(src_files) == 0:
         raise click.BadParameter(
-            f"No images found in '<--dataset-dir>/images/'.", param_hint="'-dd' / '--dataset-dir'"
+            f"No images found in '<dataset-dir>/images/'.", param_hint="'-dd' / '--dataset-dir'"
         )
 
     # read CRS from DSM
@@ -857,7 +840,7 @@ def odm(
         dem_ctx = utils.OpenRaster(dem_ofile, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(
-            f"No DSM found in '<--dataset-dir>/odm_dem/'. {str(ex)}",
+            f"No DSM found in '<dataset-dir>/odm_dem/'. {str(ex)}",
             param_hint="'-dd' / '--dataset-dir'",
         )
     with dem_ctx as dem_im:
@@ -874,7 +857,7 @@ def odm(
         )
     except FileNotFoundError as ex:
         raise click.BadParameter(
-            f"No 'reconstruction.json' file found in '<--dataset-dir>/opensfm/'. {str(ex)}",
+            f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {str(ex)}",
             param_hint="'-dd' / '--dataset-dir'",
         )
     except ParamError as ex:
