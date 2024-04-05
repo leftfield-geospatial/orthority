@@ -31,7 +31,6 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
-from rasterio.transform import array_bounds, from_origin
 from rasterio.warp import reproject, Resampling, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
@@ -482,7 +481,7 @@ class Ortho:
         ortho_res = np.abs((tile_transform.a, tile_transform.e))
         kernel_size = np.maximum(np.ceil(5 * src_res / ortho_res).astype('int'), (3, 3))
 
-        # remap source, or undistorted source, to ortho band(s)
+        # remap the source to ortho
         tile_array, tile_mask = self._camera.remap(
             src_array,
             tile_xgrid,
@@ -594,10 +593,13 @@ class Ortho:
 
         The source image is read and processed band-by-band, or all bands at once, depending on
         the value of ``per_band``.  If necessary, the portion of the DEM stored internally is
-        reprojected to the ortho CRS and resolution.  If ``full_remap`` is False, the camera
-        model is used to undistort the source image.  Using the camera model and DEM, the ortho
-        image is remapped from the source or undistorted source image tile-by-tile.  Up to N
-        ortho tiles are processed concurrently, where N is the number of CPUs.
+        reprojected to the ortho CRS and resolution.  Using the camera model and DEM, the ortho
+        image is remapped from the source image tile-by-tile.  Up to N ortho tiles are processed
+        concurrently, where N is the number of CPUs.
+
+        .. note::
+
+            An occlusion masking option will be added in a future release.
 
         :param ortho_file:
             Ortho image file to create.  Can be a path or URI string, or an
@@ -613,11 +615,6 @@ class Ortho:
         :param per_band:
             Remap the source to ortho image all bands at once (False), or band-by-band (True).
             False is faster but requires more memory.
-        :param full_remap:
-            Orthorectify the source image with the full camera model (True), or the undistorted
-            source image with a pinhole camera model (False).  True remaps the source
-            image once.  False is faster but remaps the source image twice, so can reduce ortho
-            image quality.
         :param write_mask:
             Mask valid ortho pixels with an internal mask (True), or with a nodata value based on
             ``dtype`` (False). An internal mask helps remove nodata noise caused by lossy
@@ -627,8 +624,8 @@ class Ortho:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (
             the default), the source image dtype is used.
         :param compress:
-            Ortho image compression type ('jpeg' or 'deflate').  Deflate can be used with all
-            ``dtype``s, and JPEG with the uint8 ``dtype``.  With supporting ``rasterio`` builds,
+            Ortho image compression type ('jpeg' or 'deflate').  Deflate can be used with any
+            ``dtype``, and JPEG with the uint8 ``dtype``.  With supporting ``rasterio`` builds,
             JPEG can also be used with uint16, in which case the ortho is 12 bit JPEG compressed.
             If ``compress`` is set to None (the default), JPEG is used for the uint8 ``dtype``,
             and Deflate otherwise.
