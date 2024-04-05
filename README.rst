@@ -8,9 +8,7 @@ Orthority
 
 .. description_start
 
-Orthority provides a command line interface and Python API for orthorectifying drone and aerial
-imagery, given a camera model and DEM. It supports common lens distortion types. Camera parameters
-can be read from various file formats, or image EXIF / XMP tags.
+Orthority provides a command line interface and Python API for orthorectifying drone and aerial imagery, given a camera model and DEM. It supports common frame camera models. Camera parameters can be read from various file formats, or image EXIF / XMP tags.
 
 .. description_end
 
@@ -24,14 +22,14 @@ Orthority is a python 3 package that can be installed with `pip <https://pip.pyp
 pip
 ~~~
 
-.. code:: shell
+.. code-block:: bash
 
    pip install orthority
 
 conda
 ~~~~~
 
-.. code:: shell
+.. code-block:: bash
 
    conda install -c conda-forge orthority
 
@@ -47,25 +45,25 @@ Command line interface
 
 Orthority command line functionality is accessed with the ``oty`` command, and its sub-commands:
 
--  ``ortho``: Orthorectify with camera model(s) defined by interior and exterior parameter files.
--  ``exif``: Orthorectify with camera model(s) defined by image EXIF / XMP tags.
--  ``odm``: Orthorectify with OpenDroneMap camera models and DSM.
+-  ``frame``: Orthorectify images with frame camera model(s) defined by interior and exterior parameter files.
+-  ``exif``: Orthorectify images with frame camera model(s) defined by image EXIF / XMP tags.
+-  ``odm``: Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 
 Get help on ``oty`` with:
 
-.. code:: shell
+.. code-block:: bash
 
    oty --help
 
 and help on an ``oty`` sub-command with:
 
-.. code:: shell
+.. code-block:: bash
 
    oty <sub-command> --help
 
 .. cli_end
 
-Options for the orthorectification algorithm and ortho image format are common to all sub-commands.
+Options for the output files and orthorectification algorithm are common to all orthorectification sub-commands.
 
 .. note::
 
@@ -74,44 +72,38 @@ Options for the orthorectification algorithm and ortho image format are common t
 Examples
 ^^^^^^^^
 
-Orthorectify *source.tif* with the DEM in *dem.tif*, and camera model defined by *int_param.yaml*
-and *ext_param.geojson* interior and exterior parameters:
+Orthorectify *source.tif* with the DEM in *dem.tif*, and frame camera model defined by *int_param.yaml* and *ext_param.geojson* interior and exterior parameters:
 
-.. code:: shell
+.. code-block:: bash
 
-   oty ortho --dem dem.tif --int-param int_param.yaml --ext-param ext_param.geojson source.tif
+   oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.geojson source.tif
 
-Orthorectify *source.tif* with the DEM in *dem.tif*, and camera model defined by *source.tif* EXIF /
-XMP tags:
+Orthorectify *source.tif* with the DEM in *dem.tif*, and frame camera model defined by *source.tif* EXIF / XMP tags:
 
-.. code:: shell
+.. code-block:: bash
 
    oty exif --dem dem.tif source.tif
 
-As above, but the create the ortho image with *bilinear* interpolation, a 0.5 m pixel size and
-*deflate* compression:
+As above, but the create the ortho image with *bilinear* interpolation, a 0.5 m pixel size and *deflate* compression:
 
-.. code:: shell
+.. code-block:: bash
 
    oty exif --dem dem.tif --interp bilinear --res 0.5 --compress deflate source.tif
 
-Orthorectify images in the OpenDroneMap dataset *odm_data*, with the dataset DSM and camera models.
-Ortho images are placed in *odm_data/orthority*.
+Orthorectify images in the OpenDroneMap dataset *odm*, with the dataset DSM and camera models.  Ortho images are placed in *odm/orthority*.
 
-.. code:: shell
+.. code-block:: bash
 
-   oty odm --dataset-dir odm_data --out-dir odm_data/orthority
+   oty odm --dataset-dir odm --out-dir odm/orthority
 
 API
 ~~~
 
 Orthorectify an image with the camera model defined by its EXIF / XMP tags:
 
-.. code:: python
+.. code-block:: python
 
-    from pathlib import Path
     import orthority as oty
-    from orthority import param_io
 
     # URLs of source image and DEM
     src_file = (
@@ -123,58 +115,35 @@ Orthorectify an image with the camera model defined by its EXIF / XMP tags:
         'tests/data/odm/odm_dem/dsm.tif'
     )
 
-    # read interior and exterior parameters from src_file EXIF / XMP tags
-    reader = param_io.ExifReader((src_file,))
-    int_param_dict = reader.read_int_param()
-    ext_param_dict = reader.read_ext_param()
+    # create camera from src_file EXIF / XMP tags
+    cameras = oty.ExifCameras((src_file,))
+    camera = cameras.get(src_file)
 
-    # extract exterior parameters for src_file, and interior parameters for
-    # src_file's camera
-    ext_params = ext_param_dict[Path(src_file).name]
-    int_params = int_param_dict[ext_params.pop('camera')]
-
-    # create camera from interior & exterior parameters
-    camera = oty.create_camera(**int_params, **ext_params)
-
-    # orthorectify src_file with dem_file, the created camera & exterior parameter
-    # ('world') CRS
-    ortho = oty.Ortho(src_file, dem_file, camera, crs=reader.crs)
+    # orthorectify src_file with dem_file, the created camera & world CRS
+    ortho = oty.Ortho(src_file, dem_file, camera, crs=cameras.crs)
     ortho.process('ortho.tif')
 
 Documentation
 -------------
 
-See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage and reference
-documentation.
+See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage and reference documentation.
 
 Contributing
 ------------
 
-Contributions are welcome! There is a guide for developers in the `documentation
-<https://orthority.readthedocs.io/contributing>`__. Please report bugs and make
-feature requests with the `github issue tracker
-<https://github.com/leftfield-geospatial/simple-ortho/issues>`__.
+Contributions are welcome. There is a guide in the `documentation <https://orthority.readthedocs.io/contributing>`__. Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/simple-ortho/issues>`__.
 
 Licensing
 ---------
 
 Orthority is licensed under the `GNU Affero General Public License v3.0 (AGPLv3) <LICENSE>`__.
 
-Portions of the `AGPLv3 <https://github.com/OpenDroneMap/ODM/blob/master/LICENSE>`__ licensed
-`OpenDroneMap software <https://github.com/OpenDroneMap/ODM>`__, and
-`BSD-style <https://github.com/mapillary/OpenSfM/blob/main/LICENSE>`__ licensed `OpenSfM
-library <https://github.com/mapillary/OpenSfM>`__ have been adapted and included in the Orthority
-package.
+Portions of the `AGPLv3 <https://github.com/OpenDroneMap/ODM/blob/master/LICENSE>`__ licensed `OpenDroneMap software <https://github.com/OpenDroneMap/ODM>`__, and `BSD-style <https://github.com/mapillary/OpenSfM/blob/main/LICENSE>`__ licensed `OpenSfM library <https://github.com/mapillary/OpenSfM>`__ have been adapted and included in the Orthority package.
 
 Acknowledgements
 ----------------
 
-Special thanks to `Yu-Huang
-Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__
-& the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial
-Information <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and
-the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and
-aero-triangulation data that form part of the package test data.
+Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__ & the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial Information <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and aero-triangulation data that form part of the package test data.
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml
