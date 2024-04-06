@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import warnings
+from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import as_completed, ThreadPoolExecutor
 from contextlib import ExitStack
@@ -510,9 +511,9 @@ def _rpy_to_opk(
     return omega, phi, kappa
 
 
-class Reader:
+class Reader(ABC):
     """
-    Abstract interior and exterior parameter reader.
+    Base parameter reader class.
 
     :param crs:
         CRS of the world coordinate system.
@@ -520,6 +521,7 @@ class Reader:
         CRS of input geographic coordinates (if any).
     """
 
+    @abstractmethod
     def __init__(self, crs: str | CRS = None, lla_crs: str | CRS = _default_lla_crs) -> None:
         self._crs, self._lla_crs = self._parse_crss(crs, lla_crs)
 
@@ -542,13 +544,10 @@ class Reader:
         """CRS of the world coordinate system."""
         return self._crs
 
-    def read_int_param(self) -> dict[str, dict[str, Any]]:
-        """Read interior camera parameters."""
-        raise NotImplementedError()
-
+    @abstractmethod
     def read_ext_param(self) -> dict[str, dict[str, Any]]:
         """Read exterior camera parameters."""
-        raise NotImplementedError()
+        pass
 
 
 class CsvReader(Reader):
@@ -864,6 +863,7 @@ class OsfmReader(Reader):
         return utils.utm_crs_from_latlon(*ref_lla[:2])
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
+        """Read interior camera parameters."""
         return _read_osfm_int_param(self._json_dict['cameras'])
 
     def read_ext_param(self) -> dict[str, dict[str, Any]]:
@@ -978,6 +978,7 @@ class ExifReader(Reader):
         # return CRS.from_proj4(f'+proj=ortho +lat_0={mean_latlon[0]} +lon_0={mean_latlon[1]}'
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
+        """Read interior camera parameters."""
         int_param_dict = {}
         for filename, exif in self._exif_dict.items():
             int_param = _read_exif_int_param(exif)
