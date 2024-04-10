@@ -8,8 +8,10 @@ from pathlib import Path
 
 import numpy as np
 import rasterio as rio
+import rasterio.windows
 from rasterio.enums import Resampling
-from rasterio.warp import reproject
+from rasterio.transform import GCPTransformer
+from rasterio.warp import reproject, transform_bounds
 
 from orthority import param_io
 from orthority.exif import Exif
@@ -22,6 +24,13 @@ odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River'
 odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
 
 io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
+
+rpc_src_root = Path(
+    'D:/Data/Development/Projects/PhD GeoInformatics/Data/Digital Globe/056844553010_01'
+    '/056844553010_01_P001_PAN/'
+)
+
+rpc_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/rpc')
 # TODO: save images as COGs to optimise URL tests and doc egs
 # TODO: rename NGI images from 3324c -> 3324C, and modify param files accordingly
 
@@ -146,6 +155,9 @@ def downsample_dem(
 
 
 def create_ngi_test_data():
+    # TODO: abbreviate and capitales source file names (+ in exterior param files)
+    # TODO: the NGI DEM crs (WGS84) is used as exterior param CRS.  should we not be using
+    #  Hartebeeshoek94 which as its own EPSG codes?
     src_rgb_files = [
         '3324c_2015_1004_05_0182_RGBN_CMP.tif',
         '3324c_2015_1004_05_0184_RGBN_CMP.tif',
@@ -333,7 +345,70 @@ def create_io_test_data():
     )
 
 
+def create_rpc_test_data():
+    src_file = '03NOV18082012-P1BS-056844553010_01_P001.TIF'
+    rpc_test_root.mkdir(exist_ok=True)
+    dem_file = ngi_test_root.joinpath('dem.tif')
+
+    # read ngi dem bounds & crs
+    with rio.open(dem_file, 'r') as dem_im:
+        dem_bounds = dem_im.bounds
+        dem_crs = dem_im.crs
+
+    # read cropped & downsampled portion of source image lying inside dem bounds
+    ds_fact = 10.0
+    rpc_src_file = rpc_src_root.joinpath(src_file)
+    with rio.open(rpc_src_file, 'r') as src_im:
+        rpcs = src_im.rpcs
+        gcps = src_im.gcps
+
+        # find window corresponding to dem bounds (inner buffer of 1000)
+        bounds = transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds)
+        with GCPTransformer(gcps[0]) as tform:
+            ul = np.round(tform.rowcol(bounds[0], bounds[3])[::-1], -2) + 1000
+            br = np.round(tform.rowcol(bounds[2], bounds[1])[::-1], -2) - 1000
+        win = rio.windows.Window(*ul, *(br - ul))
+
+        # read window & downsample
+        shape = np.round((1, win.height / ds_fact, win.width / ds_fact)).astype('int')
+        array = src_im.read(window=win, resampling=rio.enums.Resampling.average, out_shape=shape)
+
+    # adjust rpcs for crop and downsample
+    rpcs.line_off = (rpcs.line_off - win.row_off) / ds_fact
+    rpcs.samp_off = (rpcs.samp_off - win.col_off) / ds_fact
+    rpcs.line_scale /= ds_fact
+    rpcs.samp_scale /= ds_fact
+
+    # adjust gcps for crop and downsample
+    for gcp in gcps[0]:
+        gcp.row = (gcp.row - win.row_off) / ds_fact
+        gcp.col = (gcp.col - win.col_off) / ds_fact
+
+    # setup test image profile
+    rpc_test_file = rpc_test_root.joinpath('qb2_basic1b.tif')
+    profile = dict(
+        width=array.shape[2],
+        height=array.shape[1],
+        count=array.shape[0],
+        compress='jpeg',
+        tiled=True,
+        blockxsize=256,
+        blockysize=256,
+        dtype='uint8',
+        driver='GTiff',
+        crs=gcps[1],
+        gcps=gcps[0],
+        rpcs=rpcs,
+    )
+
+    # scale 10-255 & write
+    array = 10.0 + (255.0 - 10.0) * (array - array.min()) / (array.max() - array.min())
+    with rio.open(rpc_test_file, 'w', **profile) as dst_im:
+        dst_im.write(array.astype('uint8'))
+
+
 if __name__ == '__main__':
     create_odm_test_data()
     create_ngi_test_data()
     create_io_test_data()
+    create_rpc_test_data()
