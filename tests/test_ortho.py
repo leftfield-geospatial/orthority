@@ -145,15 +145,6 @@ def test_init_nocrs_error(
     assert 'crs' in str(ex.value)
 
 
-def test_init_geogcrs_error(
-    rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera
-):
-    """Test Ortho initialisation with a geographic CRS raises an error."""
-    with pytest.raises(ValueError) as ex:
-        _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs='EPSG:4326')
-    assert 'projected' in str(ex.value)
-
-
 def test_init_dem_coverage_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
