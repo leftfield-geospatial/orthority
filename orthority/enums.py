@@ -25,11 +25,11 @@ class CameraType(str, Enum):
     """Camera model types."""
 
     pinhole = 'pinhole'
-    """Pinhole camera model."""
+    """Pinhole frame camera model."""
 
     brown = 'brown'
     """
-    Brown-Conrady camera model.
+    Brown-Conrady frame camera model.
 
     Compatible with `OpenDroneMap / OpenSfM 
     <https://opensfm.org/docs/geometry.html#camera-models>`__ ``perspective``, ``simple_radial``, 
@@ -38,7 +38,7 @@ class CameraType(str, Enum):
 
     fisheye = 'fisheye'
     """
-    Fisheye camera model.
+    Fisheye frame camera model.
 
     Compatible with `OpenDroneMap / OpenSfM 
     <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV 
@@ -47,8 +47,11 @@ class CameraType(str, Enum):
 
     opencv = 'opencv'
     """
-    `OpenCV general camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
+    `OpenCV general frame camera model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__.
     """
+
+    rpc = 'rpc'
+    """RPC camera model."""
 
     def __repr__(self):
         return self._name_
