@@ -99,28 +99,29 @@ Orthorectify images in the OpenDroneMap dataset *odm*, with the dataset DSM and 
 API
 ~~~
 
-Orthorectify an image with the camera model defined by its EXIF / XMP tags:
+Orthorectify an image using interior and exterior parameter files to generate the camera model:
+
+.. below copied from docs/scripts/overview.py
 
 .. code-block:: python
 
     import orthority as oty
 
-    # URLs of source image and DEM
-    src_file = (
-        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
-        'tests/data/odm/images/100_0005_0140.tif'
+    # URLs of required files
+    url_root = (
+        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/tests/data/'
     )
-    dem_file = (
-        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/'
-        'tests/data/odm/odm_dem/dsm.tif'
-    )
+    src_file = url_root + 'ngi/3324c_2015_1004_05_0182_RGB.tif'
+    dem_file = url_root + 'ngi/dem.tif'
+    int_param_file = url_root + 'io/ngi_int_param.yaml'
+    ext_param_file = url_root + 'io/ngi_xyz_opk.csv'
 
-    # create camera from src_file EXIF / XMP tags
-    cameras = oty.ExifCameras((src_file,))
+    # create a camera for src_file from interior / exterior parameters
+    cameras = oty.FrameCameras(int_param_file, ext_param_file)
     camera = cameras.get(src_file)
 
-    # orthorectify src_file with dem_file, the created camera & world CRS
-    ortho = oty.Ortho(src_file, dem_file, camera, crs=cameras.crs)
+    # orthorectify src_file with dem_file, the created camera & world / ortho CRS
+    ortho = oty.Ortho(src_file, dem_file, camera=camera, crs=cameras.crs)
     ortho.process('ortho.tif')
 
 Documentation
