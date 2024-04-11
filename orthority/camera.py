@@ -72,6 +72,16 @@ class Camera(ABC):
             raise ValueError(f"'ji' should be a 2xN 2D array.")
 
     @staticmethod
+    def _validate_z(z: np.ndarray, ji: np.ndarray) -> None:
+        """Utility function to validate z against pixel coordinate dimensions."""
+        if isinstance(z, np.ndarray) and (
+            z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1])
+        ):
+            raise ValueError(
+                f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
+            )
+
+    @staticmethod
     def _validate_image(im_array: np.ndarray) -> None:
         """Utility function to validate an image dtype and dimensions for remapping."""
         if str(im_array.dtype) not in Camera._valid_dtypes:
@@ -97,6 +107,8 @@ class Camera(ABC):
         with the height array (DEM) ``z``.
         """
         # create a transform from world (x, y) to center (j, i) pixel coordinates
+        # TODO: see if an opencv or numpy equiv affine transform is faster (here, and all places
+        #  rio.Affine is used)
         inv_transform = ~(transform * rio.Affine.translation(0.5, 0.5))
 
         # find / initialise z surface minimum and maximum
@@ -129,6 +141,11 @@ class Camera(ABC):
             # nan outside its bounds and for already masked / nan pixels)
             zsurf_ji = np.array(inv_transform * ray_xyz[:2]).astype('float32', copy=False)
             zsurf_z = np.full((zsurf_ji.shape[1],), dtype=z.dtype, fill_value=float('nan'))
+            # TODO: z.shape must be less than SHRT_MAX=2**15.  This implies that both source and
+            #  ortho image dims should be less than SHRT_MAX.  source is remapped in camera,
+            #  and dem == ortho dims is remapped here.  error checking should be done here,
+            #  Camera.remap & FrameCamera.read.  Perhaps also in Ortho.__init__ (source) and
+            #  Ortho.process (ortho).
             cv2.remap(z, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
 
             # store the first ray-z intersection point if it exists, otherwise the z_min point
@@ -342,7 +359,7 @@ class Camera(ABC):
             nodata = self._get_dtype_nodata(im_array.dtype)
 
         # find (j, i) image pixel coords corresponding to (x, y, z) world coords
-        ji = self.world_to_pixel(np.row_stack((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
+        ji = self.world_to_pixel(np.array((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
 
         # separate ji into (j, i) grids, converting to float32 for compatibility with
         # cv2.remap (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
@@ -376,30 +393,98 @@ class Camera(ABC):
 
 
 class RpcCamera(Camera):
-    def __init__(self, rpc: RPC | dict, rpc_options: dict | None = None, crs: str | CRS = None):
+    def __init__(
+        self,
+        im_size: tuple[int, int],
+        rpc: RPC | dict,
+        rpc_options: dict | None = None,
+        crs: str | CRS = None,
+    ):
         super().__init__()
+        self._im_size = im_size
         self._rpc_crs = CRS.from_epsg(4979)
-        self._crs = CRS.from_string(crs) if isinstance(crs, str) else crs
-        self._transformer = RPCTransformer(rpc, **rpc_options)
+        self._rpc = rpc if isinstance(rpc, RPC) else RPC(**rpc)
+        self._rpc_options = rpc_options or {}
+        self._crs = self._validate_crs(crs) if crs else None
+        # TODO: can we find camera position from RPCs (e.g. as intersection of vectors in
+        #  projected world space - see e.g.
+        #  https://github.com/centreborelli/rpcm/blob/master/rpcm/rpc_model.py)
 
     @property
     def crs(self) -> CRS | None:
         return self._crs or self._rpc_crs
 
+    def _validate_crs(self, crs: str | CRS) -> CRS:
+        """Validate the CRS has ellipsoidal height or no vertical CRS."""
+        crs = rio.CRS.from_string(crs) if isinstance(crs, str) else crs
+        for z in [0, 1]:
+            xyz = warp(self._rpc_crs, crs, [self._rpc.long_off], [self._rpc.lat_off], [z])
+            if not xyz[2][0] == z:
+                raise ValueError(
+                    "RPC camera requires a 'crs' with ellipsoidal height, or no vertical CRS."
+                )
+        return crs
+
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
+        # TODO: make rasterio feature / pull request(s) to release gil on warp & rpc transform,
+        #  and allow nans through.
         if self._crs:
-            xyz = warp(self._crs, self._rpc_crs, [xyz[0]], [xyz[1]], [xyz[2]])
-        return np.array(self._transformer.rowcol(*xyz))
+            # warp from world / ortho to geographic / RPC coordinates, removing, and replacing nans
+            # around the warp call (which raises errors on nans)
+            mask = ~np.any(np.isnan(xyz), axis=0)
+            xyz_ = np.full(xyz.shape, fill_value=np.nan)
+            xyz_[:, mask] = np.array(warp(self._crs, self._rpc_crs, *xyz[:, mask]))
+        else:
+            xyz_ = xyz.copy()
 
-    @abstractmethod
+        def poly(x: np.ndarray, y: np.ndarray, z: np.ndarray, c: Sequence[float]) -> np.ndarray:
+            """Return the polynomial value for given coordinates and coefficients.  Uses a Horner
+            type approach: https://en.wikipedia.org/wiki/Horner%27s_method.
+            """
+            res = c[0] + x * (
+                c[1]
+                + y * (c[4] + z * c[10])
+                + z * c[5]
+                + x * (c[7] + x * c[11] + y * c[14] + z * c[17])
+            )
+            res += y * (c[2] + c[6] * z + y * (c[8] + x * c[12] + y * c[15] + z * c[18]))
+            res += z * (c[3] + z * (c[9] + x * c[13] + y * c[16] + z * c[19]))
+            return res
+
+        # RPC model evaluation based on http://geotiff.maptools.org/rpc_prop.html. Equivalent to
+        # this Rasterio code, but releases the GIL:
+        # ij = self._rpc_tformer.rowcol(*xyz_, op=lambda x: x)
+        # ji = np.array(ij[::-1]) - 0.5
+        xyz_ -= np.array([[self._rpc.long_off, self._rpc.lat_off, self._rpc.height_off]]).T
+        xyz_ /= np.array([[self._rpc.long_scale, self._rpc.lat_scale, self._rpc.height_scale]]).T
+        i = poly(*xyz_, self._rpc.line_num_coeff) / poly(*xyz_, self._rpc.line_den_coeff)
+        j = poly(*xyz_, self._rpc.samp_num_coeff) / poly(*xyz_, self._rpc.samp_den_coeff)
+        ji = np.array((j, i))
+        ji *= np.array([[self._rpc.samp_scale, self._rpc.line_scale]]).T
+        ji += np.array([[self._rpc.samp_off, self._rpc.line_off]]).T
+        return ji
+
     def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray, **kwargs) -> np.ndarray:
         self._validate_pixel_coords(ji)
-        # TODO: sort out pixel offset here and in world_to_pixel
-        xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
-        xyz = np.row_stack([xy, z * np.ones(xy.shape[1])])
+        self._validate_z(z, ji)
+
+        # project from pixel to geographic / RPC coordinates, removing and replacing nans around
+        # the .xy call (which raises warnings on nans and converts to inf)
+        z = z * np.ones(ji.shape[1]) if np.isscalar(z) else z.copy()
+        ji = ji * np.ones((2, z.shape[0])) if ji.shape[1] == 1 else ji
+        mask = ~(np.any(np.isnan(ji), axis=0) | np.isnan(z))
+        xy = np.full(ji.shape, fill_value=np.nan)
+        z[~mask] = np.nan
+        with RPCTransformer(self._rpc, **self._rpc_options) as tform:
+            # TODO: the center offset in .xy below is inefficient
+            xy[:, mask] = tform.xy(ji[1, mask], ji[0, mask], zs=z[mask], offset='center')
+
+        xyz = np.array([*xy, z])
         if self._crs:
-            xyz = np.array(warp(self._rpc_crs, self._crs, *xyz))
+            # warp from geographic / RPC to world / ortho  coordinates, removing, and replacing nans
+            # around the warp call (which raises errors on nans)
+            xyz[:, mask] = np.array(warp(self._rpc_crs, self._crs, *xyz[:, mask]))
         return xyz
 
 
@@ -409,19 +494,24 @@ class GcpCamera(Camera):
         gcps: Sequence[GroundControlPoint, dict],
     ):
         super().__init__()
-        gcps = [GroundControlPoint(gcp) if isinstance(gcp, dict) else gcp for gcp in gcps]
-        self._transformer = GCPTransformer(gcps)
+        self._gcps = [GroundControlPoint(gcp) if isinstance(gcp, dict) else gcp for gcp in gcps]
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
-        return np.array(self._transformer.rowcol(*xyz))
+        with GCPTransformer(self._gcps) as tform:
+            ij = tform.rowcol(*xyz, op=lambda x: x)
+        # flip i & j and convert UL to center pixel coordinates
+        ji = np.array(ij[::-1]) - 0.5
+        return ji
 
     @abstractmethod
     def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray, **kwargs) -> np.ndarray:
         self._validate_pixel_coords(ji)
-        # TODO: sort out pixel offset here and in world_to_pixel
-        xy = self._transformer.xy(ji[1], ji[0], zs=z, offset='ul')
-        xyz = np.row_stack([xy, z * np.ones(xy.shape[1])])
+        self._validate_z(z, ji)
+
+        with GCPTransformer(self._gcps) as tform:
+            xy = tform.xy(ji[1], ji[0], zs=z, offset='center')
+        xyz = np.array([*xy, z * np.ones(len(xy[0]))])
         return xyz
 
 
@@ -728,13 +818,7 @@ class FrameCamera(Camera):
         #  way in most (all?) places.
         self._test_init()
         self._validate_pixel_coords(ji)
-
-        if isinstance(z, np.ndarray) and (
-            z.ndim != 1 or (z.shape[0] != 1 and ji.shape[1] != 1 and z.shape[0] != ji.shape[1])
-        ):
-            raise ValueError(
-                f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
-            )
+        self._validate_z(z, ji)
 
         # transform pixel coordinates to camera coordinates
         xyz_ = (
@@ -1396,7 +1480,7 @@ class FisheyeCamera(FrameCamera):
         return xyz_
 
 
-def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera | FrameCamera:
+def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera | FrameCamera | RpcCamera:
     """
     Create a camera object given a camera type and parameters.
 
@@ -1411,6 +1495,8 @@ def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera | Frame
         cam_class = FisheyeCamera
     elif cam_type == CameraType.opencv:
         cam_class = OpenCVCamera
+    elif cam_type == CameraType.rpc:
+        cam_class = RpcCamera
     else:
         cam_class = PinholeCamera
 
