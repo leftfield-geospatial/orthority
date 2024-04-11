@@ -13,7 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""Factories for creating camera objects from parameter files."""
+"""Factories for creating camera models from parameter files and dictionaries."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -45,7 +45,7 @@ class Cameras(ABC):
     @abstractmethod
     def get(self, filename: str | PathLike | OpenFile) -> Camera:
         """
-        Create and return the camera object for the given image filename.
+        Return a camera object for the given image filename.
 
         :param filename:
             Image filename.  Can be a path, URI string, or :class:`~fsspec.core.OpenFile`
@@ -84,12 +84,11 @@ class FrameCameras(Cameras):
         Optional dictionary of keyword arguments for the :class:`~orthority.param_io.Reader`
         sub-class corresponding to the exterior (and possibly interior) parameter file format.
         If ``ext_param`` is a dictionary, these arguments are not passed to a
-        :class:`~orthority.param_io.Reader`, but a 'crs' argument is used for
-        :attr:`FrameCameras.crs`.
+        :class:`~orthority.param_io.Reader`, but :attr:`FrameCameras.crs` is set with the
+        value of a 'crs' argument.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
-        sub-class corresponding to the interior parameters.  Should exclude the interior parameters
-        themselves which are read from ``int_param``.
+        Optional dictionary of keyword arguments for :class:`~orthority.camera.FrameCamera`.
+        Should exclude the interior parameters themselves which are read from ``int_param``.
     """
 
     # TODO: add doc link to file and dictionary formats.
@@ -133,7 +132,7 @@ class FrameCameras(Cameras):
                 # only read OSfM interior params here if the interior and exterior param files
                 # are not the same, otherwise they are read with exteriors below
                 if int_param != ext_param:
-                    # TODO: does != work for all file object types
+                    # TODO: does != work for all file object types?
                     int_param_dict = param_io.read_osfm_int_param(int_param)
             else:
                 raise ParamError(f"'{int_param_suffix}' file type not supported.")
@@ -219,15 +218,14 @@ class ExifCameras(FrameCameras):
         Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode ('rb'), or dataset readers.
     :param io_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.Reader`
-        sub-class corresponding to the exterior (and possibly interior) parameter file format.
-        If ``ext_param`` is a dictionary, these arguments are not passed to a
-        :class:`~orthority.param_io.Reader`, but a 'crs' argument is used for
+        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.ExifReader`
+        class. If ``ext_param`` is a dictionary, these arguments are not passed to
+        :class:`~orthority.param_io.ExifReader`, but :attr:`FrameCameras.crs` is set with the
+        value of a 'crs' argument.
         :attr:`FrameCameras.crs`.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
-        sub-class corresponding to the interior parameters.  Should exclude the interior parameters
-        themselves which are read from ``int_param``.
+        Optional dictionary of keyword arguments for :class:`~orthority.camera.FrameCamera`.
+        Should exclude the interior parameters themselves which are read from ``int_param``.
     """
 
     def __init__(
