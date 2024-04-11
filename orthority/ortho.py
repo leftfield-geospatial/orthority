@@ -161,8 +161,6 @@ class Ortho:
                         f"Source image '{self._src_name}' is not projected, 'crs' should be "
                         f"specified."
                     )
-        if not crs.is_projected:
-            raise ValueError(f"'crs' should be a projected system.")
         return crs
 
     def _get_init_dem(
@@ -285,6 +283,8 @@ class Ortho:
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
         if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
+
+        # TODO: error check resolution e.g. if bigger than ortho bounds
 
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
