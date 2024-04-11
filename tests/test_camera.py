@@ -31,10 +31,11 @@ from orthority.camera import (
     FrameCamera,
     OpenCVCamera,
     PinholeCamera,
+    RpcCamera,
 )
 from orthority.enums import CameraType, Interp
 from orthority.errors import CameraInitError, OrthorityWarning
-from tests.conftest import _dem_offset, checkerboard, ortho_bounds, create_zsurf
+from tests.conftest import _dem_offset, _dem_gain, checkerboard, ortho_bounds, create_zsurf
 from orthority import utils
 
 
@@ -66,7 +67,6 @@ def test_frame_init(
 ):
     """Test ``FrameCamera`` creation."""
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
-    # TODO: add distort and alpha?  or are they tested elsewhere
     distort = True
     alpha = 0.0
     camera: FrameCamera = create_camera(
@@ -129,17 +129,46 @@ def test_frame_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz:
     assert np.all(camera._R != 0)
 
 
-@pytest.mark.parametrize('cam_type', [*CameraType])
+@pytest.mark.parametrize('cam_type',
+    [CameraType.pinhole, CameraType.opencv, CameraType.brown, CameraType.fisheye]
+)
 def test_frame_update_error(
     cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
 ):
-    """Test an error is raised if a ``FrameCamera`` is used before initialising exterior parameters."""
+    """Test an error is raised if a ``FrameCamera`` is used before initialising exterior parameters.
+    """
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
     with pytest.raises(CameraInitError):
         camera.world_to_pixel(None)
     with pytest.raises(CameraInitError):
         camera.pixel_to_world_z(None, None)
+
+
+@pytest.mark.parametrize('crs', ['utm34n_crs', 'wgs84_crs', None])
+def test_rpc_init(im_size: tuple, rpc: dict, crs: str, request: pytest.FixtureRequest):
+    """Test ``RpcCamera`` creation."""
+    crs: str = request.getfixturevalue(crs) if crs else 'EPSG:4979'
+
+    for _rpc in [rpc, rio.transform.RPC(**rpc)]:
+        camera: RpcCamera = create_camera(CameraType.rpc, im_size, _rpc, crs=crs)
+
+        assert type(camera) is RpcCamera
+        assert camera.im_size == im_size
+        assert camera.crs == rio.CRS.from_string(crs)
+        __rpc = camera._rpc.to_dict()
+        assert all([__rpc[k] == v for k, v in rpc.items()])
+
+
+@pytest.mark.parametrize('crs', ['utm34n_egm96_crs', 'utm34n_egm2008_crs', 'utm34n_msl_crs'])
+def test_rpc_init_crs_error(im_size: tuple, rpc: dict, crs: str, request: pytest.FixtureRequest):
+    """Test ``RpcCamera`` creation raises an error when the world / ortho CRS has a vertical CRS."""
+    crs: str = request.getfixturevalue(crs)
+
+    with pytest.raises(ValueError) as ex:
+        _ = RpcCamera(im_size, rpc, crs=crs)
+
+    assert 'crs' in str(ex.value) and 'ellipsoidal' in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -152,6 +181,8 @@ def test_frame_update_error(
         'opencv_camera_und',
         'fisheye_camera',
         'fisheye_camera_und',
+        'rpc_camera',
+        'rpc_camera_proj',
     ],
 )
 def test_project_points(camera: str, request: pytest.FixtureRequest):
@@ -167,7 +198,7 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
     assert ji_ == pytest.approx(ji, abs=0.1)
 
     # test for broadcast type ambiguities where number of pts == number of dimensions
-    for sl in (slice(0, 2), slice(0, 3)):
+    for sl in (slice(0, 2), slice(0, 3), slice(0, 1)):
         assert xyz[:, sl] == pytest.approx(camera.pixel_to_world_z(ji[:, sl], z[sl]))
         assert ji_[:, sl] == pytest.approx(camera.world_to_pixel(xyz[:, sl]))
 
@@ -182,6 +213,8 @@ def test_project_points(camera: str, request: pytest.FixtureRequest):
         'opencv_camera_und',
         'fisheye_camera',
         'fisheye_camera_und',
+        'rpc_camera',
+        'rpc_camera_proj',
     ],
 )
 def test_project_dims(camera: str, request: pytest.FixtureRequest):
@@ -190,7 +223,7 @@ def test_project_dims(camera: str, request: pytest.FixtureRequest):
 
     # single point to single z
     ji = np.reshape(camera.im_size, (-1, 1)) / 2
-    z = camera.pos[2] * 0.5
+    z = _dem_offset
     xyz = camera.pixel_to_world_z(ji, z)
     ji_ = camera.world_to_pixel(xyz)
 
@@ -200,7 +233,7 @@ def test_project_dims(camera: str, request: pytest.FixtureRequest):
     assert ji_ == pytest.approx(ji, abs=1)
 
     # single point to multiple z
-    z = camera.pos[2] * np.linspace(0.1, 0.8, 10)
+    z = _dem_offset * np.linspace(0.1, 0.8, 10)
     xyz = camera.pixel_to_world_z(ji, z)
     ji_ = camera.world_to_pixel(xyz)
 
@@ -211,7 +244,7 @@ def test_project_dims(camera: str, request: pytest.FixtureRequest):
 
     # multiple points to single z
     ji = np.random.rand(2, 10) * np.reshape(camera.im_size, (-1, 1))
-    z = camera.pos[2] * 0.5
+    z = _dem_offset
     xyz = camera.pixel_to_world_z(ji, z)
     ji_ = camera.world_to_pixel(xyz)
 
@@ -234,6 +267,56 @@ def test_frame_project_nodistort(camera: str, request: pytest.FixtureRequest):
 
     assert pinhole_xyz == pytest.approx(xyz, abs=1e-3)
     assert ji_ == pytest.approx(ji, abs=1e-3)
+
+
+@pytest.mark.parametrize('camera', ['rpc_camera', 'rpc_camera_proj'])
+def test_rpc_project_nans(camera: str, request: pytest.FixtureRequest):
+    """Test ``RpcCamera.pixel()_to_world_z()`` and ``RpcCamera.world_to_pixel()`` pass nan
+    coordinates through.
+    """
+    camera: RpcCamera = request.getfixturevalue(camera)
+
+    # test pixel_to_world_z with nans in ji
+    nan_mask = np.array([True, False, True, False, True])
+    ji = np.random.rand(2, 5) * np.reshape(camera.im_size, (-1, 1))
+    z = np.random.rand(5) * _dem_offset
+    ji[:, nan_mask] = np.nan
+    xyz = camera.pixel_to_world_z(ji, z)
+    assert np.all(np.isnan(xyz[:, nan_mask]))
+    ji_ = camera.world_to_pixel(xyz)
+    assert ji_[:, ~nan_mask] == pytest.approx(ji[:, ~nan_mask], abs=0.1)
+
+    # test pixel_to_world_z with nans in z
+    ji = np.random.rand(2, 5) * np.reshape(camera.im_size, (-1, 1))
+    z[nan_mask] = np.nan
+    xyz = camera.pixel_to_world_z(ji, z)
+    assert np.all(np.isnan(xyz[:, nan_mask]))
+    ji_ = camera.world_to_pixel(xyz)
+    assert ji_[:, ~nan_mask] == pytest.approx(ji[:, ~nan_mask], abs=0.1)
+
+    # test pixel_to_world_z with ji and z all nans
+    ji *= np.nan
+    z *= np.nan
+    xyz = camera.pixel_to_world_z(ji, z)
+    assert np.all(np.isnan(xyz))
+
+    # create xyz coords to test world_to_pixel
+    ji = np.random.rand(2, 5) * np.reshape(camera.im_size, (-1, 1))
+    z = np.random.rand(5) * _dem_offset
+    xyz = camera.pixel_to_world_z(ji, z)
+
+    # test world_to_pixel with nan in one dimension of xyz
+    nan_mask = np.zeros(ji.shape[1], dtype=bool)
+    for row in range(3):
+        xyz_ = xyz.copy()
+        xyz_[row, nan_mask] = np.nan
+        ji_ = camera.world_to_pixel(xyz_)
+        assert np.all(np.isnan(ji_[:, nan_mask]))
+        assert ji_[:, ~nan_mask] == pytest.approx(ji[:, ~nan_mask], abs=0.1)
+
+    # test world_to_pixel with all nans
+    ji = camera.world_to_pixel(np.full((3, 5), fill_value=np.nan))
+    assert np.all(np.isnan(ji))
 
 
 @pytest.mark.parametrize('cam_type', [CameraType.brown, CameraType.opencv])
@@ -287,7 +370,9 @@ def test_frame_project_im_size(
     scale: float,
     request: pytest.FixtureRequest,
 ):
-    """Test ``FrameCamera`` projection coordinate equivalence for different image sizes."""
+    """Test ``FrameCamera`` projection coordinate equivalence for different image sizes with
+    same aspect ratio.
+    """
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
     ref_camera: FrameCamera = create_camera(cam_type, **frame_args, **dist_param)
 
@@ -309,9 +394,7 @@ def test_frame_project_im_size(
     assert test_xy == pytest.approx(ref_xy, abs=1e-3)
 
 
-@pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
-)
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'rpc_camera'])
 def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     """Test ``Camera.world_to_pixel()`` raises a ``ValueError`` with invalid coordinate shapes."""
     camera: Camera = request.getfixturevalue(camera)
@@ -325,22 +408,25 @@ def test_world_to_pixel_error(camera: str, request: pytest.FixtureRequest):
     assert "'xyz'" in str(ex.value)
 
 
-def test_pixel_to_world_z_error(pinhole_camera: Camera):
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'rpc_camera'])
+def test_pixel_to_world_z_error(camera: Camera, request: pytest.FixtureRequest):
     """Test ``Camera.pixel_to_world_z()`` raises a ValueError with invalid coordinate shapes."""
+    camera: Camera = request.getfixturevalue(camera)
+
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
+        camera.pixel_to_world_z(np.zeros(2), np.zeros(1))
     assert "'ji'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
+        camera.pixel_to_world_z(np.zeros((3, 1)), np.zeros(1))
     assert "'ji'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
+        camera.pixel_to_world_z(np.zeros((2, 1)), np.zeros((2, 1)))
     assert "'z'" in str(ex.value)
 
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
+        camera.pixel_to_world_z(np.zeros((2, 3)), np.zeros(2))
     assert "'z'" in str(ex.value)
 
 
@@ -538,16 +624,16 @@ def test_frame_undistort_pixel_no_ext_init(
 
 
 @pytest.mark.parametrize('num_pts', [None, 40, 100, 400, 1000, 4000])
-def test_pixel_boundary(pinhole_camera: Camera, num_pts: int | None):
+def test_pixel_boundary(rpc_camera: Camera, num_pts: int | None):
     """Test ``Camera.pixel_boundary()`` generates a rectangular boundary with the correct
     corners and length.
     """
     # create corner only boundary to test against
-    w, h = np.array(pinhole_camera.im_size, dtype='float32') - 1
+    w, h = np.array(rpc_camera.im_size, dtype='float32') - 1
     ref_ji = {(0.0, 0.0), (w, 0.0), (w, h), (0.0, h)}
 
     # create pixel boundary and simplify to corner only
-    ji = pinhole_camera.pixel_boundary(num_pts=num_pts).astype('float32')
+    ji = rpc_camera.pixel_boundary(num_pts=num_pts).astype('float32')
     test_ji = cv2.approxPolyDP(ji.T, epsilon=1e-6, closed=True)
     test_ji = set([tuple(*pt) for pt in test_ji])
 
@@ -601,12 +687,19 @@ def test_frame_pixel_boundary_undistort(
     assert cc[0, 1] > 0.95
 
 
-@pytest.mark.parametrize('camera, num_pts', [('pinhole_camera', None), ('pinhole_camera', 200)])
+@pytest.mark.parametrize(
+    'camera, num_pts',
+    [
+        ('pinhole_camera', None),
+        ('pinhole_camera', 200),
+        ('rpc_camera', None),
+        ('rpc_camera', 200),
+    ],
+)
 def test_world_boundary(camera: str, num_pts: int, request: pytest.FixtureRequest):
     """Test ``Camera.world_boundary()`` at scalar and surface z values.  Basic dimensionality,
     z value and sanity testing only.
     """
-    # TODO: add non-frame camera to fixtures
     camera: Camera = request.getfixturevalue(camera)
 
     # create reference boundary at scalar z
@@ -654,6 +747,35 @@ def test_frame_world_boundary_zsurf_clip(pinhole_camera: FrameCamera):
     assert xyz[2].min() < pinhole_camera.pos[2]
 
 
+def _test_world_boundary_zsurf(
+    camera: Camera, x: np.ndarray, y: np.ndarray, z: np.ndarray, transform: rio.Affine
+):
+    """Test ``camera.world_boundary()`` z surface intersection by comparing with the
+    ``camera.remap( )`` mask.
+    """
+
+    # remap to get reference mask
+    nodata = 0
+    im_array = np.full((1, *camera.im_size[::-1]), fill_value=127, dtype='uint8')
+    _, remap_mask = camera.remap(im_array, x, y, z, nodata=nodata, interp=Interp.nearest)
+    ref_mask = ~remap_mask
+
+    # find world boundary and convert to mask
+    xyz = camera.world_boundary(z, num_pts=400, transform=transform)
+    center_transform = transform * rio.Affine.translation(0.5, 0.5)
+    ji = np.array(~center_transform * xyz[:2])
+    ji_ = [np.round(ji.T).astype(int)]
+    test_mask = np.zeros(ref_mask.shape, dtype='uint8')
+    test_mask = cv2.fillPoly(test_mask, ji_, color=(255,)).view(bool)
+
+    # compare masks
+    assert test_mask[ref_mask].sum() / ref_mask.sum() > 0.95
+    if not (np.all(test_mask) and np.all(ref_mask)):
+        cc = np.corrcoef(test_mask.flatten(), ref_mask.flatten())
+        assert cc[0, 1] > 0.9
+        print(cc[0, 1])
+
+
 @pytest.mark.parametrize(
     'xyz_offset, opk_offset',
     [
@@ -668,15 +790,15 @@ def test_frame_world_boundary_zsurf_clip(pinhole_camera: FrameCamera):
         ((0, 0, 2.0e3), (0, 0, 0)),
     ],
 )
-def test_world_boundary_zsurf(
+def test_frame_world_boundary_zsurf(
     frame_args: dict,
     xyz_grids: tuple[tuple, rio.Affine],
     xyz_offset: tuple[float],
     opk_offset: tuple[float],
 ):
     """Test ``Camera.world_boundary()`` z surface intersection by comparing a
-    ``PinholeCamera.world_boundary()`` mask with the ``PinholeCameraCamera.remap()`` mask for
-    varying camera angles and positions, including partial z surface coverage.
+    ``PinholeCamera.world_boundary()`` mask with the ``PinholeCamera.remap()`` mask for varying
+    camera angles and positions, including partial z surface coverage.
     """
     # Note that these tests should use the pinhole camera model to ensure no artefacts outside
     # the ortho boundary, and z < camera height to ensure no ortho artefacts in z > camera
@@ -699,25 +821,35 @@ def test_world_boundary_zsurf(
     (x, y, z), transform = xyz_grids
     z = z[0]  # sinusoid
 
-    # remap to get reference mask
-    nodata = 0
-    im_array = np.full((1, *camera.im_size[::-1]), fill_value=127, dtype='uint8')
-    _, remap_mask = camera.remap(im_array, x, y, z, nodata=nodata, interp=Interp.nearest)
-    ref_mask = ~remap_mask
+    _test_world_boundary_zsurf(camera, x, y, z, transform)
 
-    # find world boundary and convert to mask
-    xyz = camera.world_boundary(z, num_pts=400, transform=transform)
-    center_transform = transform * rio.Affine.translation(0.5, 0.5)
-    ji = np.array(~center_transform * xyz[:2])
-    ji_ = [np.round(ji.T).astype(int)]
-    test_mask = np.zeros(ref_mask.shape, dtype='uint8')
-    test_mask = cv2.fillPoly(test_mask, ji_, color=(255,)).view(bool)
 
-    # compare masks
-    assert test_mask[ref_mask].sum() / ref_mask.sum() > 0.95
-    if not (np.all(test_mask) and np.all(ref_mask)):
-        cc = np.corrcoef(test_mask.flatten(), ref_mask.flatten())
-        assert cc[0, 1] > 0.9
+@pytest.mark.parametrize(
+    'xy_offset',
+    [(0, 0), (0.005, 0), (0.0, 0.005), (0.005, 0.005)],
+)
+def test_rpc_world_boundary_zsurf(
+    im_size: tuple[int, int],
+    rpc: dict,
+    utm34n_crs: str,
+    xyz_grids: tuple[tuple, rio.Affine],
+    xy_offset: tuple[float],
+):
+    """Test ``Camera.world_boundary()`` z surface intersection by comparing a
+    ``RpcCamera.world_boundary()`` mask with the ``RpcCamera.remap()`` mask for varying camera
+    angles and positions, including partial z surface coverage.
+    """
+    _rpc = rpc.copy()
+    _rpc['long_off'] += xy_offset[0]
+    _rpc['lat_off'] += xy_offset[1]
+    camera = RpcCamera(im_size, _rpc, crs=utm34n_crs)
+
+    # (x, y, z) world coordinate grids
+    (x, y, z), transform = xyz_grids
+    z = z[0]  # sinusoid
+    z = z.mean() + (z - z.mean()) * 100  # TODO: put this in the grids and dems themselves?
+
+    _test_world_boundary_zsurf(camera, x, y, z, transform)
 
 
 @pytest.mark.parametrize(
@@ -742,28 +874,32 @@ def test_frame_world_boundary_equiv(camera: str, camera_und: str, request: pytes
     assert xyz == pytest.approx(xyz_und, abs=1e-6)
 
 
-def test_frame_world_boundary_errors(pinhole_camera: FrameCamera):
+@pytest.mark.parametrize(
+    'camera', ['pinhole_camera', 'rpc_camera']
+)
+def test_world_boundary_errors(camera: str, request: pytest.FixtureRequest):
     """Test ``Camera.world_boundary()`` error conditions."""
+    camera: Camera = request.getfixturevalue(camera)
+
     # z is 1D array
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.world_boundary(z=np.ones(10))
+        camera.world_boundary(z=np.ones(10))
     assert "'z'" in str(ex.value)
 
     # z is 2D array but no transform specified
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.world_boundary(z=np.ones((10, 10)), transform=None)
+        camera.world_boundary(z=np.ones((10, 10)), transform=None)
     assert "transform" in str(ex.value)
 
 
 @pytest.mark.parametrize('indexes, dtype', [(None, None), ([1, 2, 3], 'uint8'), (1, 'float32')])
 def test_read(
-    rgb_byte_src_file: Path, pinhole_camera: Camera, indexes: int | Sequence[int], dtype: str
+    rgb_byte_src_file: Path, rpc_camera: Camera, indexes: int | Sequence[int], dtype: str
 ):
     """Test a valid image is returned by ``Camera.read()`` with different band indexes and data
     types.
     """
-    # TODO: test with non-frame camera
-    test_array = pinhole_camera.read(rgb_byte_src_file, indexes=indexes, dtype=dtype)
+    test_array = rpc_camera.read(rgb_byte_src_file, indexes=indexes, dtype=dtype)
 
     with rio.open(rgb_byte_src_file) as im:
         indexes = indexes or im.indexes
@@ -876,7 +1012,7 @@ def test_frame_read_undistort(
     ],
 )
 def test_remap(
-    pinhole_camera: Camera,
+    rpc_camera_proj: Camera,
     xyz_grids: tuple[tuple, rio.Affine],
     indexes: Sequence[int],
     dtype: str,
@@ -885,14 +1021,13 @@ def test_remap(
     """Test ``Camera.remap()`` with different image dimensions, data types and nodata values.
     Basic dimensionality, dtype and sanity testing only.
     """
-    # TODO: test with non-frame camera(s)
     # (x, y, z) world coordinate grids
     (x, y, z), transform = xyz_grids
     z = z[0]  # sinusoid
 
     # remap checkerboard image (with nearest interp so remapped values can be compared to source)
-    im_array = np.expand_dims(checkerboard(pinhole_camera.im_size[::-1]), axis=0).astype(dtype)
-    remap_array, remap_mask = pinhole_camera.remap(
+    im_array = np.expand_dims(checkerboard(rpc_camera_proj.im_size[::-1]), axis=0).astype(dtype)
+    remap_array, remap_mask = rpc_camera_proj.remap(
         im_array, x, y, z, nodata=nodata, interp=Interp.nearest
     )
 
@@ -1107,28 +1242,28 @@ def test_nadir_pinhole_remap(
     assert np.all(remap_array == im_array)
 
 
-def test_remap_errors(pinhole_camera: FrameCamera, xyz_grids: tuple[tuple, rio.Affine]):
+def test_remap_errors(rpc_camera: RpcCamera, xyz_grids: tuple[tuple, rio.Affine]):
     """Test ``Camera.remap()`` error conditions."""
     (x, y, z), transform = xyz_grids
 
     # im_array not 3D
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.remap(np.ones((10, 10)), x, y, z)
+        rpc_camera.remap(np.ones((10, 10)), x, y, z)
     assert 'im_array' in str(ex.value) and '3' in str(ex.value)
 
     # im_array with unsupported dtype
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.remap(np.ones((1, 10, 10), dtype='int32'), x, y, z)
+        rpc_camera.remap(np.ones((1, 10, 10), dtype='int32'), x, y, z)
     assert 'im_array' in str(ex.value) and 'data type' in str(ex.value)
 
     # 3D z
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x, y, z)
+        rpc_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x, y, z)
     assert "'z'" in str(ex.value)
 
     # float32 x/y
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x.astype('float32'), y, z[0])
+        rpc_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x.astype('float32'), y, z[0])
     assert 'float64' in str(ex.value)
 
 

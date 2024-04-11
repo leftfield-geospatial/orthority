@@ -1097,7 +1097,9 @@ def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: 
 
 
 @pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
+    'camera', [
+        'pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', 'rpc_camera_proj'
+    ]
 )
 def test_process_camera(
     rgb_byte_src_file: Path,
