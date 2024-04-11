@@ -27,15 +27,10 @@ import pytest
 import rasterio as rio
 from click.testing import CliRunner
 from rasterio.transform import from_bounds, from_origin
-from rasterio.warp import array_bounds, transform_bounds
+from rasterio.warp import array_bounds, transform, transform_bounds
 
 from orthority.camera import (
-    BrownCamera,
-    Camera,
-    FisheyeCamera,
-    FrameCamera,
-    OpenCVCamera,
-    PinholeCamera,
+    BrownCamera, Camera, FisheyeCamera, FrameCamera, OpenCVCamera, PinholeCamera, RpcCamera,
 )
 from orthority.enums import CameraType
 from orthority.ortho import Ortho
@@ -201,6 +196,40 @@ def cxy() -> tuple[float, float]:
 
 
 @pytest.fixture(scope='session')
+def rpc(xyz: tuple[float, float, float], utm34n_crs: str, im_size: tuple[int, int]) -> dict:
+    """Example RPC dictionary."""
+    xyz_ = transform(utm34n_crs, 'EPSG:4326', *[[coord] for coord in xyz])
+    lat_scale = 0.005 / 2  # frame camera fixture ortho bounds are ~0.01 deg
+    long_scale = lat_scale * im_size[0] / im_size[1]
+    line_num_coeff = [0] * 20
+    line_num_coeff[:5] = [-0.005, -0.033, -1.042, 0.008, -0.001]
+    line_den_coeff = [0] * 20
+    line_den_coeff[:3] = [1.0, -0.001, -0.002]
+    samp_num_coeff = [0] * 20
+    samp_num_coeff[:5] = [0.008, 1.016, 0.002, 0.013, 0.001]
+    samp_den_coeff = [0] * 20
+    samp_den_coeff[:3] = [1.0, -0.002, -0.001]
+
+    rpc = dict(
+        height_off=_dem_offset,
+        height_scale=_dem_offset,
+        lat_off=xyz_[1][0],
+        lat_scale=lat_scale,
+        long_off=xyz_[0][0],
+        long_scale=long_scale,
+        line_off=(im_size[1] - 1) / 2,
+        line_scale=im_size[1] / 2,
+        samp_off=(im_size[0] - 1) / 2,
+        samp_scale=im_size[0] / 2,
+        line_num_coeff=line_num_coeff,
+        line_den_coeff=line_den_coeff,
+        samp_num_coeff=samp_num_coeff,
+        samp_den_coeff=samp_den_coeff,
+    )
+    return rpc
+
+
+@pytest.fixture(scope='session')
 def interior_args(focal_len, im_size, sensor_size, cxy) -> dict:
     """A dictionary of interior parameters for ``FrameCamera.__init__()``."""
     return dict(
@@ -224,6 +253,12 @@ def exterior_args(xyz: tuple, opk: tuple) -> dict:
 def frame_args(interior_args: dict, exterior_args: dict) -> dict:
     """A dictionary of interior and exterior parameters for ``FrameCamera.__init__()``."""
     return dict(**interior_args, **exterior_args)
+
+
+@pytest.fixture(scope='session')
+def rpc_args(im_size: tuple[int, int], rpc: dict) -> dict:
+    """A dictionary of parameters for ``RpcCamera.__init__()``."""
+    return dict(im_size=im_size, rpc=rpc)
 
 
 @pytest.fixture(scope='session')
@@ -292,6 +327,18 @@ def fisheye_camera(frame_args: dict, fisheye_dist_param: dict) -> FrameCamera:
 def fisheye_camera_und(frame_args: dict, fisheye_dist_param: dict) -> FrameCamera:
     """Example ``FisheyeCamera`` object with near-nadir orientation and ``distort=False``."""
     return FisheyeCamera(**frame_args, **fisheye_dist_param, distort=False)
+
+
+@pytest.fixture(scope='session')
+def rpc_camera(rpc_args: dict) -> RpcCamera:
+    """Example ``RpcCamera`` object with geographic world coordinates."""
+    return RpcCamera(**rpc_args)
+
+
+@pytest.fixture(scope='session')
+def rpc_camera_proj(rpc_args: dict, utm34n_crs: str) -> RpcCamera:
+    """Example ``RpcCamera`` object with projected world coordinates."""
+    return RpcCamera(**rpc_args, crs=utm34n_crs)
 
 
 @pytest.fixture(scope='session')
@@ -550,9 +597,7 @@ def float_utm34n_msl_dem_file(
     bounds = ortho_bounds(pinhole_camera)
     array, transform = create_zsurf(bounds)
     array *= 3.28084  # meters to feet
-    profile = create_profile(
-        array, transform=transform, crs=utm34n_msl_crs, nodata=float('nan')
-    )
+    profile = create_profile(array, transform=transform, crs=utm34n_msl_crs, nodata=float('nan'))
 
     filename = tmp_path_factory.mktemp('data').joinpath('float_utm34n_msl_dem.tif')
     with rio.open(filename, 'w', **profile) as im:
@@ -789,6 +834,12 @@ def odm_xyz_opk_csv_file() -> Path:
     Includes a header.
     """
     return root_path.joinpath('tests/data/io/odm_xyz_opk.csv')
+
+
+@pytest.fixture(scope='session')
+def rpc_image_file() -> Path:
+    """RPC image file."""
+    return root_path.joinpath('tests/data/rpc/qb_basic1b.tif')
 
 
 @pytest.fixture(scope='session')
