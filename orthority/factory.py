@@ -24,7 +24,7 @@ from typing import IO, Sequence
 import rasterio as rio
 
 from orthority import param_io
-from orthority.camera import Camera, create_camera, FrameCamera
+from orthority.camera import Camera, create_camera, FrameCamera, RpcCamera
 from orthority.errors import CrsMissingError, ParamError
 from orthority.utils import get_filename, join_ofile, OpenFile
 
@@ -81,17 +81,18 @@ class FrameCameras(Cameras):
         Exterior parameter file or dictionary.  If a file, can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
     :param io_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.Reader`
+        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.FrameReader`
         sub-class corresponding to the exterior (and possibly interior) parameter file format.
         If ``ext_param`` is a dictionary, these arguments are not passed to a
-        :class:`~orthority.param_io.Reader`, but :attr:`FrameCameras.crs` is set with the
+        :class:`~orthority.param_io.FrameReader`, but :attr:`FrameCameras.crs` is set with the
         value of a 'crs' argument.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for :class:`~orthority.camera.FrameCamera`.
-        Should exclude the interior parameters themselves which are read from ``int_param``.
+        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
+        class.  Should exclude the interior parameters themselves which are read from ``int_param``.
     """
 
     # TODO: add doc link to file and dictionary formats.
+    # TODO: revide the docs for io_kwargs and cam_kwargs according to RST docs, for all factories
     def __init__(
         self,
         int_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
@@ -219,13 +220,10 @@ class ExifCameras(FrameCameras):
         objects in binary mode ('rb'), or dataset readers.
     :param io_kwargs:
         Optional dictionary of keyword arguments for the :class:`~orthority.param_io.ExifReader`
-        class. If ``ext_param`` is a dictionary, these arguments are not passed to
-        :class:`~orthority.param_io.ExifReader`, but :attr:`FrameCameras.crs` is set with the
-        value of a 'crs' argument.
-        :attr:`FrameCameras.crs`.
+        class.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for :class:`~orthority.camera.FrameCamera`.
-        Should exclude the interior parameters themselves which are read from ``int_param``.
+        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
+        class.  Should exclude the interior parameters themselves which are read from ``files``.
     """
 
     def __init__(
@@ -242,3 +240,78 @@ class ExifCameras(FrameCameras):
         ext_param_dict = reader.read_ext_param()
         io_kwargs.update(crs=reader.crs)
         super().__init__(int_param_dict, ext_param_dict, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
+
+
+class RpcCameras(Cameras):
+    """
+    RPC camera factory for an :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>`.
+
+    :param rpc_param:
+        RPC parameter file or dictionary.  If a file, can be a path or URI string,
+        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+    :param cam_kwargs:
+        Optional dictionary of keyword arguments for :class:`~orthority.camera.RpcCamera`.
+        Should exclude the RPC parameters themselves which are read from ``rpc_param``.
+    """
+
+    # TODO: how to combine oty rpc file and image files as they might be on the CLI?
+    # TODO: factory class name consistency e.g. ExifFrameCameras->FrameCameras &
+    #  ImRpcCameras->RpcCameras
+    def __init__(
+        self,
+        rpc_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
+        cam_kwargs: dict = None,
+    ):
+        if not isinstance(rpc_param, dict):
+            self._rpc_param_dict = param_io.read_oty_rpc_param(rpc_param)
+        else:
+            self._rpc_param_dict = rpc_param
+        self._cam_kwargs = cam_kwargs or {}
+        self._cameras = {}
+
+    @property
+    def filenames(self) -> set[str]:
+        return set(self._rpc_param_dict.keys())
+
+    def get(self, filename: str | PathLike | OpenFile) -> RpcCamera:
+        # get rpc params for filename
+        filename = Path(get_filename(filename))
+        rpc_param = self._rpc_param_dict.get(
+            filename.name, self._rpc_param_dict.get(filename.stem, None)
+        )
+        if not rpc_param:
+            raise ParamError(f"Could not find RPC parameters for '{filename.name}'.")
+
+        if filename.name not in self._cameras:
+            self._cameras[filename.name] = create_camera(**rpc_param, **self._cam_kwargs)
+
+        return self._cameras[filename.name]
+
+    def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
+        rpc_file = join_ofile(out_dir, 'rpc.yaml', mode='wt')
+        param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)
+
+
+class ImRpcCameras(RpcCameras):
+    """
+    RPC camera factory for image file(s) with RPC tags / sidecar file(s).
+
+    :param files:
+        Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        objects in binary mode ('rb'), or dataset readers.
+    :param io_kwargs:
+        Optional dictionary of keyword arguments for :class:`~orthority.param_io.read_im_rpc_param`.
+    :param cam_kwargs:
+        Optional dictionary of keyword arguments for :class:`~orthority.camera.RpcCamera`.
+        Should exclude the RPC parameters themselves which are read from ``files``.
+    """
+
+    def __init__(
+        self,
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+        io_kwargs: dict = None,
+        cam_kwargs: dict = None,
+    ):
+        io_kwargs = io_kwargs or {}
+        rpc_param_dict = param_io.read_im_rpc_param(files, **io_kwargs)
+        super().__init__(rpc_param_dict, cam_kwargs=cam_kwargs)
