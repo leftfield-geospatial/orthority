@@ -14,14 +14,11 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """
-Interior & exterior parameter file IO and conversions.
+Parameter file IO and conversions.
 
 Files are read and converted into standard format dictionaries that can be used to create camera
 objects with :func:`~orthority.camera.create_camera` or the various
 :class:`~orthority.camera.Camera` subclasses.
-
-All ``crs`` and ``lla_crs`` parameters can be supplied as EPSG, proj4 or WKT strings;
-or :class:`~rasterio.crs.CRS` objects.
 """
 from __future__ import annotations
 
@@ -32,7 +29,7 @@ import os
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from csv import Dialect, DictReader, Sniffer
 from io import StringIO
@@ -48,6 +45,7 @@ import yaml
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.errors import CRSError as RioCrsError
+from rasterio.transform import RPC
 from rasterio.warp import transform
 from tqdm.std import tqdm, tqdm as std_tqdm
 
@@ -81,9 +79,16 @@ _optional_schema = {
 _default_lla_crs = CRS.from_epsg(4979)
 """Default CRS for geographic camera coordinates."""
 
+_default_tqdm_kwargs = dict(
+    bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]',
+    dynamic_ncols=True,
+    leave=True,
+)
+"""Default progress bar kwargs."""
+
 
 def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
-    """Read camera interior parameters from an OpenDroneMap / OpenSfM JSON dictionary."""
+    """Read interior parameters from an OpenDroneMap / OpenSfM JSON dictionary."""
 
     def parse_json_param(json_param: dict, cam_id: str) -> dict[str, Any]:
         """Validate & convert the given JSON dictionary for a single camera."""
@@ -148,7 +153,7 @@ def _create_exif_cam_id(exif: Exif) -> str:
 
 
 def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
-    """Read camera interior parameters from an Exif object."""
+    """Read interior parameters from an Exif object."""
     # TODO: might there be cases where XMP tags CalibratedFocalLength, CalibratedOpticalCenter* are
     #  present but not DewarpData, and better than equiv EXIF tags?
     if exif.dewarp:
@@ -199,7 +204,7 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
 def _read_exif_ext_param(
     exif: Exif, crs: str | CRS, lla_crs: str | CRS
 ) -> dict[str, dict[str, Any]]:
-    """Read camera exterior parameters from an Exif object."""
+    """Read exterior parameters from an Exif object."""
     if not exif.lla:
         raise ParamError(f"No latitude, longitude & altitude tags in '{exif.filename}'.")
     if not exif.rpy:
@@ -214,12 +219,12 @@ def _read_exif_ext_param(
 
 def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more cameras from an :doc:`Orthority format YAML file
-    <../file_formats/yaml>`.
+    Read interior parameters for one or more camera from an :doc:`Orthority interior parameter
+    file <../file_formats/oty_int>`.
 
     :param file:
-        YAML file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
-        a file object, opened in text mode ('rt').
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
     """
     with utils.Open(file, 'rt') as f:
         yaml_dict = yaml.safe_load(f)
@@ -286,8 +291,8 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
     See the :doc:`format documentation <../file_formats/opensfm>` for supported camera models.
 
     :param file:
-        OpenDroneMap / OpenSfM JSON file to read.  Can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
     """
     with utils.Open(file, 'rt') as f:
         json_dict = json.load(f)
@@ -304,10 +309,115 @@ def read_exif_int_param(
     See the :doc:`format documentation <../file_formats/exif_xmp>` for required tags.
 
     :param file:
-        Image file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile`
-        object in binary mode ('rb'), or a dataset reader.
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object in
+        binary mode ('rb'), or a dataset reader.
     """
     return _read_exif_int_param(Exif(file))
+
+
+def read_im_rpc_param(
+    files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+    progress: bool | std_tqdm = False,
+) -> dict[str, dict[str, Any]]:
+    """
+    Read RPC camera parameters from :doc:`image file(s) with RPC tags / sidecar file(s)
+    <../file_formats/im_rpc>`.
+
+    :param files:
+        File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        objects in binary mode ('rb'), or dataset readers.
+    :param progress:
+        Whether to display a progress bar monitoring the portion of files read.  Can be set to a
+        custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this case, the bar's
+        ``total`` attribute is set internally, and the ``iterable`` attribute is not used.
+    """
+
+    def _read_im_rpc_param(
+        file: str | PathLike | OpenFile | rio.DatasetReader,
+    ) -> dict[str, dict[str, Any]]:
+        """Read RPC camera parameters from an image file."""
+        filename = utils.get_filename(file)
+        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+            file, 'r'
+        ) as im:
+            im_size = (im.width, im.height)
+            rpc: RPC = im.rpcs
+
+        if rpc is None:
+            raise ParamError(f"No RPC parameters in '{filename}'.")
+        rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
+        return {filename: rpc_param}
+
+    # read RPC params in a thread pool
+    rpc_param_dict = {}
+    with ExitStack() as exit_stack:
+        # create / set up progress bar
+        if progress is True:
+            progress = exit_stack.enter_context(tqdm(**_default_tqdm_kwargs))
+        elif progress is False:
+            progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
+        progress.total = len(files)
+
+        # create thread pool and populate rpc_param_dict in same order as files
+        executor = exit_stack.enter_context(ThreadPoolExecutor())
+        futures = [executor.submit(_read_im_rpc_param, file) for file in files]
+        for future in futures:
+            rpc_param_dict.update(**future.result())
+            progress.update()
+        progress.refresh()
+
+    return rpc_param_dict
+
+
+def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
+    """
+    Read RPC parameters for one or more camera from an :doc:`Orthority RPC file
+    <../file_formats/oty_rpc>`.
+
+    :param file:
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
+    """
+    with utils.Open(file, 'rt') as f:
+        yaml_dict = yaml.safe_load(f)
+
+    # template to test yaml_dict items against
+    schema = dict(
+        im_size=list,
+        rpc=dict(
+            height_off=float,
+            height_scale=float,
+            lat_off=float,
+            lat_scale=float,
+            line_den_coeff=[float],
+            line_num_coeff=[float],
+            line_off=(int, float),
+            line_scale=(int, float),
+            long_off=float,
+            long_scale=float,
+            samp_den_coeff=[float],
+            samp_num_coeff=[float],
+            samp_off=(int, float),
+            samp_scale=(int, float),
+        ),
+    )
+
+    # validate and convert yaml_dict
+    rpc_param_dict = {}
+    for filename, rpc_param in yaml_dict.items():
+        try:
+            if not isinstance(filename, str):
+                raise ValueError(f"'{filename}' key is not an an instance of 'str'.")
+            utils.validate_collection(schema, rpc_param)
+        except (ValueError, TypeError, KeyError) as ex:
+            raise ParamError(
+                f"'{utils.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}"
+            )
+        rpc_param_dict[filename] = dict(
+            cam_type=CameraType.rpc, im_size=tuple(rpc_param['im_size']), rpc=rpc_param['rpc']
+        )
+
+    return rpc_param_dict
 
 
 def write_int_param(
@@ -316,7 +426,8 @@ def write_int_param(
     overwrite: bool = False,
 ) -> None:
     """
-    Write interior parameters to an :doc:`Orthority format YAML file <../file_formats/yaml>`.
+    Write interior parameters to an :doc:`Orthority interior parameter file
+    <../file_formats/oty_int>`.
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
@@ -346,7 +457,8 @@ def write_ext_param(
     overwrite: bool = False,
 ) -> None:
     """
-    Write exterior parameters to an :doc:`Orthority format GeoJSON file <../file_formats/geojson>`.
+    Write exterior parameters to an :doc:`Orthority exterior parameter file
+    <../file_formats/oty_ext>`.
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
@@ -354,7 +466,8 @@ def write_ext_param(
     :param ext_param_dict:
         Exterior parameters to write.
     :param crs:
-        CRS of the world coordinate system.
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.
     :param overwrite:
         Whether to overwrite the file if it exists.
     """
@@ -376,6 +489,31 @@ def write_ext_param(
 
     with utils.Open(file, 'wt', overwrite=overwrite) as f:
         json.dump(json_dict, f, indent=4)
+
+
+def write_rpc_param(
+    file: str | PathLike | OpenFile | IO[str],
+    rpc_param_dict: dict[str, dict[str, Any]],
+    overwrite: bool = False,
+) -> None:
+    """
+    Write RPC parameters to an :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>`.
+
+    :param file:
+        File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
+        a file object, opened in text mode ('wt').
+    :param rpc_param_dict:
+        RPC parameters to write.
+    :param overwrite:
+        Whether to overwrite the file if it exists.
+    """
+    # copy rpc_param_dict to yaml_dict without 'cam_type' item(s)
+    yaml_dict = {}
+    for filename, rpm_param in rpc_param_dict.items():
+        yaml_dict[filename] = {k: v for k, v in rpm_param.items() if k != 'cam_type'}
+
+    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+        yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
 
 
 def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
@@ -452,9 +590,11 @@ def _rpy_to_opk(
         (latitude, longitude, altitude) geographic coordinates of the camera (in units of
         ``lla_crs``).
     :param crs:
-        CRS of the world coordinate system.
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.
     :param lla_crs:
-        CRS of the ``lla`` geographic coordinates.
+        CRS of the ``lla`` geographic coordinates as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.
     :param C_bB:
         Optional camera to body rotation matrix.  Defaults to:
         ``[[0, 1, 0], [1, 0, 0], [0, 0, -1]]``, which describes typical drone geometry.
@@ -511,14 +651,16 @@ def _rpy_to_opk(
     return omega, phi, kappa
 
 
-class Reader(ABC):
+class FrameReader(ABC):
     """
-    Base parameter reader class.
+    Base frame camera parameter reader class.
 
     :param crs:
-        CRS of the world coordinate system.
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.
     :param lla_crs:
-        CRS of input geographic coordinates (if any).
+        CRS of input geographic coordinates (if any), as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.
     """
 
     @abstractmethod
@@ -550,7 +692,7 @@ class Reader(ABC):
         pass
 
 
-class CsvReader(Reader):
+class CsvReader(FrameReader):
     """
     Exterior parameter reader for a CSV file.
 
@@ -561,18 +703,20 @@ class CsvReader(Reader):
     formats.
 
     :param file:
-        CSV file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
-        a file object, opened in text mode ('rt').
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
     :param crs:
-        CRS of the world coordinate system.  If set to None (the default), and the file contains
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.  If set to None (the default), and the file contains
         :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined.  If
         set to None, and the file contains (x, y, z) world coordinate positions, a CRS can be
-        provided via a '.prj' file (i.e. a text file defining the CRS with a WKT, proj4 or EPSG
-        string, and having the same path & stem as ``file``, but a '.prj' extension).  In all
-        other situations, ``crs`` should be supplied.
+        provided via a '.prj' file (i.e. a text file defining a CRS string, and having the same
+        path & stem as ``file``, but a '.prj' extension).  In all other situations, ``crs`` should
+        be supplied.
     :param lla_crs:
         Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
-        pitch, yaw) angle values in the file.
+        pitch, yaw) angle values in the file (as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object).
     :param fieldnames:
         List of names specifying the CSV fields.  If set to None (the default), names will be
         read from the file header if it exists.  If ``fieldnames`` is supplied, any existing file
@@ -614,7 +758,7 @@ class CsvReader(Reader):
         **kwargs,
     ) -> None:
         # TODO: allow other coordinate conventions for opk / rpy (bluh, odm, patb)
-        Reader.__init__(self, crs, lla_crs=lla_crs)
+        FrameReader.__init__(self, crs, lla_crs=lla_crs)
         self._file = file
         self._radians = radians
 
@@ -797,20 +941,22 @@ class CsvReader(Reader):
         return ext_param_dict
 
 
-class OsfmReader(Reader):
+class OsfmReader(FrameReader):
     """
     Interior and exterior parameter reader for an OpenSfM :file:`reconstruction.json` file.
 
     See the :doc:`format documentation <../file_formats/opensfm>` for supported camera models.
 
     :param file:
-        The :file:`reconstruction.json` file to read.  Can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
     :param crs:
-        CRS of the world coordinate system.  If set to None (the default), a UTM CRS will be
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.  If set to None (the default), a UTM CRS will be
         auto-determined.
     :param lla_crs:
-        CRS of the ``reference_lla`` value in the :file:`reconstruction.json` file.
+        CRS of the ``reference_lla`` value in the :file:`reconstruction.json` file as an EPSG, WKT
+        or proj4 string; or :class:`~rasterio.crs.CRS` object.
     """
 
     # TODO: OSfM reconstruction is in a topocentric system, so the transfer of 3D cartesian
@@ -825,7 +971,7 @@ class OsfmReader(Reader):
         lla_crs: str | CRS = CRS.from_epsg(4326),
         **kwargs,
     ) -> None:
-        Reader.__init__(self, crs=crs, lla_crs=lla_crs)
+        FrameReader.__init__(self, crs=crs, lla_crs=lla_crs)
         self._json_dict = self._read_json_dict(file)
         if not self._crs:
             self._crs = self._find_utm_crs()
@@ -896,32 +1042,27 @@ class OsfmReader(Reader):
         return ext_param_dict
 
 
-class ExifReader(Reader):
+class ExifReader(FrameReader):
     """
     Interior and exterior parameter reader for image file(s) with EXIF / XMP tags.
 
     See the :doc:`format documentation <../file_formats/exif_xmp>` for required tags.
 
     :param files:
-        Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode ('rb'), or dataset readers.
     :param crs:
-        CRS of the world coordinate system.  If set to None (the default), a UTM CRS will be
+        CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
+        :class:`~rasterio.crs.CRS` object.  If set to None (the default), a UTM CRS will be
         auto-determined.
     :param lla_crs:
-        CRS of geographic camera coordinates in the EXIF / XMP tags.
+        CRS of geographic camera coordinates in the EXIF / XMP tags as an EPSG, WKT or proj4 string;
+        or :class:`~rasterio.crs.CRS` object.
     :param progress:
         Whether to display a progress bar monitoring the portion of files read.  Can be set to a
         custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this case, the bar's
         ``total`` attribute is set internally, and the ``iterable`` attribute is not used.
     """
-
-    # default progress bar kwargs
-    _default_tqdm_kwargs = dict(
-        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]',
-        dynamic_ncols=True,
-        leave=True,
-    )
 
     def __init__(
         self,
@@ -931,7 +1072,7 @@ class ExifReader(Reader):
         progress: bool | std_tqdm = False,
         **kwargs,
     ) -> None:
-        Reader.__init__(self, crs, lla_crs)
+        FrameReader.__init__(self, crs, lla_crs)
         files = files if isinstance(files, Iterable) else [files]
         self._exif_dict = self._read_exif(files, progress)
 
@@ -944,19 +1085,20 @@ class ExifReader(Reader):
         files: Sequence[str | PathLike | OpenFile | rio.DatasetReader], progress: bool | std_tqdm
     ) -> dict[str, Exif]:
         """Return a dictionary of Exif objects for the given images."""
+        # read exif tags in thread pool
         exif_dict = {}
         with ExitStack() as exit_stack:
             # create / set up progress bar
             if progress is True:
-                progress = exit_stack.enter_context(tqdm(**ExifReader._default_tqdm_kwargs))
+                progress = exit_stack.enter_context(tqdm(**_default_tqdm_kwargs))
             elif progress is False:
                 progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
             progress.total = len(files)
 
-            # read tags from image files
+            # create thread pool and populate exif_dict in same order as files
             executor = exit_stack.enter_context(ThreadPoolExecutor())
             futures = [executor.submit(Exif, file) for file in files]
-            for future in as_completed(futures):
+            for future in futures:
                 exif_obj = future.result()
                 exif_dict[exif_obj.filename] = exif_obj
                 progress.update()
@@ -994,17 +1136,18 @@ class ExifReader(Reader):
         return ext_param_dict
 
 
-class OtyReader(Reader):
+class OtyReader(FrameReader):
     """
-    Exterior parameter reader for an :doc:`Orthority format GeoJSON file <../file_formats/geojson>`.
+    Exterior parameter reader for an :doc:`Orthority exterior parameter file
+    <../file_formats/oty_ext>`.
 
     :param file:
-        GeoJSON file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile`
-        object or a file object, opened in text mode ('rt').
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode ('rt').
     """
 
     def __init__(self, file: str | PathLike | OpenFile | IO[str], **kwargs) -> None:
-        Reader.__init__(self)
+        FrameReader.__init__(self)
         self._crs, self._json_dict = self._read_json_dict(file, self._crs)
 
     @staticmethod
