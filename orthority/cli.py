@@ -39,7 +39,7 @@ from orthority import root_path, utils
 from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp
 from orthority.errors import CrsMissingError, ParamError
-from orthority.factory import Cameras, ExifCameras, FrameCameras
+from orthority.factory import Cameras, ExifCameras, FrameCameras, ImRpcCameras, RpcCameras
 from orthority.ortho import Ortho
 from orthority.version import __version__
 
@@ -731,6 +731,8 @@ def exif(
     Ortho images and parameter files are placed in the current working directory by
     default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
+    # TODO: this command could be combined with oty frame i.e. --int-param and --ext-param are
+    #  optional, if not provided, it attempts to read models from images themselves.
     # create progress bar
     desc = 'Reading parameters'
     bar_format = _get_bar_format(units='files', desc_width=len(desc))
@@ -872,6 +874,106 @@ def odm(
         resolution=resolution,
         dem_band=1,
         out_dir=out_dir,
+        **kwargs,
+    )
+
+
+@cli.command(
+    # make these short help messages consistent between frame / rpc models
+    cls=RstCommand,
+    short_help='Orthorectify with RPC tags or parameter file.',
+    epilog='See https://orthority.readthedocs.io/ for more detail.',
+)
+@src_files_arg
+@dem_file_option
+@click.option(
+    '-rp',
+    '--rpc-param',
+    'rpc_param_file',
+    type=click.Path(dir_okay=False),
+    default=None,
+    callback=_text_file_cb,
+    help='Path / URI of an RPC parameter file.',
+)
+@crs_option
+@resolution_option
+@dem_band_option
+@interp_option
+@dem_interp_option
+@per_band_option
+@write_mask_option
+@dtype_option
+@compress_option
+@build_ovw_option
+@export_params_option
+@out_dir_option
+@overwrite_option
+def rpc(
+    src_files: Sequence[OpenFile],
+    rpc_param_file: OpenFile,
+    crs: rio.CRS,
+    **kwargs,
+) -> None:
+    """
+    Orthorectify SOURCE images with RPC camera model(s).
+
+    SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
+
+    RPC parameters are read from SOURCE image tags / sidecar file(s), or from
+    :option:`--rpc-param <oty-rpc --rpc-param>` if provided.
+
+    The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
+    parameters with :option:`--export-params <oty-exif --export-params>`.  If :option:`--crs
+    <oty-exif --crs>` is not supplied, a WGS84 world / ortho CRS is used::
+
+        oty rpc --dem dem.tif source*.tif
+
+    Camera parameters can be converted to an Orthority format file with :option:`--export-params
+    <oty-exif --export-params>`::
+
+        oty rpc ---export-params
+
+    Ortho images and parameter files are placed in the current working directory by
+    default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    """
+    # TODO: incorporating image and --rpc-param into one command is different to the frame / exif
+    #  split - should we make it more consistent?
+
+    # RPC camera uses WGS84 geographic CRS, if no user CRS provided
+    if not crs:
+        crs = rio.CRS.from_epsg(4979)
+        cam_kwargs = {}
+    else:
+        cam_kwargs = dict(crs=crs)
+
+    if rpc_param_file:
+        # create camera factory from parameter file
+        try:
+            cameras = RpcCameras(rpc_param_file, cam_kwargs=cam_kwargs)
+        except (FileNotFoundError, ParamError) as ex:
+            raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
+    else:
+        # create progress bar
+        desc = 'Reading parameters'
+        bar_format = _get_bar_format(units='files', desc_width=len(desc))
+        reader_bar = tqdm(desc=desc, bar_format=bar_format, leave=False)
+
+        # create camera factory from image tags / sidecar file(s)
+        try:
+            with reader_bar:
+                cameras = ImRpcCameras(
+                    src_files,
+                    io_kwargs=dict(progress=reader_bar),
+                    cam_kwargs=cam_kwargs,
+                )
+        except (FileNotFoundError, ParamError) as ex:
+            raise click.BadParameter(str(ex), param_hint='SOURCE...')
+
+    # orthorectify
+    _ortho(
+        src_files=src_files,
+        cameras=cameras,
+        crs=crs,
         **kwargs,
     )
 
