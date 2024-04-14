@@ -81,14 +81,16 @@ class FrameCameras(Cameras):
         Exterior parameter file or dictionary.  If a file, can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
     :param io_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.FrameReader`
-        sub-class corresponding to the exterior (and possibly interior) parameter file format.
-        If ``ext_param`` is a dictionary, these arguments are not passed to a
-        :class:`~orthority.param_io.FrameReader`, but :attr:`FrameCameras.crs` is set with the
-        value of a 'crs' argument.
+        Optional dictionary of additional arguments for the
+        :class:`~orthority.param_io.FrameReader` sub-class corresponding to the exterior (and
+        possibly interior) parameter file format. Should exclude ``ext_param`` or ``int_param``
+        file names, which are passed internally.  If ``ext_param`` is a dictionary,
+        these arguments are not passed to :class:`~orthority.param_io.FrameReader`,
+        but :attr:`FrameCameras.crs` is set with the value of a 'crs' argument.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
-        class.  Should exclude the interior parameters themselves which are read from ``int_param``.
+        Optional dictionary of additional arguments for the
+        :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
+        parameters which are passed internally.
     """
 
     # TODO: add doc link to file and dictionary formats.
@@ -219,11 +221,12 @@ class ExifCameras(FrameCameras):
         Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode ('rb'), or dataset readers.
     :param io_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.ExifReader`
-        class.
+        Optional dictionary of additional arguments for the :class:`~orthority.param_io.ExifReader`
+        class.  Should exclude ``files`` which is passed internally.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for the :class:`~orthority.camera.FrameCamera`
-        class.  Should exclude the interior parameters themselves which are read from ``files``.
+        Optional dictionary of additional arguments for the
+        :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
+        parameters which are passed internally.
     """
 
     def __init__(
@@ -250,13 +253,14 @@ class RpcCameras(Cameras):
         RPC parameter file or dictionary.  If a file, can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for :class:`~orthority.camera.RpcCamera`.
-        Should exclude the RPC parameters themselves which are read from ``rpc_param``.
+        Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
+        class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
     """
 
     # TODO: how to combine oty rpc file and image files as they might be on the CLI?
     # TODO: factory class name consistency e.g. ExifFrameCameras->FrameCameras &
-    #  ImRpcCameras->RpcCameras
+    #  ImRpcCameras->RpcCameras or ExifFrameCameras->IntExtFrameCameras &
+    #  ImRpcCameras->OtyRpcCameras
     def __init__(
         self,
         rpc_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
@@ -300,10 +304,12 @@ class ImRpcCameras(RpcCameras):
         Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode ('rb'), or dataset readers.
     :param io_kwargs:
-        Optional dictionary of keyword arguments for :class:`~orthority.param_io.read_im_rpc_param`.
+        Optional dictionary of additional arguments for
+        :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is passed
+        internally.
     :param cam_kwargs:
-        Optional dictionary of keyword arguments for :class:`~orthority.camera.RpcCamera`.
-        Should exclude the RPC parameters themselves which are read from ``files``.
+        Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
+        class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
     """
 
     def __init__(
