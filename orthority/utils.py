@@ -82,7 +82,7 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) ->
     j_range = np.arange(0, camera.im_size[0])
     i_range = np.arange(0, camera.im_size[1])
     j_grid, i_grid = np.meshgrid(j_range, i_range, indexing='xy')
-    ji = np.row_stack((j_grid.reshape(1, -1), i_grid.reshape(1, -1)))
+    ji = np.array((j_grid.reshape(-1), i_grid.reshape(-1)))
 
     # find the corresponding undistorted/ source (j, i) pixel coords
     camera_xyz = camera._pixel_to_camera(ji)
@@ -261,7 +261,7 @@ class OpenRaster:
 
             # TODO: delete sidecar files if overwriting
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(f"File exists: '{ofile.path}'")
+                raise FileExistsError(ofile.path)
 
             file_obj = self._exit_stack.enter_context(ofile)
             self._dataset = self._exit_stack.enter_context(rio.open(file_obj, mode, **kwargs))
@@ -335,7 +335,7 @@ class Open:
             # overwrite could be prevented with 'x' modes, but is done this way for consistency
             # with OpenRaster & rasterio which doesn't support 'x'
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(f"File exists: '{ofile.path}'")
+                raise FileExistsError(ofile.path)
 
             self._file_obj = self._exit_stack.enter_context(ofile)
             self._file_obj.filename = get_filename(file)

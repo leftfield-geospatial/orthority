@@ -38,8 +38,8 @@ from tqdm.std import tqdm
 from orthority import root_path, utils
 from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp
-from orthority.errors import CrsMissingError, ParamError
-from orthority.factory import Cameras, ExifCameras, FrameCameras, ImRpcCameras, RpcCameras
+from orthority.errors import CrsError, CrsMissingError, ParamError
+from orthority.factory import Cameras, FrameCameras, RpcCameras
 from orthority.ortho import Ortho
 from orthority.version import __version__
 
@@ -181,8 +181,6 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
             crs = _read_crs(crs)
         except Exception as ex:
             raise click.BadParameter(f'{str(ex)}', param=param)
-        if not crs.is_projected:
-            raise click.BadParameter(f"CRS should be a projected system.", param=param)
     return crs
 
 
@@ -315,7 +313,14 @@ def _ortho(
     if export_params:
         # convert interior / exterior params to oty format files & exit
         logger.info('Writing parameter files...')
-        cameras.write_param(out_dir, overwrite=overwrite)
+        try:
+            cameras.write_param(out_dir, overwrite=overwrite)
+        except FileExistsError as ex:
+            raise click.UsageError(
+                f"File exists and won't be overwritten without '-o' / '--overwrite': {str(ex)}."
+            )
+        except CrsMissingError:
+            raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
         return
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
@@ -354,13 +359,13 @@ def _ortho(
                 try:
                     camera = cameras.get(src_file)
                 except ParamError as ex:
-                    raise click.BadParameter(str(ex))
+                    raise click.UsageError(str(ex))
 
                 # open & validate src_file (open it once here so it is not opened repeatedly)
                 try:
                     src_im = inner_stack.enter_context(utils.OpenRaster(src_file, 'r'))
                 except FileNotFoundError as ex:
-                    raise click.BadParameter(str(ex), param_hint='SOURCE...')
+                    raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
                 # finalise and validate world / ortho crs
                 crs = crs or src_im.crs
@@ -372,7 +377,12 @@ def _ortho(
                 ortho_ofile = utils.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
-                ortho.process(ortho_ofile, overwrite=overwrite, progress=src_file_bar, **kwargs)
+                try:
+                    ortho.process(ortho_ofile, overwrite=overwrite, progress=src_file_bar, **kwargs)
+                except FileExistsError as ex:
+                    raise click.UsageError(
+                        f"File exists and won't be overwritten without '-o' / '--overwrite': {str(ex)}."
+                    )
 
 
 # Define click options that are common to more than one command
@@ -662,17 +672,17 @@ def frame(
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
     except (FileNotFoundError, ParamError) as ex:
-        raise click.BadParameter(str(ex))
+        raise click.UsageError(str(ex))
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
+    except CrsError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+
+    # get factory CRS if not set already
     crs = crs or cameras.crs
 
     # orthorectify
-    _ortho(
-        cameras=cameras,
-        crs=crs,
-        **kwargs,
-    )
+    _ortho(cameras=cameras, crs=crs, **kwargs)
 
 
 @cli.command(
@@ -741,24 +751,21 @@ def exif(
     # create camera factory
     try:
         with reader_bar:
-            cameras = ExifCameras(
+            cameras = FrameCameras.from_images(
                 src_files,
                 io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=reader_bar),
                 cam_kwargs=dict(distort=full_remap, alpha=alpha),
             )
     except (FileNotFoundError, ParamError) as ex:
-        raise click.BadParameter(str(ex), param_hint='SOURCE...')
+        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+    except CrsError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
 
     # get auto UTM CRS, if CRS not set already
     crs = crs or cameras.crs
 
     # orthorectify
-    _ortho(
-        src_files=src_files,
-        cameras=cameras,
-        crs=crs,
-        **kwargs,
-    )
+    _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
 
 
 @cli.command(
@@ -863,7 +870,7 @@ def odm(
             param_hint="'-dd' / '--dataset-dir'",
         )
     except ParamError as ex:
-        raise click.BadParameter(str(ex))
+        raise click.UsageError(str(ex))
 
     # orthorectify
     _ortho(
@@ -881,7 +888,7 @@ def odm(
 @cli.command(
     # make these short help messages consistent between frame / rpc models
     cls=RstCommand,
-    short_help='Orthorectify with RPC tags or parameter file.',
+    short_help='Orthorectify with RPC camera model(s).',
     epilog='See https://orthority.readthedocs.io/ for more detail.',
 )
 @src_files_arg
@@ -938,6 +945,7 @@ def rpc(
     """
     # TODO: incorporating image and --rpc-param into one command is different to the frame / exif
     #  split - should we make it more consistent?
+    # TODO: test --crs geographic
 
     # RPC camera uses WGS84 geographic CRS, if no user CRS provided
     if not crs:
@@ -961,13 +969,13 @@ def rpc(
         # create camera factory from image tags / sidecar file(s)
         try:
             with reader_bar:
-                cameras = ImRpcCameras(
+                cameras = RpcCameras.from_images(
                     src_files,
                     io_kwargs=dict(progress=reader_bar),
                     cam_kwargs=cam_kwargs,
                 )
         except (FileNotFoundError, ParamError) as ex:
-            raise click.BadParameter(str(ex), param_hint='SOURCE...')
+            raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
     # orthorectify
     _ortho(

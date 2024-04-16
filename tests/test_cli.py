@@ -117,7 +117,7 @@ def test_frame_dem_missing_error(
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test ``oty frame`` without ``--dem`` raises an error ."""
+    """Test ``oty frame`` without ``--dem`` raises an error."""
     cli_str = (
         f'frame --int-param {ngi_oty_int_param_file} --ext-param {ngi_oty_ext_param_file} '
         f'--out-dir {tmp_path} {ngi_image_file}'
@@ -885,11 +885,7 @@ def test_frame_overwrite_error(
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert (
-        result.exception is not None
-        and 'exists' in str(result.exception)
-        and ortho_file.name in str(result.exception)
-    )
+    assert 'exists' in result.stdout and ortho_file.name in result.stdout
 
 
 def test_frame_urls(
@@ -909,6 +905,27 @@ def test_frame_urls(
     assert result.exit_code == 0, result.stdout
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
+
+
+def test_exif_source_error(
+    ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty exif`` raises an error with a non-EXIF source image."""
+    cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'SOURCE' in result.stdout and 'tags' in result.stdout.lower()
+
+
+def test_exif_source_not_found_error(
+    ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty exif`` raises an error with a non-existing source image."""
+    src_file = 'unknown.tif'
+    cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {src_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'SOURCE' in result.stdout and src_file in result.stdout.lower()
 
 
 def test_exif_crs(
@@ -938,6 +955,26 @@ def test_exif_crs_auto(
 
     with rio.open(ortho_files[0], 'r') as ortho_im:
         assert ortho_im.crs == rio.CRS.from_string(odm_crs)
+
+
+def test_exif_crs_geographic_error(
+    odm_image_file: Path, odm_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty exif`` raises an error when ``--crs`` is geographic."""
+    cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --crs EPSG:4326 {odm_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--crs' in result.stdout and 'projected' in result.stdout
+
+
+def test_exif_crs_invalid_error(
+    odm_image_file: Path, odm_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty exif`` raises an error when ``--crs`` is invalid."""
+    cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --crs unknown {odm_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--crs' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_exif_option(
@@ -987,14 +1024,6 @@ def test_exif_lla_crs(
 
     # compare ortho bounds
     assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=res / 2)
-
-
-def test_exif_error(ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
-    """Test ``oty exif`` raises an error with a non-EXIF source image."""
-    cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
-    result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout and 'tags' in result.stdout.lower()
 
 
 def test_odm_dataset_dir(
@@ -1170,7 +1199,7 @@ def test__frame_filename_not_found_error(
     ext_param_dict = {'unknown.tif': dict(xyz=xyz, opk=opk, camera='pinhole test camera')}
     cameras = FrameCameras(pinhole_int_param_dict, ext_param_dict)
 
-    with pytest.raises(click.BadParameter) as ex:
+    with pytest.raises(click.UsageError) as ex:
         _ortho(
             src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
             dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
@@ -1201,7 +1230,7 @@ def test__frame_camera_not_found_error(
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=camera)}
     cameras = FrameCameras(mult_int_param_dict, ext_param_dict)
 
-    with pytest.raises(click.BadParameter) as ex:
+    with pytest.raises(click.UsageError) as ex:
         _ortho(
             src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
             dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
@@ -1233,7 +1262,7 @@ def test__frame_mult_camera_no_camera_error(
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
     cameras = FrameCameras(mult_int_param_dict, ext_param_dict)
 
-    with pytest.raises(click.BadParameter) as ex:
+    with pytest.raises(click.UsageError) as ex:
         _ortho(
             src_files=(fsspec.open(str(rgb_byte_src_file), 'rb'),),
             dem_file=fsspec.open(str(float_utm34n_dem_file), 'rb'),
