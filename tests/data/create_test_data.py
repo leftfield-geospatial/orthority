@@ -398,7 +398,7 @@ def create_rpc_test_data():
         driver='GTiff',
         crs=gcps[1],
         gcps=gcps[0],
-        rpcs=rpcs,
+        rpcs=rpcs,  # NB: there is a rio/GDAL bug if RPCs are passed as a dict to rio.open()
     )
 
     # scale 10-255 & write

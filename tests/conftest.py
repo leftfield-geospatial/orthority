@@ -201,13 +201,13 @@ def rpc(xyz: tuple[float, float, float], utm34n_crs: str, im_size: tuple[int, in
     xyz_ = transform(utm34n_crs, 'EPSG:4326', *[[coord] for coord in xyz])
     lat_scale = 0.005 / 2  # frame camera fixture ortho bounds are ~0.01 deg
     long_scale = lat_scale * im_size[0] / im_size[1]
-    line_num_coeff = [0] * 20
+    line_num_coeff = [0.0] * 20
     line_num_coeff[:5] = [-0.005, -0.033, -1.042, 0.008, -0.001]
-    line_den_coeff = [0] * 20
+    line_den_coeff = [0.0] * 20
     line_den_coeff[:3] = [1.0, -0.001, -0.002]
-    samp_num_coeff = [0] * 20
+    samp_num_coeff = [0.0] * 20
     samp_num_coeff[:5] = [0.008, 1.016, 0.002, 0.013, 0.001]
-    samp_den_coeff = [0] * 20
+    samp_den_coeff = [0.0] * 20
     samp_den_coeff[:3] = [1.0, -0.002, -0.001]
 
     rpc = dict(
@@ -225,6 +225,8 @@ def rpc(xyz: tuple[float, float, float], utm34n_crs: str, im_size: tuple[int, in
         line_den_coeff=line_den_coeff,
         samp_num_coeff=samp_num_coeff,
         samp_den_coeff=samp_den_coeff,
+        err_bias=-1.0,  # unknown
+        err_rand=-1.0,  # unknown
     )
     return rpc
 
@@ -839,7 +841,7 @@ def odm_xyz_opk_csv_file() -> Path:
 @pytest.fixture(scope='session')
 def rpc_image_file() -> Path:
     """RPC image file."""
-    return root_path.joinpath('tests/data/rpc/qb_basic1b.tif')
+    return root_path.joinpath('tests/data/rpc/qb2_basic1b.tif')
 
 
 @pytest.fixture(scope='session')
