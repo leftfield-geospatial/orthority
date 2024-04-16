@@ -51,7 +51,7 @@ from tqdm.std import tqdm, tqdm as std_tqdm
 
 from orthority import utils
 from orthority.enums import CameraType, CsvFormat
-from orthority.errors import CrsMissingError, ParamError
+from orthority.errors import CrsError, CrsMissingError, ParamError
 from orthority.exif import Exif
 
 logger = logging.getLogger(__name__)
@@ -126,7 +126,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         # validate any remaining optional params, update param_dict & return
         err_keys = set(json_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
-            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
+            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'.")
         int_param.update(**json_param)
         return int_param
 
@@ -257,7 +257,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         # validate any remaining distortion params, update param_dict & return
         err_keys = set(yaml_param.keys()).difference(_optional_schema[int_param['cam_type']])
         if len(err_keys) > 0:
-            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'")
+            raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'.")
         int_param.update(**yaml_param)
         return int_param
 
@@ -407,11 +407,11 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     for filename, rpc_param in yaml_dict.items():
         try:
             if not isinstance(filename, str):
-                raise ValueError(f"'{filename}' key is not an an instance of 'str'.")
+                raise TypeError(f"'{filename}' key is not an an instance of 'str'.")
             utils.validate_collection(schema, rpc_param)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
-                f"'{utils.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}"
+                f"'{utils.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}."
             )
         rpc_param_dict[filename] = dict(
             cam_type=CameraType.rpc, im_size=tuple(rpc_param['im_size']), rpc=rpc_param['rpc']
@@ -473,7 +473,14 @@ def write_ext_param(
     """
     feat_list = []
     lla_crs = _default_lla_crs
-    crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+
+    try:
+        crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+    except RioCrsError as ex:
+        raise CrsError(f"Could not interpret 'crs': {str(ex)}.")
+    if not crs.is_projected:
+        raise CrsError(f"'crs' should be a projected system.")
+
     for src_file, ext_param in ext_param_dict.items():
         xyz = ext_param['xyz']
         lla = transform(crs, lla_crs, [xyz[0]], [xyz[1]], [xyz[2]])
@@ -671,14 +678,20 @@ class FrameReader(ABC):
     def _parse_crss(crs: str | CRS, lla_crs: str | CRS) -> tuple[CRS, CRS]:
         """Validate and convert CRSs."""
         if crs:
-            crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+            try:
+                crs = CRS.from_string(crs) if isinstance(crs, str) else crs
+            except RioCrsError as ex:
+                raise CrsError(f"Could not interpret 'crs': {str(ex)}.")
             if not crs.is_projected:
-                raise ValueError(f"'crs' should be a projected system.")
+                raise CrsError(f"'crs' should be a projected system.")
 
         if lla_crs:
-            lla_crs = CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
+            try:
+                lla_crs = CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
+            except RioCrsError as ex:
+                raise CrsError(f"Could not interpret 'lla_crs': {str(ex)}.")
             if not lla_crs.is_geographic:
-                raise ValueError(f"'lla_crs' should be a geographic system.")
+                raise CrsError(f"'lla_crs' should be a geographic system.")
         return crs, lla_crs
 
     @property
@@ -874,13 +887,14 @@ class CsvReader(FrameReader):
                         crs_str = f.read()
                     crs = CRS.from_string(crs_str)
 
-                    if crs.is_geographic:
-                        raise ValueError(f"CRS in '{prj_name}' should not be a geographic system")
+                    if not crs.is_projected:
+                        raise ParamError(f"CRS in '{prj_name}' should be a projected system.")
 
-                    logger.debug(f"Using '{prj_name}' CRS: '{crs.to_proj4()}'")
-
+                    logger.debug(f"Using '{prj_name}' CRS: '{crs.to_string()}'")
                 except FileNotFoundError as ex:
                     logger.debug(f"Could not open '{prj_name}': {str(ex)}.")
+                except RioCrsError as ex:
+                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {str(ex)}.")
             else:
                 # a file object was passed to __init__ so the CSV file path / URI is unknown and a
                 # .prj file cannot be found
@@ -994,7 +1008,8 @@ class OsfmReader(FrameReader):
             utils.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
-                f"'{utils.get_filename(file)}' is not a valid OpenSfM reconstruction file: {str(ex)}"
+                f"'{utils.get_filename(file)}' is not a valid OpenSfM reconstruction file: "
+                f"{str(ex)}."
             )
 
         # keep root schema keys and delete the rest
@@ -1173,14 +1188,14 @@ class OtyReader(FrameReader):
             utils.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
-                f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}"
+                f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}."
             )
 
         if not crs:
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}")
+                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}.")
 
         return crs, json_dict
 
