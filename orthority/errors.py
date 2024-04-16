@@ -22,6 +22,10 @@ class ParamError(OrthorityError):
     """Raised when there is a problem reading camera parameters."""
 
 
+class CrsError(OrthorityError):
+    """Raised when a CRS is invalid."""
+
+
 class CrsMissingError(OrthorityError):
     """Raised when a required CRS was not specified."""
 
