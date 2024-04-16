@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 # TODO: define custom file types for e.g. str | Path | OpenFile | IO[str] once sphinx bug with
 #  linking to external type defs in __init__ type hints is fixed
 
-_optional_schema = {
+_opt_frame_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
     # fmt: off
     CameraType.opencv: [
@@ -74,7 +74,7 @@ _optional_schema = {
     CameraType.brown: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'],
     CameraType.fisheye: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
 }
-"""Schema of valid optional parameters for each camera type."""
+"""Schema of valid optional parameters for each frame camera type."""
 
 _default_lla_crs = CRS.from_epsg(4979)
 """Default CRS for geographic camera coordinates."""
@@ -124,7 +124,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
                 int_param[to_key] = json_param.pop(from_key)
 
         # validate any remaining optional params, update param_dict & return
-        err_keys = set(json_param.keys()).difference(_optional_schema[int_param['cam_type']])
+        err_keys = set(json_param.keys()).difference(_opt_frame_schema[int_param['cam_type']])
         if len(err_keys) > 0:
             raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'.")
         int_param.update(**json_param)
@@ -255,7 +255,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
             int_param['sensor_size'] = tuple(yaml_param.pop('sensor_size'))
 
         # validate any remaining distortion params, update param_dict & return
-        err_keys = set(yaml_param.keys()).difference(_optional_schema[int_param['cam_type']])
+        err_keys = set(yaml_param.keys()).difference(_opt_frame_schema[int_param['cam_type']])
         if len(err_keys) > 0:
             raise ParamError(f"Unsupported parameter(s) {err_keys} for camera '{cam_id}'.")
         int_param.update(**yaml_param)

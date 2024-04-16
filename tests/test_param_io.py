@@ -25,11 +25,12 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.warp import transform
+from tqdm.std import tqdm
 
 from orthority import param_io
 from orthority.camera import FrameCamera
 from orthority.enums import CameraType, CsvFormat, Interp
-from orthority.errors import CrsMissingError, ParamError
+from orthority.errors import CrsError, CrsMissingError, ParamError
 from tests.conftest import oty_to_osfm_int_param
 
 
@@ -53,7 +54,7 @@ def _validate_int_param_dict(int_param_dict: dict):
             and all([isinstance(f, float) for f in int_params['focal_len']])
         )
         optional_keys = set(int_params.keys()).difference(req_keys)
-        assert set(optional_keys).issubset(param_io._optional_schema[cam_type])
+        assert set(optional_keys).issubset(param_io._opt_frame_schema[cam_type])
 
 
 def _validate_ext_param_dict(ext_param_dict: dict, cameras: Collection[str | None] = None):
@@ -264,6 +265,7 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
     """Test rasterio.warp.transform adjusts the z coordinate with source and destination CRS
     vertical datums specified.
     """
+
     src_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(src_crs))
     dst_crs: rio.CRS = rio.CRS.from_string(request.getfixturevalue(dst_crs))
     src_xyz = [[10.0], [10.0], [100.0]]
@@ -473,13 +475,24 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
         ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
     ],
 )
-def test_csv_reader_crs_error(ngi_legacy_csv_file: Path, fieldnames: list):
+def test_csv_reader_crs_missing_error(ngi_legacy_csv_file: Path, fieldnames: list):
     """Test that CsvReader initialised with a XYZ-RPY or LLA-OPK format file and no CRS raises an
     error.
     """
     with pytest.raises(CrsMissingError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
     assert 'crs' in str(ex.value).lower()
+
+
+def test_csv_reader_crs_error(ngi_legacy_csv_file: Path):
+    """Test CsvReader with a geographic / invalid CRS raises an error."""
+    with pytest.raises(CrsError) as ex:
+        param_io.CsvReader(ngi_legacy_csv_file, crs='EPSG:4326')
+    assert 'projected' in str(ex.value)
+
+    with pytest.raises(CrsError) as ex:
+        param_io.CsvReader(ngi_legacy_csv_file, crs='unknown')
+    assert 'could not interpret' in str(ex.value).lower()
 
 
 def test_csv_reader_lla_rpy_lla_crs(odm_lla_rpy_csv_file, odm_crs: str, wgs84_egm2008_crs: str):
@@ -501,6 +514,17 @@ def test_csv_reader_lla_rpy_lla_crs(odm_lla_rpy_csv_file, odm_crs: str, wgs84_eg
         assert test_ext_params['xyz'][:2] == pytest.approx(ref_ext_params['xyz'][:2], abs=1e-6)
         assert test_ext_params['xyz'][2] != pytest.approx(ref_ext_params['xyz'][2], abs=1)
         assert test_ext_params['opk'] == pytest.approx(ref_ext_params['opk'], abs=1e-4)
+
+
+def test_csv_reader_lla_crs_error(ngi_xyz_opk_csv_file: Path):
+    """Test CsvReader with a projected / invalid LLA CRS raises an error."""
+    with pytest.raises(CrsError) as ex:
+        param_io.CsvReader(ngi_xyz_opk_csv_file, lla_crs='EPSG:3857')
+    assert 'geographic' in str(ex.value)
+
+    with pytest.raises(CrsError) as ex:
+        param_io.CsvReader(ngi_xyz_opk_csv_file, lla_crs='unknown')
+    assert 'could not interpret' in str(ex.value).lower()
 
 
 def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
@@ -718,6 +742,25 @@ def test_exif_reader_empty():
     assert reader.read_ext_param() == {}
 
 
+def test_exif_reader_progress(odm_image_files: tuple[Path, ...], capsys: pytest.CaptureFixture):
+    """Test ExifReader progress bar display."""
+    # default bar
+    param_io.ExifReader(odm_image_files, progress=True)
+    cap = capsys.readouterr()
+    assert 'files' in cap.err and '100%' in cap.err
+
+    # no bar
+    param_io.ExifReader(odm_image_files, progress=False)
+    cap = capsys.readouterr()
+    assert 'files' not in cap.err and '100%' not in cap.err
+
+    # custom bar
+    desc = 'custom'
+    param_io.ExifReader(odm_image_files, progress=tqdm(desc=desc))
+    cap = capsys.readouterr()
+    assert desc in cap.err
+
+
 def test_oty_rw_ext_param(mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: Path):
     """Test exterior parameter read / write from / to orthority geojson format."""
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
@@ -741,3 +784,66 @@ def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
     """Test OtyReader reads the crs correctly."""
     reader = param_io.OtyReader(ngi_oty_ext_param_file)
     assert reader.crs == rio.CRS.from_string(ngi_crs)
+
+
+def test_rw_oty_rpc_param(rpc_args: dict, tmp_path: Path):
+    """Test writing and reading RPC parameters to/from an Orthority RPC file."""
+    rpc_param = dict(cam_type=CameraType.rpc, **rpc_args)
+    rpc_param_dict = dict(file1=rpc_param, file2=rpc_param)
+    param_file = tmp_path.joinpath('rpc.yaml')
+    param_io.write_rpc_param(param_file, rpc_param_dict)
+    assert param_io.read_oty_rpc_param(param_file) == rpc_param_dict
+
+
+def test_read_im_rpc_param(im_size: tuple[int, int], rpc: dict, tmp_path: Path):
+    """Test reading RPC parameters from an GeoTIFF."""
+    # create reference image files with known RPCs, and reference parameter dictionary
+    im_files = (tmp_path.joinpath('rpc1.tif'), tmp_path.joinpath('rpc2.tif'))
+    rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc)
+    profile = dict(
+        driver='GTiff',
+        width=im_size[0],
+        height=im_size[1],
+        count=1,
+        dtype='uint8',
+        # NB: there is a rio/gdal bug if RPCs are passed as a dict to rio.open()
+        rpcs=rio.transform.RPC(**rpc),
+    )
+    array = np.zeros((1, *im_size[::-1]), dtype='uint8')
+    ref_dict = {}
+    for im_file in im_files:
+        ref_dict[im_file.name] = rpc_param
+        with rio.open(im_file, 'w', **profile) as im:
+            im.write(array)
+
+    # read image rpc params and compare nested dicts
+    def compare_objs(ref_obj, test_obj):
+        if isinstance(ref_obj, dict):
+            for k, v in ref_obj.items():
+                assert k in test_obj, k
+                compare_objs(v, test_obj[k])
+        else:
+            assert ref_obj == pytest.approx(test_obj, rel=0.001), (ref_obj, test_obj)
+
+    test_dict = param_io.read_im_rpc_param(im_files)
+    compare_objs(ref_dict, test_dict)
+
+
+def test_read_im_rpc_param_progress(rpc_image_file: Path, capsys: pytest.CaptureFixture):
+    """Test read_im_rpc_param() progress bar display."""
+    files = (rpc_image_file,)
+    # default bar
+    param_io.read_im_rpc_param(files, progress=True)
+    cap = capsys.readouterr()
+    assert 'files' in cap.err and '100%' in cap.err
+
+    # no bar
+    param_io.read_im_rpc_param(files, progress=False)
+    cap = capsys.readouterr()
+    assert 'files' not in cap.err and '100%' not in cap.err
+
+    # custom bar
+    desc = 'custom'
+    param_io.read_im_rpc_param(files, progress=tqdm(desc=desc))
+    cap = capsys.readouterr()
+    assert desc in cap.err
