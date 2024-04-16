@@ -22,7 +22,7 @@ import rasterio as rio
 
 from orthority.camera import BrownCamera, FrameCamera
 from orthority.errors import CrsMissingError, ParamError
-from orthority.factory import ExifCameras, FrameCameras
+from orthority.factory import FrameCameras
 
 
 @pytest.mark.parametrize(
@@ -208,22 +208,22 @@ def test_frame_cameras_write_param_crs_error(
         cameras.write_param(tmp_path)
 
 
-def test_exif_cameras_init(odm_image_files: tuple[Path, ...]):
-    """Test creating a ``ExifCameras`` instance."""
-    cameras = ExifCameras(odm_image_files)
+def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
+    """Test ``FrameCameras.from_images()``."""
+    cameras = FrameCameras.from_images(odm_image_files)
     assert cameras.crs is not None
     assert cameras.filenames == {Path(fn).name for fn in odm_image_files}
     assert len(cameras._int_param_dict) > 0
     assert len(cameras._ext_param_dict) > 0
 
 
-def test_exif_cameras_init_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
-    """Test ``ExifCameras.__init__()`` passes through ``io_args`` to the ``ExifReader`` and
+def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
+    """Test ``FrameCameras.from_images()`` passes through ``io_args`` to the ``ExifReader`` and
     ``cam_args`` to the camera(s).
     """
     io_kwargs = dict(crs=ngi_crs)
     cam_kwargs = dict(distort=False, alpha=0.0)
-    cameras = ExifCameras(odm_image_files, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
+    cameras = FrameCameras.from_images(odm_image_files, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
     assert cameras.crs == rio.CRS.from_string(ngi_crs)
 
     camera = cameras.get(odm_image_files[0])

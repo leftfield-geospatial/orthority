@@ -72,7 +72,7 @@ class Cameras(ABC):
 
 class FrameCameras(Cameras):
     """
-    Frame camera factory for interior and exterior parameter files.
+    Frame camera factory for interior and exterior parameter files or dictionaries.
 
     :param int_param:
         Interior parameter file or dictionary.  If a file, can be a path or URI string,
@@ -108,6 +108,36 @@ class FrameCameras(Cameras):
         self._cam_kwargs = cam_kwargs or {}
         self._cameras = {}
 
+    @classmethod
+    def from_images(
+        cls,
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+        io_kwargs: dict = None,
+        cam_kwargs: dict = None,
+    ):
+        """
+        Create frame camera factory from image file(s) with EXIF / XMP tags.
+
+        :param files:
+            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            objects in binary mode ('rb'), or dataset readers.
+        :param io_kwargs:
+            Optional dictionary of additional arguments for the :class:`~orthority.param_io.ExifReader`
+            class.  Should exclude ``files`` which is passed internally.
+        :param cam_kwargs:
+            Optional dictionary of additional arguments for the
+            :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
+            parameters which are passed internally.
+        """
+        # TODO: read exif tags and create cameras as needed rather than upfront (would
+        #  complicate exporting which needs upfront params)?
+        io_kwargs = io_kwargs or {}
+        reader = param_io.ExifReader(files, **io_kwargs)
+        int_param_dict = reader.read_int_param()
+        ext_param_dict = reader.read_ext_param()
+        io_kwargs.update(crs=reader.crs)
+        return cls(int_param_dict, ext_param_dict, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
+
     @property
     def crs(self) -> rio.CRS | None:
         """CRS of the world coordinate system."""
@@ -138,7 +168,9 @@ class FrameCameras(Cameras):
                     # TODO: does != work for all file object types?
                     int_param_dict = param_io.read_osfm_int_param(int_param)
             else:
-                raise ParamError(f"'{int_param_suffix}' file type not supported.")
+                raise ParamError(
+                    f"'{int_param_suffix}' interior parameter file type not supported."
+                )
         else:
             int_param_dict = int_param
 
@@ -152,7 +184,9 @@ class FrameCameras(Cameras):
             elif ext_param_suffix == '.geojson':
                 reader = param_io.OtyReader(ext_param)
             else:
-                raise ParamError(f"'{ext_param_suffix}' file type not supported.")
+                raise ParamError(
+                    f"'{ext_param_suffix}' exterior paramater file type not supported."
+                )
             ext_param_dict = reader.read_ext_param()
             crs = reader.crs
 
@@ -213,38 +247,6 @@ class FrameCameras(Cameras):
         )
 
 
-class ExifCameras(FrameCameras):
-    """
-    Frame camera factory for image file(s) with EXIF / XMP tags.
-
-    :param files:
-        Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-        objects in binary mode ('rb'), or dataset readers.
-    :param io_kwargs:
-        Optional dictionary of additional arguments for the :class:`~orthority.param_io.ExifReader`
-        class.  Should exclude ``files`` which is passed internally.
-    :param cam_kwargs:
-        Optional dictionary of additional arguments for the
-        :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
-        parameters which are passed internally.
-    """
-
-    def __init__(
-        self,
-        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
-        io_kwargs: dict = None,
-        cam_kwargs: dict = None,
-    ):
-        # TODO: read exif tags and create cameras as needed rather than upfront (would
-        #  complicate exporting which needs upfront params)?
-        io_kwargs = io_kwargs or {}
-        reader = param_io.ExifReader(files, **io_kwargs)
-        int_param_dict = reader.read_int_param()
-        ext_param_dict = reader.read_ext_param()
-        io_kwargs.update(crs=reader.crs)
-        super().__init__(int_param_dict, ext_param_dict, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
-
-
 class RpcCameras(Cameras):
     """
     RPC camera factory for an :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>`.
@@ -273,6 +275,31 @@ class RpcCameras(Cameras):
         self._cam_kwargs = cam_kwargs or {}
         self._cameras = {}
 
+    @classmethod
+    def from_images(
+        cls,
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+        io_kwargs: dict = None,
+        cam_kwargs: dict = None,
+    ):
+        """
+        Create RPC camera factory from image file(s) with RPC tags / sidecar file(s).
+
+        :param files:
+            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            objects in binary mode ('rb'), or dataset readers.
+        :param io_kwargs:
+            Optional dictionary of additional arguments for
+            :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is passed
+            internally.
+        :param cam_kwargs:
+            Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
+            class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
+        """
+        io_kwargs = io_kwargs or {}
+        rpc_param_dict = param_io.read_im_rpc_param(files, **io_kwargs)
+        return cls(rpc_param_dict, cam_kwargs=cam_kwargs)
+
     @property
     def filenames(self) -> set[str]:
         return set(self._rpc_param_dict.keys())
@@ -294,30 +321,3 @@ class RpcCameras(Cameras):
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
         rpc_file = join_ofile(out_dir, 'rpc.yaml', mode='wt')
         param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)
-
-
-class ImRpcCameras(RpcCameras):
-    """
-    RPC camera factory for image file(s) with RPC tags / sidecar file(s).
-
-    :param files:
-        Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-        objects in binary mode ('rb'), or dataset readers.
-    :param io_kwargs:
-        Optional dictionary of additional arguments for
-        :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is passed
-        internally.
-    :param cam_kwargs:
-        Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
-        class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
-    """
-
-    def __init__(
-        self,
-        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
-        io_kwargs: dict = None,
-        cam_kwargs: dict = None,
-    ):
-        io_kwargs = io_kwargs or {}
-        rpc_param_dict = param_io.read_im_rpc_param(files, **io_kwargs)
-        super().__init__(rpc_param_dict, cam_kwargs=cam_kwargs)

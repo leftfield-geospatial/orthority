@@ -19,7 +19,7 @@ import os
 import pathlib
 
 from orthority.enums import Compress, Interp
-from orthority.factory import FrameCameras, ExifCameras
+from orthority.factory import FrameCameras, RpcCameras
 from orthority.ortho import Ortho
 
 # Add a NullHandler to the package logger to hide logs by default.  Applications can then add
