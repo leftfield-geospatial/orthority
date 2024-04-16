@@ -28,6 +28,7 @@ from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
+from tqdm.std import tqdm
 
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
@@ -1088,9 +1089,8 @@ def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: 
 
 
 @pytest.mark.parametrize(
-    'camera', [
-        'pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', 'rpc_camera_proj'
-    ]
+    'camera',
+    ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera', 'rpc_camera_proj'],
 )
 def test_process_camera(
     rgb_byte_src_file: Path,
@@ -1123,6 +1123,30 @@ def test_process_camera(
         assert np.all(np.unique(src_array) == np.unique(ortho_array[:, ortho_mask]))
         assert src_array.mean() == pytest.approx(ortho_array[:, ortho_mask].mean(), abs=15)
         assert src_array.std() == pytest.approx(ortho_array[:, ortho_mask].std(), abs=15)
+
+
+def test_process_progress(
+    rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """Test ortho progress bar display."""
+    # default bar
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, progress=True)
+    cap = capsys.readouterr()
+    assert 'blocks' in cap.err and '100%' in cap.err
+
+    # no bar
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, overwrite=True, progress=False)
+    cap = capsys.readouterr()
+    assert 'blocks' not in cap.err and '100%' not in cap.err
+
+    # custom bar
+    desc = 'custom'
+    rgb_pinhole_utm34n_ortho.process(
+        ortho_file, _dem_resolution, overwrite=True, progress=tqdm(desc=desc)
+    )
+    cap = capsys.readouterr()
+    assert desc in cap.err
 
 
 def test_process_ngi(
