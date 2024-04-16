@@ -900,7 +900,7 @@ def odm(
     type=click.Path(dir_okay=False),
     default=None,
     callback=_text_file_cb,
-    help='Path / URI of an RPC parameter file.',
+    help='Path / URI of an Orthority RPC parameter file.',
 )
 @crs_option
 @resolution_option
@@ -926,7 +926,7 @@ def rpc(
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
-    RPC parameters are read from SOURCE image tags / sidecar file(s), or from
+    Camera parameters are read from SOURCE image tags / sidecar file(s), or from
     :option:`--rpc-param <oty-rpc --rpc-param>` if provided.
 
     The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
@@ -938,16 +938,13 @@ def rpc(
     Camera parameters can be converted to an Orthority format file with :option:`--export-params
     <oty-exif --export-params>`::
 
-        oty rpc ---export-params
+        oty rpc ---export-params source*.tif
 
     Ortho images and parameter files are placed in the current working directory by
     default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
-    # TODO: incorporating image and --rpc-param into one command is different to the frame / exif
-    #  split - should we make it more consistent?
-    # TODO: test --crs geographic
-
-    # RPC camera uses WGS84 geographic CRS, if no user CRS provided
+    # set CRS to the RPC camera default (WGS84) if no CRS supplied, otherwise pass user CRS in
+    # cam_kwargs
     if not crs:
         crs = rio.CRS.from_epsg(4979)
         cam_kwargs = {}
