@@ -19,10 +19,12 @@ from pathlib import Path
 
 import pytest
 import rasterio as rio
+from tqdm.std import tqdm
 
-from orthority.camera import BrownCamera, FrameCamera
+from orthority.camera import BrownCamera, FrameCamera, RpcCamera
+from orthority.enums import CameraType
 from orthority.errors import CrsMissingError, ParamError
-from orthority.factory import FrameCameras
+from orthority.factory import FrameCameras, RpcCameras
 
 
 @pytest.mark.parametrize(
@@ -36,7 +38,7 @@ from orthority.factory import FrameCameras
 def test_frame_cameras_init(
     int_param_file: str, ext_param_file: str, request: pytest.FixtureRequest
 ):
-    """Test creating a ``FrameCameras`` instance with different parameter files."""
+    """Test creating a frame camera factory with different parameter files."""
     int_param_file: Path = request.getfixturevalue(int_param_file)
     ext_param_file: Path = request.getfixturevalue(ext_param_file)
 
@@ -50,7 +52,7 @@ def test_frame_cameras_init(
 def test_frame_cameras_init_dicts(
     mult_int_param_dict: dict, mult_ext_param_dict: dict, utm34n_crs: str
 ):
-    """Test creating a ``FrameCameras`` instance with parameter dictionaries."""
+    """Test creating a frame camera factory with parameter dictionaries."""
     io_kwargs = dict(crs=utm34n_crs)
     cameras = FrameCameras(mult_int_param_dict, mult_ext_param_dict, io_kwargs=io_kwargs)
     assert cameras._int_param_dict == mult_int_param_dict
@@ -63,14 +65,14 @@ def test_frame_cameras_init_dicts(
 def test_frame_cameras_init_io_kwargs(
     ngi_legacy_config_file: Path, ngi_legacy_csv_file: Path, ngi_crs: str
 ):
-    """Test ``FrameCameras.__init__()`` passes ``io_kwargs`` through to the parameter reader."""
+    """Test the frame camera factory passes ``io_kwargs`` through to the parameter reader."""
     io_kwargs = dict(crs=ngi_crs)
     cameras = FrameCameras(ngi_legacy_config_file, ngi_legacy_csv_file, io_kwargs=io_kwargs)
     assert cameras.crs == rio.CRS.from_string(ngi_crs)
 
 
 def test_frame_cameras_init_cam_kwargs(odm_reconstruction_file: Path, odm_image_file: Path):
-    """Test ``FrameCameras.__init__()`` passes ``cam_kwargs`` through to the camera(s)."""
+    """Test the frame camera factory passes ``cam_kwargs`` through to the camera(s)."""
     cam_kwargs = dict(distort=False, alpha=0.0)
     cameras = FrameCameras(odm_reconstruction_file, odm_reconstruction_file, cam_kwargs=cam_kwargs)
     camera = cameras.get(odm_image_file)
@@ -79,7 +81,7 @@ def test_frame_cameras_init_cam_kwargs(odm_reconstruction_file: Path, odm_image_
 
 
 def test_frame_cameras_init_error(ngi_oty_int_param_file: Path, ngi_oty_ext_param_file: Path):
-    """Test ``FrameCameras.__init__()`` raises errors with unrecognised parameter file extensions."""
+    """Test the frame camera factory raises errors with unrecognised parameter file extensions."""
     with pytest.raises(ParamError) as ex:
         FrameCameras(ngi_oty_ext_param_file, ngi_oty_ext_param_file)
     assert 'not supported' in str(ex.value)
@@ -88,8 +90,31 @@ def test_frame_cameras_init_error(ngi_oty_int_param_file: Path, ngi_oty_ext_para
     assert 'not supported' in str(ex.value)
 
 
+def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
+    """Test creating a frame camera factory from images."""
+    cameras = FrameCameras.from_images(odm_image_files)
+    assert cameras.crs is not None
+    assert cameras.filenames == {Path(fn).name for fn in odm_image_files}
+    assert len(cameras._int_param_dict) > 0
+    assert len(cameras._ext_param_dict) > 0
+
+
+def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
+    """Test creating a frame camera factory from images passes ``io_kwargs`` and ``cam_kwargs``
+    through.
+    """
+    io_kwargs = dict(crs=ngi_crs)
+    cam_kwargs = dict(distort=False, alpha=0.0)
+    cameras = FrameCameras.from_images(odm_image_files, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
+    assert cameras.crs == rio.CRS.from_string(ngi_crs)
+
+    camera = cameras.get(odm_image_files[0])
+    assert camera.distort == cam_kwargs['distort']
+    assert camera.alpha == cam_kwargs['alpha']
+
+
 def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: tuple[Path, ...]):
-    """Test ``FrameCameras.get()`` creates valid cameras for known filenames."""
+    """Test ``FrameCameras.get()`` for known filenames."""
     cameras = FrameCameras(odm_reconstruction_file, odm_reconstruction_file)
     assert cameras.filenames == {Path(fn).stem for fn in odm_image_files}
     for file in odm_image_files:
@@ -106,7 +131,7 @@ def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: tuple
 def test_frame_cameras_get_mult_camera(
     mult_int_param_dict: dict, mult_ext_param_dict: dict, utm34n_crs: str
 ):
-    """Test ``FrameCameras.get()`` with multiple multiple camera ID interior & exterior parameters."""
+    """Test ``FrameCameras.get()`` with multiple camera ID interior & exterior parameters."""
     cameras = FrameCameras(mult_int_param_dict, mult_ext_param_dict)
     for file in mult_ext_param_dict.keys():
         camera = cameras.get(file)
@@ -128,7 +153,7 @@ def test_frame_cameras_get_filename_not_found_error(
     pinhole_int_param_dict: dict, xyz: tuple, opk: tuple
 ):
     """Test ``FrameCameras.get()`` raises an error when there are no exterior parameters for the
-    ``filename``.
+    filename.
     """
     filename = 'some_file'
     ext_param_dict = {'unknown': dict(xyz=xyz, opk=opk, camera=None)}
@@ -171,7 +196,7 @@ def test_frame_cameras_get_no_cam_id_error(mult_int_param_dict: dict, xyz: tuple
 def test_frame_cameras_write_param(
     mult_int_param_dict: dict, mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: Path
 ):
-    """Test ``FrameCameras.write_param()`` creates interior and exterior parameter files."""
+    """Test writing frame camera interior and exterior parameter files."""
     io_kwargs = dict(crs=utm34n_crs)
     cameras = FrameCameras(mult_int_param_dict, mult_ext_param_dict, io_kwargs=io_kwargs)
 
@@ -183,8 +208,8 @@ def test_frame_cameras_write_param(
 def test_frame_cameras_write_param_overwrite(
     mult_int_param_dict: dict, mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: Path
 ):
-    """Test ``FrameCameras.write_param()`` raises an error if the destination file(s) exist,
-    and overwrites them if ``overwrite=True``.
+    """Test writing frame camera parameter files raises an error if the destination file(s) exist,
+    and overwrites them when ``overwrite=True``.
     """
     io_kwargs = dict(crs=utm34n_crs)
     cameras = FrameCameras(mult_int_param_dict, mult_ext_param_dict, io_kwargs=io_kwargs)
@@ -202,30 +227,74 @@ def test_frame_cameras_write_param_overwrite(
 def test_frame_cameras_write_param_crs_error(
     mult_int_param_dict: dict, mult_ext_param_dict: dict, tmp_path: Path
 ):
-    """Test ``FrameCameras.write_param()`` raises an error if there is no world CRS."""
+    """Test writing frame camera parameter files raises an error if there is no world CRS."""
     cameras = FrameCameras(mult_int_param_dict, mult_ext_param_dict)
     with pytest.raises(CrsMissingError):
         cameras.write_param(tmp_path)
 
 
-def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
-    """Test ``FrameCameras.from_images()``."""
-    cameras = FrameCameras.from_images(odm_image_files)
-    assert cameras.crs is not None
-    assert cameras.filenames == {Path(fn).name for fn in odm_image_files}
-    assert len(cameras._int_param_dict) > 0
-    assert len(cameras._ext_param_dict) > 0
+def test_rpc_cameras_init(rpc_param_file: Path):
+    """Test creating a RPC camera factory instance from a parameter file."""
+    cameras = RpcCameras(rpc_param_file)
+    assert cameras.filenames == set(cameras._rpc_param_dict.keys())
+    assert len(cameras._rpc_param_dict) == 1
 
 
-def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
-    """Test ``FrameCameras.from_images()`` passes through ``io_args`` to the ``ExifReader`` and
-    ``cam_args`` to the camera(s).
+def test_rpc_cameras_init_dict(rpc_args: dict):
+    """Test creating a RPC camera factory from a parameter dictionary."""
+    rpc_param_dict = {'src_image.tif': dict(cam_type=CameraType.rpc, **rpc_args)}
+    cameras = RpcCameras(rpc_param_dict)
+    assert cameras._rpc_param_dict == rpc_param_dict
+
+
+def test_rpc_cameras_init_cam_kwargs(rpc_param_file: Path, ngi_crs: str):
+    """Test the RPC camera factory passes ``cam_kwargs`` through to the camera(s)."""
+    cam_kwargs = dict(crs=rio.CRS.from_string(ngi_crs))
+    cameras = RpcCameras(rpc_param_file, cam_kwargs=cam_kwargs)
+    camera = cameras.get(list(cameras.filenames)[0])
+    assert camera.crs == cam_kwargs['crs']
+
+
+def test_rpc_cameras_from_images(rpc_image_file: Path):
+    """Test creating a RPC camera factory from images."""
+    cameras = RpcCameras.from_images((rpc_image_file,))
+    assert cameras.filenames == {rpc_image_file.name}
+    assert len(cameras._rpc_param_dict) == 1
+
+
+def test_rpc_cameras_from_images_kwargs(
+    rpc_image_file: Path, ngi_crs: str, capsys: pytest.CaptureFixture
+):
+    """Test creating a RPC camera factory from images passes ``io_kwargs`` and ``cam_kwargs``
+    through.
     """
-    io_kwargs = dict(crs=ngi_crs)
-    cam_kwargs = dict(distort=False, alpha=0.0)
-    cameras = FrameCameras.from_images(odm_image_files, io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
-    assert cameras.crs == rio.CRS.from_string(ngi_crs)
+    desc = 'custom'
+    io_kwargs = dict(progress=tqdm(desc=desc))
+    cam_kwargs = dict(crs=rio.CRS.from_string(ngi_crs))
+    cameras = RpcCameras.from_images((rpc_image_file,), io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
 
-    camera = cameras.get(odm_image_files[0])
-    assert camera.distort == cam_kwargs['distort']
-    assert camera.alpha == cam_kwargs['alpha']
+    cap = capsys.readouterr()
+    assert desc in cap.err
+
+    camera = cameras.get(list(cameras.filenames)[0])
+    assert camera.crs == cam_kwargs['crs']
+
+
+def test_rpc_cameras_get(rpc_param_file: Path, rpc_image_file: Path):
+    """Test ``RpcCameras.get()`` for a known filename."""
+    cameras = RpcCameras(rpc_param_file)
+    camera = cameras.get(rpc_image_file.name)
+
+    assert isinstance(camera, RpcCamera)
+    rpc_param = cameras._rpc_param_dict[rpc_image_file.name]
+    assert camera.im_size == rpc_param['im_size']
+    assert camera._rpc == rio.transform.RPC(**rpc_param['rpc'])
+
+
+def test_rpc_cameras_get_filename_not_found_error(rpc_param_file: Path):
+    """Test ``RpcCameras.get()`` raises an error with an invalid filename."""
+    cameras = RpcCameras(rpc_param_file)
+    filename = 'unknown.tif'
+    with pytest.raises(ParamError) as ex:
+        cameras.get(filename)
+    assert filename in str(ex.value) and 'could not find' in str(ex.value).lower()
