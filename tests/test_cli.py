@@ -329,7 +329,7 @@ def test_frame_crs_file(
     # use file:// prefix to test differentiation with CRS string e.g. 'EPSG:...'
     cli_str = (
         f'frame --dem {odm_dem_file} --int-param {odm_reconstruction_file} '
-        f'--ext-param {odm_xyz_opk_csv_file} --out-dir {tmp_path} --crs file://{crs_file} --res 5 '
+        f'--ext-param {odm_xyz_opk_csv_file} --out-dir {tmp_path} --crs {crs_file} --res 5 '
         f'{odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
@@ -925,7 +925,11 @@ def test_exif_source_not_found_error(
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {src_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout and src_file in result.stdout.lower()
+    assert (
+        'SOURCE' in result.stdout
+        and 'No such file' in result.stdout
+        and src_file in result.stdout.lower()
+    )
 
 
 def test_exif_crs(
@@ -1080,6 +1084,163 @@ def test_odm_dataset_dir_error(tmp_path: Path, runner: CliRunner):
         and 'directory' in result.stdout
         and dataset_dir in result.stdout
     )
+
+
+def test_rpc_image(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty rpc`` with a source image that has RPC metadata."""
+    cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {rpc_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.crs == rio.CRS.from_epsg(4979)
+
+
+def test_rpc_image_no_rpc_error(
+    ngi_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` raises an error with a source image that has no RPC metadata."""
+    cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        'SOURCE' in result.stdout
+        and ngi_image_file.name in result.stdout
+        and 'No RPC parameters' in result.stdout
+    )
+
+
+def test_rpc_image_not_found_error(ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty rpc`` raises an error with a non-existent source image."""
+    src_file = 'unknown.tif'
+    cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {src_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        'SOURCE' in result.stdout and 'No such file' in result.stdout and src_file in result.stdout
+    )
+
+
+def test_rpc_param_file(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    rpc_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--rpc-param`` uses the RPC parameter file."""
+    # create source image with no RPCs (and same name as rpc_image_file)
+    src_file = tmp_path.joinpath(rpc_image_file.name)
+    with rio.open(rpc_image_file, 'r') as rpc_im:
+        profile = rpc_im.profile
+        profile.pop('rpcs', None)  # make sure no rpcs
+        with rio.open(src_file, 'w', **profile) as no_rpc_im:
+            no_rpc_im.write(rpc_im.read())
+
+    # orthorectify
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --rpc-param {rpc_param_file} --out-dir {tmp_path} {src_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.crs == rio.CRS.from_epsg(4979)
+
+
+def test_rpc_param_file_invalid_error(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--rpc-param`` raises an error with an invalid parameter file."""
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --rpc-param {ngi_oty_int_param_file} --out-dir {tmp_path}'
+        f' {rpc_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--rpc-param' in result.stdout
+        and 'valid' in result.stdout
+        and ngi_oty_int_param_file.name in result.stdout
+    )
+
+
+def test_rpc_param_file_not_found_error(
+    rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` with ``--rpc-param`` raises an error with a non-existent parameter file."""
+    rpc_param_file = 'unknown.yaml'
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --rpc-param {rpc_param_file} --out-dir {tmp_path}'
+        f' {rpc_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--rpc-param' in result.stdout
+        and 'No such file' in result.stdout
+        and rpc_param_file in result.stdout
+    )
+
+
+def test_rpc_image_crs(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty rpc`` with ``--crs`` and a source image with RPC metadata, generates orthos with
+    the correct CRS.
+    """
+    crs = 'EPSG:3857'
+    cli_str = f'rpc --dem {ngi_dem_file} --crs {crs} --res 30 --out-dir {tmp_path} {rpc_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.crs == rio.CRS.from_string(crs)
+
+
+def test_rpc_param_file_crs(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    rpc_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--crs`` and a ``--rpc-param`` RPC parameter file, generates orthos
+    with the correct CRS.
+    """
+    crs = 'EPSG:3857'
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --rpc-param {rpc_param_file} --crs {crs} --res 30 '
+        f'--out-dir {tmp_path} {rpc_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.crs == rio.CRS.from_string(crs)
+
+
+def test_rpc_option(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty rpc`` passes through a ``--res`` option."""
+    res = 0.0005  # degrees
+    cli_str = f'rpc --dem {ngi_dem_file} --res {res} --out-dir {tmp_path} {rpc_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.res == (res, res)
 
 
 def test_simple_ortho(
