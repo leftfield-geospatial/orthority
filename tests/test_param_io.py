@@ -790,14 +790,22 @@ def test_rw_oty_rpc_param(rpc_args: dict, tmp_path: Path):
     """Test writing and reading RPC parameters to/from an Orthority RPC file."""
     rpc_param = dict(cam_type=CameraType.rpc, **rpc_args)
     rpc_param_dict = dict(file1=rpc_param, file2=rpc_param)
-    param_file = tmp_path.joinpath('rpc.yaml')
+    param_file = tmp_path.joinpath('rpc_param.yaml')
     param_io.write_rpc_param(param_file, rpc_param_dict)
     assert param_io.read_oty_rpc_param(param_file) == rpc_param_dict
 
 
-def test_read_im_rpc_param(im_size: tuple[int, int], rpc: dict, tmp_path: Path):
-    """Test reading RPC parameters from an GeoTIFF."""
-    # create reference image files with known RPCs, and reference parameter dictionary
+def test_read_oty_rpc_param_error(ngi_oty_int_param_file: Path):
+    """Test reading RPC parameters raises an error with an invalid parameter file."""
+    with pytest.raises(ParamError) as ex:
+        param_io.read_oty_rpc_param(ngi_oty_int_param_file)
+    assert ngi_oty_int_param_file.name in str(ex.value) and 'valid' in str(ex.value)
+
+
+def test_read_im_rpc_param(rpc: dict, tmp_path: Path):
+    """Test reading RPC parameters from GeoTIFFs."""
+    # create image files with known RPCs, and corresponding parameter dictionary
+    im_size = (1, 1)
     im_files = (tmp_path.joinpath('rpc1.tif'), tmp_path.joinpath('rpc2.tif'))
     rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc)
     profile = dict(
@@ -810,13 +818,13 @@ def test_read_im_rpc_param(im_size: tuple[int, int], rpc: dict, tmp_path: Path):
         rpcs=rio.transform.RPC(**rpc),
     )
     array = np.zeros((1, *im_size[::-1]), dtype='uint8')
-    ref_dict = {}
+    ref_rpc_param_dict = {}
     for im_file in im_files:
-        ref_dict[im_file.name] = rpc_param
+        ref_rpc_param_dict[im_file.name] = rpc_param
         with rio.open(im_file, 'w', **profile) as im:
             im.write(array)
 
-    # read image rpc params and compare nested dicts
+    # read image file rpc params and compare parameter dicts
     def compare_objs(ref_obj, test_obj):
         if isinstance(ref_obj, dict):
             for k, v in ref_obj.items():
@@ -825,12 +833,19 @@ def test_read_im_rpc_param(im_size: tuple[int, int], rpc: dict, tmp_path: Path):
         else:
             assert ref_obj == pytest.approx(test_obj, rel=0.001), (ref_obj, test_obj)
 
-    test_dict = param_io.read_im_rpc_param(im_files)
-    compare_objs(ref_dict, test_dict)
+    test_rpc_param_dict = param_io.read_im_rpc_param(im_files)
+    compare_objs(ref_rpc_param_dict, test_rpc_param_dict)
+
+
+def test_read_im_rpc_param_error(ngi_image_file: Path):
+    """Test reading RPC parameters from a GeoTIFF without RPC coefficients raises an error."""
+    with pytest.raises(ParamError) as ex:
+        param_io.read_im_rpc_param((ngi_image_file,))
+    assert ngi_image_file.name in str(ex.value) and 'No RPC parameters' in str(ex.value)
 
 
 def test_read_im_rpc_param_progress(rpc_image_file: Path, capsys: pytest.CaptureFixture):
-    """Test read_im_rpc_param() progress bar display."""
+    """Test the progress bar display when reading RPC parameters from GeoTIFFs."""
     files = (rpc_image_file,)
     # default bar
     param_io.read_im_rpc_param(files, progress=True)
