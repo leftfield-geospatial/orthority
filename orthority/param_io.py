@@ -344,7 +344,7 @@ def read_im_rpc_param(
             rpc: RPC = im.rpcs
 
         if rpc is None:
-            raise ParamError(f"No RPC parameters in '{filename}'.")
+            raise ParamError(f"No RPC parameters found in '{filename}'.")
         rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
         return {filename: rpc_param}
 

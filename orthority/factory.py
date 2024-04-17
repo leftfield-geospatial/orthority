@@ -319,5 +319,5 @@ class RpcCameras(Cameras):
         return self._cameras[filename.name]
 
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
-        rpc_file = join_ofile(out_dir, 'rpc.yaml', mode='wt')
+        rpc_file = join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
         param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)

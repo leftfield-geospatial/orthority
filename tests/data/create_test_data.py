@@ -276,6 +276,68 @@ def create_odm_test_data():
         json.dump(json_obj, f, indent=4)
 
 
+def create_rpc_test_data():
+    src_file = '03NOV18082012-P1BS-056844553010_01_P001.TIF'
+    rpc_test_root.mkdir(exist_ok=True)
+    dem_file = ngi_test_root.joinpath('dem.tif')
+
+    # read ngi dem bounds & crs
+    with rio.open(dem_file, 'r') as dem_im:
+        dem_bounds = dem_im.bounds
+        dem_crs = dem_im.crs
+
+    # read cropped & downsampled portion of source image lying inside dem bounds
+    ds_fact = 10.0
+    rpc_src_file = rpc_src_root.joinpath(src_file)
+    with rio.open(rpc_src_file, 'r') as src_im:
+        rpcs = src_im.rpcs
+        gcps = src_im.gcps
+
+        # find window corresponding to dem bounds (inner buffer of 1000)
+        bounds = transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds)
+        with GCPTransformer(gcps[0]) as tform:
+            ul = np.round(tform.rowcol(bounds[0], bounds[3])[::-1], -2) + 1000
+            br = np.round(tform.rowcol(bounds[2], bounds[1])[::-1], -2) - 1000
+        win = rio.windows.Window(*ul, *(br - ul))
+
+        # read window & downsample
+        shape = np.round((1, win.height / ds_fact, win.width / ds_fact)).astype('int')
+        array = src_im.read(window=win, resampling=rio.enums.Resampling.average, out_shape=shape)
+
+    # adjust rpcs for crop and downsample
+    rpcs.line_off = (rpcs.line_off - win.row_off) / ds_fact
+    rpcs.samp_off = (rpcs.samp_off - win.col_off) / ds_fact
+    rpcs.line_scale /= ds_fact
+    rpcs.samp_scale /= ds_fact
+
+    # adjust gcps for crop and downsample
+    for gcp in gcps[0]:
+        gcp.row = (gcp.row - win.row_off) / ds_fact
+        gcp.col = (gcp.col - win.col_off) / ds_fact
+
+    # setup test image profile
+    rpc_test_file = rpc_test_root.joinpath('qb2_basic1b.tif')
+    profile = dict(
+        width=array.shape[2],
+        height=array.shape[1],
+        count=array.shape[0],
+        compress='jpeg',
+        tiled=True,
+        blockxsize=256,
+        blockysize=256,
+        dtype='uint8',
+        driver='GTiff',
+        crs=gcps[1],
+        gcps=gcps[0],
+        rpcs=rpcs,  # NB: there is a rio/GDAL bug if RPCs are passed as a dict to rio.open()
+    )
+
+    # scale 10-255 & write
+    array = 10.0 + (255.0 - 10.0) * (array - array.min()) / (array.max() - array.min())
+    with rio.open(rpc_test_file, 'w', **profile) as dst_im:
+        dst_im.write(array.astype('uint8'))
+
+
 def create_io_test_data():
     # create lla_rpy csv file for odm data
     io_root.mkdir(exist_ok=True)
@@ -344,71 +406,15 @@ def create_io_test_data():
         io_root.joinpath('ngi_ext_param.geojson'), ext_param_dict, crs=ngi_crs, overwrite=True
     )
 
-
-def create_rpc_test_data():
-    src_file = '03NOV18082012-P1BS-056844553010_01_P001.TIF'
-    rpc_test_root.mkdir(exist_ok=True)
-    dem_file = ngi_test_root.joinpath('dem.tif')
-
-    # read ngi dem bounds & crs
-    with rio.open(dem_file, 'r') as dem_im:
-        dem_bounds = dem_im.bounds
-        dem_crs = dem_im.crs
-
-    # read cropped & downsampled portion of source image lying inside dem bounds
-    ds_fact = 10.0
-    rpc_src_file = rpc_src_root.joinpath(src_file)
-    with rio.open(rpc_src_file, 'r') as src_im:
-        rpcs = src_im.rpcs
-        gcps = src_im.gcps
-
-        # find window corresponding to dem bounds (inner buffer of 1000)
-        bounds = transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds)
-        with GCPTransformer(gcps[0]) as tform:
-            ul = np.round(tform.rowcol(bounds[0], bounds[3])[::-1], -2) + 1000
-            br = np.round(tform.rowcol(bounds[2], bounds[1])[::-1], -2) - 1000
-        win = rio.windows.Window(*ul, *(br - ul))
-
-        # read window & downsample
-        shape = np.round((1, win.height / ds_fact, win.width / ds_fact)).astype('int')
-        array = src_im.read(window=win, resampling=rio.enums.Resampling.average, out_shape=shape)
-
-    # adjust rpcs for crop and downsample
-    rpcs.line_off = (rpcs.line_off - win.row_off) / ds_fact
-    rpcs.samp_off = (rpcs.samp_off - win.col_off) / ds_fact
-    rpcs.line_scale /= ds_fact
-    rpcs.samp_scale /= ds_fact
-
-    # adjust gcps for crop and downsample
-    for gcp in gcps[0]:
-        gcp.row = (gcp.row - win.row_off) / ds_fact
-        gcp.col = (gcp.col - win.col_off) / ds_fact
-
-    # setup test image profile
-    rpc_test_file = rpc_test_root.joinpath('qb2_basic1b.tif')
-    profile = dict(
-        width=array.shape[2],
-        height=array.shape[1],
-        count=array.shape[0],
-        compress='jpeg',
-        tiled=True,
-        blockxsize=256,
-        blockysize=256,
-        dtype='uint8',
-        driver='GTiff',
-        crs=gcps[1],
-        gcps=gcps[0],
-        rpcs=rpcs,  # NB: there is a rio/GDAL bug if RPCs are passed as a dict to rio.open()
+    # create oty format rpc param file for rpc image
+    rpc_param_dict = param_io.read_im_rpc_param((rpc_test_root.joinpath('qb2_basic1b.tif'),))
+    param_io.write_rpc_param(
+        rpc_test_root.joinpath('rpc_param.yaml'), rpc_param_dict, overwrite=True
     )
-
-    # scale 10-255 & write
-    array = 10.0 + (255.0 - 10.0) * (array - array.min()) / (array.max() - array.min())
-    with rio.open(rpc_test_file, 'w', **profile) as dst_im:
-        dst_im.write(array.astype('uint8'))
 
 
 if __name__ == '__main__':
     create_odm_test_data()
     create_ngi_test_data()
-    create_io_test_data()
     create_rpc_test_data()
+    create_io_test_data()
