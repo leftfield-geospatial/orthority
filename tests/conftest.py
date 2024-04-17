@@ -840,8 +840,14 @@ def odm_xyz_opk_csv_file() -> Path:
 
 @pytest.fixture(scope='session')
 def rpc_image_file() -> Path:
-    """RPC image file."""
+    """Quickbird2 image file with RPC metadata."""
     return root_path.joinpath('tests/data/rpc/qb2_basic1b.tif')
+
+
+@pytest.fixture(scope='session')
+def rpc_param_file() -> Path:
+    """Orthority RPC parameter file for the Quickbird2 image."""
+    return root_path.joinpath('tests/data/rpc/rpc_param.yaml')
 
 
 @pytest.fixture(scope='session')
