@@ -8,6 +8,8 @@ Pixel coordinates
 
 *Pixel coordinates* are 2D *(j, i)* column and row indices of image pixels.  Orthority uses the standard convention where the origin is on the center of the top left pixel, the *j*-axis points right, and the *i*-axis points down.
 
+.. TODO: make it clearer that they are center pixel coords
+
 Camera coordinates
 ------------------
 
