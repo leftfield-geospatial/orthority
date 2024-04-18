@@ -23,17 +23,6 @@ jobs:
     - name: Check out repository
       uses: actions/checkout@v4
 
-    - name: Install / cache GL packages for OpenCV
-      uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: |
-          mesa-libGL
-          mesa-libEGL
-          libglvnd-egl
-          libglvnd-glx
-          libglvnd-opengl
-        version: 1.0
-
     - name: Set up conda
       uses: conda-incubator/setup-miniconda@v3
       with:
@@ -46,7 +35,8 @@ jobs:
     - name: Install dependencies
       run: |
         conda info
-        conda install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        conda install -c conda-forge rasterio click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        pip install opencv-python-headless
         conda list
 
     - name: Run unit tests
