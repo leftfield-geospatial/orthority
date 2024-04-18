@@ -14,17 +14,19 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Orthorectification toolkit."""
-import logging
 import os
-import pathlib
 
 # enable on-demand download and caching of proj transformation grids (NB must be done before
 # importing rasterio)
 os.environ.update(PROJ_NETWORK='ON')
 
+import logging
+import pathlib
+
 from orthority.enums import Compress, Interp
 from orthority.factory import FrameCameras, RpcCameras
 from orthority.ortho import Ortho
+
 
 # Add a NullHandler to the package logger to hide logs by default.  Applications can then add
 # their own handler(s).

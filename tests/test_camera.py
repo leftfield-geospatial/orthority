@@ -15,28 +15,23 @@
 
 from __future__ import annotations
 
-import numpy as np
-import pytest
 from pathlib import Path
-import rasterio as rio
-import cv2
-from rasterio.transform import from_bounds
 from typing import Sequence
 
+import cv2
+import numpy as np
+import pytest
+import rasterio as rio
+from rasterio.transform import from_bounds
+
+from orthority import utils
 from orthority.camera import (
-    BrownCamera,
-    Camera,
-    create_camera,
-    FisheyeCamera,
-    FrameCamera,
-    OpenCVCamera,
-    PinholeCamera,
+    BrownCamera, Camera, create_camera, FisheyeCamera, FrameCamera, OpenCVCamera, PinholeCamera,
     RpcCamera,
 )
 from orthority.enums import CameraType, Interp
 from orthority.errors import CameraInitError, OrthorityWarning
-from tests.conftest import _dem_offset, _dem_gain, checkerboard, ortho_bounds, create_zsurf
-from orthority import utils
+from tests.conftest import _dem_offset, checkerboard, create_zsurf, ortho_bounds
 
 
 @pytest.mark.parametrize(
@@ -129,13 +124,14 @@ def test_frame_update(im_size: tuple, focal_len: float, sensor_size: tuple, xyz:
     assert np.all(camera._R != 0)
 
 
-@pytest.mark.parametrize('cam_type',
-    [CameraType.pinhole, CameraType.opencv, CameraType.brown, CameraType.fisheye]
+@pytest.mark.parametrize(
+    'cam_type', [CameraType.pinhole, CameraType.opencv, CameraType.brown, CameraType.fisheye]
 )
 def test_frame_update_error(
     cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
 ):
-    """Test an error is raised if a ``FrameCamera`` is used before initialising exterior parameters.
+    """Test an error is raised if a ``FrameCamera`` is used before initialising exterior
+    parameters.
     """
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
@@ -874,9 +870,7 @@ def test_frame_world_boundary_equiv(camera: str, camera_und: str, request: pytes
     assert xyz == pytest.approx(xyz_und, abs=1e-6)
 
 
-@pytest.mark.parametrize(
-    'camera', ['pinhole_camera', 'rpc_camera']
-)
+@pytest.mark.parametrize('camera', ['pinhole_camera', 'rpc_camera'])
 def test_world_boundary_errors(camera: str, request: pytest.FixtureRequest):
     """Test ``Camera.world_boundary()`` error conditions."""
     camera: Camera = request.getfixturevalue(camera)

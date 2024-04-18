@@ -1193,6 +1193,4 @@ def simple_ortho(argv=None):
 if __name__ == '__main__':
     cli()
 
-# TODO: test CLI exceptions are meaningful
-
 ##
