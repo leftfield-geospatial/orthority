@@ -18,6 +18,10 @@ import logging
 import os
 import pathlib
 
+# enable on-demand download and caching of proj transformation grids (NB must be done before
+# importing rasterio)
+os.environ.update(PROJ_NETWORK='ON')
+
 from orthority.enums import Compress, Interp
 from orthority.factory import FrameCameras, RpcCameras
 from orthority.ortho import Ortho
@@ -26,9 +30,6 @@ from orthority.ortho import Ortho
 # their own handler(s).
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
-
-# enable on-demand download and caching of proj transformation grids
-os.environ.update(PROJ_NETWORK='ON')
 
 # path to package root TODO: remove with deprecated simple-ortho CLI
 if '__file__' in globals():
