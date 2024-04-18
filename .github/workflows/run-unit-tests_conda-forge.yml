@@ -16,12 +16,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-latest, ubuntu-20.04, windows-latest ]
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: ['3.9', '3.10', '3.11']
 
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
+
+    - name: Install / cache GL packages for OpenCV
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: |
+          mesa-libGL
+          mesa-libEGL
+          libglvnd-egl
+          libglvnd-glx
+          libglvnd-opengl
+        version: 1.0
 
     - name: Set up conda
       uses: conda-incubator/setup-miniconda@v3
