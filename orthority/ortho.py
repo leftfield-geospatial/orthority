@@ -652,7 +652,8 @@ class Ortho:
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
                 resolution = (self._gsd, self._gsd)
-                logger.debug(f'Using auto resolution: {resolution[0]:.4f}')
+                res_str = ('{:.4e}' if resolution[0] < 1e-3 else '{:.4f}').format(resolution[0])
+                logger.debug('Using auto resolution: ' + res_str)
 
             # open source image
             # TODO: would GTIFF_REPORT_COMPD_CS=True help avoid PAM files with ellipsoidal height
