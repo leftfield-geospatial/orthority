@@ -18,4 +18,5 @@ Camera coordinates
 World coordinates
 ------------------
 
-*World coordinates* are 3D *(x, y, z)* cartesian coordinates.  For orthorectification this system is represented by a projected CRS (coordinate reference system) where the origin and axis alignment is fixed relative to the earth surface.  Typically the *x*-axis points East, the *y*-axis points North, and the *z*-axis (height) points up away from the earth.  The ortho image is georeferenced in this coordinate system.
+*World coordinates* are 3D *(x, y, z)* coordinates where the origin and axis alignment is fixed relative to the Earth.  For orthorectification this system is represented by a geospatial CRS (coordinate reference system).  :ref:`Frame cameras <background/camera_models:frame cameras>` use a cartesian world system, approximated by a projected CRS.  :ref:`RPC cameras <background/camera_models:rpc cameras>` use the WGS84 geographic CRS, optionally transformed to a projected CRS.  The ortho image is georeferenced in this coordinate system.
+
