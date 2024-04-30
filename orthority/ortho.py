@@ -647,7 +647,7 @@ class Ortho:
             elif progress is False:
                 progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
 
-            exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
+            # exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
 
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
