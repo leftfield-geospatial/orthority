@@ -316,9 +316,7 @@ def _ortho(
         try:
             cameras.write_param(out_dir, overwrite=overwrite)
         except FileExistsError as ex:
-            raise click.UsageError(
-                f"File exists and won't be overwritten without '-o' / '--overwrite': {str(ex)}."
-            )
+            raise click.UsageError(str(ex))
         except CrsMissingError:
             raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
         return
@@ -380,9 +378,7 @@ def _ortho(
                 try:
                     ortho.process(ortho_ofile, overwrite=overwrite, progress=src_file_bar, **kwargs)
                 except FileExistsError as ex:
-                    raise click.UsageError(
-                        f"File exists and won't be overwritten without '-o' / '--overwrite': {str(ex)}."
-                    )
+                    raise click.UsageError(str(ex))
 
 
 # Define click options that are common to more than one command

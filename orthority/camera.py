@@ -27,9 +27,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
-from rasterio.transform import (
-    GCPTransformer, GroundControlPoint, RPC, RPCTransformer,
-)
+from rasterio.transform import GCPTransformer, GroundControlPoint, RPC, RPCTransformer
 from rasterio.warp import transform as warp
 
 from orthority import utils
@@ -427,8 +425,9 @@ class RpcCamera(Camera):
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
-        # TODO: make rasterio feature / pull request(s) to release gil on warp & rpc transform,
-        #  and allow nans through.
+        # TODO: make rasterio feature / pull request(s) to release gil on crs & rpc transform,
+        #  and to not copy coordinates back and forth between python/c formats in for loops (see
+        #  e.g. pyproj for a way of doing this efficiently).
         if self._crs:
             # warp from world / ortho to geographic / RPC coordinates, removing, and replacing nans
             # around the warp call (which raises errors on nans)
