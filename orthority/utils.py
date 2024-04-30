@@ -34,14 +34,18 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from fsspec.implementations.http import HTTPFileSystem
+from fsspec.implementations.local import LocalFileSystem
 from rasterio.crs import CRS
-from rasterio.errors import NotGeoreferencedWarning
+from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
 
 from orthority.enums import Interp
 
 logger = logging.getLogger(__name__)
+
+
 # TODO: rename this module _utils, & version -> _version
 # TODO: use the more general os.PathLike instead of pathlib.Path for all path type specifiers,
 #  then use os.fspath to convert paths to str (everywhere).
@@ -261,10 +265,20 @@ class OpenRaster:
 
             # TODO: delete sidecar files if overwriting
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(ofile.path)
+                raise FileExistsError(f"File exists: '{ofile.path}'")
 
-            file_obj = self._exit_stack.enter_context(ofile)
-            self._dataset = self._exit_stack.enter_context(rio.open(file_obj, mode, **kwargs))
+            if isinstance(ofile.fs, (LocalFileSystem, HTTPFileSystem)):
+                # use GDAL internal file system
+                try:
+                    self._dataset = self._exit_stack.enter_context(
+                        rio.open(ofile.path, mode, **kwargs)
+                    )
+                except RasterioIOError as ex:
+                    raise FileNotFoundError(str(ex))
+            else:
+                # use fsspec file object
+                file_obj = self._exit_stack.enter_context(ofile)
+                self._dataset = self._exit_stack.enter_context(rio.open(file_obj, mode, **kwargs))
 
             # store the source filename as a dataset attribute
             self._dataset.filename = get_filename(file)
@@ -335,7 +349,7 @@ class Open:
             # overwrite could be prevented with 'x' modes, but is done this way for consistency
             # with OpenRaster & rasterio which doesn't support 'x'
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
-                raise FileExistsError(ofile.path)
+                raise FileExistsError(f"File exists: '{ofile.path}'")
 
             self._file_obj = self._exit_stack.enter_context(ofile)
             self._file_obj.filename = get_filename(file)
