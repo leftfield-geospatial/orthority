@@ -425,8 +425,8 @@ crs_option = click.option(
     default=None,
     show_default='auto',
     callback=_crs_cb,
-    help='CRS of ortho image(s) and any projected coordinate exterior parameters as an EPSG, '
-    'proj4, or WKT string; or path of a text file containing string.',
+    help='CRS of ortho image(s) and world coordinates as an EPSG, proj4, or WKT string; path / URI '
+    'of a text file containing string; or path / URI of an image with metadata CRS.',
 )
 lla_crs_option = click.option(
     '-lc',
@@ -927,7 +927,7 @@ def rpc(
 
     The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
     parameters with :option:`--export-params <oty-exif --export-params>`.  If :option:`--crs
-    <oty-exif --crs>` is not supplied, a WGS84 world / ortho CRS is used::
+    <oty-exif --crs>` is not supplied, a WGS84 geographic world / ortho CRS is used::
 
         oty rpc --dem dem.tif source*.tif
 
