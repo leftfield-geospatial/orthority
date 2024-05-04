@@ -1,5 +1,5 @@
-YAML RPC parameters
-===================
+Orthority RPC parameters
+========================
 
 This is the native Orthority format for :ref:`RPC camera <background/camera_models:rpc cameras>` parameters.  It is a YAML file containing a nested dictionary of one or more image filename keys and the corresponding RPC parameter dictionary values.  The basic layout is:
 

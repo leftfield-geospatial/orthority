@@ -1,5 +1,5 @@
-GeoJSON exterior parameters
-===========================
+Orthority exterior parameters
+=============================
 
 This is the native Orthority format for frame camera :ref:`exterior parameters <background/camera_models:exterior parameters>`.  It is a standard GeoJSON ``FeatureCollection`` of ``Point`` features, that can be visualised in a GIS.  The world / ortho CRS is stored in a ``world_crs`` member of the ``FeatureCollection`` as a WKT, proj4 or EPSG string.  E.g.
 

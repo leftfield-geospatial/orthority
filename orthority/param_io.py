@@ -265,7 +265,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     if 'camera' in yaml_dict:
         warnings.warn(
             "Support for the 'config.yaml' format is deprecated and will be removed in future. "
-            "Please switch to the Orthority YAML format for interior parameters.",
+            "Please switch to the Orthority interior parameter format.",
             category=DeprecationWarning,
         )
         yaml_dict = yaml_dict['camera']
@@ -321,7 +321,7 @@ def read_im_rpc_param(
 ) -> dict[str, dict[str, Any]]:
     """
     Read RPC camera parameters from :doc:`image file(s) with RPC tags / sidecar file(s)
-    <../file_formats/im_rpc>`.
+    <../file_formats/image_rpc>`.
 
     :param files:
         File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
@@ -721,14 +721,15 @@ class CsvReader(FrameReader):
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
         :class:`~rasterio.crs.CRS` object.  If set to None (the default), and the file contains
-        :attr:`~orthority.enums.CsvFormat.lla_rpy` values, a UTM CRS will be auto-determined.  If
-        set to None, and the file contains (x, y, z) world coordinate positions, a CRS can be
-        provided via a '.prj' file (i.e. a text file defining a CRS string, and having the same
-        path & stem as ``file``, but a '.prj' extension).  In all other situations, ``crs`` should
-        be supplied.
+        (x, y, z) world coordinate positions, a CRS can be provided via a '.prj' sidecar file
+        (i.e. a text file defining a CRS string, and having the same path as ``file``,
+        but a '.prj' extension).  If set to None, and the file contains (``latitude``,
+        ``longitude``, ``altitude``) **and** (``roll``, ``pitch``, ``yaw``) fields, a UTM CRS
+        will be auto-determined. If the file contains (``latitude``, ``longitude``, ``altitude``)
+        **or** (``roll``, ``pitch``, ``yaw``) fields, ``crs`` should be supplied.
     :param lla_crs:
         Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
-        pitch, yaw) angle values in the file (as an EPSG, WKT or proj4 string; or
+        pitch, yaw) values in the file (as an EPSG, WKT or proj4 string; or
         :class:`~rasterio.crs.CRS` object).
     :param fieldnames:
         List of names specifying the CSV fields.  If set to None (the default), names will be

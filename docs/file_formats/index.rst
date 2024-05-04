@@ -8,13 +8,13 @@ This section describes camera model file formats supported by Orthority.
 .. toctree::
     :maxdepth: 1
 
-    yaml
-    geojson
+    oty_int
+    oty_ext
     csv
     exif_xmp
     opensfm
     image_rpc
-    yaml_rpc
+    oty_rpc
     legacy
 
 .. TODO: note that files define one or both of frame camera interior and or exterior parameters. and make better sense of the statement above.

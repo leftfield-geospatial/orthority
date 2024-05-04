@@ -57,7 +57,7 @@ Angle units and ``.prj`` file
 
 Orientation angles are assumed to be in degrees by default.  The :option:`--radians <oty-frame --radians>` option on the command line, or the :meth:`~orthority.param_io.CsvReader` ``radians`` argument in the API should be supplied if angles are in radians.
 
-Optionally, the CRS of ``x``, ``y``, ``z`` world coordinate positions can be supplied in a sidecar ``.prj`` file (i.e. a text file containing a WKT, proj4 or EPSG string, and having the same path & name as the CSV filename, but a ``.prj`` extension).  In this case, the world / ortho CRS does not have to be supplied with the :option:`--crs <oty-frame --crs>` command line option, or :meth:`~orthority.param_io.CsvReader` ``crs`` API argument.
+Optionally, the CRS of ``x``, ``y``, ``z`` world coordinate positions can be supplied in a sidecar :file:`.prj` file (i.e. a text file containing a WKT, proj4 or EPSG string, and having the same path as the CSV file, but a :file:`.prj` extension).  In this case, the world / ortho CRS does not have to be supplied with the :option:`--crs <oty-frame --crs>` command line option, or :meth:`~orthority.param_io.CsvReader` ``crs`` API argument.
 
 .. note::
 

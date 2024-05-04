@@ -14,7 +14,7 @@ Orthority can read frame camera :ref:`interior parameters <background/camera_mod
     * - ``fisheye``
       - :attr:`~orthority.enums.CameraType.fisheye`
 
-Similar to the :doc:`YAML format <yaml>`, interior parameters in :file:`cameras.json` or :file:`reconstruction.json` files are defined as dictionaries of camera ID keys, and nested parameter dictionary values.  E.g.:
+Similar to the :doc:`Orthority interior parameter format <oty_int>`, interior parameters in :file:`cameras.json` or :file:`reconstruction.json` files are defined as dictionaries of camera ID keys, and nested parameter dictionary values.  E.g.:
 
 .. literalinclude:: ../../tests/data/odm/opensfm/reconstruction.json
     :language: json

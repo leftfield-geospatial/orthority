@@ -73,7 +73,7 @@ def _validate_ext_param_dict(ext_param_dict: dict, cameras: Collection[str | Non
 
 
 def test_rw_oty_int_param(mult_int_param_dict: dict, tmp_path: Path):
-    """Test interior parameter read / write from / to orthority yaml format."""
+    """Test interior parameter read / write from / to orthority interior parameter format."""
     filename = tmp_path.joinpath('int_param.yaml')
     param_io.write_int_param(filename, mult_int_param_dict)
     test_dict = param_io.read_oty_int_param(filename)
@@ -762,7 +762,7 @@ def test_exif_reader_progress(odm_image_files: tuple[Path, ...], capsys: pytest.
 
 
 def test_oty_rw_ext_param(mult_ext_param_dict: dict, utm34n_crs: str, tmp_path: Path):
-    """Test exterior parameter read / write from / to orthority geojson format."""
+    """Test exterior parameter read / write from / to orthority exterior parameter format."""
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
     param_io.write_ext_param(ext_param_file, mult_ext_param_dict, crs=utm34n_crs)
     assert ext_param_file.exists()
