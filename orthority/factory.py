@@ -72,7 +72,7 @@ class Cameras(ABC):
 
 class FrameCameras(Cameras):
     """
-    Frame camera factory for interior and exterior parameter files or dictionaries.
+    Frame camera factory.
 
     :param int_param:
         Interior parameter file or dictionary.  If a file, can be a path or URI string,
@@ -116,14 +116,16 @@ class FrameCameras(Cameras):
         cam_kwargs: dict = None,
     ):
         """
-        Create frame camera factory from image file(s) with EXIF / XMP tags.
+        Create frame camera factory from :doc:`image file(s) with EXIF / XMP tags
+        <../file_formats/exif_xmp>`.
 
         :param files:
             Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode ('rb'), or dataset readers.
         :param io_kwargs:
-            Optional dictionary of additional arguments for the :class:`~orthority.param_io.ExifReader`
-            class.  Should exclude ``files`` which is passed internally.
+            Optional dictionary of additional arguments for the
+            :class:`~orthority.param_io.ExifReader` class.  Should exclude ``files`` which is
+            passed internally.
         :param cam_kwargs:
             Optional dictionary of additional arguments for the
             :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
@@ -249,11 +251,12 @@ class FrameCameras(Cameras):
 
 class RpcCameras(Cameras):
     """
-    RPC camera factory for an :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>`.
+    RPC camera factory.
 
     :param rpc_param:
-        RPC parameter file or dictionary.  If a file, can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+        :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>` or dictionary.  If a file,
+        can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a file object,
+        opened in text mode ('rt').
     :param cam_kwargs:
         Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
         class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
@@ -283,15 +286,16 @@ class RpcCameras(Cameras):
         cam_kwargs: dict = None,
     ):
         """
-        Create RPC camera factory from image file(s) with RPC tags / sidecar file(s).
+        Create RPC camera factory from :doc:`image file(s) with RPC tags / sidecar file(s)
+        <../file_formats/image_rpc>`.
 
         :param files:
             Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode ('rb'), or dataset readers.
         :param io_kwargs:
             Optional dictionary of additional arguments for
-            :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is passed
-            internally.
+            :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is
+            passed internally.
         :param cam_kwargs:
             Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
             class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.

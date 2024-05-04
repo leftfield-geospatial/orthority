@@ -922,7 +922,7 @@ def rpc(
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
-    Camera parameters are read from SOURCE image tags / sidecar file(s), or from
+    Camera parameters are read from SOURCE image tags / sidecar files, or from
     :option:`--rpc-param <oty-rpc --rpc-param>` if provided.
 
     The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera

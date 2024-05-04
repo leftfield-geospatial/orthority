@@ -27,7 +27,8 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
-from rasterio.transform import GCPTransformer, GroundControlPoint, RPC, RPCTransformer
+from rasterio.rpc import RPC
+from rasterio.transform import GCPTransformer, GroundControlPoint, RPCTransformer
 from rasterio.warp import transform as warp
 
 from orthority import utils
@@ -391,6 +392,21 @@ class Camera(ABC):
 
 
 class RpcCamera(Camera):
+    """
+    RPC camera.
+
+    :param im_size:
+        Image (width, height) in pixels.
+    :param rpc:
+        RPC parameters as a :class:`~rasterio.rpc.RPC` object or dictionary.
+    :param rpc_options:
+        Options for :cpp:func:`GDALCreateRPCTransformerV2`.  Only used for the reverse pixel to
+        world coordinate transform.
+    :param crs:
+        World / ortho CRS as an EPSG, proj4 or WKT string, or :class:`~rasterio.crs.CRS` object.
+        If set to None (the default), the WGS84 geographic 3D CRS is used.
+    """
+
     def __init__(
         self,
         im_size: tuple[int, int],
@@ -1479,7 +1495,7 @@ class FisheyeCamera(FrameCamera):
         return xyz_
 
 
-def create_camera(cam_type: str | CameraType, *args, **kwargs) -> Camera | FrameCamera | RpcCamera:
+def create_camera(cam_type: str | CameraType, *args, **kwargs) -> FrameCamera | RpcCamera:
     """
     Create a camera object given a camera type and parameters.
 
