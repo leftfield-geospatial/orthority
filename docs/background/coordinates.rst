@@ -13,7 +13,7 @@ Pixel coordinates
 Camera coordinates
 ------------------
 
-*Camera coordinates* are 3D *(x, y, z)* cartesian coordinates aligned with the camera and centered on its optical point.  Internally, Orthority uses the OpenCV / OpenSfM convention for these axes, where the *x*-axis points right, the *y*-axis down and *z*-axis forwards (looking through the camera at the world scene).  For (*omega*, *phi*, *kappa*) angles supplied in :doc:`CSV <../file_formats/csv>` / :doc:`GeoJSON <../file_formats/geojson>` files or with the :mod:`~orthority.camera` API, Orthority uses the PATB axis convention.  In this convention, the *x*-axis points right, the *y*-axis up and the *z*-axis backwards.
+*Camera coordinates* are 3D *(x, y, z)* cartesian coordinates aligned with the camera and centered on its optical point.  Internally, Orthority uses the OpenCV / OpenSfM convention for these axes, where the *x*-axis points right, the *y*-axis down and *z*-axis forwards (looking through the camera at the world scene).  For (*omega*, *phi*, *kappa*) angles supplied in :doc:`CSV <../file_formats/csv>` / :doc:`Orthority exterior parameter <../file_formats/oty_ext>` files or with the :mod:`~orthority.camera` API, Orthority uses the PATB axis convention.  In this convention, the *x*-axis points right, the *y*-axis up and the *z*-axis backwards.
 
 World coordinates
 ------------------
