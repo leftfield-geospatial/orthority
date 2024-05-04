@@ -5,7 +5,8 @@ Command line reference
     :maxdepth: 1
 
     oty
-    ortho
+    frame
     exif
     odm
+    rpc
     simple_ortho
