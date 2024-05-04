@@ -1,3 +1,5 @@
+.. include:: ../../shared.txt
+
 Algorithm configuration
 =======================
 
@@ -12,7 +14,4 @@ Interpolation methods for remapping the source image and reprojecting the DEM ar
 .. code-block:: bash
 
     oty odm --dataset-dir odm --interp lanczos --dem-interp lanczos --per-band --overwrite
-
-.. |oty| replace:: ``oty``
-.. _oty: ../../cli/oty.html
 

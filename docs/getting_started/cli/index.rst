@@ -1,3 +1,5 @@
+.. include:: ../../shared.txt
+
 Command line
 ============
 
@@ -25,9 +27,6 @@ and help on an ``oty`` sub-command with:
     ortho_config
     camera_config
     algorithm_config
-
-.. |oty| replace:: ``oty``
-.. _oty: ../../cli/oty.html
 
 
 .. TODO: include a note about logging verbosity

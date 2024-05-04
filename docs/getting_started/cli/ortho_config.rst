@@ -1,3 +1,5 @@
+.. include:: ../../shared.txt
+
 Ortho image configuration
 =========================
 
@@ -9,7 +11,7 @@ Compression can be configured with ``--compress`` as either ``deflate`` (with an
 
 .. note::
 
-    Support for 12 bit JPEG compression is `Rasterio <https://rasterio.readthedocs.io>`__ build / package dependent.
+    Support for 12 bit JPEG compression is Rasterio_ build / package dependent.
 
 The next example orthorectifies using EXIF / XMP tags, and configures the ortho image with a 0.2m resolution, the ``uint8`` data type, and ``deflate`` compression:
 
@@ -24,7 +26,4 @@ Internal overviews are added by default.  This can be changed with ``--no-build-
 .. code-block:: bash
 
     oty exif --dem odm/odm_dem/dsm.tif --compress deflate --no-write-mask --no-build-ovw --overwrite odm/images/100_0005_0140.tif
-
-.. |oty| replace:: ``oty``
-.. _oty: ../../cli/oty.html
 

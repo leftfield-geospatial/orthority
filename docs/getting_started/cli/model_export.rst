@@ -1,3 +1,5 @@
+.. include:: ../../shared.txt
+
 Camera model export
 ===================
 
@@ -8,7 +10,3 @@ Camera model export
     oty exif --export-params odm/images/*.tif
 
 ``--out-dir`` can be used to change the output directory, and ``--overwrite`` to replace existing files.
-
-.. |oty| replace:: ``oty``
-.. _oty: ../../cli/oty.html
-
