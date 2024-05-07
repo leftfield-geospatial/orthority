@@ -366,11 +366,7 @@ def utm34n_crs() -> str:
 @pytest.fixture(scope='session')
 def utm34n_wgs84_crs() -> str:
     """CRS string for UTM zone 34N with height above WGS84 ellipsoid vertical CRS."""
-    # TODO: GDAL/rasterio implements this CRS as a sidecar PAM file which cannot be written to /
-    #   read from with rio.open(<python file object>).  Perhaps this be fixed with when rio.open(
-    #   opener=) when it is implemented.
-    # return 'EPSG:32634+4326'
-    raise NotImplementedError()
+    return 'EPSG:32634+4326'
 
 
 @pytest.fixture(scope='session')
@@ -400,9 +396,7 @@ def webmerc_crs() -> str:
 @pytest.fixture(scope='session')
 def webmerc_wgs84_crs() -> str:
     """CRS string for web mercator with height above WGS84 ellipsoid vertical CRS."""
-    # return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
-    # see utm34n_wgs84_crs note above
-    raise NotImplementedError()
+    return '+proj=webmerc +datum=WGS84 +ellps=WGS84 +vunits=m'
 
 
 @pytest.fixture(scope='session')

@@ -252,13 +252,13 @@ def test_aa_to_opk(xyz: tuple, opk: tuple):
     [
         ('wgs84_wgs84_crs', 'utm34n_egm96_crs'),
         ('wgs84_wgs84_crs', 'utm34n_egm2008_crs'),
-        # ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
+        ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
         ('utm34n_egm96_crs', 'wgs84_wgs84_crs'),
         ('utm34n_egm2008_crs', 'wgs84_wgs84_crs'),
-        # ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
+        ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
         ('wgs84_wgs84_crs', 'webmerc_egm96_crs'),
         ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
-        # ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
+        ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
     ],
 )
 def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
@@ -280,10 +280,10 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
 @pytest.mark.parametrize(
     'src_crs, dst_crs',
     [
-        # ('wgs84_crs', 'utm34n_wgs84_crs'),
+        ('wgs84_crs', 'utm34n_wgs84_crs'),
         ('wgs84_crs', 'utm34n_egm96_crs'),
         ('wgs84_crs', 'utm34n_egm2008_crs'),
-        # ('wgs84_crs', 'webmerc_wgs84_crs'),
+        ('wgs84_crs', 'webmerc_wgs84_crs'),
         ('wgs84_crs', 'webmerc_egm96_crs'),
         ('wgs84_crs', 'webmerc_egm2008_crs'),
         ('utm34n_crs', 'wgs84_wgs84_crs'),

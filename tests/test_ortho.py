@@ -341,14 +341,12 @@ def test_reproject_dem_crs_equal(
     assert np.all(nan_equals(array, ortho._dem_array))
 
 
-# TODO: add case for utm34n_wgs84 if sidecar PAM files can be created with updated rasterio.open(
-#  opener=) support
 @pytest.mark.parametrize(
     'dem_file, crs',
     [
         ('float_utm34n_egm2008_dem_file', 'utm34n_egm96_crs'),
         ('float_utm34n_egm96_dem_file', 'utm34n_egm2008_crs'),
-        # ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
+        ('float_utm34n_egm96_dem_file', 'utm34n_wgs84_crs'),
     ],
 )
 def test_reproject_dem_vert_crs_both(
@@ -1204,6 +1202,4 @@ def test_process_odm(
 
 
 # TODO: add test with dem that includes occlusion
-# TODO: add tests for other CRSs, spec'd in proj4 string, with vertical CRS & with ortho & DEM in
-#  different CRSs
 ##
