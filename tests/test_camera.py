@@ -524,7 +524,7 @@ def test_frame_horizon_fov(
     ],
 )
 def test_frame_undistort_pixel(camera: str, camera_und: str, request: pytest.FixtureRequest):
-    """Test ``FrameCamera().undistort_pixel()`` by comparing ``undistort_pixel()`` followed by
+    """Test ``FrameCamera()._undistort_pixel()`` by comparing ``_undistort_pixel()`` followed by
     ``FrameCamera(distort=False).pixel_to_world_z()`` with
     ``FrameCamera(distort=True).pixel_to_world_z()``.
     """
@@ -535,7 +535,7 @@ def test_frame_undistort_pixel(camera: str, camera_und: str, request: pytest.Fix
     z = np.random.rand(1000) * (camera.pos[2] * 0.8)
     xyz = camera.pixel_to_world_z(ji, z)
 
-    ji_undistort = camera_und.undistort_pixel(ji)
+    ji_undistort = camera_und._undistort_pixel(ji)
     xyz_undistort = camera_und.pixel_to_world_z(ji_undistort, z)
 
     assert xyz_undistort == pytest.approx(xyz, abs=1e-3)
@@ -545,14 +545,14 @@ def test_frame_undistort_pixel(camera: str, camera_und: str, request: pytest.Fix
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_frame_distort_pixel(camera: str, request: pytest.FixtureRequest):
-    """Test ``FrameCamera.distort_pixel()`` by comparing undistorted & re-distorted coordinates
+    """Test ``FrameCamera._distort_pixel()`` by comparing undistorted & re-distorted coordinates
     with the original.
     """
     camera: FrameCamera = request.getfixturevalue(camera)
 
     ji = np.random.rand(2, 1000) * np.reshape(camera.im_size, (-1, 1))
-    ji_und = camera.undistort_pixel(ji)
-    ji_ = camera.distort_pixel(ji_und)
+    ji_und = camera._undistort_pixel(ji)
+    ji_ = camera._distort_pixel(ji_und)
 
     assert ji_ == pytest.approx(ji, abs=1e-1)
 
@@ -586,7 +586,7 @@ def test_frame_undistort_pixel_alpha(
     ji = np.array(
         [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2], [0, 0]]
     ).T
-    undistort_ji = np.round(camera.undistort_pixel(ji), 3)
+    undistort_ji = np.round(camera._undistort_pixel(ji), 3)
 
     # test if points in undistort_ji are on (0), inside (+1), or outside (-1), ji
     inside = np.zeros(undistort_ji.shape[1])
@@ -611,11 +611,11 @@ def test_frame_undistort_pixel_alpha(
 def test_frame_undistort_pixel_no_ext_init(
     cam_type: CameraType, im_size: tuple, focal_len: float, sensor_size: tuple
 ):
-    """Test ``FrameCamera.undistort_pixel()`` without exterior initialisation."""
+    """Test ``FrameCamera._undistort_pixel()`` without exterior initialisation."""
     camera = create_camera(cam_type, im_size, focal_len, sensor_size=sensor_size)
 
     ji = (np.array([im_size]).T - 1) / 2
-    ji_ = camera.undistort_pixel(ji)
+    ji_ = camera._undistort_pixel(ji)
     assert ji_ == pytest.approx(ji, 1e-3)
 
 
@@ -885,6 +885,11 @@ def test_world_boundary_errors(camera: str, request: pytest.FixtureRequest):
         camera.world_boundary(z=np.ones((10, 10)), transform=None)
     assert "transform" in str(ex.value)
 
+    # z is 2D array with width and or height > 2**15 - 1
+    with pytest.raises(ValueError) as ex:
+        camera.world_boundary(z=np.ones((1, 2**15)), transform=rio.Affine.identity())
+    assert "'z'" in str(ex.value) and "width" in str(ex.value)
+
 
 @pytest.mark.parametrize('indexes, dtype', [(None, None), ([1, 2, 3], 'uint8'), (1, 'float32')])
 def test_read(
@@ -911,7 +916,7 @@ def test_read(
     'camera', ['pinhole_camera', 'brown_camera', 'opencv_camera', 'fisheye_camera']
 )
 def test_frame_undistort(camera: str, request: pytest.FixtureRequest):
-    """Test ``FrameCamera.undistort_im()`` by comparing source & distorted-undistorted images."""
+    """Test ``FrameCamera._undistort_im()`` by comparing source & distorted-undistorted images."""
     nodata = 0
     interp = Interp.cubic
     camera: FrameCamera = request.getfixturevalue(camera)
@@ -921,7 +926,7 @@ def test_frame_undistort(camera: str, request: pytest.FixtureRequest):
 
     # distort then undistort
     dist_array = utils.distort_image(camera, im_array, nodata=nodata, interp=interp)
-    undist_array = camera.undistort_im(dist_array, nodata=nodata, interp=interp)
+    undist_array = camera._undistort_im(dist_array, nodata=nodata, interp=interp)
 
     # test similarity of source and distorted-undistorted images
     dist_mask = dist_array != nodata
@@ -933,20 +938,25 @@ def test_frame_undistort(camera: str, request: pytest.FixtureRequest):
 
 
 def test_frame_undistort_errors(pinhole_camera: FrameCamera):
-    """Test ``FrameCamera.undistort_im()`` error conditions."""
+    """Test ``FrameCamera._undistort_im()`` error conditions."""
     # im_array not 3D
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.undistort_im(np.ones((10, 10)))
+        pinhole_camera._undistort_im(np.ones((10, 10)))
     assert 'im_array' in str(ex.value) and '3' in str(ex.value)
 
     # im_array with unsupported dtype
     with pytest.raises(ValueError) as ex:
-        pinhole_camera.undistort_im(np.ones((1, 10, 10), dtype='int32'))
+        pinhole_camera._undistort_im(np.ones((1, 10, 10), dtype='int32'))
     assert 'im_array' in str(ex.value) and 'data type' in str(ex.value)
 
     # im_array size does not match camera im_size
     with pytest.warns(OrthorityWarning, match='im_size'):
-        pinhole_camera.undistort_im(np.ones((1, 10, 10), dtype='uint8'))
+        pinhole_camera._undistort_im(np.ones((1, 10, 10), dtype='uint8'))
+
+    # im_array width and or height > 2**15 - 1
+    with pytest.raises(ValueError) as ex:
+        pinhole_camera._undistort_im(np.ones((1, 1, 2**15), dtype='uint8'))
+    assert "'im_array'" in str(ex.value) and "width" in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -983,7 +993,7 @@ def test_frame_read_undistort(
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
         dtype = dtype or im.dtypes[0]
         ref_array = im.read(indexes=indexes, out_dtype=dtype)
-    ref_array = brown_camera_und.undistort_im(ref_array, nodata=nodata, interp=interp)
+    ref_array = brown_camera_und._undistort_im(ref_array, nodata=nodata, interp=interp)
 
     # test dimensions and dtype
     assert test_array.ndim == 3
@@ -1069,14 +1079,14 @@ def test_frame_remap_mask_dilation(
 
     # reference remap with no mask dilation
     nodata = float('nan')
-    und_array = brown_camera_und.undistort_im(im_array, nodata=nodata)
+    und_array = brown_camera_und._undistort_im(im_array, nodata=nodata)
     ref_array, ref_mask = brown_camera_und.remap(
         und_array, x, y, z, nodata=nodata, interp=interp, kernel_size=(5, 5)
     )
 
     # test remap with mask dilation
     nodata = 0
-    und_array = brown_camera_und.undistort_im(im_array, nodata=nodata)
+    und_array = brown_camera_und._undistort_im(im_array, nodata=nodata)
     test_array, test_mask = brown_camera_und.remap(
         und_array, x, y, z, nodata=nodata, interp=interp, kernel_size=(5, 5)
     )
@@ -1131,7 +1141,7 @@ def test_frame_remap_distort(
     remap_array, remap_mask = camera.remap(im_array, x, y, z, nodata=nodata, interp=interp)
 
     # remap with distort=False camera
-    und_im_array = camera_und.undistort_im(im_array, nodata=nodata, interp=interp)
+    und_im_array = camera_und._undistort_im(im_array, nodata=nodata, interp=interp)
     und_remap_array, und_remap_mask = camera_und.remap(
         und_im_array, x, y, z, nodata=nodata, interp=interp
     )
@@ -1181,13 +1191,13 @@ def test_frame_remap_alpha(
     im_array = np.expand_dims(checkerboard(camera_a1.im_size[::-1]), axis=0).astype(dtype)
 
     # remap with alpha=1 camera
-    a1_im_array = camera_a1.undistort_im(im_array, nodata=nodata, interp=interp)
+    a1_im_array = camera_a1._undistort_im(im_array, nodata=nodata, interp=interp)
     a1_remap_array, a1_remap_mask = camera_a1.remap(
         a1_im_array, x, y, z, nodata=nodata, interp=interp
     )
 
     # remap with alpha=0 camera
-    a0_im_array = camera_a0.undistort_im(im_array, nodata=nodata, interp=interp)
+    a0_im_array = camera_a0._undistort_im(im_array, nodata=nodata, interp=interp)
     a0_remap_array, a0_remap_mask = camera_a0.remap(
         a0_im_array, x, y, z, nodata=nodata, interp=interp
     )
@@ -1259,6 +1269,11 @@ def test_remap_errors(rpc_camera: RpcCamera, xyz_grids: tuple[tuple, rio.Affine]
     with pytest.raises(ValueError) as ex:
         rpc_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x.astype('float32'), y, z[0])
     assert 'float64' in str(ex.value)
+
+    # im_array width and or height > 2**15 - 1
+    with pytest.raises(ValueError) as ex:
+        rpc_camera.remap(np.ones((1, 1, 2**15)), x, y, z)
+    assert "'im_array'" in str(ex.value) and "width" in str(ex.value)
 
 
 ##
