@@ -28,10 +28,3 @@ and help on an ``oty`` sub-command with:
     camera_config
     algorithm_config
 
-
-.. TODO: include a note about logging verbosity
-.. TODO:
- - link to background sections
- - notes on test data
- - vertical CRS and --crs with eg
-

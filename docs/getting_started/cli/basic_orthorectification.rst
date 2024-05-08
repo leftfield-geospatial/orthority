@@ -43,7 +43,7 @@ Frame camera models can be derived from image EXIF / XMP tags with |oty exif|_. 
 
     oty exif --dem odm/odm_dem/dsm.tif odm/images/*.tif
 
-The world / ortho CRS defaults to a UTM CRS whose zone covers the camera positions.  This can be overridden with :option:`--crs <oty-exif --crs>`:
+The world / ortho CRS defaults to a UTM CRS whose zone covers the camera positions.  This can be changed with :option:`--crs <oty-exif --crs>`:
 
 .. code-block:: bash
 
@@ -51,7 +51,7 @@ The world / ortho CRS defaults to a UTM CRS whose zone covers the camera positio
 
 .. note::
 
-    Inaccuracies in EXIF / XMP tag values result in distortion and positioning errors in the ortho images.  This is a general limitation of the approach.
+    EXIF / XMP tag values typically contain inaccuracies that can result in distortion and positioning errors in the ortho images.  This is a general limitation of this approach.
 
 ``oty odm``
 -----------
@@ -62,12 +62,12 @@ The world / ortho CRS defaults to a UTM CRS whose zone covers the camera positio
 
     oty odm --dataset-dir odm
 
-Without the :option:`--crs <oty-odm --crs>`: option, the world / ortho CRS is read from the OpenDroneMap DSM.  This is the recommended setting.
+Without the :option:`--crs <oty-odm --crs>` option, the world / ortho CRS is read from the OpenDroneMap DSM.  This is the recommended setting.
 
 ``oty rpc``
 ------------
 
-RPC camera model(s) can be derived from :doc:`image tags / sidecar files <../../file_formats/image_rpc>` or an :doc:`Orthority RPC parameter file <../../file_formats/oty_rpc>` with |oty rpc|_.  This example orthorectifies a satellite image with RPC tags using the NGI_ DEM of the same area.  Ortho images are placed in the current directory:
+RPC camera model(s) can be derived from :doc:`image tags / sidecar files <../../file_formats/image_rpc>` or an :doc:`Orthority RPC parameter file <../../file_formats/oty_rpc>` with |oty rpc|_.  This example orthorectifies a satellite image with RPC tags using the NGI DEM of the same area.  Ortho images are placed in the current directory:
 
 .. code-block:: bash
 
@@ -79,7 +79,7 @@ The same image can be orthorectified with the model defined by a RPC parameter f
 
     oty rpc --dem ngi/dem.tif --rpc-param rpc/rpc_param.yaml rpc/qb2_basic1b.tif
 
-The world / ortho CRS defaults to the WGS84 geographic 3D CRS.  This can be overridden with  :option:`--crs <oty-rpc --crs>`:
+The world / ortho CRS defaults to the WGS84 geographic 3D CRS.  This can be changed with  :option:`--crs <oty-rpc --crs>`:
 
 .. code-block:: bash
 

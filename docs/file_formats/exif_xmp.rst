@@ -1,7 +1,7 @@
 EXIF / XMP tags
 ===============
 
-:ref:`Frame camera parameters <background/camera_models:frame cameras>` can be read from image EXIF / XMP tags.  The tables below list required tag sets for interior and exterior parameters.  If more than one set is present, the first complete set is used.
+:ref:`Frame camera <background/camera_models:frame cameras>` interior and exterior parameters can be read from image EXIF / XMP tags.  The tables below list required tag sets.  If more than one set is present, the first complete set is used.
 
 Interior parameters
 -------------------
@@ -88,9 +88,7 @@ Camera orientation
 
 .. TODO: add an oty info subcommand and refer to it here
 
-.. TODO: add reference to contribution guidelines
-
 .. note::
 
-    Reading camera parameters from EXIF / XMP tags is currently experimental.  If you need support for tags not included above, please see the contribution guide.
+    Reading camera parameters from EXIF / XMP tags is currently experimental.  If you need support for tags not included above, please see the :doc:`contribution guide <../contributing>`.
 

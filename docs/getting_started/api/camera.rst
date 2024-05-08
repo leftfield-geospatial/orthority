@@ -28,8 +28,6 @@ World / ortho CRS
 
 :class:`~orthority.factory.FrameCameras` will read or choose a world / ortho CRS from these exterior parameter formats:
 
-.. TODO: decide on Orthority file format names and standardise throughout
-
 * :doc:`Orthority format <../../file_formats/oty_ext>`.
 * :doc:`OpenDroneMap / OpenSfM <../../file_formats/opensfm>` :file:`reconstruction.json` format.
 * :doc:`CSV format <../../file_formats/csv>` with ``x``, ``y`` & ``z`` fields and a :file:`.prj` sidecar file.
