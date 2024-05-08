@@ -27,7 +27,6 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
-from rasterio.enums import ColorInterp
 from rasterio.rpc import RPC
 from rasterio.transform import GCPTransformer, GroundControlPoint, RPCTransformer
 from rasterio.warp import transform as warp
@@ -301,7 +300,7 @@ class Camera(ABC):
         :param im_file:
             Image file to read from.
         :param indexes:
-            Band index(es) to read (1 based).  Defaults to all non-alpha bands if not supplied.
+            Band index(es) to read (1 based).  Defaults to all bands if not supplied.
         :param dtype:
             Data type of the returned array.  If set to None (the default), the ``im_file``
             dtype is used.
@@ -316,10 +315,6 @@ class Camera(ABC):
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
         with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
-            # default to non-alpha bands
-            indexes = indexes or tuple(
-                [bi + 1 for bi in range(im.count) if im.colorinterp[bi] != ColorInterp.alpha]
-            )
             dtype = dtype or im.dtypes[0]
             return im.read(indexes, out_dtype=dtype)
 

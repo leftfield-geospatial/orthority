@@ -764,7 +764,7 @@ def _test_world_boundary_zsurf(
     test_mask = np.zeros(ref_mask.shape, dtype='uint8')
     test_mask = cv2.fillPoly(test_mask, ji_, color=(255,)).view(bool)
 
-    # compare masks
+    # test test_mask contains and is similar to ref_mask
     assert test_mask[ref_mask].sum() / ref_mask.sum() > 0.95
     if not (np.all(test_mask) and np.all(ref_mask)):
         cc = np.corrcoef(test_mask.flatten(), ref_mask.flatten())
@@ -843,7 +843,7 @@ def test_rpc_world_boundary_zsurf(
     # (x, y, z) world coordinate grids
     (x, y, z), transform = xyz_grids
     z = z[0]  # sinusoid
-    z = z.mean() + (z - z.mean()) * 100  # TODO: put this in the grids and dems themselves?
+    z = z.mean() + (z - z.mean()) * 100  # increase the z "variance"
 
     _test_world_boundary_zsurf(camera, x, y, z, transform)
 
