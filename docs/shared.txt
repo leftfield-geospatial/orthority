@@ -16,3 +16,5 @@
 .. _NGI: https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery
 .. _Rasterio: https://rasterio.readthedocs.io
 .. _GDAL: https://gdal.org
+.. _pip: https://pip.pypa.io
+.. _conda: https://docs.conda.io/projects/miniconda

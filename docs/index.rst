@@ -1,9 +1,4 @@
-.. orthority documentation master file, created by
-   sphinx-quickstart on Mon Oct 16 13:53:06 2023.
-   You can adapt this file completely to your liking, but it should at least
-   contain the root `toctree` directive.
-
-orthority
+Orthority
 =========
 
 .. image:: readme_banner.webp
@@ -24,5 +19,6 @@ Documentation
    background/index
    file_formats/index
    getting_started/index
+   contributing
    cli/index
    api/index
