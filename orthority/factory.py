@@ -81,20 +81,18 @@ class FrameCameras(Cameras):
         Exterior parameter file or dictionary.  If a file, can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
     :param io_kwargs:
-        Optional dictionary of additional arguments for the
+        Optional dictionary of keyword arguments for the
         :class:`~orthority.param_io.FrameReader` sub-class corresponding to the exterior (and
         possibly interior) parameter file format. Should exclude ``ext_param`` or ``int_param``
         file names, which are passed internally.  If ``ext_param`` is a dictionary,
-        these arguments are not passed to :class:`~orthority.param_io.FrameReader`,
+        these arguments are not passed to the :class:`~orthority.param_io.FrameReader` sub-class,
         but :attr:`FrameCameras.crs` is set with the value of a 'crs' argument.
     :param cam_kwargs:
-        Optional dictionary of additional arguments for the
+        Optional dictionary of keyword arguments for the
         :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
         parameters which are passed internally.
     """
 
-    # TODO: add doc link to file and dictionary formats.
-    # TODO: revide the docs for io_kwargs and cam_kwargs according to RST docs, for all factories
     def __init__(
         self,
         int_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
@@ -123,16 +121,14 @@ class FrameCameras(Cameras):
             Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode ('rb'), or dataset readers.
         :param io_kwargs:
-            Optional dictionary of additional arguments for the
+            Optional dictionary of keyword arguments for the
             :class:`~orthority.param_io.ExifReader` class.  Should exclude ``files`` which is
             passed internally.
         :param cam_kwargs:
-            Optional dictionary of additional arguments for the
+            Optional dictionary of keyword arguments for the
             :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
             parameters which are passed internally.
         """
-        # TODO: read exif tags and create cameras as needed rather than upfront (would
-        #  complicate exporting which needs upfront params)?
         io_kwargs = io_kwargs or {}
         reader = param_io.ExifReader(files, **io_kwargs)
         int_param_dict = reader.read_int_param()
@@ -164,10 +160,11 @@ class FrameCameras(Cameras):
             if int_param_suffix in ['.yaml', '.yml']:
                 int_param_dict = param_io.read_oty_int_param(int_param)
             elif int_param_suffix == '.json':
-                # only read OSfM interior params here if the interior and exterior param files
-                # are not the same, otherwise they are read with exteriors below
+                # Only read OSfM interior params here if the interior and exterior param file
+                # objects are different, otherwise they are read with exteriors below. (Note that
+                # int_param != ext_param is True if OpenFile / file objects are different but point
+                # to the same file.)
                 if int_param != ext_param:
-                    # TODO: does != work for all file object types?
                     int_param_dict = param_io.read_osfm_int_param(int_param)
             else:
                 raise ParamError(
@@ -258,14 +255,10 @@ class RpcCameras(Cameras):
         can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a file object,
         opened in text mode ('rt').
     :param cam_kwargs:
-        Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
+        Optional dictionary of keyword arguments for the :class:`~orthority.camera.RpcCamera`
         class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
     """
 
-    # TODO: how to combine oty rpc file and image files as they might be on the CLI?
-    # TODO: factory class name consistency e.g. ExifFrameCameras->FrameCameras &
-    #  ImRpcCameras->RpcCameras or ExifFrameCameras->IntExtFrameCameras &
-    #  ImRpcCameras->OtyRpcCameras
     def __init__(
         self,
         rpc_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],

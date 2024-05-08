@@ -32,7 +32,6 @@ rpc_src_root = Path(
 
 rpc_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/rpc')
 # TODO: save images as COGs to optimise URL tests and doc egs
-# TODO: rename NGI images from 3324c -> 3324C, and modify param files accordingly
 
 
 def downsample_rgb(
@@ -155,9 +154,7 @@ def downsample_dem(
 
 
 def create_ngi_test_data():
-    # TODO: abbreviate and capitales source file names (+ in exterior param files)
-    # TODO: the NGI DEM crs (WGS84) is used as exterior param CRS.  should we not be using
-    #  Hartebeeshoek94 which as its own EPSG codes?
+    # TODO: abbreviate and capitalise source file names (+ in exterior param files)
     src_rgb_files = [
         '3324c_2015_1004_05_0182_RGBN_CMP.tif',
         '3324c_2015_1004_05_0184_RGBN_CMP.tif',

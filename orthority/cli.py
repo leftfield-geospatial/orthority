@@ -12,7 +12,6 @@
 #
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
-
 from __future__ import annotations
 
 import argparse
@@ -49,25 +48,9 @@ logger = logging.getLogger(__name__)
 #  and the utils.get_filename and utils.join_ofile work arounds.
 
 
-class PlainInfoFormatter(logging.Formatter):
-    """
-    Logging formatter to format INFO logs without the module name etc.
-
-    prefix.
-    """
-
-    def format(self, record: logging.LogRecord):
-        if record.levelno == logging.INFO:
-            self._style._fmt = '%(message)s'
-        else:
-            self._style._fmt = '%(levelname)s:%(name)s: %(message)s'
-        return super().format(record)
-
-
 class RstCommand(click.Command):
     """click.Command subclass for formatting help with RST markup."""
 
-    # TODO: can we lose this?
     def get_help(self, ctx: click.Context):
         """
         Strip some RST markup from the help text for CLI display.
@@ -118,8 +101,6 @@ class RstCommand(click.Command):
 
 def _configure_logging(verbosity: int):
     """Configure python logging level."""
-    # TODO: change logger.warning to warnings.warn where a client may want to respond to a warning.
-    # TODO: lose PlainInfoFormatter if not needed
 
     def showwarning(message, category, filename, lineno, file=None, line=None):
         """Redirect orthority warnings to the source module's logger, otherwise show warning as
@@ -161,7 +142,6 @@ def _read_crs(crs: str):
     crs_path = Path(crs)
     if crs_path.suffix.lower() in ['.tif', '.tiff']:
         # read CRS from geotiff path / URL
-        # TODO: currently this feature is undocumented
         with utils.suppress_no_georef(), utils.OpenRaster(crs, 'r') as im:
             crs = im.crs
     else:
@@ -307,7 +287,6 @@ def _ortho(
 
     Backend function for orthorectification sub-commands.
     """
-    # TODO: consider processing >1 file concurrently
     # TODO: investigate simplifying progress bars with rich
 
     if export_params:
@@ -737,8 +716,6 @@ def exif(
     Ortho images and parameter files are placed in the current working directory by
     default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
     """
-    # TODO: this command could be combined with oty frame i.e. --int-param and --ext-param are
-    #  optional, if not provided, it attempts to read models from images themselves.
     # create progress bar
     desc = 'Reading parameters'
     bar_format = _get_bar_format(units='files', desc_width=len(desc))
@@ -838,8 +815,6 @@ def odm(
         )
 
     # read CRS from DSM
-    # TODO: replicate the ODM CRS generation method in OsfmReader and read the CRS from there,
-    #  then the DSM can be opened once only in _ortho
     dem_ofile = utils.join_ofile(dataset_dir, 'odm_dem/dsm.tif', mode='rb')
     try:
         dem_ctx = utils.OpenRaster(dem_ofile, 'r')

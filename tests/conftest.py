@@ -290,8 +290,6 @@ def pinhole_camera(frame_args: dict) -> FrameCamera:
 @pytest.fixture(scope='session')
 def pinhole_camera_und(frame_args: dict) -> FrameCamera:
     """Example ``PinholeCamera`` object with near-nadir orientation and ``distort=False``."""
-    # TODO: use parameterised fixtures for these and similar?
-    #  https://docs.pytest.org/en/latest/example/parametrize.html#indirect-parametrization
     return PinholeCamera(**frame_args, distort=False)
 
 

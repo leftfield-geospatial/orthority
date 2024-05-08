@@ -35,7 +35,6 @@ jobs:
     - name: Install dependencies
       # Note that conda-forge OpenCV 4.9 package has *GL dependencies that are not satisfied by
       # GitHub's Ubuntu image, so 'opencv-python-headless' is installed with pip below.
-      # TODO: change this if a headless conda-forge version becomes available
       run: |
         conda info
         conda install -c conda-forge rasterio click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov

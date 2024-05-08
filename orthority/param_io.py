@@ -13,13 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 
-"""
-Parameter file IO and conversions.
-
-Files are read and converted into standard format dictionaries that can be used to create camera
-objects with :func:`~orthority.camera.create_camera` or the various
-:class:`~orthority.camera.Camera` subclasses.
-"""
+"""Parameter file IO and conversions."""
 from __future__ import annotations
 
 import csv
@@ -56,10 +50,6 @@ from orthority.exif import Exif
 
 logger = logging.getLogger(__name__)
 
-# TODO: add a note about file paths, urls, OpenFile & file objects being options for specifying
-#  files
-# TODO: specify the dict formats with examples (maybe in its own doc)?
-# TODO: could dataclasses be a better way of defining the int / ext parameter dicts?
 # TODO: define custom file types for e.g. str | Path | OpenFile | IO[str] once sphinx bug with
 #  linking to external type defs in __init__ type hints is fixed
 
@@ -155,7 +145,7 @@ def _create_exif_cam_id(exif: Exif) -> str:
 def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
     """Read interior parameters from an Exif object."""
     # TODO: might there be cases where XMP tags CalibratedFocalLength, CalibratedOpticalCenter* are
-    #  present but not DewarpData, and better than equiv EXIF tags?
+    #  present but not DewarpData, and are better than equiv EXIF tags?
     if exif.dewarp:
         if len(exif.dewarp) != 9 or not any(exif.dewarp) or not exif.tag_im_size:
             logger.debug(f"Cannot interpret dewarp data for '{exif.filename}'.")
@@ -875,7 +865,6 @@ class CsvReader(FrameReader):
 
     def _get_crs(self) -> CRS:
         """Read / auto-determine and validate a CRS when no user CRS was supplied."""
-        # TODO: should .prj crs be read as lla_crs for lla positions?
         crs = None
         filename = utils.get_filename(self._file)
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
@@ -1124,7 +1113,8 @@ class ExifReader(FrameReader):
 
     def _find_utm_crs(self) -> CRS:
         """Return a UTM CRS that covers the mean of the camera positions."""
-        # TODO: use weighted sum as in OpenSfM: https://github.com/mapillary/OpenSfM/blob/c6b5acef9376a75b87414d900c258ef876a6413a/opensfm/dataset.py#L985
+        # TODO: use weighted sum as in OpenSfM, then use ExifReader.crs in oty odm, see :
+        #  https://github.com/mapillary/OpenSfM/blob/c6b5acef9376a75b87414d900c258ef876a6413a/opensfm/dataset.py#L985
         llas = []
         for e in self._exif_dict.values():
             if not e.lla:
