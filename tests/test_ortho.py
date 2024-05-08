@@ -448,6 +448,13 @@ def test_reproject_dem_vert_crs_scale(
     assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array) / 3.28084, abs=1e-3)
 
 
+def test_reproject_resolution_error(rgb_pinhole_utm34n_ortho: Ortho):
+    """Test DEM reprojection raises an error when the resolution exceeds the ortho bounds."""
+    with pytest.raises(ValueError) as ex:
+        _, _ = rgb_pinhole_utm34n_ortho._reproject_dem(Interp.cubic, (1000, 1000))
+    assert 'resolution' in str(ex.value)
+
+
 def test_mask_dem(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
     """Test the similarity of the masked DEM (ortho boundary) and ortho valid data mask (without
     cropping).
@@ -488,7 +495,7 @@ def test_mask_dem(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
     # test dem mask contains, and is similar to the ortho mask
     assert dem_transform_mask == dem_transform
     assert dem_mask.shape == ortho_mask.shape
-    assert dem_mask[ortho_mask].sum() / dem_mask.sum() > 0.9  # TODO: / ortho_mask.sum()?
+    assert dem_mask[ortho_mask].sum() / ortho_mask.sum() > 0.95
     cc = np.corrcoef(dem_mask.flatten(), ortho_mask.flatten())
     assert cc[0, 1] > 0.9
 
@@ -1199,7 +1206,3 @@ def test_process_odm(
         ortho_files.append(ortho_file)
 
     _validate_ortho_files(tuple(ortho_files), num_ovl_thresh=5)
-
-
-# TODO: add test with dem that includes occlusion
-##

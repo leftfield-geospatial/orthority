@@ -31,6 +31,7 @@ import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
+from rasterio.transform import array_bounds
 from rasterio.warp import reproject, Resampling, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
@@ -58,7 +59,7 @@ class Ortho:
         DEM image covering the source image.  Can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
     :param camera:
-        Source image camera model (can be created with :meth:`~orthority.camera.create_camera`).
+        Source image camera model.
     :param crs:
         CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string,
         or :class:`~rasterio.crs.CRS` object.  If set to None (the default), the CRS will be read
@@ -179,7 +180,6 @@ class Ortho:
             crs_equal = self._crs == dem_im.crs
 
             # find the scale from meters to ortho crs z units
-            # TODO: add test where ortho crs z units are not meters
             zs = []
             ref_crs = rio.CRS.from_epsg(4979)
             for z in [0, 1]:
@@ -284,7 +284,12 @@ class Ortho:
         if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
             return self._dem_array.copy(), self._dem_transform
 
-        # TODO: error check resolution e.g. if bigger than ortho bounds
+        # error check resolution
+        init_bounds = array_bounds(*self._dem_array.shape, self._dem_transform)
+        ortho_bounds = np.array(transform_bounds(self._dem_crs, self._crs, *init_bounds))
+        ortho_size = ortho_bounds[2:] - ortho_bounds[:2]
+        if np.any(resolution > ortho_size):
+            raise ValueError(f"'resolution' is larger than the ortho size.")
 
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
@@ -296,9 +301,10 @@ class Ortho:
             world_zs.append(world_xyz[2][0])
         z_scale = world_zs[1] - world_zs[0]
 
-        # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie inside the
-        #  source dem bounds.  This seems suspect, but is unlikely to affect ortho bounds (source
-        #  dem will typically contain the ortho with room to spare), so am leaving as is for now.
+        # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie just inside
+        #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
+        #  bounds so am leaving as is for now.
+
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
             self._dem_array,
@@ -656,7 +662,6 @@ class Ortho:
                 logger.debug('Using auto resolution: ' + res_str)
 
             # open source image
-            # TODO: would GTIFF_REPORT_COMPD_CS=True help avoid PAM files with ellipsoidal height
             env = rio.Env(
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
@@ -674,10 +679,10 @@ class Ortho:
             # get dem array covering ortho extents in world / ortho crs and ortho resolution
             dem_interp = Interp(dem_interp)
             dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
-            # TODO: don't mask dem if pinhole camera or frame camera with distort=False. Or make
-            #  dem masking an option which defaults to not masking with pinhole camera /
-            #  distort=False camera. note though that dem masking is like occlusion masking for
-            #  image edges, which still applies to pinhole camera.
+            # TODO: Don't mask dem if camera is pinhole or frame with distort=False. Or make dem
+            #  masking an option which defaults to not masking with pinhole / frame camera w
+            #  distort=False. Note though that dem masking is like occlusion masking for
+            #  image edges, which applies to any camera.
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & set write_mask
@@ -689,8 +694,6 @@ class Ortho:
                 compress=compress,
                 write_mask=write_mask,
             )
-            # TODO: any existing PAM or other sidecar file will not be removed / overwritten
-            #  as utils.OpenRaster works currently
             ortho_im = exit_stack.enter_context(
                 utils.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
             )
