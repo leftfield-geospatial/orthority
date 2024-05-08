@@ -65,7 +65,7 @@ class CameraType(str, Enum):
         cam_type = cam_type.lower().strip()
         if cam_type in ['perspective', 'simple_radial', 'radial']:
             cam_type = 'brown'
-        if cam_type not in cls.__members__:
+        if cam_type not in cls.__members__ or cam_type == 'rpc':
             raise ValueError(f"Unsupported OpenDroneMap / OpenSfM camera type: '{cam_type}'")
         return cls(cam_type)
 

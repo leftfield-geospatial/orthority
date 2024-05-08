@@ -228,10 +228,9 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
 
         # convert type -> cam_type
         cam_type = yaml_param.pop('type').lower()
-        try:
-            int_param = dict(cam_type=CameraType(cam_type))
-        except ValueError:
-            raise ParamError(f"Unsupported camera type '{cam_type}'.")
+        if cam_type not in CameraType.__members__ or cam_type == 'rpc':
+            raise ParamError(f"Unsupported frame camera type '{cam_type}'.")
+        int_param = dict(cam_type=CameraType(cam_type))
 
         int_param['im_size'] = tuple(yaml_param.pop('im_size'))
 
