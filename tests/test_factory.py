@@ -33,6 +33,7 @@ from orthority.factory import FrameCameras, RpcCameras
         ('ngi_oty_int_param_file', 'ngi_oty_ext_param_file'),
         ('ngi_legacy_config_file', 'ngi_xyz_opk_csv_file'),
         ('odm_reconstruction_file', 'odm_reconstruction_file'),
+        ('odm_reconstruction_file', 'odm_lla_rpy_csv_file'),  # test osfm interior / exterior logic
     ],
 )
 def test_frame_cameras_init(
