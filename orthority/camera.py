@@ -27,6 +27,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.crs import CRS
+from rasterio.enums import ColorInterp
 from rasterio.rpc import RPC
 from rasterio.transform import GCPTransformer, GroundControlPoint, RPCTransformer
 from rasterio.warp import transform as warp
@@ -157,11 +158,6 @@ class Camera(ABC):
             # nan outside its bounds and for already masked / nan pixels)
             zsurf_ji = np.array(inv_transform * ray_xyz[:2]).astype('float32', copy=False)
             zsurf_z = np.full((zsurf_ji.shape[1],), dtype=z.dtype, fill_value=float('nan'))
-            # TODO: z.shape must be less than SHRT_MAX=2**15.  This implies that both source and
-            #  ortho image dims should be less than SHRT_MAX.  source is remapped in camera,
-            #  and dem == ortho dims is remapped here.  error checking should be done here,
-            #  Camera.remap & FrameCamera.read.  Perhaps also in Ortho.__init__ (source) and
-            #  Ortho.process (ortho).
             cv2.remap(z, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
 
             # store the first ray-z intersection point if it exists, otherwise the z_min point
@@ -305,7 +301,7 @@ class Camera(ABC):
         :param im_file:
             Image file to read from.
         :param indexes:
-            Band index(es) to read (1 based).
+            Band index(es) to read (1 based).  Defaults to all non-alpha bands if not supplied.
         :param dtype:
             Data type of the returned array.  If set to None (the default), the ``im_file``
             dtype is used.
@@ -315,12 +311,15 @@ class Camera(ABC):
         :return:
             Image as 3D array with band(s) along the first dimension (Rasterio ordering).
         """
-        # TODO: don't read alpha channel by default (?)
         # add an empty dimension to indexes if it is scalar so that image is read as 3D
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
         with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
+            # default to non-alpha bands
+            indexes = indexes or tuple(
+                [bi + 1 for bi in range(im.count) if im.colorinterp[bi] != ColorInterp.alpha]
+            )
             dtype = dtype or im.dtypes[0]
             return im.read(indexes, out_dtype=dtype)
 
@@ -361,7 +360,6 @@ class Camera(ABC):
         :return:
             - Remapped image, as a L-by-M-by-N 3D array with the same data type as ``im_array``.
             - Nodata mask of the remapped image, as a M-by-N 2D boolean array."""
-        # TODO: is there a neater or more efficient way to package x, y & z?
         self._validate_image(im_array)
         if not (x.shape == y.shape == z.shape) or (x.ndim != 2):
             raise ValueError("'x', 'y' and 'z' should have 2 dimensions, and the same shape.")
@@ -435,9 +433,6 @@ class RpcCamera(Camera):
         self._rpc = rpc if isinstance(rpc, RPC) else RPC(**rpc)
         self._rpc_options = rpc_options or {}
         self._crs = self._validate_crs(crs) if crs else None
-        # TODO: can we find camera position from RPCs (e.g. as intersection of vectors in
-        #  projected world space - see e.g.
-        #  https://github.com/centreborelli/rpcm/blob/master/rpcm/rpc_model.py)
 
     @property
     def crs(self) -> CRS | None:
@@ -456,7 +451,7 @@ class RpcCamera(Camera):
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
-        # TODO: make rasterio feature / pull request(s) to release gil on crs & rpc transform,
+        # TODO: make rasterio feature / pull request to release gil on crs & rpc transform,
         #  and to not copy coordinates back and forth between python/c formats in for loops (see
         #  e.g. pyproj for a way of doing this efficiently).
         if self._crs:
@@ -974,8 +969,6 @@ class FrameCamera(Camera):
             array, are given at the minimum of ``z``.
         """
         self._test_init()
-        # TODO: is this check too restrictive?  this would prevent horizontal views e.g. inside
-        #  rugged terrain being orthorectified
         if self._horizon_fov():
             raise ValueError("Camera has a field of view that includes, or is above, the horizon.")
 
@@ -1080,7 +1073,6 @@ class FrameCamera(Camera):
             - Remapped image, as a L-by-M-by-N 3D array with the same data type as ``im_array``.
             - Nodata mask of the remapped image, as a M-by-N 2D boolean array.
         """
-        # TODO: standardise masks as either valid or invalid pixels (e.g. Ortho._mask_dem)
         remap, mask = super().remap(image, x, y, z, nodata=nodata, interp=interp)
 
         # remove blurring with nodata pixels when necessary
@@ -1222,7 +1214,6 @@ class OpenCVCamera(FrameCamera):
             self._K, self._dist_param, np.eye(3), self._K_undistort, im_size, cv2.CV_32FC1
         )
         # equivalent to the above, but using Camera methods (works out slower):
-        # TODO: could this be speeded up by optimising _camera_to_pixel and pixel_to_camera?
         # j = np.arange(0, self.im_size[0], dtype='int32')
         # i = np.zeros(self.im_size[0], dtype='int32')
         # ji = np.row_stack((j, i))
@@ -1244,7 +1235,6 @@ class OpenCVCamera(FrameCamera):
         return ji[:, 0, :].T
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
-        # TODO: avoid cast to float64 if float32?
         ji_cv = ji.T.astype('float64', copy=False)
         xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_param)
         xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
