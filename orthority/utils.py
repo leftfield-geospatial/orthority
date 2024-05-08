@@ -34,7 +34,12 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
-from fsspec.implementations.http import HTTPFileSystem
+
+try:
+    from fsspec.implementations.http import HTTPFileSystem
+except ImportError:
+    HTTPFileSystem = type('unknown', (), {})
+
 from fsspec.implementations.local import LocalFileSystem
 from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
@@ -44,11 +49,6 @@ from rasterio.windows import Window
 from orthority.enums import Interp
 
 logger = logging.getLogger(__name__)
-
-
-# TODO: rename this module _utils, & version -> _version
-# TODO: use the more general os.PathLike instead of pathlib.Path for all path type specifiers,
-#  then use os.fspath to convert paths to str (everywhere).
 
 
 @contextmanager
@@ -220,13 +220,6 @@ class OpenRaster:
         Keyword arguments to pass to :func:`rasterio.open`.
     """
 
-    # TODO: using rio.open() with file objects or fsspec OpenFile objects means that sidecar
-    #  files are not written or read. We know this is an issue for writing PAM files of projected
-    #  CRSs with ellipsoidal height. It is also an issue for reading RPC coefficients from .RPB
-    #  or .XML sidecar files.  This should be confirmed and tested with an updated rasterio.  If
-    #  necessary, local files should be opened with the native GDAL opener, at least this way,
-    #  the sidecar files can be RW locally. This may need a re-work of the CLI's current use of
-    #  OpenFile.
     def __init__(
         self,
         file: str | PathLike | DatasetReaderBase | OpenFile,
@@ -249,10 +242,11 @@ class OpenRaster:
             self._dataset = file
 
         elif isinstance(file, (str, PathLike, OpenFile)):
-            # TODO: use the opener arg to rio.open() when that rasterio version is released,
-            #  rather than passing an open file object.  test that files are not buffered in
-            #  memory with this option, and currently problematic fsspec protocols (e.g. github)
-            #  no longer cause a seg fault.
+            # TODO: use the opener arg to rio.open() and pin the rasterio dependency version when
+            #  rasterio 1.4 is released, rather than passing an open file object.  this should
+            #  allow sidecar files to read / written (test that it does).  also test that files
+            #  are not buffered in memory with this option, and currently problematic fsspec
+            #  protocols (e.g. github) no longer cause a seg fault.
             if isinstance(file, OpenFile):
                 if mode + 'b' != file.mode:
                     raise IOError(
@@ -322,10 +316,7 @@ class Open:
         overwrite: bool = False,
         **kwargs,
     ):
-        # TODO: can text encoding be automatically determined?  previously this worked
-        #  with urllib:
-        #   req = urllib.urlopen(str(file))
-        #   encoding = req.headers.get_content_charset(failobj='utf-8')
+        # TODO: text encoding defaults to utf-8, which can't be changed from the CLI
         self._exit_stack = ExitStack()
         if isinstance(file, IOBase):
             if file.closed:
