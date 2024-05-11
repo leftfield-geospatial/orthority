@@ -25,7 +25,6 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.warp import transform
-from tqdm.std import tqdm
 
 from orthority import param_io
 from orthority.camera import FrameCamera
@@ -756,7 +755,7 @@ def test_exif_reader_progress(odm_image_files: tuple[Path, ...], capsys: pytest.
 
     # custom bar
     desc = 'custom'
-    param_io.ExifReader(odm_image_files, progress=tqdm(desc=desc))
+    param_io.ExifReader(odm_image_files, progress=dict(desc=desc))
     cap = capsys.readouterr()
     assert desc in cap.err
 
@@ -859,6 +858,6 @@ def test_read_im_rpc_param_progress(rpc_image_file: Path, capsys: pytest.Capture
 
     # custom bar
     desc = 'custom'
-    param_io.read_im_rpc_param(files, progress=tqdm(desc=desc))
+    param_io.read_im_rpc_param(files, progress=dict(desc=desc))
     cap = capsys.readouterr()
     assert desc in cap.err

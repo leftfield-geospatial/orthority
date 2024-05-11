@@ -20,7 +20,6 @@ import logging
 import re
 import shutil
 import warnings
-from contextlib import ExitStack
 from pathlib import Path
 from typing import Sequence
 from urllib.parse import urlparse
@@ -324,26 +323,25 @@ def _ortho(
                 f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
             )
+
         for src_file in tqdm(src_files, desc='Total', bar_format=outer_bar_format):
-            # create progress bar for the current src_file
+            # set up progress bar args for the current src_file
             src_file_path = Path(src_file.path)
-            with ExitStack() as inner_stack:
-                src_file_bar = inner_stack.enter_context(
-                    tqdm(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
-                )
+            tqdm_kwargs = dict(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
 
-                # create camera for src_file
-                try:
-                    camera = cameras.get(src_file)
-                except ParamError as ex:
-                    raise click.UsageError(str(ex))
+            # create camera for src_file
+            try:
+                camera = cameras.get(src_file)
+            except ParamError as ex:
+                raise click.UsageError(str(ex))
 
-                # open & validate src_file (open it once here so it is not opened repeatedly)
-                try:
-                    src_im = inner_stack.enter_context(utils.OpenRaster(src_file, 'r'))
-                except FileNotFoundError as ex:
-                    raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+            # open & validate src_file (open it once here so it is not opened repeatedly)
+            try:
+                src_ctx = utils.OpenRaster(src_file, 'r')
+            except FileNotFoundError as ex:
+                raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
+            with src_ctx as src_im:
                 # finalise and validate world / ortho crs
                 crs = crs or src_im.crs
                 if not crs:
@@ -355,7 +353,7 @@ def _ortho(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
                 try:
-                    ortho.process(ortho_ofile, overwrite=overwrite, progress=src_file_bar, **kwargs)
+                    ortho.process(ortho_ofile, overwrite=overwrite, progress=tqdm_kwargs, **kwargs)
                 except FileExistsError as ex:
                     raise click.UsageError(str(ex))
 
@@ -375,7 +373,7 @@ dem_file_option = click.option(
     type=click.Path(dir_okay=False),
     default=None,
     callback=_raster_file_cb,
-    help='Path / URI of a DEM image covering the source image(s).',
+    help='Path / URI of a DEM file covering the source image(s).',
 )
 int_param_file_option = click.option(
     '-ip',
@@ -434,8 +432,8 @@ resolution_option = click.option(
     show_default='ground sampling distance',
     multiple=True,
     callback=_resolution_cb,
-    help='Ortho image resolution in units of the ``--crs`` (usually meters).  Can be used '
-    'twice for non-square pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
+    help='Ortho image resolution in units of the ``--crs``.  Can be used twice for non-square '
+    'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
 )
 dem_band_option = click.option(
     '-db',
@@ -617,10 +615,10 @@ def frame(
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
-    Interior parameters are supported in orthority (.yaml), OpenDroneMap :file:`cameras.json`,
+    Interior parameters are supported in Orthority (.yaml), OpenDroneMap :file:`cameras.json`,
     and OpenSfM :file:`reconstruction.json` formats.  Exterior parameters are supported in
-    Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Note that
-    parameter file extensions are used to distinguish their format.
+    Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Parameter file
+    extensions are used to distinguish their format.
 
     The :option:`--int-param <oty-frame --int-param>` and :option:`--ext-param <oty-frame
     --ext-param>` options are required.  The :option:`--dem <oty-frame --dem>` option is
@@ -635,8 +633,8 @@ def frame(
 
         oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
-    Ortho images and parameter files are placed in the current working directory by default.
-    This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    Ortho images and parameter files are placed in the current working directory by default. This
+    can be changed with :option:`--out-dir <oty-frame --out-dir>`.
     """
     # create camera factory
     try:
@@ -711,24 +709,23 @@ def exif(
     Camera parameters can be converted into Orthority format files with :option:`--export-params
     <oty-exif --export-params>`::
 
-        oty exif ---export-params
+        oty exif ---export-params source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by
-    default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    Ortho images and parameter files are placed in the current working directory by default.
+    This can be changed with :option:`--out-dir <oty-exif --out-dir>`.
     """
-    # create progress bar
+    # set up progress bar args
     desc = 'Reading parameters'
     bar_format = _get_bar_format(units='files', desc_width=len(desc))
-    reader_bar = tqdm(desc=desc, bar_format=bar_format, leave=False)
+    tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
 
     # create camera factory
     try:
-        with reader_bar:
-            cameras = FrameCameras.from_images(
-                src_files,
-                io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=reader_bar),
-                cam_kwargs=dict(distort=full_remap, alpha=alpha),
-            )
+        cameras = FrameCameras.from_images(
+            src_files,
+            io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=tqdm_kwargs),
+            cam_kwargs=dict(distort=full_remap, alpha=alpha),
+        )
     except (FileNotFoundError, ParamError) as ex:
         raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
     except CrsError as ex:
@@ -790,7 +787,7 @@ def odm(
     Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 
     The images, DSM and camera models are read from the dataset. If :option:`--crs <oty-odm
-    --crs>` is not supplied, the world / ortho CRS is also read from the dataset.
+    --crs>` is not supplied (recommended), the world / ortho CRS is also read from the dataset.
     :option:`--dataset-dir <oty-odm --dataset-dir>` is the only required option::
 
         oty odm --dataset-dir dataset
@@ -801,7 +798,7 @@ def odm(
         oty odm --dataset-dir dataset --export-params
 
     Ortho images and parameter files are placed in the :file:`{dataset}/orthority` subdirectory
-    by default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    by default.  This can be changed with :option:`--out-dir <oty-odm --out-dir>`.
     """
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
@@ -900,19 +897,19 @@ def rpc(
     Camera parameters are read from SOURCE image tags / sidecar files, or from
     :option:`--rpc-param <oty-rpc --rpc-param>` if provided.
 
-    The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
-    parameters with :option:`--export-params <oty-exif --export-params>`.  If :option:`--crs
-    <oty-exif --crs>` is not supplied, a WGS84 geographic world / ortho CRS is used::
+    The :option:`--dem <oty-rpc --dem>` option is required, except when exporting camera
+    parameters with :option:`--export-params <oty-rpc --export-params>`.  If :option:`--crs
+    <oty-rpc --crs>` is not supplied, a WGS84 geographic world / ortho CRS is used::
 
         oty rpc --dem dem.tif source*.tif
 
     Camera parameters can be converted to an Orthority format file with :option:`--export-params
-    <oty-exif --export-params>`::
+    <oty-rpc --export-params>`::
 
         oty rpc ---export-params source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by
-    default.  This can be overridden with :option:`--out-dir <oty-odm --out-dir>`.
+    Ortho images and parameter files are placed in the current working directory by default.
+    This can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
     """
     # set CRS to the RPC camera default (WGS84) if no CRS supplied, otherwise pass user CRS in
     # cam_kwargs
@@ -929,19 +926,16 @@ def rpc(
         except (FileNotFoundError, ParamError) as ex:
             raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
     else:
-        # create progress bar
+        # set up progress bar args
         desc = 'Reading parameters'
         bar_format = _get_bar_format(units='files', desc_width=len(desc))
-        reader_bar = tqdm(desc=desc, bar_format=bar_format, leave=False)
+        tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
 
         # create camera factory from image tags / sidecar file(s)
         try:
-            with reader_bar:
-                cameras = RpcCameras.from_images(
-                    src_files,
-                    io_kwargs=dict(progress=reader_bar),
-                    cam_kwargs=cam_kwargs,
-                )
+            cameras = RpcCameras.from_images(
+                src_files, io_kwargs=dict(progress=tqdm_kwargs), cam_kwargs=cam_kwargs
+            )
         except (FileNotFoundError, ParamError) as ex:
             raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 

@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pytest
 import rasterio as rio
-from tqdm.std import tqdm
 
 from orthority.camera import BrownCamera, FrameCamera, RpcCamera
 from orthority.enums import CameraType
@@ -270,7 +269,7 @@ def test_rpc_cameras_from_images_kwargs(
     through.
     """
     desc = 'custom'
-    io_kwargs = dict(progress=tqdm(desc=desc))
+    io_kwargs = dict(progress=dict(desc=desc))
     cam_kwargs = dict(crs=rio.CRS.from_string(ngi_crs))
     cameras = RpcCameras.from_images((rpc_image_file,), io_kwargs=io_kwargs, cam_kwargs=cam_kwargs)
 

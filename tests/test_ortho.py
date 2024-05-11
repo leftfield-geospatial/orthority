@@ -28,7 +28,6 @@ from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
-from tqdm.std import tqdm
 
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
@@ -1148,7 +1147,7 @@ def test_process_progress(
     # custom bar
     desc = 'custom'
     rgb_pinhole_utm34n_ortho.process(
-        ortho_file, _dem_resolution, overwrite=True, progress=tqdm(desc=desc)
+        ortho_file, _dem_resolution, overwrite=True, progress=dict(desc=desc)
     )
     cap = capsys.readouterr()
     assert desc in cap.err

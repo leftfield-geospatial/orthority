@@ -592,7 +592,7 @@ class Ortho:
         compress: str | Compress | None = _default_config['compress'],
         build_ovw: bool = _default_config['build_ovw'],
         overwrite: bool = _default_config['overwrite'],
-        progress: bool | std_tqdm = False,
+        progress: bool | dict = False,
     ) -> None:
         """
         Orthorectify the source image.
@@ -641,18 +641,19 @@ class Ortho:
             Whether to overwrite the ortho image if it exists.
         :param progress:
             Whether to display a progress bar monitoring the portion of ortho tiles written.  Can
-            be set to a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this
-            case, the bar's ``total`` attribute is set internally, and the ``iterable`` attribute
-            is not used.
+            be set to a dictionary of arguments for a custom `tqdm
+            <https://tqdm.github.io/docs/tqdm/>`_ bar.
         """
         exit_stack = ExitStack()
         with exit_stack:
-            # create / set up progress bar
+            # create the progress bar
             if progress is True:
-                progress = exit_stack.enter_context(tqdm(**Ortho._default_tqdm_kwargs))
+                progress = tqdm(**Ortho._default_tqdm_kwargs)
             elif progress is False:
-                progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
-
+                progress = tqdm(disable=True, leave=False)
+            else:
+                progress = tqdm(**progress)
+            progress = exit_stack.enter_context(progress)
             # exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
 
             # use the GSD for auto resolution if resolution not provided

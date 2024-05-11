@@ -24,7 +24,6 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
 from csv import Dialect, DictReader, Sniffer
 from io import StringIO
 from os import PathLike
@@ -41,7 +40,7 @@ from rasterio.crs import CRS
 from rasterio.errors import CRSError as RioCrsError
 from rasterio.transform import RPC
 from rasterio.warp import transform
-from tqdm.std import tqdm, tqdm as std_tqdm
+from tqdm.std import tqdm
 
 from orthority import utils
 from orthority.enums import CameraType, CsvFormat
@@ -306,7 +305,7 @@ def read_exif_int_param(
 
 def read_im_rpc_param(
     files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
-    progress: bool | std_tqdm = False,
+    progress: bool | dict = False,
 ) -> dict[str, dict[str, Any]]:
     """
     Read RPC camera parameters from :doc:`image file(s) with RPC tags / sidecar file(s)
@@ -317,8 +316,7 @@ def read_im_rpc_param(
         objects in binary mode ('rb'), or dataset readers.
     :param progress:
         Whether to display a progress bar monitoring the portion of files read.  Can be set to a
-        custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this case, the bar's
-        ``total`` attribute is set internally, and the ``iterable`` attribute is not used.
+        dictionary of arguments for a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar.
     """
 
     def _read_im_rpc_param(
@@ -329,6 +327,8 @@ def read_im_rpc_param(
         with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
             file, 'r'
         ) as im:
+            # TODO: what is the speed of this for a large remote image?  does it just read the
+            #  metadata, or the whole image?
             im_size = (im.width, im.height)
             rpc: RPC = im.rpcs
 
@@ -337,23 +337,21 @@ def read_im_rpc_param(
         rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
         return {filename: rpc_param}
 
-    # read RPC params in a thread pool
+    # read RPC params in a thread pool, populating rpc_param_dict in same order as files
     rpc_param_dict = {}
-    with ExitStack() as exit_stack:
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(_read_im_rpc_param, file) for file in files]
+
         # create / set up progress bar
         if progress is True:
-            progress = exit_stack.enter_context(tqdm(**_default_tqdm_kwargs))
+            progress = tqdm(futures, **_default_tqdm_kwargs)
         elif progress is False:
-            progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
-        progress.total = len(files)
+            progress = tqdm(futures, disable=True, leave=False)
+        else:
+            progress = tqdm(futures, **progress)
 
-        # create thread pool and populate rpc_param_dict in same order as files
-        executor = exit_stack.enter_context(ThreadPoolExecutor())
-        futures = [executor.submit(_read_im_rpc_param, file) for file in files]
-        for future in futures:
+        for future in progress:
             rpc_param_dict.update(**future.result())
-            progress.update()
-        progress.refresh()
 
     return rpc_param_dict
 
@@ -1064,8 +1062,7 @@ class ExifReader(FrameReader):
         or :class:`~rasterio.crs.CRS` object.
     :param progress:
         Whether to display a progress bar monitoring the portion of files read.  Can be set to a
-        custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar to use.  In this case, the bar's
-        ``total`` attribute is set internally, and the ``iterable`` attribute is not used.
+        dictionary of arguments for a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar.
     """
 
     def __init__(
@@ -1073,7 +1070,7 @@ class ExifReader(FrameReader):
         files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
-        progress: bool | std_tqdm = False,
+        progress: bool | dict = False,
         **kwargs,
     ) -> None:
         FrameReader.__init__(self, crs, lla_crs)
@@ -1086,27 +1083,25 @@ class ExifReader(FrameReader):
 
     @staticmethod
     def _read_exif(
-        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader], progress: bool | std_tqdm
+        files: Sequence[str | PathLike | OpenFile | rio.DatasetReader], progress: bool | dict
     ) -> dict[str, Exif]:
         """Return a dictionary of Exif objects for the given images."""
-        # read exif tags in thread pool
+        # read exif tags in thread pool, populating exif_dict in same order as files
         exif_dict = {}
-        with ExitStack() as exit_stack:
+        with ThreadPoolExecutor() as executor:
+            futures = [executor.submit(Exif, file) for file in files]
+
             # create / set up progress bar
             if progress is True:
-                progress = exit_stack.enter_context(tqdm(**_default_tqdm_kwargs))
+                progress = tqdm(futures, **_default_tqdm_kwargs)
             elif progress is False:
-                progress = exit_stack.enter_context(tqdm(disable=True, leave=False))
-            progress.total = len(files)
+                progress = tqdm(futures, disable=True, leave=False)
+            else:
+                progress = tqdm(futures, **progress)
 
-            # create thread pool and populate exif_dict in same order as files
-            executor = exit_stack.enter_context(ThreadPoolExecutor())
-            futures = [executor.submit(Exif, file) for file in files]
-            for future in futures:
+            for future in progress:
                 exif_obj = future.result()
                 exif_dict[exif_obj.filename] = exif_obj
-                progress.update()
-            progress.refresh()
 
         return exif_dict
 
