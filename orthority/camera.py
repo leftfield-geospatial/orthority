@@ -45,7 +45,7 @@ class Camera(ABC):
     # data types accepted by cv2.remap()
     _valid_dtypes = ['uint8', 'uint16', 'int16', 'float32', 'float64']
     # cv2.remap() maximum image dimension
-    _shrt_max = 1 << 15 - 1
+    _shrt_max = (1 << 15) - 1
 
     @abstractmethod
     def __init__(
@@ -255,16 +255,16 @@ class Camera(ABC):
     ) -> np.ndarray:
         """
         A polygon of (x, y, z) world coordinates along the image boundary, at a specified z value
-        or surface (DEM).
+        or surface (DEM) intersection.
 
         :param z:
-            Z heights(s) as a single value or a 2D array (surface).
+            Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
             Number of boundary points to include.  If set to None (the default), eight points are
             included, with points at the image corners and mid-points of the sides.
         :param transform:
-            Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
-            is an array and not used otherwise.
+            Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
+            Required when ``z`` is an array and not used otherwise.
         :param interp:
             Interpolation method to use for finding boundary intersections with ``z`` when it is an
             array.  Not used when ``z`` is a single value.
@@ -329,10 +329,10 @@ class Camera(ABC):
         **kwargs,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Remap image to ortho image at given world coordinates.
+        Remap an image to an ortho image at the given world coordinates.
 
         :param im_array:
-            Image to remap as a 3D array with L band(s) along the first dimension (Rasterio
+            Image to remap as a 3D array with band(s) along the first dimension (Rasterio
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
@@ -353,8 +353,10 @@ class Camera(ABC):
             Not used.
 
         :return:
-            - Remapped image, as a L-by-M-by-N 3D array with the same data type as ``im_array``.
-            - Nodata mask of the remapped image, as a M-by-N 2D boolean array."""
+            - Remapped image as a L-by-M-by-N 3D array, where L is the number of ``im_array``
+              bands.  Same data type as ``im_array``.
+            - Nodata mask of the remapped image, as a M-by-N 2D boolean array.
+        """
         self._validate_image(im_array)
         if not (x.shape == y.shape == z.shape) or (x.ndim != 2):
             raise ValueError("'x', 'y' and 'z' should have 2 dimensions, and the same shape.")
@@ -497,7 +499,7 @@ class RpcCamera(Camera):
         xy = np.full(ji.shape, fill_value=np.nan)
         z[~mask] = np.nan
         with RPCTransformer(self._rpc, **self._rpc_options) as tform:
-            # TODO: the center offset in .xy below is inefficient
+            # TODO: the center offset in .xy below & in GcpCamera is inefficient
             xy[:, mask] = tform.xy(ji[1, mask], ji[0, mask], zs=z[mask], offset='center')
 
         xyz = np.array([*xy, z])
@@ -509,11 +511,22 @@ class RpcCamera(Camera):
 
 
 class GcpCamera(Camera):
+    """
+    GCP camera (UNTESTED).
+
+    :param im_size:
+        Image (width, height) in pixels.
+    :param gcps:
+        GCPs as a sequence of :class:`~rasterio.control.GroundControlPoint` objects or dictionaries.
+    """
+
     def __init__(
         self,
+        im_size: tuple[int, int],
         gcps: Sequence[GroundControlPoint, dict],
     ):
         super().__init__()
+        self._im_size = im_size
         self._gcps = [GroundControlPoint(gcp) if isinstance(gcp, dict) else gcp for gcp in gcps]
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
@@ -524,14 +537,21 @@ class GcpCamera(Camera):
         ji = np.array(ij[::-1]) - 0.5
         return ji
 
-    @abstractmethod
     def pixel_to_world_z(self, ji: np.ndarray, z: float | np.ndarray, **kwargs) -> np.ndarray:
         self._validate_pixel_coords(ji)
         self._validate_z(z, ji)
 
+        # project from pixel to GCP coordinates, removing and replacing nans around the .xy call
+        # (which raises warnings on nans and converts to inf)
+        z = z * np.ones(ji.shape[1]) if np.isscalar(z) else z.copy()
+        ji = ji * np.ones((2, z.shape[0])) if ji.shape[1] == 1 else ji
+        mask = ~(np.any(np.isnan(ji), axis=0) | np.isnan(z))
+        xy = np.full(ji.shape, fill_value=np.nan)
+        z[~mask] = np.nan
         with GCPTransformer(self._gcps) as tform:
-            xy = tform.xy(ji[1], ji[0], zs=z, offset='center')
-        xyz = np.array([*xy, z * np.ones(len(xy[0]))])
+            xy[:, mask] = tform.xy(ji[1, mask], ji[0, mask], zs=z[mask], offset='center')
+
+        xyz = np.array([*xy, z])
         return xyz
 
 
@@ -600,8 +620,10 @@ class FrameCamera(Camera):
     @property
     def distort(self) -> bool:
         """Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
-        undistorted image from :meth:`read` (False).
+        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
+        with ``distort=False``, but may reduce remap quality.
         """
         return self._distort
 
@@ -611,11 +633,11 @@ class FrameCamera(Camera):
 
     @property
     def alpha(self) -> float:
-        """Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        """Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
         :attr:`~FrameCamera.distort` is False.  0 includes the largest portion of the source
         image that allows all undistorted pixels to be valid.  1 includes all source pixels in
-        the undistorted image. Affects scaling of the camera model intrinsic matrix.  No effect
-        when :attr:`~FrameCamera.distort` is True.
+        the undistorted image. Its value affects scaling of the camera model intrinsic matrix.
+        Not used when :attr:`~FrameCamera.distort` is True.
         """
         return self._alpha
 
@@ -945,13 +967,13 @@ class FrameCamera(Camera):
         or surface (DEM).
 
         :param z:
-            Z heights(s) as a single value or a 2D array (surface).
+            Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
             Number of boundary points to include.  If set to None (the default), eight points are
             included, with points at the image corners and mid-points of the sides.
         :param transform:
-            Affine transform defining the (x, y) world coordinates of ``z``.  Required when ``z``
-            is an array and not used otherwise.
+            Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
+            Required when ``z`` is an array and not used otherwise.
         :param interp:
             Interpolation method to use for finding boundary intersections with ``z`` when it is an
             array.  Not used when ``z`` is a single value.
@@ -1039,10 +1061,10 @@ class FrameCamera(Camera):
         kernel_size: tuple[int, int] = (3, 3),
     ) -> tuple[np.ndarray, np.ndarray]:
         """
-        Remap image to ortho image at given world coordinates.
+        Remap an image to an ortho image at the given world coordinates.
 
         :param im_array:
-            Image to remap as a 3D array with L band(s) along the first dimension (Rasterio
+            Image to remap as a 3D array with band(s) along the first dimension (Rasterio
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
@@ -1065,7 +1087,8 @@ class FrameCamera(Camera):
             if blurring could not have occurred (e.g. if :attr:`~FrameCamera.distort` is True).
 
         :return:
-            - Remapped image, as a L-by-M-by-N 3D array with the same data type as ``im_array``.
+            - Remapped image as a L-by-M-by-N 3D array, where L is the number of ``im_array``
+              bands.  Same data type as ``im_array``.
             - Nodata mask of the remapped image, as a M-by-N 2D boolean array.
         """
         remap, mask = super().remap(image, x, y, z, nodata=nodata, interp=interp)
@@ -1141,15 +1164,16 @@ class OpenCVCamera(FrameCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
-        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
-        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
-        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
+        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
+        with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
         ``distort`` is False.  0 includes the largest portion of the source image that allows all
         undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
+        Its value affects scaling of the camera model intrinsic matrix.  Not used when
+        ``distort`` is True.
     """
 
     def __init__(
@@ -1275,15 +1299,16 @@ class BrownCamera(OpenCVCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
-        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
-        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
-        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
+        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
+        with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
         ``distort`` is False.  0 includes the largest portion of the source image that allows all
         undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
+        Its value affects scaling of the camera model intrinsic matrix.  Not used when
+        ``distort`` is True.
     """
 
     def __init__(
@@ -1371,15 +1396,16 @@ class FisheyeCamera(FrameCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`read` (True).  Or, exclude distortion from the camera model, and return an
-        undistorted image from :meth:`read` (False).  :meth:`~FrameCamera.remap` of a
-        :meth:`~FrameCamera.read` image is faster with ``distort=False``, but may reduce remap
-        quality.  Can be read or changed after initialisation with :attr:`~FrameCamera.distort`.
+        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
+        with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`FrameCamera.read` when
+        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
         ``distort`` is False.  0 includes the largest portion of the source image that allows all
         undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Affects scaling of the camera model intrinsic matrix.  Not used when ``distort`` is True.
+        Its value affects scaling of the camera model intrinsic matrix.  Not used when
+        ``distort`` is True.
     """
 
     def __init__(
