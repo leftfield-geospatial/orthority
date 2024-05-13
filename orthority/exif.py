@@ -35,7 +35,7 @@ _xmp_schemas = dict(
     dji=dict(
         lla_keys=[
             '{http://www.dji.com/drone-dji/1.0/}GpsLatitude',
-            '{http://www.dji.com/drone-dji/1.0/}GpsLongitude',
+            '{http://www.dji.com/drone-dji/1.0/}GpsLongtitude',
             '{http://www.dji.com/drone-dji/1.0/}AbsoluteAltitude',
         ],
         rpy_keys=[
