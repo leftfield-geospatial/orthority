@@ -8,7 +8,7 @@ Orthority
 
 .. description_start
 
-Orthority provides a command line interface and Python API for orthorectifying drone and aerial imagery, given a camera model and DEM. It supports common frame camera models. Camera parameters can be read from various file formats, or image EXIF / XMP tags.
+Orthority provides a command line interface and Python API for orthorectifying drone, aerial and satellite imagery, given a camera model and DEM. It supports common frame, and RPC camera models. Camera parameters can be read from various file formats, or image tags.
 
 .. description_end
 

@@ -1,3 +1,4 @@
+.. include:: shared.txt
 .. include:: ../../shared.txt
 
 Ortho image configuration
@@ -17,7 +18,7 @@ The next example orthorectifies using EXIF / XMP tags, and configures the ortho 
 
 .. code-block:: bash
 
-    oty exif --dem odm/odm_dem/dsm.tif --res 0.2 --dtype uint8 --compress deflate --overwrite odm/images/100_0005_0140.tif
+    oty exif --dem odm/odm_dem/dsm.tif --res 0.2 --dtype uint8 --compress deflate odm/images/100_0005_0140.tif
 
 Valid ortho pixels are masked with either an internal mask band or a nodata value.  By default, an internal mask is used when the ortho image is ``jpeg`` compressed.  This avoids ``jpeg`` artefacts in invalid areas.  When the ortho is ``deflate`` compressed, the default is use to a nodata value based on the data type.  Masking behaviour can be changed with ``--write-mask`` to write an internal mask, or ``--no-write-mask`` to use a nodata value.
 
@@ -25,5 +26,5 @@ Internal overviews are added by default.  This can be changed with ``--no-build-
 
 .. code-block:: bash
 
-    oty exif --dem odm/odm_dem/dsm.tif --compress deflate --no-write-mask --no-build-ovw --overwrite odm/images/100_0005_0140.tif
+    oty exif --dem odm/odm_dem/dsm.tif --compress deflate --no-write-mask --no-build-ovw odm/images/100_0005_0140.tif
 

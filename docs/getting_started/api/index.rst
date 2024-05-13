@@ -17,7 +17,7 @@ Or, with conda_:
 
 .. note::
 
-    If you're using the Orthority and Rasterio_ packages together, Orthority should be imported first.
+    If you're using the Orthority and Rasterio_ packages together, Orthority should be imported first to configure the PROJ setting for :doc:`vertical CRS transformations <../../background/vertical_crs>`.
 
 .. toctree::
     :maxdepth: 1

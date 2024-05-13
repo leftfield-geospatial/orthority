@@ -1,18 +1,3 @@
-.. |oty| replace:: ``oty``
-.. _oty: ../../cli/oty.html
-
-.. |oty frame| replace:: ``oty frame``
-.. _oty frame: ../../cli/frame.html
-
-.. |oty exif| replace:: ``oty exif``
-.. _oty exif: ../../cli/exif.html
-
-.. |oty odm| replace:: ``oty odm``
-.. _oty odm: ../../cli/odm.html
-
-.. |oty rpc| replace:: ``oty rpc``
-.. _oty rpc: ../../cli/rpc.html
-
 .. _NGI: https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery
 .. _Rasterio: https://rasterio.readthedocs.io
 .. _GDAL: https://gdal.org

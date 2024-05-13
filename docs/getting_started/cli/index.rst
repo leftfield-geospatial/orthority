@@ -1,4 +1,4 @@
-.. include:: ../../shared.txt
+.. include:: shared.txt
 
 Command line
 ============

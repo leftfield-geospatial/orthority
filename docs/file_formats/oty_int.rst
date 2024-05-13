@@ -1,7 +1,7 @@
 Orthority interior parameters
 =============================
 
-This is the native Orthority format for frame camera :ref:`interior parameters <background/camera_models:interior parameters>`.  It is a YAML file containing a nested dictionary that is based on the OpenDroneMap / OpenSfM :file:`cameras.json` format.  The root level consists of one or more camera ID keys and the corresponding parameter dictionary values.  Parameter dictionaries define parameter name - value pairs for a camera.  The basic layout is:
+This is the native Orthority format for frame camera :ref:`interior parameters <background/camera_models:interior parameters>`.  It is a YAML file containing a nested dictionary based on the OpenDroneMap / OpenSfM :file:`cameras.json` format.  The root level consists of one or more camera ID keys and the corresponding parameter dictionary values.  Parameter dictionaries define parameter name - value pairs for a camera.  The basic layout is:
 
 .. code-block:: yaml
 
@@ -38,7 +38,7 @@ Camera IDs can be used in exterior parameters to refer to a specific camera in m
     * - ``k1``, ``k2``, …
       - Optional distortion coefficients for the camera ``type``.  Values default to zero if not supplied.
 
-Available camera types and their distortion coefficients are detailed below:
+Available frame camera types and their distortion coefficients are detailed below:
 
 .. list-table::
     :widths: auto

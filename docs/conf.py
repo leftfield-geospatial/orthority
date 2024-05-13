@@ -53,6 +53,7 @@ intersphinx_mapping = {
     'rasterio': ('https://rasterio.readthedocs.io/en/stable/', None),
     'gdal': ('https://gdal.org/', None),
     'fsspec': ('https://filesystem-spec.readthedocs.io/en/latest/', None),
+    'affine': ('https://affine.readthedocs.io/en/latest/', None),
 }
 
 # -- Options for pygments -----------------------------------------------------

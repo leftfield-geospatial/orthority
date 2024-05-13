@@ -1,4 +1,4 @@
-.. include:: ../../shared.txt
+.. include:: shared.txt
 
 Frame camera configuration
 ==========================
@@ -15,7 +15,7 @@ To show the use of these options, we orthorectify the OpenDroneMap dataset using
 
 .. code-block:: bash
 
-    oty odm --dataset-dir odm --no-full-remap --alpha 0 --overwrite
+    oty odm --dataset-dir odm --no-full-remap --alpha 0
 
 .. note::
 

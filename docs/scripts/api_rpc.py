@@ -20,6 +20,11 @@ cameras = oty.RpcCameras.from_images((src_file,))
 camera = cameras.get(src_file)
 # [end create tag]
 
+# [io_kwargs]
+io_kwargs = dict(progress=True)
+cameras = oty.RpcCameras.from_images((src_file,), io_kwargs=io_kwargs)
+# [end io_kwargs]
+
 # [cam_kwargs]
 cam_kwargs = dict(crs='EPSG:32735')
 cameras = oty.RpcCameras.from_images((src_file,), cam_kwargs=cam_kwargs)

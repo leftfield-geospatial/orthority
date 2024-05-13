@@ -71,7 +71,7 @@ def sinusoid(shape: tuple[int, int]) -> np.ndarray:
 
 
 def ortho_bounds(camera: Camera, z: float = Ortho._egm_minmax[0]) -> tuple:
-    """Return (left, bottom, right, top) ortho bounds for the given ``camera`` at z=``z``."""
+    """Return (left, bottom, right, top) ortho bounds for the given ``camera`` at ``z``."""
     w, h = np.array(camera.im_size) - 1
     ji = np.array(
         [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]

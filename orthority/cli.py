@@ -166,7 +166,7 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
 def _src_files_cb(
     ctx: click.Context, param: click.Parameter, src_files: Sequence[str]
 ) -> Sequence[OpenFile]:
-    """Click callback to form a list of source file OpenFile instances. ``src_files`` can be a
+    """Click callback to form a list of source image OpenFile instances. ``src_files`` can be a
     list of file paths / URIs, or a list of path / URI glob patterns.
     """
     if not src_files or len(src_files) == 0:
@@ -176,7 +176,7 @@ def _src_files_cb(
     except Exception as ex:
         raise click.BadParameter(str(ex), param=param)
     if len(src_files) == 0:
-        raise click.BadParameter('No source file(s) found.', param=param)
+        raise click.BadParameter('No source image(s) found.', param=param)
     return src_files
 
 

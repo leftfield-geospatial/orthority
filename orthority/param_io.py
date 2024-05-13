@@ -208,7 +208,7 @@ def _read_exif_ext_param(
 
 def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more camera from an :doc:`Orthority interior parameter
+    Read interior parameters for one or more cameras from an :doc:`Orthority interior parameter
     file <../file_formats/oty_int>`.
 
     :param file:
@@ -273,7 +273,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
 
 def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
-    Read interior parameters for one or more camera, from an OpenDroneMap :file:`cameras.json` or
+    Read interior parameters for one or more cameras, from an OpenDroneMap :file:`cameras.json` or
     OpenSfM :file:`reconstruction.json` file.
 
     See the :doc:`format documentation <../file_formats/opensfm>` for supported camera models.
@@ -358,7 +358,7 @@ def read_im_rpc_param(
 
 def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict[str, Any]]:
     """
-    Read RPC parameters for one or more camera from an :doc:`Orthority RPC file
+    Read RPC parameters for one or more cameras from an :doc:`Orthority RPC file
     <../file_formats/oty_rpc>`.
 
     :param file:
@@ -647,7 +647,7 @@ def _rpy_to_opk(
 
 class FrameReader(ABC):
     """
-    Base frame camera parameter reader class.
+    Base frame camera parameter reader.
 
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
@@ -708,12 +708,12 @@ class CsvReader(FrameReader):
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
         :class:`~rasterio.crs.CRS` object.  If set to None (the default), and the file contains
-        (x, y, z) world coordinate positions, a CRS can be provided via a '.prj' sidecar file
-        (i.e. a text file defining a CRS string, and having the same path as ``file``,
-        but a '.prj' extension).  If set to None, and the file contains (``latitude``,
-        ``longitude``, ``altitude``) **and** (``roll``, ``pitch``, ``yaw``) fields, a UTM CRS
-        will be auto-determined. If the file contains (``latitude``, ``longitude``, ``altitude``)
-        **or** (``roll``, ``pitch``, ``yaw``) fields, ``crs`` should be supplied.
+        (x, y, z) world coordinate positions, a CRS can be provided via a :file:`.prj` sidecar
+        file (i.e. a text file defining a CRS string, and having the same path as ``file``,
+        but a :file:`.prj` extension).  If set to None, and the file contains (latitude,
+        longitude, altitude) **and** (roll, pitch, yaw) fields, a UTM CRS will be
+        auto-determined. If the file contains (latitude, longitude, altitude) **or** (roll,
+        pitch, yaw) fields (but not both), ``crs`` should be supplied.
     :param lla_crs:
         Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
         pitch, yaw) values in the file (as an EPSG, WKT or proj4 string; or

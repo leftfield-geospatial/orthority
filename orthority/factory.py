@@ -39,7 +39,7 @@ class Cameras(ABC):
     @property
     @abstractmethod
     def filenames(self) -> set[str]:
-        """Filenames for which there are cameras."""
+        """Set of filenames that have cameras."""
         pass
 
     @abstractmethod
@@ -81,12 +81,12 @@ class FrameCameras(Cameras):
         Exterior parameter file or dictionary.  If a file, can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
     :param io_kwargs:
-        Optional dictionary of keyword arguments for the
-        :class:`~orthority.param_io.FrameReader` sub-class corresponding to the exterior (and
-        possibly interior) parameter file format. Should exclude ``ext_param`` or ``int_param``
-        file names, which are passed internally.  If ``ext_param`` is a dictionary,
-        these arguments are not passed to the :class:`~orthority.param_io.FrameReader` sub-class,
-        but :attr:`FrameCameras.crs` is set with the value of a 'crs' argument.
+        Optional dictionary of keyword arguments for the :class:`~orthority.param_io.FrameReader`
+        sub-class corresponding to the exterior parameter file format. Should exclude
+        ``ext_param`` or ``int_param`` file names, which are passed internally.  If ``ext_param``
+        is a dictionary, these arguments are not passed to the
+        :class:`~orthority.param_io.FrameReader` sub-class, but :attr:`FrameCameras.crs` is set
+        with the value of a ``crs`` argument.
     :param cam_kwargs:
         Optional dictionary of keyword arguments for the
         :class:`~orthority.camera.FrameCamera` class. Should exclude interior and exterior
@@ -290,7 +290,7 @@ class RpcCameras(Cameras):
             :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is
             passed internally.
         :param cam_kwargs:
-            Optional dictionary of additional arguments for the :class:`~orthority.camera.RpcCamera`
+            Optional dictionary of keyword arguments for the :class:`~orthority.camera.RpcCamera`
             class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
         """
         io_kwargs = io_kwargs or {}

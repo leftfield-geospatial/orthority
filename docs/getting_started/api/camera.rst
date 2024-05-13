@@ -48,7 +48,7 @@ Parameter IO
 
 Internally, camera factories use the :mod:`~orthority.param_io` module to read and interpret parameter files.
 
-The ``io_kwargs`` argument can be used in :class:`~orthority.factory.FrameCameras` or :meth:`~orthority.factory.FrameCameras.from_images` to pass keyword arguments to the :class:`~orthority.param_io.FrameReader` sub-class corresponding to the exterior (and possibly interior) parameter file format.
+The ``io_kwargs`` argument can be used in :class:`~orthority.factory.FrameCameras` or :meth:`~orthority.factory.FrameCameras.from_images` to pass keyword arguments to the :class:`~orthority.param_io.FrameReader` sub-class corresponding to the exterior parameter file format.
 
 E.g. to create a factory from image EXIF / XMP tags and pass an explicit world / ortho CRS to :class:`~orthority.param_io.ExifReader`:
 
@@ -96,6 +96,18 @@ Camera models can also be created from :doc:`image RPC tags / sidecar files <../
     :language: python
     :start-after: [create tag]
     :end-before: [end create tag]
+
+Parameter IO
+~~~~~~~~~~~~
+
+The ``io_kwargs`` argument can be used in :meth:`~orthority.factory.RpcCameras.from_images` to pass keyword arguments to :meth:`~orthority.param_io.read_im_rpc_param`.
+
+E.g. to display a progress bar while reading image RPC tags / sidecar files:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [io_kwargs]
+    :end-before: [end io_kwargs]
 
 Camera options
 ~~~~~~~~~~~~~~

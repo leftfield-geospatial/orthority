@@ -1,4 +1,5 @@
 .. include:: ../../shared.txt
+.. include:: shared.txt
 
 Basic orthorectification
 ========================
@@ -8,7 +9,7 @@ Basic orthorectification
 ``oty frame``
 -------------
 
-|oty frame|_ uses interior and exterior parameter files to specify :ref:`frame camera models <background/camera_models:frame cameras>`.  Here we orthorectify `NGI <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ aerial images using the associated DEM, :doc:`Orthority format <../../file_formats/oty_int>` interior parameters, and :doc:`CSV format <../../file_formats/csv>` exterior parameters.  Ortho images are placed in the current directory:
+|oty frame|_ uses interior and exterior parameter files to specify :ref:`frame camera models <background/camera_models:frame cameras>`.  Here we orthorectify NGI_ aerial images using the associated DEM, :doc:`Orthority format <../../file_formats/oty_int>` interior parameters, and :doc:`CSV format <../../file_formats/csv>` exterior parameters.  Ortho images are placed in the current directory:
 
 .. code-block:: bash
 
@@ -24,20 +25,22 @@ In order of priority, the world / ortho CRS is read from:
     * :doc:`CSV format <../../file_formats/csv>` with ``latitude``, ``longitude``, ``altitude``, ``roll``, ``pitch`` & ``yaw`` fields.
 #. Source image CRS metadata, if any.
 
-In the first example, the world / ortho CRS is read from the CSV file's :file:`.prj` sidecar file.
+In the first example, the world / ortho CRS is read from exterior parameters in CSV format with ``x``, ``y`` & ``z`` fields and a  :file:`.prj` sidecar file.
 
-The next example orthorectifies drone images with `OpenDroneMap <https://github.com/OpenDroneMap/ODM>`__ generated DEM and interior parameters.  Exterior parameters are in CSV format with ``x``, ``y`` & ``z`` fields, but no :file:`.prj` sidecar file.  The world / ortho CRS cannot be read from the input files, so it is specified with :option:`--crs <oty-frame --crs>`:
+In the next example, exterior parameters are in CSV format with ``x``, ``y`` & ``z`` fields, but no :file:`.prj` sidecar file.  The world / ortho CRS cannot be read from the input files, so it is specified with :option:`--crs <oty-frame --crs>`:
 
 .. code-block:: bash
 
     oty frame --dem odm/odm_dem/dsm.tif --int-param odm/opensfm/reconstruction.json --ext-param io/odm_xyz_opk.csv --crs EPSG:32651 odm/images/*.tif
 
-See the :doc:`file format documentation <../../file_formats/index>` for details on supported frame camera parameter formats.
+.. note::
+
+    See the :doc:`file format documentation <../../file_formats/index>` for supported parameter formats.
 
 ``oty exif``
 ------------
 
-Frame camera models can be derived from image EXIF / XMP tags with |oty exif|_.  The :doc:`EXIF / XMP documentation <../../file_formats/exif_xmp>` describes the required tags.  This example orthorectifies drone imagery using an `OpenDroneMap <https://github.com/OpenDroneMap/ODM>`__ generated DSM.  Ortho images are placed in the current directory:
+Frame camera models can be derived from image EXIF / XMP tags with |oty exif|_.  The :doc:`EXIF / XMP documentation <../../file_formats/exif_xmp>` describes the required tags.  This example orthorectifies drone imagery using an OpenDroneMap generated DSM.  Ortho images are placed in the current directory:
 
 .. code-block:: bash
 
@@ -51,7 +54,7 @@ The world / ortho CRS defaults to a UTM CRS whose zone covers the camera positio
 
 .. note::
 
-    EXIF / XMP tag values typically contain inaccuracies that can result in distortion and positioning errors in the ortho images.  This is a general limitation of this approach.
+    EXIF / XMP tag values typically contain inaccuracies that can result in distortion and positioning errors in the ortho images.  This is the case with the Orthority test data, and a general limitation of this approach.
 
 ``oty odm``
 -----------

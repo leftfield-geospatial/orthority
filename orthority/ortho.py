@@ -56,12 +56,12 @@ class Ortho:
         Source image to be orthorectified. Can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
     :param dem_file:
-        DEM image covering the source image.  Can be a path or URI string,
+        DEM file covering the source image.  Can be a path or URI string,
         an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
     :param camera:
         Source image camera model.
     :param crs:
-        CRS of the ``camera`` world coordinates and ortho image as an EPSG, proj4 or WKT string,
+        CRS of the ``camera`` world coordinates, and ortho image, as an EPSG, proj4 or WKT string,
         or :class:`~rasterio.crs.CRS` object.  If set to None (the default), the CRS will be read
         from the source image if possible. If the source image is not projected in the world /
         ortho CRS, ``crs`` should be supplied.
@@ -599,9 +599,9 @@ class Ortho:
 
         The source image is read and processed band-by-band, or all bands at once, depending on
         the value of ``per_band``.  If necessary, the portion of the DEM stored internally is
-        reprojected to the ortho CRS and resolution.  Using the camera model and DEM, the ortho
-        image is remapped from the source image tile-by-tile.  Up to N ortho tiles are processed
-        concurrently, where N is the number of CPUs.
+        reprojected to the world / ortho CRS and ortho resolution.  Using the camera model and
+        DEM, the ortho image is remapped from the source image tile-by-tile.  Up to N ortho tiles
+        are processed concurrently, where N is the number of CPUs.
 
         .. note::
 
@@ -611,11 +611,10 @@ class Ortho:
             Ortho image file to create.  Can be a path or URI string, or an
             :class:`~fsspec.core.OpenFile` object in binary mode ('wb').
         :param resolution:
-            Ortho image pixel (x, y) size in units of the world / ortho CRS (usually meters).  If
-            set to None (the default), an approximate ground sampling distance is used as the
-            resolution.
+            Ortho image pixel (x, y) size in units of the world / ortho CRS.  If set to None (the
+            default), an approximate ground sampling distance is used as the resolution.
         :param interp:
-            Interpolation method to use for remapping the source to ortho image.
+            Interpolation method for remapping the source to ortho image.
         :param dem_interp:
             Interpolation method for reprojecting the DEM.
         :param per_band:
@@ -624,7 +623,7 @@ class Ortho:
         :param write_mask:
             Mask valid ortho pixels with an internal mask (True), or with a nodata value based on
             ``dtype`` (False). An internal mask helps remove nodata noise caused by lossy
-            compression. If set to None (the default), the mask will be written when jpeg
+            compression. If set to None (the default), the mask will be written when JPEG
             compression is used.
         :param dtype:
             Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (

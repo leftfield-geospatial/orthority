@@ -31,7 +31,7 @@ class CrsMissingError(OrthorityError):
 
 
 class CameraInitError(OrthorityError):
-    """Raised when a camera's exterior parameters have not been initialised."""
+    """Raised when a camera's parameters have not been initialised."""
 
 
 class OrthorityWarning(RuntimeWarning):

@@ -5,7 +5,7 @@ simple-ortho
 
 .. deprecated:: 0.3.0
 
-    The ``simple-ortho`` command is deprecated and will be removed in future.  Please switch to |oty|_ and its sub-commands.
+    The ``simple-ortho`` command is deprecated and will be removed in future.  Please switch to ``oty`` and its sub-commands.
 
 .. argparse::
     :module: orthority.cli

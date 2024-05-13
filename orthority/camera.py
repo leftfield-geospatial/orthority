@@ -346,7 +346,7 @@ class Camera(ABC):
             coordinate pixels are mapped to ``nodata``.
         :param nodata:
             Value to use for masking invalid pixels in the remapped image.  If set to None (the
-            default), a value based on the ``image`` data type is chosen automatically.
+            default), a value based on the ``im_array`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
         :param kwargs:
@@ -1078,12 +1078,12 @@ class FrameCamera(Camera):
             coordinate pixels are mapped to ``nodata``.
         :param nodata:
             Value to use for masking invalid pixels in the remapped image.  If set to None (the
-            default), a value based on the ``image`` data type is chosen automatically.
+            default), a value based on the ``im_array`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
         :param kernel_size:
             Kernel (width, height) size in pixels, used for dilating the nodata mask.  Removes
-            blurring of boundary pixels with nodata areas in an undistorted ``image``.  Not used
+            blurring of boundary pixels with nodata areas in an undistorted ``im_array``.  Not used
             if blurring could not have occurred (e.g. if :attr:`~FrameCamera.distort` is True).
 
         :return:
