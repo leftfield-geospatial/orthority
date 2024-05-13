@@ -1,7 +1,7 @@
 Integraph DMC:
-  type: pinhole
-  im_size: [ 640, 1152 ]
-  focal_len: 120.0
-  sensor_size: [ 92.16, 165.888 ]
-  cx: 0.0
-  cy: 0.0
+    type: pinhole
+    im_size: [640, 1152]
+    focal_len: 120.0
+    sensor_size: [92.16, 165.888]
+    cx: 0.0
+    cy: 0.0
