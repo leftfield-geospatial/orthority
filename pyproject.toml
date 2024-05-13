@@ -29,7 +29,9 @@ oty = 'orthority.cli:cli'
 simple-ortho = 'orthority.cli:simple_ortho'
 
 [project.optional-dependencies]
-test = ['pytest']
+http = ['requests', 'aiohttp']
+tests = ['pytest', 'requests', 'aiohttp']
+docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
 
 [project.urls]
 Homepage = 'https://github.com/leftfield-geospatial/simple-ortho'
@@ -45,3 +47,7 @@ packages = ['orthority']
 
 [tool.setuptools.dynamic]
 version = {attr = 'orthority.version.__version__'}
+
+[tool.black]
+line-length = 100
+skip-string-normalization = true
