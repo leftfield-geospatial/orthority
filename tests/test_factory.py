@@ -139,8 +139,8 @@ def test_frame_cameras_get_mult_camera(
 
 
 def test_frame_cameras_get_single_camera(pinhole_int_param_dict: dict, xyz: tuple, opk: tuple):
-    """Test ``FrameCameras.get()`` with an exterior parameter camera ID of None and a single set of
-    interior parameters.
+    """Test ``FrameCameras.get()`` with an exterior parameter camera ID of ``None`` and a single
+    set of interior parameters.
     """
     filename = 'some_file'
     ext_param_dict = {filename: dict(xyz=xyz, opk=opk, camera=None)}
@@ -181,8 +181,8 @@ def test_frame_cameras_get_camera_not_found_error(
 
 
 def test_frame_cameras_get_no_cam_id_error(mult_int_param_dict: dict, xyz: tuple, opk: tuple):
-    """Test ``FrameCameras.get()`` raises an error when the exterior parameter camera ID is None and
-    there are multiple sets of interior parameters.
+    """Test ``FrameCameras.get()`` raises an error when the exterior parameter camera ID is
+    ``None`` and there are multiple sets of interior parameters.
     """
     filename = 'some_file'
     ext_param_dict = {filename: dict(xyz=xyz, opk=opk, camera=None)}

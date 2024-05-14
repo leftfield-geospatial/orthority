@@ -39,7 +39,7 @@ When there is no file header (and ``fieldnames`` is not provided to :meth:`~orth
 
 .. note::
 
-    Conversion from (*roll*, *pitch*, *yaw*) camera orientation is approximate and relies on the :ref:`world <background/coordinates:world coordinates>` CRS having minimal distortion in the imaged area.
+    Conversion from (roll, pitch, yaw) camera orientation is approximate and relies on the :ref:`world <background/coordinates:world coordinates>` CRS having minimal distortion in the imaged area.
 
 Dialect
 -------

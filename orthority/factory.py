@@ -43,13 +43,13 @@ class Cameras(ABC):
         pass
 
     @abstractmethod
-    def get(self, filename: str | PathLike | OpenFile) -> Camera:
+    def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> Camera:
         """
         Return a camera object for the given image filename.
 
         :param filename:
-            Image filename.  Can be a path, URI string, or :class:`~fsspec.core.OpenFile`
-            instance.
+            Image filename.  Can be a path, URI string, :class:`~fsspec.core.OpenFile` instance
+            or dataset.
 
         :return:
             Camera object.
@@ -76,10 +76,10 @@ class FrameCameras(Cameras):
 
     :param int_param:
         Interior parameter file or dictionary.  If a file, can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode (``'rt'``).
     :param ext_param:
         Exterior parameter file or dictionary.  If a file, can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode ('rt').
+        an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode (``'rt'``).
     :param io_kwargs:
         Optional dictionary of keyword arguments for the :class:`~orthority.param_io.FrameReader`
         sub-class corresponding to the exterior parameter file format. Should exclude
@@ -119,7 +119,7 @@ class FrameCameras(Cameras):
 
         :param files:
             Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-            objects in binary mode ('rb'), or dataset readers.
+            objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of keyword arguments for the
             :class:`~orthority.param_io.ExifReader` class.  Should exclude ``files`` which is
@@ -200,7 +200,7 @@ class FrameCameras(Cameras):
 
         return int_param_dict, ext_param_dict, crs
 
-    def get(self, filename: str | PathLike | OpenFile) -> FrameCamera:
+    def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> FrameCamera:
         # get exterior params for filename
         filename = Path(get_filename(filename))
         ext_param = self._ext_param_dict.get(
@@ -253,7 +253,7 @@ class RpcCameras(Cameras):
     :param rpc_param:
         :doc:`Orthority RPC parameter file <../file_formats/oty_rpc>` or dictionary.  If a file,
         can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a file object,
-        opened in text mode ('rt').
+        opened in text mode (``'rt'``).
     :param cam_kwargs:
         Optional dictionary of keyword arguments for the :class:`~orthority.camera.RpcCamera`
         class.  Should exclude ``im_size`` and ``rpc`` which are passed internally.
@@ -284,7 +284,7 @@ class RpcCameras(Cameras):
 
         :param files:
             Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-            objects in binary mode ('rb'), or dataset readers.
+            objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of additional arguments for
             :class:`~orthority.param_io.read_im_rpc_param`.  Should exclude ``files`` which is
@@ -301,7 +301,7 @@ class RpcCameras(Cameras):
     def filenames(self) -> set[str]:
         return set(self._rpc_param_dict.keys())
 
-    def get(self, filename: str | PathLike | OpenFile) -> RpcCamera:
+    def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:
         # get rpc params for filename
         filename = Path(get_filename(filename))
         rpc_param = self._rpc_param_dict.get(

@@ -35,7 +35,7 @@ In the next example, exterior parameters are in CSV format with ``x``, ``y`` & `
 
 .. note::
 
-    See the :doc:`file format documentation <../../file_formats/index>` for supported parameter formats.
+    See the :doc:`file format documentation <../../file_formats/index>` for supported frame camera parameter formats.
 
 ``oty exif``
 ------------
@@ -89,8 +89,14 @@ The world / ortho CRS defaults to the WGS84 geographic 3D CRS.  This can be chan
     oty rpc --dem ngi/dem.tif --crs EPSG:32735 rpc/qb2_basic1b.tif
 
 
-Output files
-------------
+File IO
+-------
+
+Files can be read from or written to local or remote :doc:`file paths / URIs <../../background/path_uri>`.  ``SOURCE`` images can be specified with local or remote wildcard patterns.
+
+.. note::
+
+    Some file systems, like HTTP, are read-only and don't support wildcards.
 
 Ortho images are named automatically based on the source image names.  The output directory for ortho images and :doc:`exported files <model_export>` can be changed from its default with the ``--out-dir`` option.  Passing ``--overwrite`` overwrites existing files.  These options are common to all |oty|_ orthorectification sub-commands.  E.g., this repeats the :ref:`getting_started/cli/basic_orthorectification:``oty odm``` example, creating and using :file:`ortho` as the output directory, and overwriting existing files:
 

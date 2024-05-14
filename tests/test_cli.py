@@ -466,7 +466,7 @@ def test_frame_dem_band_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, run
 
 
 def test_frame_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty frame --interp`` by comparing 'nearest' to 'average' interpolation orthos."""
+    """Test ``oty frame --interp`` by comparing ``nearest`` to ``average`` interpolation orthos."""
     ortho_std = []
     for interp in ['average', 'nearest']:
         # create ortho
@@ -499,7 +499,7 @@ def test_frame_interp_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runne
 
 
 def test_frame_dem_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty frame --dem-interp`` by comparing 'nearest' to 'average' DEM interpolation
+    """Test ``oty frame --dem-interp`` by comparing ``nearest`` to ``average`` DEM interpolation
     orthos.
     """
     ortho_std = []
@@ -1033,7 +1033,7 @@ def test_exif_lla_crs(
 def test_odm_dataset_dir(
     odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
 ):
-    """Test ``oty odm`` creates orthos in '<--dataset-dir>/orthority' sub-folder."""
+    """Test ``oty odm`` creates orthos in ``<--dataset-dir>/orthority`` sub-folder."""
     shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
     cli_str = f'odm --dataset-dir {tmp_path} --res 5 --overwrite'
     result = runner.invoke(cli, cli_str.split())
@@ -1324,7 +1324,7 @@ def test__frame_single_camera(
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test the _ortho backend with an exterior parameter camera ID of None and a single set of
+    """Test the _ortho backend with an exterior parameter camera ID of ``None`` and a single set of
     interior parameters.
     """
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}
@@ -1417,7 +1417,7 @@ def test__frame_mult_camera_no_camera_error(
     tmp_path: Path,
     runner: CliRunner,
 ):
-    """Test the _ortho backend raises an error when the exterior parameter camera ID is None and
+    """Test the _ortho backend raises an error when the exterior parameter camera ID is ``None`` and
     there are multiple sets of interior parameters.
     """
     ext_param_dict = {rgb_byte_src_file.name: dict(xyz=xyz, opk=opk, camera=None)}

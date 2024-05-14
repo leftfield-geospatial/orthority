@@ -54,16 +54,16 @@ class Ortho:
 
     :param src_file:
         Source image to be orthorectified. Can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
+        an :class:`~fsspec.core.OpenFile` object in binary mode (``'rb'``), or a dataset reader.
     :param dem_file:
         DEM file covering the source image.  Can be a path or URI string,
-        an :class:`~fsspec.core.OpenFile` object in binary mode ('rb'), or a dataset reader.
+        an :class:`~fsspec.core.OpenFile` object in binary mode (``'rb'``), or a dataset reader.
     :param camera:
         Source image camera model.
     :param crs:
         CRS of the ``camera`` world coordinates, and ortho image, as an EPSG, proj4 or WKT string,
-        or :class:`~rasterio.crs.CRS` object.  If set to None (the default), the CRS will be read
-        from the source image if possible. If the source image is not projected in the world /
+        or :class:`~rasterio.crs.CRS` object.  If set to ``None`` (the default), the CRS will be
+        read from the source image if possible. If the source image is not projected in the world /
         ortho CRS, ``crs`` should be supplied.
     :param dem_band:
         Index of the DEM band to use (1-based).
@@ -609,31 +609,31 @@ class Ortho:
 
         :param ortho_file:
             Ortho image file to create.  Can be a path or URI string, or an
-            :class:`~fsspec.core.OpenFile` object in binary mode ('wb').
+            :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
         :param resolution:
-            Ortho image pixel (x, y) size in units of the world / ortho CRS.  If set to None (the
-            default), an approximate ground sampling distance is used as the resolution.
+            Ortho image pixel (x, y) size in units of the world / ortho CRS.  If set to ``None``
+            (the default), an approximate ground sampling distance is used as the resolution.
         :param interp:
             Interpolation method for remapping the source to ortho image.
         :param dem_interp:
             Interpolation method for reprojecting the DEM.
         :param per_band:
-            Remap the source to ortho image all bands at once (False), or band-by-band (True).
-            False is faster but requires more memory.
+            Remap the source to ortho image all bands at once (``False``), or band-by-band
+            (``True``). ``False`` is faster but requires more memory.
         :param write_mask:
-            Mask valid ortho pixels with an internal mask (True), or with a nodata value based on
-            ``dtype`` (False). An internal mask helps remove nodata noise caused by lossy
-            compression. If set to None (the default), the mask will be written when JPEG
-            compression is used.
+            Mask valid ortho pixels with an internal mask (``True``), or with a nodata value
+            based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
+            lossy compression. If set to ``None`` (the default), the mask will be written when
+            JPEG compression is used.
         :param dtype:
-            Ortho image data type ('uint8', 'uint16', 'float32' or 'float64').  If set to None (
-            the default), the source image dtype is used.
+            Ortho image data type (``uint8``, ``uint16``, ``float32`` or ``float64``).  If set to
+            ``None`` (the default), the source image data type is used.
         :param compress:
-            Ortho image compression type ('jpeg' or 'deflate').  Deflate can be used with any
-            ``dtype``, and JPEG with the uint8 ``dtype``.  With supporting ``rasterio`` builds,
-            JPEG can also be used with uint16, in which case the ortho is 12 bit JPEG compressed.
-            If ``compress`` is set to None (the default), JPEG is used for the uint8 ``dtype``,
-            and Deflate otherwise.
+            Ortho image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
+            any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
+            builds, ``jpeg`` can also be used with uint16, in which case the ortho is 12 bit JPEG
+            compressed. If ``compress`` is set to ``None`` (the default), ``jpeg`` is used for the
+            uint8 ``dtype``, and ``deflate`` otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param overwrite:

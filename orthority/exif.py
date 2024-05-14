@@ -105,7 +105,7 @@ class Exif:
 
     :param file:
         Image file to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile`
-        object in binary mode ('rb'), or a dataset reader.
+        object in binary mode (``'rb'``), or a dataset reader.
     """
 
     def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):

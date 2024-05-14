@@ -14,7 +14,7 @@ This is the native Orthority format for frame camera :ref:`exterior parameters <
         ]
     }
 
-Each ``Feature`` corresponds to a source image file, where the Feature geometry is the camera position in geographic coordinates.  The ``Feature`` properties are as follows:
+Each ``Feature`` corresponds to a source image file, where the ``Feature`` geometry is the camera position in geographic coordinates.  The ``Feature`` properties are as follows:
 
 .. list-table::
     :widths: auto

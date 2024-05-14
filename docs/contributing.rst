@@ -28,7 +28,7 @@ If installing with pip_, you can install dependencies and link the repository in
 
 If installing into a conda_ environment, it is best to install the `dependencies <https://github.com/leftfield-geospatial/orthority/blob/main/pyproject.yaml>`__ with ``conda`` first, before running the command above.
 
-Please work on features in a new branch, and submit your changes as a `GitHub pull request <https://docs.github.com/articles/about-pull-requests>`__ for review.  It is recommended to discuss possible pull requests in an issue beforehand.
+Please work on features in a new branch, and submit your changes as a `GitHub pull request <https://docs.github.com/articles/about-pull-requests>`__ for review.  I recommend discussing possible pull requests in an issue beforehand.
 
 Orthority uses `black <https://black.readthedocs.io>`__ for formatting (with settings in |pyproject.yaml|_), and the RST docstring style.  Please include `pytest <https://docs.pytest.org>`__ unit tests with your code.
 

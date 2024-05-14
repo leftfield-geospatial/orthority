@@ -213,7 +213,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     """
     with utils.Open(file, 'rt') as f:
         yaml_dict = yaml.safe_load(f)
@@ -280,7 +280,7 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     """
     with utils.Open(file, 'rt') as f:
         json_dict = json.load(f)
@@ -298,7 +298,7 @@ def read_exif_int_param(
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object in
-        binary mode ('rb'), or a dataset reader.
+        binary mode (``'rb'``), or a dataset reader.
     """
     return _read_exif_int_param(Exif(file))
 
@@ -313,7 +313,7 @@ def read_im_rpc_param(
 
     :param files:
         File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-        objects in binary mode ('rb'), or dataset readers.
+        objects in binary mode (``'rb'``), or dataset readers.
     :param progress:
         Whether to display a progress bar monitoring the portion of files read.  Can be set to a
         dictionary of arguments for a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar.
@@ -363,7 +363,7 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     """
     with utils.Open(file, 'rt') as f:
         yaml_dict = yaml.safe_load(f)
@@ -418,7 +418,7 @@ def write_int_param(
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
-        a file object, opened in text mode ('wt').
+        a file object, opened in text mode (``'wt'``).
     :param int_param_dict:
         Interior parameters to write.
     :param overwrite:
@@ -449,7 +449,7 @@ def write_ext_param(
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
-        a file object, opened in text mode ('wt').
+        a file object, opened in text mode (``'wt'``).
     :param ext_param_dict:
         Exterior parameters to write.
     :param crs:
@@ -495,7 +495,7 @@ def write_rpc_param(
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
-        a file object, opened in text mode ('wt').
+        a file object, opened in text mode (``'wt'``).
     :param rpc_param_dict:
         RPC parameters to write.
     :param overwrite:
@@ -704,30 +704,29 @@ class CsvReader(FrameReader):
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
-        :class:`~rasterio.crs.CRS` object.  If set to None (the default), and the file contains
-        (x, y, z) world coordinate positions, a CRS can be provided via a :file:`.prj` sidecar
-        file (i.e. a text file defining a CRS string, and having the same path as ``file``,
-        but a :file:`.prj` extension).  If set to None, and the file contains (latitude,
-        longitude, altitude) **and** (roll, pitch, yaw) fields, a UTM CRS will be
-        auto-determined. If the file contains (latitude, longitude, altitude) **or** (roll,
-        pitch, yaw) fields (but not both), ``crs`` should be supplied.
+        :class:`~rasterio.crs.CRS` object.  If set to ``None`` (the default), and the file
+        contains (``x``, ``y``, ``z``) world coordinate positions, a CRS can be provided via a
+        :file:`.prj` sidecar file.  If set to ``None``, and the file contains (``latitude``,
+        ``longitude``, ``altitude``) and (``roll``, ``pitch``, ``yaw``) fields, a UTM CRS will be
+        auto-determined. If the file contains (``latitude``, ``longitude``, ``altitude``) or
+        (``roll``, ``pitch``, ``yaw``) fields (but not both), ``crs`` should be supplied.
     :param lla_crs:
-        Geographic CRS associated with any (latitude, longitude, altitude) position and/or (roll,
-        pitch, yaw) values in the file (as an EPSG, WKT or proj4 string; or
-        :class:`~rasterio.crs.CRS` object).
+        Geographic CRS associated with any (``latitude``, ``longitude``, ``altitude``) position
+        and/or (``roll``, ``pitch``, ``yaw``) values in the file (as an EPSG, WKT or proj4
+        string; or :class:`~rasterio.crs.CRS` object).
     :param fieldnames:
-        List of names specifying the CSV fields.  If set to None (the default), names will be
+        List of names specifying the CSV fields.  If set to ``None`` (the default), names will be
         read from the file header if it exists.  If ``fieldnames`` is supplied, any existing file
         header is ignored.  See the :doc:`CSV documentation <../file_formats/csv>` for recognised
         and required field names.
     :param dialect:
         :class:`~csv.Dialect` object specifying the CSV delimiter, quote character etc. If set to
-        None (the default), this is auto-detected from the file.
+        ``None`` (the default), this is auto-detected from the file.
     :param radians:
-        Whether orientation angles are in radians (True), or degrees (False).
+        Whether orientation angles are in radians (``True``), or degrees (``False``).
     """
 
     _type_schema = dict(
@@ -950,10 +949,10 @@ class OsfmReader(FrameReader):
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
-        :class:`~rasterio.crs.CRS` object.  If set to None (the default), a UTM CRS will be
+        :class:`~rasterio.crs.CRS` object.  If set to ``None`` (the default), a UTM CRS will be
         auto-determined.
     :param lla_crs:
         CRS of the ``reference_lla`` value in the :file:`reconstruction.json` file as an EPSG, WKT
@@ -1052,10 +1051,10 @@ class ExifReader(FrameReader):
 
     :param files:
         File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
-        objects in binary mode ('rb'), or dataset readers.
+        objects in binary mode (``'rb'``), or dataset readers.
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
-        :class:`~rasterio.crs.CRS` object.  If set to None (the default), a UTM CRS will be
+        :class:`~rasterio.crs.CRS` object.  If set to ``None`` (the default), a UTM CRS will be
         auto-determined.
     :param lla_crs:
         CRS of geographic camera coordinates in the EXIF / XMP tags as an EPSG, WKT or proj4 string;
@@ -1143,7 +1142,7 @@ class OtyReader(FrameReader):
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
-        file object, opened in text mode ('rt').
+        file object, opened in text mode (``'rt'``).
     """
 
     def __init__(self, file: str | PathLike | OpenFile | IO[str], **kwargs) -> None:

@@ -66,7 +66,7 @@ def test_join_ofile(file: str, request: pytest.FixtureRequest):
 
 @pytest.mark.parametrize('raster_file', ['odm_image_file', 'odm_image_url'])
 def test_open_raster_read(raster_file: str, request: pytest.FixtureRequest):
-    """Test OpenRaster in 'r' mode with path / URI, fsspec OpenFile and dataset objects."""
+    """Test OpenRaster in ``'r'`` mode with path / URI, fsspec OpenFile and dataset objects."""
     raster_file = request.getfixturevalue(raster_file)
 
     def _test_open_raster_read(_raster_file, test_closed: bool = True):
@@ -87,7 +87,7 @@ def test_open_raster_read(raster_file: str, request: pytest.FixtureRequest):
 
 
 def test_open_raster_write(tmp_path: Path):
-    """Test OpenRaster in 'w' mode with path / URI, fsspec OpenFile and dataset objects."""
+    """Test OpenRaster in ``'w'`` mode with path / URI, fsspec OpenFile and dataset objects."""
     raster_file = tmp_path.joinpath('test_open_raster_write.tif')
     profile = rio.default_gtiff_profile
     array = np.ones((256, 256), dtype=profile['dtype'])
@@ -170,7 +170,7 @@ def test_open_raster_not_found_error(raster_file: str):
     ],
 )
 def test_open_read(file: str, kwargs: dict, request: pytest.FixtureRequest):
-    """Test Open in 'rt' mode with path / URI, fsspec OpenFile and file objects."""
+    """Test Open in ``'rt'`` mode with path / URI, fsspec OpenFile and file objects."""
     file = request.getfixturevalue(file)
 
     def _test_open_read(_file, test_closed: bool = True, **kwargs):
@@ -191,7 +191,7 @@ def test_open_read(file: str, kwargs: dict, request: pytest.FixtureRequest):
 
 
 def test_open_write(tmp_path: Path):
-    """Test Open in 'w' mode with path / URI, fsspec OpenFile and file objects."""
+    """Test Open in ``'w'`` mode with path / URI, fsspec OpenFile and file objects."""
     file = tmp_path.joinpath('test_open_write.txt')
 
     @contextmanager

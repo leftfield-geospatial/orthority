@@ -413,7 +413,7 @@ lla_crs_option = click.option(
     show_default=True,
     callback=_lla_crs_cb,
     help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; '
-    'or path of a text file containing string',
+    'path / URI of a text file containing string; or path / URI of an image with metadata CRS.',
 )
 radians_option = click.option(
     '-rd/-dg',
@@ -486,8 +486,8 @@ alpha_option = click.option(
     nargs=1,
     default=1,
     show_default=True,
-    help='Scaling of the ``--no-full-remap`` undistorted image: 0 includes the largest '
-    'source image portion that allows all undistorted pixels to be valid.  1 includes all '
+    help='Scaling of the ``--no-full-remap`` undistorted image: ``0`` includes the largest '
+    'source image portion that allows all undistorted pixels to be valid.  ``1`` includes all '
     'source pixels in the undistorted image.',
 )
 write_mask_option = click.option(
@@ -615,10 +615,10 @@ def frame(
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
-    Interior parameters are supported in Orthority (.yaml), OpenDroneMap :file:`cameras.json`,
-    and OpenSfM :file:`reconstruction.json` formats.  Exterior parameters are supported in
-    Orthority (.geojson), CSV, and OpenSfM :file:`reconstruction.json` formats.  Parameter file
-    extensions are used to distinguish their format.
+    Interior parameters are supported in Orthority :file:`.yaml`, OpenDroneMap
+    :file:`cameras.json`, and OpenSfM :file:`reconstruction.json` formats.  Exterior parameters
+    are supported in Orthority :file:`.geojson`, CSV, and OpenSfM :file:`reconstruction.json`
+    formats.  Parameter file extensions are used to distinguish their format.
 
     The :option:`--int-param <oty-frame --int-param>` and :option:`--ext-param <oty-frame
     --ext-param>` options are required.  The :option:`--dem <oty-frame --dem>` option is

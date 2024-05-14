@@ -206,8 +206,8 @@ class Camera(ABC):
         A rectangle of 2D pixel coordinates along the image boundary.
 
         :param num_pts:
-            Number of boundary points to include.  If set to None (the default), eight points are
-            included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
@@ -260,8 +260,8 @@ class Camera(ABC):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include.  If set to None (the default), eight points are
-            included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.
@@ -298,11 +298,12 @@ class Camera(ABC):
         Read image band(s) from a given file.  Sub-classes may add a processing step.
 
         :param im_file:
-            Image file to read from.
+            Image file to read. Can be a path or URI string, :class:`~fsspec.core.OpenFile`
+            object in binary mode (``'rb'``), or dataset reader.
         :param indexes:
             Band index(es) to read (1 based).  Defaults to all bands if not supplied.
         :param dtype:
-            Data type of the returned array.  If set to None (the default), the ``im_file``
+            Data type of the returned array.  If set to ``None`` (the default), the ``im_file``
             dtype is used.
         :param kwargs:
             Not used.
@@ -336,16 +337,16 @@ class Camera(ABC):
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
-            X world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            X world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            Y world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            Z world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param nodata:
-            Value to use for masking invalid pixels in the remapped image.  If set to None (the
+            Value to use for masking invalid pixels in the remapped image.  If set to ``None`` (the
             default), a value based on the ``im_array`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
@@ -414,7 +415,7 @@ class RpcCamera(Camera):
         world coordinate transform.
     :param crs:
         World / ortho CRS as an EPSG, proj4 or WKT string, or :class:`~rasterio.crs.CRS` object.
-        If set to None (the default), the WGS84 geographic 3D CRS is used.
+        If set to ``None`` (the default), the WGS84 geographic 3D CRS is used.
     """
 
     def __init__(
@@ -569,8 +570,8 @@ class FrameCamera(Camera):
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value
         or (x, y) tuple.
     :param sensor_size:
-         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
-         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to ``None``
+         (the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
          ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
         Principal point offsets in `normalised image coordinates
@@ -620,8 +621,8 @@ class FrameCamera(Camera):
     @property
     def distort(self) -> bool:
         """Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
-        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.read` (``True``).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (``False``).
         :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
         with ``distort=False``, but may reduce remap quality.
         """
@@ -633,11 +634,11 @@ class FrameCamera(Camera):
 
     @property
     def alpha(self) -> float:
-        """Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
-        :attr:`~FrameCamera.distort` is False.  0 includes the largest portion of the source
-        image that allows all undistorted pixels to be valid.  1 includes all source pixels in
+        """Scaling (``0``-``1``) of the undistorted image returned by :meth:`~FrameCamera.read` when
+        :attr:`~FrameCamera.distort` is ``False``.  ``0`` includes the largest portion of the source
+        image that allows all undistorted pixels to be valid.  ``1`` includes all source pixels in
         the undistorted image. Its value affects scaling of the camera model intrinsic matrix.
-        Not used when :attr:`~FrameCamera.distort` is True.
+        Not used when :attr:`~FrameCamera.distort` is ``True``.
         """
         return self._alpha
 
@@ -737,9 +738,9 @@ class FrameCamera(Camera):
         Return a new camera intrinsic matrix, and its inverse, for an undistorted image that is
         the same size as the source image.
 
-        ``alpha`` (0-1) controls the portion of the source included in the distorted image. 0
+        ``alpha`` (``0``-``1``) controls the portion of the source included in the distorted image. 0
         includes the largest portion of the source image that allows all undistorted pixels to be
-        valid.  1 includes all source pixels in the undistorted image.
+        valid.  ``1`` includes all source pixels in the undistorted image.
         """
 
         # Adapted from and equivalent to:
@@ -937,11 +938,11 @@ class FrameCamera(Camera):
     def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
         A polygon of 2D pixel coordinates along the image boundary.  If
-        :attr:`~FrameCamera.distort` is False, coordinates will be along the boundary of the
+        :attr:`~FrameCamera.distort` is ``False``, coordinates will be along the boundary of the
         valid area in the undistorted image returned by :meth:`~FrameCamera.read`.
 
         :param num_pts:
-            Number of boundary points to include in the polygon.  If set to None (the default),
+            Number of boundary points to include in the polygon.  If set to ``None`` (the default),
             eight points are included, with points at the image corners and mid-points of the sides.
 
         :return:
@@ -969,8 +970,8 @@ class FrameCamera(Camera):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include.  If set to None (the default), eight points are
-            included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.
@@ -1022,22 +1023,23 @@ class FrameCamera(Camera):
     ) -> np.ndarray:
         """
         Read image band(s) from a given file, undistorting when :attr:`~FrameCamera.distort` is
-        False.
+        ``False``.
 
         :param im_file:
-            Image file to read from.
+            Image file to read.  Can be a path or URI string, :class:`~fsspec.core.OpenFile`
+            object in binary mode (``'rb'``), or dataset reader.
         :param indexes:
             Band index(es) to read (1 based).
         :param dtype:
-            Data type of the returned array.  If set to None (the default), the ``im_file``
+            Data type of the returned array.  If set to ``None`` (the default), the ``im_file``
             dtype is used.
         :param nodata:
-            Value to use for masking invalid pixels in the undistorted image.  If set to None
+            Value to use for masking invalid pixels in the undistorted image.  If set to ``None``
             (the default), a value based on ``dtype`` is chosen automatically.  Not used if
-            :attr:`~FrameCamera.distort` is True.
+            :attr:`~FrameCamera.distort` is ``True``.
         :param interp:
             Interpolation method to use when undistorting the image.  Not used if
-            :attr:`~FrameCamera.distort` is True.
+            :attr:`~FrameCamera.distort` is ``True``.
 
         :return:
             Image as 3D array with band(s) along the first dimension (Rasterio ordering).
@@ -1068,23 +1070,23 @@ class FrameCamera(Camera):
             ordering).  Typically, this is the image returned by :meth:`Camera.read`, with the
             same size as the camera :attr:`~Camera.im_size`.
         :param x:
-            X world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            X world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param y:
-            Y world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            Y world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param z:
-            Z world coordinates to remap to, as a M-by-N 2D array with 'float64' data type. NaN
+            Z world coordinates to remap to, as a M-by-N 2D array with ``float64`` data type. NaN
             coordinate pixels are mapped to ``nodata``.
         :param nodata:
-            Value to use for masking invalid pixels in the remapped image.  If set to None (the
+            Value to use for masking invalid pixels in the remapped image.  If set to ``None`` (the
             default), a value based on the ``im_array`` data type is chosen automatically.
         :param interp:
             Interpolation method to use for remapping.
         :param kernel_size:
             Kernel (width, height) size in pixels, used for dilating the nodata mask.  Removes
             blurring of boundary pixels with nodata areas in an undistorted ``im_array``.  Not used
-            if blurring could not have occurred (e.g. if :attr:`~FrameCamera.distort` is True).
+            if blurring could not have occurred (e.g. if :attr:`~FrameCamera.distort` is ``True``).
 
         :return:
             - Remapped image as a L-by-M-by-N 3D array, where L is the number of ``im_array``
@@ -1134,8 +1136,8 @@ class OpenCVCamera(FrameCamera):
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple.
     :param sensor_size:
-         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
-         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to ``None``
+         (the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
          ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
         Principal point offsets in `normalised image coordinates
@@ -1164,16 +1166,16 @@ class OpenCVCamera(FrameCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
-        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.read` (``True``).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (``False``).
         :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
         with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
-        ``distort`` is False.  0 includes the largest portion of the source image that allows all
-        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Its value affects scaling of the camera model intrinsic matrix.  Not used when
-        ``distort`` is True.
+        Scaling (``0``-``1``) of the undistorted image returned by :meth:`~FrameCamera.read` when
+        ``distort`` is ``False``.  ``0`` includes the largest portion of the source image that
+        allows all undistorted pixels to be valid.  ``1`` includes all source pixels in the
+        undistorted image. Its value affects scaling of the camera model intrinsic matrix.  Not
+        used when ``distort`` is ``True``.
     """
 
     def __init__(
@@ -1279,8 +1281,8 @@ class BrownCamera(OpenCVCamera):
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple.
     :param sensor_size:
-         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
-         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to ``None``
+         (the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
          ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
         Principal point offsets in `normalised image coordinates
@@ -1299,16 +1301,16 @@ class BrownCamera(OpenCVCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
-        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.read` (``True``).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (``False``).
         :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
         with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
-        ``distort`` is False.  0 includes the largest portion of the source image that allows all
-        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Its value affects scaling of the camera model intrinsic matrix.  Not used when
-        ``distort`` is True.
+        Scaling (``0``-``1``) of the undistorted image returned by :meth:`~FrameCamera.read` when
+        ``distort`` is ``False``.  ``0`` includes the largest portion of the source image that
+        allows all undistorted pixels to be valid.  ``1`` includes all source pixels in the
+        undistorted image. Its value affects scaling of the camera model intrinsic matrix.  Not
+        used when ``distort`` is ``True``.
     """
 
     def __init__(
@@ -1377,8 +1379,8 @@ class FisheyeCamera(FrameCamera):
         Focal length(s) with the same units/scale as ``sensor_size``.  Can be a single value or
         (x, y) tuple.
     :param sensor_size:
-         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to None (
-         the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
+         Sensor (width, height) with the same units/scale as ``focal_len``.  If set to ``None``
+         (the default), pixels are assumed square and ``focal_len`` normalised and unitless (i.e.
          ``focal_len`` = focal length / max(sensor width & height)).
     :param cx:
         Principal point offsets in `normalised image coordinates
@@ -1396,16 +1398,16 @@ class FisheyeCamera(FrameCamera):
         world coordinates.
     :param distort:
         Include distortion in the camera model, and return the original (distorted) image from
-        :meth:`~FrameCamera.read` (True).  Or, exclude distortion from the camera model,
-        and return an undistorted image from :meth:`~FrameCamera.read` (False).
+        :meth:`~FrameCamera.read` (``True``).  Or, exclude distortion from the camera model,
+        and return an undistorted image from :meth:`~FrameCamera.read` (``False``).
         :meth:`~FrameCamera.remap` of an image returned by :meth:`~FrameCamera.read` is faster
         with ``distort=False``, but may reduce remap quality.
     :param alpha:
-        Scaling (0-1) of the undistorted image returned by :meth:`~FrameCamera.read` when
-        ``distort`` is False.  0 includes the largest portion of the source image that allows all
-        undistorted pixels to be valid.  1 includes all source pixels in the undistorted image.
-        Its value affects scaling of the camera model intrinsic matrix.  Not used when
-        ``distort`` is True.
+        Scaling (``0``-``1``) of the undistorted image returned by :meth:`~FrameCamera.read` when
+        ``distort`` is ``False``.  ``0`` includes the largest portion of the source image that
+        allows all undistorted pixels to be valid.  ``1`` includes all source pixels in the
+        undistorted image. Its value affects scaling of the camera model intrinsic matrix.  Not
+        used when ``distort`` is ``True``.
     """
 
     def __init__(

@@ -41,8 +41,8 @@ class CameraType(str, Enum):
     Fisheye frame camera model.
 
     Compatible with `OpenDroneMap / OpenSfM 
-    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__, and `OpenCV 
-    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  ``fisheye`` model 
+    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__ ``fisheye``, and `OpenCV 
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model 
     parameters."""
 
     opencv = 'opencv'
@@ -110,7 +110,7 @@ class Compress(str, Enum):
     """Compression types."""
 
     jpeg = 'jpeg'
-    """Jpeg compression."""
+    """JPEG compression."""
     deflate = 'deflate'
     """Deflate compression."""
 

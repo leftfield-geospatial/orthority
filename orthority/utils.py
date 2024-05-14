@@ -213,9 +213,9 @@ class OpenRaster:
         context, and ``mode`` and ``kwargs`` are ignored.  If is an OpenFile instance, it should
         be open in a binary mode matching ``mode``.
     :param mode:
-        Mode in which the dataset is opened.  Either 'r' or 'w'.
+        Mode in which the dataset is opened.  Either ``'r'`` or ``'w'``.
     :param overwrite:
-        Whether to overwrite an existing file in 'w' mode.  Ignored in 'r' mode.
+        Whether to overwrite an existing file in ``'w'`` mode.  Ignored in ``'r'`` mode.
     :param kwargs:
         Keyword arguments to pass to :func:`rasterio.open`.
     """
@@ -304,7 +304,7 @@ class Open:
     :param mode:
         Mode in which the file is opened.
     :param overwrite:
-        Whether to overwrite an existing file in 'w*' mode.  Ignored in 'r*' mode.
+        Whether to overwrite an existing file in `'`w*'`` mode.  Ignored in ``'r*'`` mode.
     :param kwargs:
         Keyword arguments to pass to :func:`fsspec.open` or ``opener`` if it is specified.
     """

@@ -130,7 +130,7 @@ def test_read_osfm_int_param(
     test_dict = param_io.read_osfm_int_param(filename)
 
     def compare_dicts(test: dict, ref: dict):
-        """Compare interior parameter dicts omitting 'sensor_size'."""
+        """Compare interior parameter dicts omitting ``sensor_size``."""
         for k, v in ref.items():
             if isinstance(v, dict):
                 compare_dicts(test[k], v)
@@ -182,7 +182,7 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_p
 
 
 def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_file: Path):
-    """Test reading EXIF / XMP tag interior parameters from an image with the 'DewarpData' XMP
+    """Test reading EXIF / XMP tag interior parameters from an image with the ``DewarpData`` XMP
     tag.
     """
     int_param_dict = param_io.read_exif_int_param(odm_image_file)
@@ -196,7 +196,7 @@ def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_fil
     'filename', ['exif_image_file', 'exif_no_focal_image_file', 'xmp_no_dewarp_image_file']
 )
 def test_read_exif_int_param_no_dewarp(filename: str, request: pytest.FixtureRequest):
-    """Test reading EXIF / XMP tag interior parameters from an image without the 'DewarpData' XMP
+    """Test reading EXIF / XMP tag interior parameters from an image without the ``DewarpData`` XMP
     tag.
     """
     filename: Path = request.getfixturevalue(filename)

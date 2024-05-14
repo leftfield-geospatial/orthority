@@ -1,7 +1,7 @@
 Vertical CRS
 ============
 
-DEM and :ref:`world coordinate <background/coordinates:world coordinates>` heights may have different vertical coordinate systems e.g. heights may be referenced to different datums (ellipsoid or geoid) and have different units.  Accurate orthorectification requires conversion of heights into a common system.  When both the DEM and world / ortho CRS have a defined vertical system (either as a 3D CRS, or a 2D+1D compound CRS), this conversion is performed automatically. Otherwise, DEM and world vertical systems are assumed the same, and no conversion is performed.
+DEM and :ref:`world coordinate <background/coordinates:world coordinates>` heights may have different vertical coordinate systems e.g. heights may be referenced to different datums (ellipsoid or geoid) and have different units.  Accurate orthorectification requires conversion of heights into a common system.  When both the DEM and world / ortho CRS have a defined vertical system (as a 3D CRS or a 2D+1D compound CRS), this conversion is performed automatically. Otherwise, DEM and world vertical systems are assumed the same, and no conversion is performed.
 
 .. note::
 
