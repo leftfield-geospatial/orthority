@@ -511,7 +511,7 @@ class RpcCamera(Camera):
         return xyz
 
 
-class GcpCamera(Camera):
+class GcpCamera(Camera):  # pragma: no cover
     """
     GCP camera (UNTESTED).
 
