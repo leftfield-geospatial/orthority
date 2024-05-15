@@ -133,7 +133,7 @@ See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage a
 Contributing
 ------------
 
-Contributions are welcome. There is a guide in the `documentation <https://orthority.readthedocs.io/contributing>`__. Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/orthority/issues>`__.
+Contributions are welcome. The online documentation has a `guide <https://orthority.readthedocs.io/en/latest/contributing.html>`__.  Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/orthority/issues>`__.
 
 Licensing
 ---------
