@@ -3,7 +3,7 @@
 Orthority
 =========
 
-.. image:: https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/main/docs/readme_banner.webp
+.. image:: https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/docs/readme_banner.webp
    :alt: banner
 
 .. description_start
@@ -133,7 +133,7 @@ See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage a
 Contributing
 ------------
 
-Contributions are welcome. The online documentation has a `guide <https://orthority.readthedocs.io/en/latest/contributing.html>`__.  Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/orthority/issues>`__.
+Contributions are welcome - the online documentation has a `guide <https://orthority.readthedocs.io/en/latest/contributing.html>`__.  Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/orthority/issues>`__.
 
 Licensing
 ---------
@@ -149,8 +149,8 @@ Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-1
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml
-.. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/simple-ortho/branch/main/graph/badge.svg?token=YPZAQS4S15
-   :target: https://codecov.io/gh/leftfield-geospatial/simple-ortho
+.. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/orthority/branch/main/graph/badge.svg?token=YPZAQS4S15
+   :target: https://codecov.io/gh/leftfield-geospatial/orthority
 .. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg
    :target: https://www.gnu.org/licenses/agpl-3.0
 .. |docs| image:: https://readthedocs.org/projects/orthority/badge/?version=latest
