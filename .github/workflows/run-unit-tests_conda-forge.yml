@@ -1,38 +1,46 @@
 name: Tests (conda-forge)
 
 on:
-#  push:
-#    branches: [main, feature_pytest_click]
-#  pull_request:
-#    branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
+  schedule:
+    - cron: '0 2 * * 1'  # run weekly
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     defaults:
       run:
-        shell: bash -l {0}
+        shell: bash -el {0}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-latest, ubuntu-latest, windows-latest ]
         python-version: ['3.9', '3.10', '3.11']
+
     steps:
-    - uses: actions/checkout@v3  # for the test data
-    - uses: conda-incubator/setup-miniconda@v2
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up conda
+      uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: ${{ matrix.python-version }}
         channels: conda-forge
-        channel-priority: true
-        activate-environment: test
-        miniforge-variant: Mambaforge
+        channel-priority: strict
+        activate-environment: orthority-test
+        conda-solver: libmamba
+
     - name: Install dependencies
+      # Note that conda-forge OpenCV 4.9 package has *GL dependencies that are not satisfied by
+      # GitHub's Ubuntu image, so 'opencv-python-headless' is installed with pip below.
       run: |
-        mamba info
-        mamba list
-        mamba install -c conda-forge rasterio opencv click tqdm pyyaml pytest pytest-cov
-        mamba list
+        conda info
+        conda install -c conda-forge rasterio click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        pip install opencv-python-headless
+        conda list
+
     - name: Run unit tests
       run: |
-        python -m pytest --cov=simple_ortho --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
+        python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests

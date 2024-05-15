@@ -31,5 +31,5 @@ ortho:
   dtype:
   # Ortho pixel size [x, y] in units of the CRS.
   resolution: [0.5, 0.5]
-  # Compression type (deflate, jpeg, auto).  (auto = jpeg compression for uint8 data type, deflate otherwise).
-  compress: auto
+  # Compression type (deflate, jpeg).  (None = jpeg compression for uint8 data type, deflate otherwise).
+  compress:

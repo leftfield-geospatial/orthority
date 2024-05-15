@@ -1,0 +1,5 @@
+sphinx
+furo
+sphinx-click
+sphinx-argparse
+sphinx-copybutton

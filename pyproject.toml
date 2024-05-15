@@ -1,0 +1,53 @@
+[project]
+name = 'orthority'
+description = 'Orthorectification of drone and aerial imagery.'
+readme = 'README.rst'
+requires-python = '>=3.8'
+dependencies = [
+    'rasterio>=1.3.6',
+    'opencv-python-headless>=4.8',
+    'pyyaml>=5',
+    'click>=8',
+    'tqdm>=4',
+    'fsspec>=2023.12'
+]
+authors = [{name = 'Leftfield Geospatial'}]
+license = {text = 'AGPL-3.0-or-later'}
+keywords = [
+    'orthorectify', 'orthorectification', 'georeference', 'uav', 'drone', 'aerial', 'exif', 'xmp',
+    'image'
+]
+classifiers = [
+    'Programming Language :: Python :: 3',
+    'License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)',
+    'Operating System :: OS Independent',
+]
+dynamic = ['version']
+
+[project.scripts]
+oty = 'orthority.cli:cli'
+simple-ortho = 'orthority.cli:simple_ortho'
+
+[project.optional-dependencies]
+http = ['requests', 'aiohttp']
+tests = ['pytest', 'requests', 'aiohttp']
+docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
+
+[project.urls]
+Homepage = 'https://github.com/leftfield-geospatial/simple-ortho'
+Changelog = 'https://github.com/leftfield-geospatial/simple-ortho/releases'
+Issues = 'https://github.com/leftfield-geospatial/simple-ortho/issues'
+
+[build-system]
+requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
+
+[tool.setuptools]
+packages = ['orthority']
+
+[tool.setuptools.dynamic]
+version = {attr = 'orthority.version.__version__'}
+
+[tool.black]
+line-length = 100
+skip-string-normalization = true
