@@ -1,4 +1,4 @@
-|Tests| |codecov| |License: AGPL v3|
+|Tests| |codecov| |License: AGPL v3| |docs|
 
 Orthority
 =========
@@ -153,3 +153,6 @@ Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-1
    :target: https://codecov.io/gh/leftfield-geospatial/simple-ortho
 .. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg
    :target: https://www.gnu.org/licenses/agpl-3.0
+.. |docs| image:: https://readthedocs.org/projects/orthority/badge/?version=latest
+    :target: https://orthority.readthedocs.io/en/latest/?badge=latest
+    :alt: Documentation Status
