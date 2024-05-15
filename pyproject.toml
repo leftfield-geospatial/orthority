@@ -1,6 +1,6 @@
 [project]
 name = 'orthority'
-description = 'Orthorectification of drone and aerial imagery.'
+description = 'Orthorectification of drone, aerial and satellite imagery.'
 readme = 'README.rst'
 requires-python = '>=3.8'
 dependencies = [
@@ -14,8 +14,8 @@ dependencies = [
 authors = [{name = 'Leftfield Geospatial'}]
 license = {text = 'AGPL-3.0-or-later'}
 keywords = [
-    'orthorectify', 'orthorectification', 'georeference', 'uav', 'drone', 'aerial', 'exif', 'xmp',
-    'image'
+    'orthorectify', 'orthorectification', 'georeference', 'uav', 'drone', 'aerial', 'satellite',
+    'exif', 'xmp', 'image', 'RPC',
 ]
 classifiers = [
     'Programming Language :: Python :: 3',
@@ -34,9 +34,9 @@ tests = ['pytest', 'requests', 'aiohttp']
 docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
 
 [project.urls]
-Homepage = 'https://github.com/leftfield-geospatial/simple-ortho'
-Changelog = 'https://github.com/leftfield-geospatial/simple-ortho/releases'
-Issues = 'https://github.com/leftfield-geospatial/simple-ortho/issues'
+Homepage = 'https://github.com/leftfield-geospatial/orthority'
+Changelog = 'https://github.com/leftfield-geospatial/orthority/releases'
+Issues = 'https://github.com/leftfield-geospatial/orthority/issues'
 
 [build-system]
 requires = ['setuptools']

@@ -1,4 +1,4 @@
-|Tests| |codecov| |License: AGPL v3| |docs|
+|Tests| |codecov| |docs| |License: AGPL v3|
 
 Orthority
 =========
