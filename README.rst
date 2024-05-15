@@ -109,7 +109,7 @@ Orthorectify an image using interior and exterior parameter files to generate th
 
     # URLs of required files
     url_root = (
-        'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/tests/data/'
+        'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
     )
     src_file = url_root + 'ngi/3324c_2015_1004_05_0182_RGB.tif'  # aerial image
     dem_file = url_root + 'ngi/dem.tif'  # DEM covering imaged area
@@ -133,7 +133,7 @@ See `orthority.readthedocs.io <https://orthority.readthedocs.io/>`__ for usage a
 Contributing
 ------------
 
-Contributions are welcome. There is a guide in the `documentation <https://orthority.readthedocs.io/contributing>`__. Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/simple-ortho/issues>`__.
+Contributions are welcome. There is a guide in the `documentation <https://orthority.readthedocs.io/contributing>`__. Please report bugs and make feature requests with the `github issue tracker <https://github.com/leftfield-geospatial/orthority/issues>`__.
 
 Licensing
 ---------
@@ -147,8 +147,8 @@ Acknowledgements
 
 Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__ & the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial Information <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and aero-triangulation data that form part of the package test data.
 
-.. |Tests| image:: https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml/badge.svg
-   :target: https://github.com/leftfield-geospatial/simple-ortho/actions/workflows/run-unit-tests_pypi.yml
+.. |Tests| image:: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml/badge.svg
+   :target: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml
 .. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/simple-ortho/branch/main/graph/badge.svg?token=YPZAQS4S15
    :target: https://codecov.io/gh/leftfield-geospatial/simple-ortho
 .. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg

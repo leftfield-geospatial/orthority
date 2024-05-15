@@ -4,9 +4,7 @@
 import orthority as oty
 
 # URLs of required files
-url_root = (
-    'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/tests/data/'
-)
+url_root = 'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
 src_file = url_root + 'rpc/qb2_basic1b.tif'  # satellite image with RPC tags
 rpc_param_file = url_root + 'rpc/rpc_param.yaml'  # Orthority format RPC parameters
 

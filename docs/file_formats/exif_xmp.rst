@@ -84,7 +84,7 @@ Camera orientation
 
 .. note::
 
-    See the `test data <https://github.com/leftfield-geospatial/simple-ortho/tree/main/tests/data/odm/images>`__ for examples of images with valid EXIF / XMP tags.
+    See the `test data <https://github.com/leftfield-geospatial/orthority/tree/main/tests/data/odm/images>`__ for examples of images with valid EXIF / XMP tags.
 
 .. TODO: add an oty info subcommand and refer to it here
 

@@ -61,5 +61,5 @@ Optionally, the CRS of ``x``, ``y``, ``z`` world coordinate positions can be sup
 
 .. note::
 
-    See the `test data <https://github.com/leftfield-geospatial/simple-ortho/tree/main/tests/data/io>`__ for other CSV file examples.
+    See the `test data <https://github.com/leftfield-geospatial/orthority/tree/main/tests/data/io>`__ for other CSV file examples.
 

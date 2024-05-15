@@ -1,9 +1,7 @@
 import orthority as oty
 
 # URLs of required files
-url_root = (
-    'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/tests/data/'
-)
+url_root = 'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
 src_file = url_root + 'ngi/3324c_2015_1004_05_0182_RGB.tif'  # aerial image
 dem_file = url_root + 'ngi/dem.tif'  # DEM covering imaged area
 int_param_file = url_root + 'io/ngi_int_param.yaml'  # interior parameters

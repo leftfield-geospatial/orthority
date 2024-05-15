@@ -639,7 +639,7 @@ def rgb_pinhole_utm34n_ortho(
 def github_root_url() -> str:
     """URL of github repository root."""
     # TODO: change to /main
-    return r'https://raw.githubusercontent.com/leftfield-geospatial/simple-ortho/feature_docs/'
+    return r'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/'
 
 
 @pytest.fixture(scope='session')
