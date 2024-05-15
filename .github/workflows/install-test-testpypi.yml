@@ -30,9 +30,9 @@ jobs:
         timeout-minutes: 5
         run: |
           cd tests/data
-          orthority frame --help
-          orthority odm --dataset-dir odm
-          orthority odm --dataset-dir odm --export-params
+          oty frame --help
+          oty odm --dataset-dir odm
+          oty odm --dataset-dir odm --export-params
           ls ./odm/orthority/*
           test -f ./odm/orthority/100_0005_0018_ORTHO.tif && echo "Pass" || echo "Fail"
           test -f ./odm/orthority/int_param.yaml && echo "Pass" || echo "Fail"

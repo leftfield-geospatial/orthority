@@ -1,4 +1,4 @@
-name: Build & publish to Test PyPI
+name: Build & publish to TestPyPI
 on:
   workflow_dispatch:
 
