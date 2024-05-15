@@ -1,0 +1,45 @@
+name: Install & test conda-forge package
+on: 
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4  # for the test data
+
+      - name: Set up conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: ${{ matrix.python-version }}
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: orthority-test
+          conda-solver: libmamba
+
+      - name: Install package
+        run: |
+          conda info
+          conda install orthority>=0.4.0
+          conda list
+
+      - name: Test CLI
+        timeout-minutes: 5
+        run: |
+          cd tests/data
+          oty frame --help
+          oty odm --dataset-dir odm
+          oty odm --dataset-dir odm --export-params
+          ls ./odm/orthority/*
+          test -f ./odm/orthority/100_0005_0018_ORTHO.tif && echo "Pass" || echo "Fail"
+          test -f ./odm/orthority/int_param.yaml && echo "Pass" || echo "Fail"
