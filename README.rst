@@ -48,6 +48,7 @@ Orthority command line functionality is accessed with the ``oty`` command, and i
 -  ``frame``: Orthorectify images with frame camera model(s) defined by interior and exterior parameter files.
 -  ``exif``: Orthorectify images with frame camera model(s) defined by image EXIF / XMP tags.
 -  ``odm``: Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
+-  ``rpc``: Orthorectify images with RPC camera models defined by image tags / sidecar files or parameter files.
 
 Get help on ``oty`` with:
 
@@ -72,29 +73,35 @@ Options for the output files and orthorectification algorithm are common to all 
 Examples
 ^^^^^^^^
 
-Orthorectify *source.tif* with the DEM in *dem.tif*, and frame camera model defined by *int_param.yaml* and *ext_param.geojson* interior and exterior parameters:
+Orthorectify ``source.tif`` with the DEM in ``dem.tif``, and frame camera model defined by ``int_param.yaml`` and ``ext_param.geojson`` interior and exterior parameters:
 
 .. code-block:: bash
 
    oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.geojson source.tif
 
-Orthorectify *source.tif* with the DEM in *dem.tif*, and frame camera model defined by *source.tif* EXIF / XMP tags:
+Orthorectify ``source.tif`` with the DEM in ``dem.tif``, and frame camera model defined by ``source.tif`` EXIF / XMP tags:
 
 .. code-block:: bash
 
    oty exif --dem dem.tif source.tif
 
-As above, but the create the ortho image with *bilinear* interpolation, a 0.5 m pixel size and *deflate* compression:
+As above, but the create the ortho image with ``bilinear`` interpolation, a 0.5 m pixel size and ``deflate`` compression:
 
 .. code-block:: bash
 
    oty exif --dem dem.tif --interp bilinear --res 0.5 --compress deflate source.tif
 
-Orthorectify images in the OpenDroneMap dataset *odm*, with the dataset DSM and camera models.  Ortho images are placed in *odm/orthority*.
+Orthorectify images in the OpenDroneMap dataset ``odm``, with the dataset DSM and camera models.  Ortho images are placed in ``odm/orthority``.
 
 .. code-block:: bash
 
    oty odm --dataset-dir odm --out-dir odm/orthority
+   
+Orthorectify ``source.tif`` with the DEM in ``dem.tif``, and RPC camera model defined by ``source.tif`` tags / sidecar files:
+   
+.. code-block:: bash
+
+   oty rpc --dem dem.tif source.tif
 
 API
 ~~~
