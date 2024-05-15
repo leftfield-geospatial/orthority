@@ -1,4 +1,4 @@
-|Tests| |codecov| |docs| |License: AGPL v3|
+|Tests| |codecov| |PyPI version| |docs| |License: AGPL v3|
 
 Orthority
 =========
@@ -158,8 +158,10 @@ Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-1
    :target: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml
 .. |codecov| image:: https://codecov.io/gh/leftfield-geospatial/orthority/branch/main/graph/badge.svg?token=YPZAQS4S15
    :target: https://codecov.io/gh/leftfield-geospatial/orthority
-.. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg
-   :target: https://www.gnu.org/licenses/agpl-3.0
+.. |PyPI version| image:: https://img.shields.io/pypi/v/orthority?color=blue
+   :target: https://pypi.org/project/orthority/
 .. |docs| image:: https://readthedocs.org/projects/orthority/badge/?version=latest
     :target: https://orthority.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
+.. |License: AGPL v3| image:: https://img.shields.io/badge/License-AGPL_v3-blue.svg
+   :target: https://www.gnu.org/licenses/agpl-3.0
