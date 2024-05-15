@@ -1,0 +1,39 @@
+name: Install & test TestPyPI package
+on:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-latest, ubuntu-latest, windows-latest ]
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4  # for the test data
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install from Test PyPI
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --extra-index-url https://test.pypi.org/simple/ --no-cache-dir --upgrade orthority
+
+      - name: Test CLI
+        timeout-minutes: 5
+        run: |
+          cd tests/data
+          orthority frame --help
+          orthority odm --dataset-dir odm
+          orthority odm --dataset-dir odm --export-params
+          ls ./odm/orthority/*
+          test -f ./odm/orthority/100_0005_0018_ORTHO.tif && echo "Pass" || echo "Fail"
+          test -f ./odm/orthority/int_param.yaml && echo "Pass" || echo "Fail"
+          
