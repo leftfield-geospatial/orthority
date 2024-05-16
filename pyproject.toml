@@ -15,7 +15,7 @@ authors = [{name = 'Leftfield Geospatial'}]
 license = {text = 'AGPL-3.0-or-later'}
 keywords = [
     'orthorectify', 'orthorectification', 'georeference', 'uav', 'drone', 'aerial', 'satellite',
-    'exif', 'xmp', 'image', 'RPC',
+    'exif', 'xmp', 'image', 'rpc',
 ]
 classifiers = [
     'Programming Language :: Python :: 3',
