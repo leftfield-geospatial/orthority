@@ -41,7 +41,6 @@ jobs:
     - name: Install OpenCV Linux dependencies
       if: matrix.os == 'ubuntu-latest'
       run: |
-      # Fix cv2 ImportError: 'libEGL.so.1: cannot open shared object file: No such file or directory'
         sudo apt-get update
         sudo apt-get install -y libegl1 libopengl0
 
