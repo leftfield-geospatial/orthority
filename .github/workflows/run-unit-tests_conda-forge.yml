@@ -32,6 +32,19 @@ jobs:
         activate-environment: orthority-test
         conda-solver: libmamba
 
+    - name: Install dependencies
+      run: |
+        conda info
+        conda install -c conda-forge rasterio opencv click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        conda list
+
+    - name: Install OpenCV Linux dependencies
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+      # Fix cv2 ImportError: 'libEGL.so.1: cannot open shared object file: No such file or directory'
+        sudo apt-get update
+        sudo apt-get install -y libegl1 libopengl0
+
     - name: Run unit tests
       run: |
         python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests
