@@ -1,4 +1,4 @@
-|Tests| |codecov| |PyPI version| |docs| |License: AGPL v3|
+|Tests| |codecov| |PyPI version| |conda-forge version| |docs| |License: AGPL v3|
 
 Orthority
 =========
@@ -160,6 +160,11 @@ Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-1
    :target: https://codecov.io/gh/leftfield-geospatial/orthority
 .. |PyPI version| image:: https://img.shields.io/pypi/v/orthority?color=blue
    :target: https://pypi.org/project/orthority/
+
+.. |conda-forge version| image:: https://img.shields.io/conda/vn/conda-forge/orthority.svg?color=blue
+   :alt: conda-forge
+   :target: https://anaconda.org/conda-forge/orthority
+
 .. |docs| image:: https://readthedocs.org/projects/orthority/badge/?version=latest
     :target: https://orthority.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
