@@ -32,22 +32,6 @@ jobs:
         activate-environment: orthority-test
         conda-solver: libmamba
 
-    - name: Install dependencies
-      # Note that conda-forge OpenCV 4.9 package has *GL dependencies that are not satisfied by
-      # GitHub's Ubuntu image, so 'opencv-python-headless' is installed with pip below.
-      run: |
-        conda info
-        conda install -c conda-forge rasterio click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
-        pip install opencv-python-headless
-        conda list
-
-    - name: Install OpenCV Linux dependencies
-      if: matrix.os == 'ubuntu-latest'
-      run: |
-      # Fix cv2 ImportError: 'libEGL.so.1: cannot open shared object file: No such file or directory'
-        sudo apt-get update
-        sudo apt-get install -y libegl1 libopengl0
-
     - name: Run unit tests
       run: |
         python -m pytest --cov=orthority --cov-report=term-missing --cov-report=xml:coverage.xml ./tests

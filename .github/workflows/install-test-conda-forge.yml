@@ -33,6 +33,12 @@ jobs:
           conda install orthority>=0.4.0
           conda list
 
+      - name: Install OpenCV Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libegl1 libopengl0
+
       - name: Test CLI
         timeout-minutes: 5
         run: |
