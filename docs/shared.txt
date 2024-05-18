@@ -2,4 +2,4 @@
 .. _Rasterio: https://rasterio.readthedocs.io
 .. _GDAL: https://gdal.org
 .. _pip: https://pip.pypa.io
-.. _conda: https://docs.conda.io/projects/miniconda
+.. _conda: https://docs.anaconda.com/free/miniconda

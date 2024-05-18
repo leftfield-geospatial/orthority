@@ -17,7 +17,7 @@ Orthority provides a command line interface and Python API for orthorectifying d
 Installation
 ------------
 
-Orthority is a python 3 package that can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.conda.io/projects/miniconda>`_.
+Orthority is a python 3 package that can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.anaconda.com/free/miniconda/>`_.
 
 pip
 ~~~
