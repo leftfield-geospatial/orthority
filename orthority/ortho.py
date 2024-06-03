@@ -543,6 +543,8 @@ class Ortho:
         tile_wins = [tile_win for _, tile_win in ortho_im.block_windows(1)]
         progress.total = len(tile_wins) * len(index_list)
 
+        # TODO: Memory increases ~linearly with number of threads, but does processing speed?
+        #  Make number of threads configurable and place a limit on the default value
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:

@@ -54,6 +54,9 @@ logger = logging.getLogger(__name__)
 @contextmanager
 def suppress_no_georef():
     """Context manager to suppress rasterio's NotGeoreferencedWarning."""
+    # TODO: warnings.catch_warnings is not thread-safe and warnings.simplefilter should rather be
+    #  called once in cli.  consider what this does to API doc examples though - perhaps it can
+    #  go in __init__.py.
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=NotGeoreferencedWarning)
         yield
