@@ -90,7 +90,7 @@ def test_frame_cameras_init_error(ngi_oty_int_param_file: Path, ngi_oty_ext_para
     assert 'not supported' in str(ex.value)
 
 
-def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
+def test_frame_cameras_from_images(odm_image_files: list[Path]):
     """Test creating a frame camera factory from images."""
     cameras = FrameCameras.from_images(odm_image_files)
     assert cameras.crs is not None
@@ -99,7 +99,7 @@ def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
     assert len(cameras._ext_param_dict) > 0
 
 
-def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
+def test_frame_cameras_from_images_kwargs(odm_image_files: list[Path], ngi_crs: str):
     """Test creating a frame camera factory from images passes ``io_kwargs`` and ``cam_kwargs``
     through.
     """
@@ -113,7 +113,7 @@ def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi
     assert camera.alpha == cam_kwargs['alpha']
 
 
-def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: tuple[Path, ...]):
+def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: list[Path]):
     """Test ``FrameCameras.get()`` for known filenames."""
     cameras = FrameCameras(odm_reconstruction_file, odm_reconstruction_file)
     assert cameras.filenames == {Path(fn).stem for fn in odm_image_files}

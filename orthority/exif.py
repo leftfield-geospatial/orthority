@@ -216,7 +216,7 @@ class Exif:
         return self._rpy
 
     @property
-    def dewarp(self) -> Sequence[float] | None:
+    def dewarp(self) -> list[float] | None:
         """Dewarp parameters."""
         return self._dewarp
 
@@ -350,12 +350,12 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> Sequence[float] | None:
+    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> list[float] | None:
         """Return the camera dewarp parameters if they exist."""
         for schema_name, xmp_schema in _xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
             if dewarp_str:
-                return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
+                return [float(ps) for ps in dewarp_str.split(';')[-1].split(',')]
         return None
 
     def to_dict(self) -> dict[str, object]:

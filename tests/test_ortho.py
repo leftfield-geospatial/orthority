@@ -1168,7 +1168,7 @@ def test_process_progress(
 
 
 def test_process_ngi(
-    ngi_image_files: tuple[Path, ...],
+    ngi_image_files: list[Path],
     ngi_dem_file: Path,
     ngi_legacy_config_file: Path,
     ngi_legacy_csv_file: Path,
@@ -1191,11 +1191,11 @@ def test_process_ngi(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(tuple(ortho_files))
+    _validate_ortho_files(ortho_files)
 
 
 def test_process_odm(
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_crs: str,
@@ -1218,4 +1218,4 @@ def test_process_odm(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(tuple(ortho_files), num_ovl_thresh=5)
+    _validate_ortho_files(ortho_files, num_ovl_thresh=5)

@@ -340,9 +340,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
         assert C_En.T.dot(R_opk).dot(C_bB.T) == pytest.approx(C_nb, abs=1e-6)
 
 
-def test_csv_reader_legacy(
-    ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: tuple[Path, ...]
-):
+def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from a legacy format CSV file."""
     reader = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs)
     assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
@@ -355,9 +353,7 @@ def test_csv_reader_legacy(
     _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
-def test_csv_reader_xyz_opk(
-    ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: tuple[Path, ...]
-):
+def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from an XYZ-OPK format CSV file with a header."""
     reader = param_io.CsvReader(ngi_xyz_opk_csv_file, crs=ngi_crs)
     assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
@@ -402,7 +398,7 @@ def test_csv_reader_xyz_opk_radians(
 def test_csv_reader_lla_rpy(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_reconstruction_file: Path,
 ):
     """Test reading exterior parameters from an LLA-RPY format CSV file with a header."""
@@ -619,7 +615,7 @@ def test_csv_reader_format(
 def test_csv_reader_dialect(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_reconstruction_file: Path,
     dialect: dict,
     tmp_path: Path,
@@ -677,7 +673,7 @@ def test_osfm_reader_validity_error(ngi_oty_ext_param_file: Path):
     assert 'valid' in str(ex.value)
 
 
-def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
+def test_exif_reader(odm_image_files: list[Path], odm_crs: str):
     """Test ExifReader reads interior and exterior parameters successfully."""
     reader = param_io.ExifReader(odm_image_files, crs=odm_crs)
     assert reader.crs == rio.CRS.from_string(odm_crs)
@@ -692,9 +688,7 @@ def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
     assert ext_cam_ids.issubset(int_cam_ids)
 
 
-def test_exif_reader_ext_values(
-    odm_image_files: tuple[Path, ...], odm_crs: str, odm_reconstruction_file
-):
+def test_exif_reader_ext_values(odm_image_files: list[Path], odm_crs: str, odm_reconstruction_file):
     """Test exterior parameter values from ExifReader against those from OsfmReader."""
     ref_reader = param_io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
     ref_ext_param_dict = ref_reader.read_ext_param()
@@ -707,15 +701,13 @@ def test_exif_reader_ext_values(
         assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=0.1)
 
 
-def test_exif_reader_auto_crs(odm_image_files: tuple[Path, ...], odm_crs: str):
+def test_exif_reader_auto_crs(odm_image_files: list[Path], odm_crs: str):
     """Test ExifReader auto determines a UTM CRS correctly."""
     reader = param_io.ExifReader(odm_image_files, crs=None)
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
-def test_exif_reader_lla_crs(
-    odm_image_files: tuple[Path, ...], odm_crs: str, wgs84_egm2008_crs: str
-):
+def test_exif_reader_lla_crs(odm_image_files: list[Path], odm_crs: str, wgs84_egm2008_crs: str):
     """Test ExifReader exterior parameters are affected by lla_crs as expected."""
     ref_reader = param_io.ExifReader(odm_image_files, crs=odm_crs)
     test_reader = param_io.ExifReader(
@@ -741,7 +733,7 @@ def test_exif_reader_empty():
     assert reader.read_ext_param() == {}
 
 
-def test_exif_reader_progress(odm_image_files: tuple[Path, ...], capsys: pytest.CaptureFixture):
+def test_exif_reader_progress(odm_image_files: list[Path], capsys: pytest.CaptureFixture):
     """Test ExifReader progress bar display."""
     # default bar
     param_io.ExifReader(odm_image_files, progress=True)

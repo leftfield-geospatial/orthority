@@ -1056,7 +1056,7 @@ def test_exif_lla_crs(
 
 
 def test_odm_dataset_dir(
-    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: list[Path], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm`` creates orthos in ``<--dataset-dir>/orthority`` sub-folder."""
     shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
@@ -1069,7 +1069,7 @@ def test_odm_dataset_dir(
 
 
 def test_odm_out_dir(
-    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: list[Path], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder."""
     cli_str = f'odm --dataset-dir {odm_dataset_dir} --res 5 --out-dir {tmp_path}'
