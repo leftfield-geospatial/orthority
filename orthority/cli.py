@@ -21,7 +21,6 @@ import re
 import shutil
 import warnings
 from pathlib import Path
-from typing import Sequence
 from urllib.parse import urlparse
 
 import click
@@ -35,9 +34,10 @@ from tqdm.std import tqdm
 
 from orthority import root_path, utils
 from orthority.camera import create_camera, FrameCamera
-from orthority.enums import CameraType, Compress, Interp
+from orthority.enums import CameraType, Compress, Interp, RpcRefine
 from orthority.errors import CrsError, CrsMissingError, ParamError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
+from orthority.fit import _default_rpc_refine_method
 from orthority.ortho import Ortho
 from orthority.version import __version__
 
@@ -164,15 +164,15 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
 
 
 def _src_files_cb(
-    ctx: click.Context, param: click.Parameter, src_files: Sequence[str]
-) -> Sequence[OpenFile]:
+    ctx: click.Context, param: click.Parameter, src_files: list[str]
+) -> list[OpenFile]:
     """Click callback to form a list of source image OpenFile instances. ``src_files`` can be a
     list of file paths / URIs, or a list of path / URI glob patterns.
     """
     if not src_files or len(src_files) == 0:
         return ()
     try:
-        src_files = fsspec.open_files(list(src_files), 'rb')
+        src_files = fsspec.open_files(src_files, 'rb')
     except Exception as ex:
         raise click.BadParameter(str(ex), param=param)
     if len(src_files) == 0:
@@ -256,6 +256,13 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
     return ofile
 
 
+def _gcp_refine_cb(
+    ctx: click.Context, param: click.Parameter, path_uri: str | bool
+) -> OpenFile | bool:
+    """Click callback to parse the ``--gcp-refine`` option."""
+    return _text_file_cb(ctx, param, path_uri) if path_uri != 'tags' else path_uri
+
+
 def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int = None) -> str:
     """Return a ``tqdm`` ``bar_format`` for the given arguments."""
     # pad or truncate desc to desc_width
@@ -271,7 +278,7 @@ def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int 
 
 
 def _ortho(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     dem_file: OpenFile,
     cameras: Cameras,
     crs: rio.CRS,
@@ -628,12 +635,12 @@ def frame(
 
         oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-frame --export-params>`::
 
         oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
-    Ortho images and parameter files are placed in the current working directory by default. This
+    Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-frame --out-dir>`.
     """
     # create camera factory
@@ -682,7 +689,7 @@ def frame(
 @out_dir_option
 @overwrite_option
 def exif(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     crs: rio.CRS,
     full_remap: bool,
     alpha: float,
@@ -706,13 +713,13 @@ def exif(
 
         oty exif --dem dem.tif source*.tif
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-exif --export-params>`::
 
         oty exif ---export-params source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by default.
-    This can be changed with :option:`--out-dir <oty-exif --out-dir>`.
+    Ortho images and exported files are placed in the current working directory by default. This
+    can be changed with :option:`--out-dir <oty-exif --out-dir>`.
     """
     # set up progress bar args
     desc = 'Reading parameters'
@@ -792,12 +799,12 @@ def odm(
 
         oty odm --dataset-dir dataset
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-odm --export-params>`::
 
         oty odm --dataset-dir dataset --export-params
 
-    Ortho images and parameter files are placed in the :file:`{dataset}/orthority` subdirectory
+    Ortho images and exported files are placed in the :file:`{dataset}/orthority` subdirectory
     by default.  This can be changed with :option:`--out-dir <oty-odm --out-dir>`.
     """
     # find source images
@@ -842,7 +849,7 @@ def odm(
 
     # orthorectify
     _ortho(
-        src_files=tuple(src_files),
+        src_files=src_files,
         dem_file=dem_ofile,
         cameras=cameras,
         crs=crs,
@@ -870,6 +877,24 @@ def odm(
     callback=_text_file_cb,
     help='Path / URI of an Orthority RPC parameter file.',
 )
+@click.option(
+    '-gr',
+    '--gcp-refine',
+    is_flag=False,
+    flag_value='tags',
+    default=None,
+    callback=_gcp_refine_cb,
+    help='Refine camera model(s) with GCP(s).  Can be supplied without a value to read GCPs from '
+    'source image tags, or with the path / URI value of an Orthority format GCP file.',
+)
+@click.option(
+    '-rm',
+    '--refine-method',
+    type=click.Choice(RpcRefine, case_sensitive=False),
+    default=_default_rpc_refine_method,
+    show_default=True,
+    help='Refinement method to use with ``--gcp-refine``.',
+)
 @crs_option
 @resolution_option
 @dem_band_option
@@ -884,8 +909,10 @@ def odm(
 @out_dir_option
 @overwrite_option
 def rpc(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     rpc_param_file: OpenFile,
+    gcp_refine: OpenFile | bool,
+    refine_method: RpcRefine,
     crs: rio.CRS,
     **kwargs,
 ) -> None:
@@ -903,13 +930,21 @@ def rpc(
 
         oty rpc --dem dem.tif source*.tif
 
-    Camera parameters can be converted to an Orthority format file with :option:`--export-params
+    Camera parameters can be refined with GCPs using :option:`--gcp-refine <oty-rpc
+    --gcp-refine>`::
+
+        oty rpc --dem dem.tif --gcp-refine source*.tif
+
+    Camera parameters can be exported to an Orthority format file with :option:`--export-params
     <oty-rpc --export-params>`::
 
-        oty rpc ---export-params source*.tif
+        oty rpc ---export-params --gcp-refine source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by default.
-    This can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
+    If :option:`--gcp-refine <oty-rpc --gcp-refine>` is supplied with :option:`--export-params
+    <oty-rpc --export-params>`, it is the refined parameters are exported, as well as the GCPs.
+
+    Ortho images and exported files are placed in the current working directory by default. This
+    can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
     """
     # set CRS to the RPC camera default (WGS84) if no CRS supplied, otherwise pass user CRS in
     # cam_kwargs
@@ -938,6 +973,19 @@ def rpc(
             )
         except (FileNotFoundError, ParamError) as ex:
             raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+
+    if gcp_refine is not None:
+        # refine model(s) with GCPs
+        ref_kwargs = dict(method=refine_method)
+        if gcp_refine == 'tags':
+            # set up progress bar args
+            desc = 'Reading GCPs'
+            bar_format = _get_bar_format(units='files', desc_width=len(desc))
+            tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+
+            cameras.refine(src_files, io_kwargs=dict(progress=tqdm_kwargs), ref_kwargs=ref_kwargs)
+        else:
+            cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
 
     # orthorectify
     _ortho(
