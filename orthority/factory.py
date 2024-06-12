@@ -16,6 +16,7 @@
 """Factories for creating camera models from parameter files and dictionaries."""
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from os import PathLike
 from pathlib import Path
@@ -25,7 +26,8 @@ import rasterio as rio
 
 from orthority import param_io
 from orthority.camera import Camera, create_camera, FrameCamera, RpcCamera
-from orthority.errors import CrsMissingError, ParamError
+from orthority.errors import CrsMissingError, OrthorityWarning, ParamError
+from orthority.fit import refine_rpc
 from orthority.utils import get_filename, join_ofile, OpenFile
 
 
@@ -118,7 +120,7 @@ class FrameCameras(Cameras):
         <../file_formats/exif_xmp>`.
 
         :param files:
-            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            Image file(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of keyword arguments for the
@@ -268,8 +270,10 @@ class RpcCameras(Cameras):
             self._rpc_param_dict = param_io.read_oty_rpc_param(rpc_param)
         else:
             self._rpc_param_dict = rpc_param
+
         self._cam_kwargs = cam_kwargs or {}
         self._cameras = {}
+        self._gcp_dict = None
 
     @classmethod
     def from_images(
@@ -283,7 +287,7 @@ class RpcCameras(Cameras):
         <../file_formats/image_rpc>`.
 
         :param files:
-            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            Image file(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of additional arguments for
@@ -301,6 +305,63 @@ class RpcCameras(Cameras):
     def filenames(self) -> set[str]:
         return set(self._rpc_param_dict.keys())
 
+    def refine(
+        self,
+        gcps: (
+            str
+            | PathLike
+            | OpenFile
+            | IO[str]
+            | Sequence[str | PathLike | OpenFile | rio.DatasetReader]
+            | dict[str, list[dict]]
+        ),
+        io_kwargs: dict = None,
+        ref_kwargs: dict = None,
+    ):
+        """
+        Refine RPC models with GCPs.
+
+        :param gcps:
+            GCPs as one of:
+
+            - :doc:`Orthority GCP file <../file_formats/oty_gcp>` as a path or URI string,
+              an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode
+              (``'rt'``).
+            - :doc:`Image file(s) with GCP tags <../file_formats/im_gcp>` as a list of paths or
+              URI strings, :class:`~fsspec.core.OpenFile` objects in binary mode (``'rb'``),
+              or dataset readers.
+            - GCP dictionary.
+        :param io_kwargs:
+            Optional dictionary of keyword arguments for
+            :class:`~orthority.param_io.read_im_gcps` if ``gcps`` is a list of image file(s).
+            Should exclude ``files`` which is passed internally.
+        :param ref_kwargs:
+            Optional dictionary of keyword arguments for :meth:`~orthority.fit.refine_rpc`.
+            Should exclude ``rpc`` and ``gcps``, which are passed internally.
+        """
+        self._cameras = {}
+
+        if gcps and not isinstance(gcps, dict):
+            # read GCPs
+            if isinstance(gcps, Sequence):
+                self._gcp_dict = param_io.read_im_gcps(gcps, **(io_kwargs or {}))
+            else:
+                self._gcp_dict = param_io.read_oty_gcps(gcps)
+        else:
+            self._gcp_dict = gcps
+
+        if self._gcp_dict:
+            # refine RPC parameters with GCPs
+            for filename, rpc_param in self._rpc_param_dict.items():
+                if filename in self._gcp_dict:
+                    rpc_param['rpc'] = refine_rpc(
+                        rpc_param['rpc'], self._gcp_dict[filename], **(ref_kwargs or {})
+                    )
+                else:
+                    warnings.warn(
+                        f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
+                    )
+
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:
         # get rpc params for filename
         filename = Path(get_filename(filename))
@@ -316,5 +377,20 @@ class RpcCameras(Cameras):
         return self._cameras[filename.name]
 
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
+        """
+        Write camera parameters to Orthority format file(s).
+
+        If RPC models have been refined with GCPs, the refined models are written, as well as the
+        GCPs, in a separate file.
+
+        :param out_dir:
+            Directory to write into.  Can be a path, URI string, or an
+            :class:`~fsspec.core.OpenFile` object.
+        :param overwrite:
+            Whether to overwrite file(s) if they exist.
+        """
         rpc_file = join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
         param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)
+        if self._gcp_dict:
+            gcp_file = join_ofile(out_dir, 'gcps.geojson', mode='wt')
+            param_io.write_gcps(gcp_file, self._gcp_dict, overwrite=overwrite)
