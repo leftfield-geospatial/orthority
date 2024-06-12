@@ -428,6 +428,8 @@ class RpcCamera(Camera):
         super().__init__()
         self._im_size = im_size
         self._rpc_crs = CRS.from_epsg(4979)
+        # convert dict rpc to RPC object to avoid issue where RPCTransformer.__init__() raises no
+        # error with rpc as a dict, but generates invalid results
         self._rpc = rpc if isinstance(rpc, RPC) else RPC(**rpc)
         self._rpc_options = rpc_options or {}
         self._crs = self._validate_crs(crs) if crs else None
