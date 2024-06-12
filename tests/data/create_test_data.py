@@ -18,19 +18,19 @@ from orthority.exif import Exif
 from orthority.utils import expand_window_to_grid
 
 ngi_src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
-ngi_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+ngi_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/ngi')
 
 odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River')
-odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
+odm_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/odm')
 
-io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
+io_root = Path('C:/Data/Development/Projects/orthority/tests/data/io')
 
 rpc_src_root = Path(
     'D:/Data/Development/Projects/PhD GeoInformatics/Data/Digital Globe/056844553010_01'
     '/056844553010_01_P001_PAN/'
 )
 
-rpc_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/rpc')
+rpc_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/rpc')
 # TODO: save images as COGs to optimise URL tests and doc egs
 
 
@@ -291,7 +291,7 @@ def create_rpc_test_data():
         gcps = src_im.gcps
 
         # find window corresponding to dem bounds (inner buffer of 1000)
-        bounds = transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds)
+        bounds = transform_bounds(dem_crs, gcps[1], *dem_bounds)
         with GCPTransformer(gcps[0]) as tform:
             ul = np.round(tform.rowcol(bounds[0], bounds[3])[::-1], -2) + 1000
             br = np.round(tform.rowcol(bounds[2], bounds[1])[::-1], -2) - 1000
@@ -411,7 +411,7 @@ def create_io_test_data():
 
 
 if __name__ == '__main__':
-    create_odm_test_data()
-    create_ngi_test_data()
+    # create_odm_test_data()
+    # create_ngi_test_data()
     create_rpc_test_data()
-    create_io_test_data()
+    # create_io_test_data()
