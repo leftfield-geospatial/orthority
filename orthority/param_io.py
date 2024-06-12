@@ -312,7 +312,7 @@ def read_im_rpc_param(
     <../file_formats/image_rpc>`.
 
     :param files:
-        File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        File(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode (``'rb'``), or dataset readers.
     :param progress:
         Whether to display a progress bar monitoring the portion of files read.  Can be set to a
@@ -405,6 +405,117 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         )
 
     return rpc_param_dict
+
+
+def read_im_gcps(
+    files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
+    progress: bool | dict = False,
+) -> dict[str, list[dict]]:
+    """
+    Read GCPs from :doc:`tags in image file(s) <../file_formats/image_gcp>`.
+
+    :param files:
+        File(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        objects in binary mode (``'rb'``), or dataset readers.
+    :param progress:
+        Whether to display a progress bar monitoring the portion of files read.  Can be set to a
+        dictionary of arguments for a custom `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar.
+    """
+
+    def _read_im_gcps(
+        file: str | PathLike | OpenFile | rio.DatasetReader,
+    ) -> dict[str, dict[str, Any]]:
+        """Read GCPs from an image file."""
+        filename = utils.get_filename(file)
+        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+            file, 'r'
+        ) as im:
+            gcps, crs = im.gcps
+
+        if gcps is None or len(gcps) == 0:
+            raise ParamError(f"No GCPs found in '{filename}'.")
+
+        # standardise GCP world coordinates in EPSG:4979
+        xyz = np.array([(gcp.x, gcp.y, gcp.z) for gcp in gcps]).T
+        if crs != _default_lla_crs:
+            xyz = np.array(transform(crs, _default_lla_crs, *xyz))
+
+        # convert to standard format dicts
+        oty_gcps = []
+        for gcp, xyz in zip(gcps, xyz.T):
+            # offset from UL (GDAL / rasterio) to center (Orthority) pixel coordinates - see e.g.
+            # https://gis.stackexchange.com/questions/122670/is-there-a-standard-for-the-coordinates-of-pixels-in-georeferenced-rasters
+            # TODO: GDAL / rasterio apparently uses the UL pixel coordinate convention but as anyone
+            #  can populate the GeoTIFF GCP metadata, we don't actually know what convention they
+            #  are in
+            gcp = dict(ji=(gcp.col - 0.5, gcp.row - 0.5), xyz=tuple(xyz), id=gcp.id, info=gcp.info)
+            oty_gcps.append(gcp)
+
+        return {filename: oty_gcps}
+
+    # read GCPs in a thread pool, populating gcp_dict in same order as files
+    gcp_dict = {}
+    with ThreadPoolExecutor() as executor:
+        futures = [executor.submit(_read_im_gcps, file) for file in files]
+
+        # create / set up progress bar
+        if progress is True:
+            progress = tqdm(futures, **_default_tqdm_kwargs)
+        elif progress is False:
+            progress = tqdm(futures, disable=True, leave=False)
+        else:
+            progress = tqdm(futures, **progress)
+
+        for future in progress:
+            gcp_dict.update(**future.result())
+
+    return gcp_dict
+
+
+def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[dict]]:
+    """
+    Read GCPs for one or more images from an :doc:`Orthority GCP file <../file_formats/oty_gcp>`.
+
+    :param file:
+        File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
+        file object, opened in text mode (``'rt'``).
+    """
+    with utils.Open(file, 'rt') as f:
+        json_dict = json.load(f)
+
+    # validate file format
+    schema = dict(
+        type='FeatureCollection',
+        features=[
+            # TODO: combine row and col into ji tuple / list?
+            dict(
+                type='Feature',
+                properties=dict(ji=list, filename=str, id=None, info=None),
+                geometry=dict(type='Point', coordinates=list),
+            )
+        ],
+    )
+
+    filename = utils.get_filename(file)
+    try:
+        utils.validate_collection(schema, json_dict)
+    except (ValueError, TypeError, KeyError) as ex:
+        raise ParamError(f"'{filename}' is not a valid Orthority GCP file: {str(ex)}.")
+
+    # convert file to GCP dictionary
+    gcp_dict = {}
+    for feat_dict in json_dict['features']:
+        prop_dict = feat_dict['properties']
+        filename = prop_dict['filename']
+        xyz = tuple(feat_dict['geometry']['coordinates'])
+        gcp = dict(ji=tuple(prop_dict['ji']), xyz=xyz, id=prop_dict['id'], info=prop_dict['info'])
+
+        if filename not in gcp_dict:
+            gcp_dict[filename] = [gcp]
+        else:
+            gcp_dict[filename].append(gcp)
+
+    return gcp_dict
 
 
 def write_int_param(
@@ -508,6 +619,36 @@ def write_rpc_param(
 
     with utils.Open(file, 'wt', overwrite=overwrite) as f:
         yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
+
+
+def write_gcps(
+    file: str | PathLike | OpenFile | IO[str],
+    gcp_dict: dict[str, list[dict]],
+    overwrite: bool = False,
+) -> None:
+    """
+    Write GCPs to an :doc:`Orthority GCP file <../file_formats/oty_gcp>`.
+
+    :param file:
+        File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or
+        a file object, opened in text mode (``'wt'``).
+    :param gcp_dict:
+        GCPs to write.
+    :param overwrite:
+        Whether to overwrite the file if it exists.
+    """
+    feat_list = []
+    for filename, gcps in gcp_dict.items():
+        for gcp in gcps:
+            props_dict = dict(ji=list(gcp['ji']), filename=filename, id=gcp['id'], info=gcp['info'])
+            geom_dict = dict(type='Point', coordinates=list(gcp['xyz']))
+            feat_dict = dict(type='Feature', properties=props_dict, geometry=geom_dict)
+            feat_list.append(feat_dict)
+
+    json_dict = dict(type='FeatureCollection', features=feat_list)
+
+    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+        json.dump(json_dict, f, indent=4)
 
 
 def _rpy_to_rotation(rpy: tuple[float, float, float]) -> np.ndarray:
@@ -1050,7 +1191,7 @@ class ExifReader(FrameReader):
     See the :doc:`format documentation <../file_formats/exif_xmp>` for required tags.
 
     :param files:
-        File(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+        File(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
         objects in binary mode (``'rb'``), or dataset readers.
     :param crs:
         CRS of the world coordinate system as an EPSG, WKT or proj4 string; or
