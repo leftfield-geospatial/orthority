@@ -82,8 +82,6 @@ def refine_rpc(
         off = ji_gcp - ji_rpc
         refine_tform[:, -1] = off.mean(axis=1)
     else:
-        if len(gcps) < 2:
-            raise ValueError("At least 2 GCPs are required for the 'shift and drift' method.")
         for axis in range(2):
             ji_rpc_ = np.row_stack((ji_rpc[axis], np.ones((ji_rpc.shape[1]))))
             (m, c), res, rank, s = np.linalg.lstsq(ji_rpc_.T, ji_gcp[axis], rcond=None)
