@@ -554,7 +554,7 @@ def test_frame_per_band(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
             assert len(ortho_files) == 1
 
             _, mem_peak = tracemalloc.get_traced_memory()
-            tracemalloc.clear_traces()
+            tracemalloc.reset_peak()
             mem_peaks.append(mem_peak)
 
         assert mem_peaks[1] > mem_peaks[0]

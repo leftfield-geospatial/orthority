@@ -731,34 +731,32 @@ def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp,
 
 
 def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
-    """Test ortho equivalence for ``per_band=True/False`` and that ``per_band=True`` uses more
+    """Test ortho equivalence for ``per_band=True/False`` and that ``per_band=True`` uses less
     memory than ``per_band=False``."""
     resolution = (5, 5)
 
+    ortho_files = [tmp_path.joinpath('ref_ortho.tif'), tmp_path.joinpath('test_ortho.tif')]
+    per_bands = [True, False]
+    mem_peaks = []
+
     tracemalloc.start()
     try:
-        # create a ref (per_band=True) and test (per_band=False) ortho
-        ortho_ref_file = tmp_path.joinpath('ref_ortho.tif')
-        rgb_pinhole_utm34n_ortho.process(
-            ortho_ref_file, resolution, per_band=True, compress=Compress.deflate
-        )
-        _, ref_peak = tracemalloc.get_traced_memory()
-        tracemalloc.clear_traces()
-
-        ortho_test_file = tmp_path.joinpath('test_ortho.tif')
-        rgb_pinhole_utm34n_ortho.process(
-            ortho_test_file, resolution, per_band=False, compress=Compress.deflate
-        )
-        _, test_peak = tracemalloc.get_traced_memory()
+        for ortho_file, per_band in zip(ortho_files, per_bands):
+            rgb_pinhole_utm34n_ortho.process(
+                ortho_file, resolution, per_band=per_band, compress=Compress.deflate
+            )
+            _, mem_peak = tracemalloc.get_traced_memory()
+            tracemalloc.reset_peak()
+            mem_peaks.append(mem_peak)
     finally:
         tracemalloc.stop()
 
     # compare memory usage
-    assert ref_peak > test_peak
+    assert mem_peaks[1] > mem_peaks[0]
 
     # compare ref and test orthos
-    assert ortho_ref_file.exists() and ortho_test_file.exists()
-    with rio.open(ortho_ref_file, 'r') as ref_im, rio.open(ortho_test_file, 'r') as test_im:
+    assert ortho_files[0].exists() and ortho_files[1].exists()
+    with rio.open(ortho_files[0], 'r') as ref_im, rio.open(ortho_files[1], 'r') as test_im:
         ref_array = ref_im.read()
         test_array = test_im.read()
 
