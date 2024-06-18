@@ -35,7 +35,7 @@ jobs:
     - name: Install dependencies
       run: |
         conda info
-        conda install -c conda-forge rasterio opencv "numpy<2" click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
+        conda install -c conda-forge rasterio opencv numpy click tqdm pyyaml fsspec requests aiohttp pytest pytest-cov
         conda list
 
     - name: Install OpenCV Linux dependencies
