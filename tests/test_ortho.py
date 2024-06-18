@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import tracemalloc
+from math import factorial
 from pathlib import Path
 from typing import Sequence
 
@@ -44,7 +45,7 @@ def _validate_ortho_files(
 ):
     """Validate the similarity of overlapping areas in ortho files."""
     cc_array = np.full((len(files),) * 2, fill_value=np.nan)
-    num_ovl_thresh = num_ovl_thresh or np.math.factorial(len(files) - 1)
+    num_ovl_thresh = num_ovl_thresh or factorial(len(files) - 1)
 
     for i1, file1 in enumerate(files):
         for i2, file2 in enumerate(files[i1 + 1 :]):
