@@ -35,6 +35,8 @@ docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton'
 
 [project.urls]
 Homepage = 'https://github.com/leftfield-geospatial/orthority'
+Documentation = "https://orthority.readthedocs.org"
+Source = 'https://github.com/leftfield-geospatial/orthority'
 Changelog = 'https://github.com/leftfield-geospatial/orthority/releases'
 Issues = 'https://github.com/leftfield-geospatial/orthority/issues'
 
