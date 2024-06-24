@@ -23,12 +23,12 @@ from pathlib import Path
 from typing import IO, Sequence
 
 import rasterio as rio
+from fsspec.core import OpenFile
 
-from orthority import param_io
+from orthority import param_io, utils
 from orthority.camera import Camera, create_camera, FrameCamera, RpcCamera
 from orthority.errors import CrsMissingError, OrthorityWarning, ParamError
 from orthority.fit import refine_rpc
-from orthority.utils import get_filename, join_ofile, OpenFile
 
 
 class Cameras(ABC):
@@ -157,7 +157,7 @@ class FrameCameras(Cameras):
         crs = None
         if not isinstance(int_param, dict):
             # read interior params
-            int_param_suffix = Path(get_filename(int_param)).suffix.lower()
+            int_param_suffix = Path(utils.get_filename(int_param)).suffix.lower()
             int_param_dict = None
             if int_param_suffix in ['.yaml', '.yml']:
                 int_param_dict = param_io.read_oty_int_param(int_param)
@@ -177,7 +177,7 @@ class FrameCameras(Cameras):
 
         if not isinstance(ext_param, dict):
             # read exterior params and CRS
-            ext_param_suffix = Path(get_filename(ext_param)).suffix.lower()
+            ext_param_suffix = Path(utils.get_filename(ext_param)).suffix.lower()
             if ext_param_suffix in ['.csv', '.txt']:
                 reader = param_io.CsvReader(ext_param, **kwargs)
             elif ext_param_suffix == '.json':
@@ -204,7 +204,7 @@ class FrameCameras(Cameras):
 
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> FrameCamera:
         # get exterior params for filename
-        filename = Path(get_filename(filename))
+        filename = Path(utils.get_filename(filename))
         ext_param = self._ext_param_dict.get(
             filename.name, self._ext_param_dict.get(filename.stem, None)
         )
@@ -235,14 +235,14 @@ class FrameCameras(Cameras):
 
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
         # write interior params
-        int_param_file = join_ofile(out_dir, 'int_param.yaml', mode='wt')
+        int_param_file = utils.join_ofile(out_dir, 'int_param.yaml', mode='wt')
         param_io.write_int_param(int_param_file, self._int_param_dict, overwrite=overwrite)
 
         if not self.crs:
             raise CrsMissingError("A world 'crs' is required to write exterior parameters.")
 
         # write exterior params
-        ext_param_file = join_ofile(out_dir, 'ext_param.geojson', mode='wt')
+        ext_param_file = utils.join_ofile(out_dir, 'ext_param.geojson', mode='wt')
         param_io.write_ext_param(
             ext_param_file, self._ext_param_dict, overwrite=overwrite, crs=self.crs
         )
@@ -364,7 +364,7 @@ class RpcCameras(Cameras):
 
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:
         # get rpc params for filename
-        filename = Path(get_filename(filename))
+        filename = Path(utils.get_filename(filename))
         rpc_param = self._rpc_param_dict.get(
             filename.name, self._rpc_param_dict.get(filename.stem, None)
         )
@@ -389,8 +389,8 @@ class RpcCameras(Cameras):
         :param overwrite:
             Whether to overwrite file(s) if they exist.
         """
-        rpc_file = join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
+        rpc_file = utils.join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
         param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)
         if self._gcp_dict:
-            gcp_file = join_ofile(out_dir, 'gcps.geojson', mode='wt')
+            gcp_file = utils.join_ofile(out_dir, 'gcps.geojson', mode='wt')
             param_io.write_gcps(gcp_file, self._gcp_dict, overwrite=overwrite)
