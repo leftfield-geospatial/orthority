@@ -446,6 +446,18 @@ def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) 
 
 
 @pytest.fixture(scope='session')
+def ms_float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) -> Path:
+    """An 4 band higher res float32 checkerboard image with no CRS."""
+    array = checkerboard((1024, 768)).astype('float32')
+    array = np.stack((array,) * 4, axis=0)
+    profile = create_profile(array)
+    src_filename = tmp_path_factory.mktemp('data').joinpath('ms_float32_src.tif')
+    with rio.open(src_filename, 'w', **profile) as im:
+        im.write(array)
+    return src_filename
+
+
+@pytest.fixture(scope='session')
 def float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) -> Path:
     """A single band float64 checkerboard image with no CRS."""
     array = np.expand_dims(checkerboard(im_size[::-1]).astype('float64'), axis=0)
