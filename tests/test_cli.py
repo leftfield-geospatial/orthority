@@ -533,33 +533,58 @@ def test_frame_dem_interp_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, r
     assert '--dem-interp' in result.stdout and 'invalid' in result.stdout.lower()
 
 
-def test_frame_per_band(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+def test_frame_per_band(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_legacy_config_file: Path,
+    ngi_legacy_csv_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
     """Test ``oty frame --per-band`` by comparing memory usage between ``--per-band`` and ``--no-
     per-band``.
     """
+    # make a temporary 4 band float64 source image from ngi_image_file (for --per-band to make
+    # a measurable memory difference, the source image needs to be relatively large, have many
+    # bands and/or a 'big' dtype.)
+    src_file = tmp_path.joinpath(ngi_image_file.name)
+    with rio.open(ngi_image_file, 'r') as ngi_im:
+        array = ngi_im.read(out_dtype='float32')
+        array = np.stack((*array, array[0]), axis=0)
+        profile = ngi_im.profile
+        profile.update(
+            count=array.shape[0], dtype=array.dtype, compress='deflate', photometric='minisblack'
+        )
+        with rio.open(src_file, 'w', **profile) as src_im:
+            src_im.write(array)
+
+    # compare memory usage between --no-per-band and --per-band
+    cli_str = (
+        f'frame --dem {ngi_dem_file} --int-param {ngi_legacy_config_file} '
+        f'--ext-param {ngi_legacy_csv_file} --res 30 --compress deflate {src_file}'
+    )
     mem_peaks = []
-    tracemalloc.start()
     try:
-        for per_band in ['per-band', 'no-per-band']:
-            # create ortho
+        tracemalloc.start()
+        for per_band in ['no-per-band', 'per-band']:
             out_dir = tmp_path.joinpath(per_band)
             out_dir.mkdir()
-            cli_str = (
-                frame_legacy_ngi_cli_str
-                + f' --out-dir {out_dir} --res 30 --compress deflate --{per_band}'
-            )
+            cli_str = cli_str + f' --out-dir {out_dir} --{per_band}'
+
+            # find peak memory used by the command
+            mem_start = tracemalloc.get_traced_memory()
             result = runner.invoke(cli, cli_str.split())
+            mem_end = tracemalloc.get_traced_memory()
+            mem_peaks.append(mem_end[1] - mem_start[0])
+            tracemalloc.clear_traces()  # clears the peak
+
             assert result.exit_code == 0, result.stdout
             ortho_files = [*out_dir.glob('*_ORTHO.tif')]
             assert len(ortho_files) == 1
-
-            _, mem_peak = tracemalloc.get_traced_memory()
-            tracemalloc.reset_peak()
-            mem_peaks.append(mem_peak)
-
-        assert mem_peaks[1] > mem_peaks[0]
     finally:
         tracemalloc.stop()
+
+    assert mem_peaks[1] < mem_peaks[0]
 
 
 def test_frame_full_remap(

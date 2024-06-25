@@ -730,39 +730,54 @@ def test_process_dem_interp(rgb_pinhole_utm34n_ortho: Ortho, dem_interp: Interp,
         assert cc[0, 1] != 1.0
 
 
-def test_process_per_band(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
+def test_process_per_band(
+    ms_float_src_file: Path,
+    float_utm34n_dem_file: Path,
+    frame_args: dict,
+    utm34n_crs: str,
+    tmp_path: Path,
+):
     """Test ortho equivalence for ``per_band=True/False`` and that ``per_band=True`` uses less
     memory than ``per_band=False``."""
-    resolution = (5, 5)
+    # Note: Allocated memory depends on thread timing and is noisy.  For per_band to make
+    # measurable memory differences, the source image needs to be relatively large, have many bands
+    # and/or a 'big' dtype.  Also, bear in mind that tracemalloc does not track GDAL allocations.
 
+    # create a camera for ms_float_src_file
+    cam_args = dict(**frame_args)
+    with rio.open(ms_float_src_file) as src_im:
+        cam_args.update(im_size=src_im.shape[::-1])
+    camera = PinholeCamera(**cam_args)
+
+    # create orthos with per_band=True/False, tracking memory usage
+    resolution = (5, 5)
     ortho_files = [tmp_path.joinpath('ref_ortho.tif'), tmp_path.joinpath('test_ortho.tif')]
     per_bands = [True, False]
-    mem_peaks = []
-
-    tracemalloc.start()
+    peak_mems = []
     try:
+        tracemalloc.start()
         for ortho_file, per_band in zip(ortho_files, per_bands):
-            rgb_pinhole_utm34n_ortho.process(
-                ortho_file, resolution, per_band=per_band, compress=Compress.deflate
-            )
-            _, mem_peak = tracemalloc.get_traced_memory()
-            tracemalloc.reset_peak()
-            mem_peaks.append(mem_peak)
+            start_mem = tracemalloc.get_traced_memory()
+            ortho = Ortho(ms_float_src_file, float_utm34n_dem_file, camera, utm34n_crs)
+            ortho.process(ortho_file, resolution, per_band=per_band, compress=Compress.deflate)
+            end_mem = tracemalloc.get_traced_memory()
+            peak_mems.append(end_mem[1] - start_mem[0])
+            tracemalloc.clear_traces()  # clears the peak
+            del ortho
     finally:
         tracemalloc.stop()
 
     # compare memory usage
-    assert mem_peaks[1] > mem_peaks[0]
+    assert peak_mems[1] > peak_mems[0]
 
-    # compare ref and test orthos
+    # compare pre_band=True/False orthos
     assert ortho_files[0].exists() and ortho_files[1].exists()
     with rio.open(ortho_files[0], 'r') as ref_im, rio.open(ortho_files[1], 'r') as test_im:
         ref_array = ref_im.read()
         test_array = test_im.read()
 
-        assert test_array.shape[0] == 3
         assert test_array.shape == ref_array.shape
-        assert np.all(test_array == ref_array)
+        assert np.all(nan_equals(test_array, ref_array))
 
 
 @pytest.mark.parametrize(
