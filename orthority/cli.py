@@ -516,7 +516,7 @@ dtype_option = click.option(
     help=f'Ortho image data type.',
 )
 compress_option = click.option(
-    '-c',
+    '-cm',
     '--compress',
     type=click.Choice(Compress, case_sensitive=False),
     default=Ortho._default_config['compress'],
@@ -532,7 +532,7 @@ build_ovw_option = click.option(
     help='Build overviews for the ortho image(s).',
 )
 export_params_option = click.option(
-    '-ep',
+    '-e',
     '--export-params',
     is_flag=True,
     type=click.BOOL,
