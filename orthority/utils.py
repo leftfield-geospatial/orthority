@@ -27,7 +27,7 @@ from contextlib import contextmanager, ExitStack
 from io import IOBase
 from os import PathLike
 from pathlib import Path
-from typing import IO, Iterable
+from typing import IO, Iterable, Sequence
 
 import cv2
 import fsspec
@@ -45,8 +45,10 @@ from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
+from rasterio.enums import ColorInterp
 
-from orthority.enums import Interp
+from orthority.enums import Interp, Compress
+from orthority.errors import OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -359,3 +361,78 @@ class Open:
 
     def close(self):
         self._exit_stack.close()
+
+
+def create_profile(
+    dtype: str | np.dtype,
+    compress: str | Compress | None = None,
+    write_mask: bool | None = None,
+    colorinterp: Sequence[ColorInterp] | None = None,
+) -> tuple[dict, bool]:
+    """Return a partial rasterio profile and ``write_mask`` value for an output image given its
+    configuration.  If ``write_mask`` is None, a value is determined automatically.  Spatial and
+    dimension profile items are not set i.e. ``crs``, ``transform``, ``width``, ``height`` &
+    ``count``.
+    """
+    # nodata values for supported data types (OpenCV remap doesn't support int8 or uint32,
+    # and only supports int32, uint64, int64 with nearest interp so these dtypes are
+    # excluded).
+    nodata_vals = dict(
+        uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan')
+    )
+    colorinterp = colorinterp or []
+    profile = {}
+
+    # check dtype support
+    dtype = str(dtype)
+    if dtype not in nodata_vals:
+        raise ValueError(f"Data type '{dtype}' is not supported.")
+
+    # configure compression
+    if compress is None:
+        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+    else:
+        compress = Compress(compress)
+        if compress == Compress.jpeg:
+            if dtype == 'uint16':
+                warnings.warn(
+                    'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
+                    'dependent.',
+                    category=OrthorityWarning,
+                )
+                profile.update(nbits=12)
+            elif dtype != 'uint8':
+                raise ValueError(
+                    f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
+                )
+
+    # configure interleaving and color interpretation
+    if compress == Compress.jpeg:
+        interleave, photometric = ('pixel', 'ycbcr') if len(colorinterp) == 3 else ('band', None)
+    elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
+        interleave, photometric = ('band', 'rgb')
+    else:
+        interleave, photometric = ('band', None)
+
+    # resolve auto write_mask (=None) to write masks for jpeg compression
+    if write_mask is None:
+        write_mask = True if compress == Compress.jpeg else False
+
+    # set nodata to None when writing internal masks to force external tools to use mask,
+    # otherwise set by dtype
+    nodata = None if write_mask else nodata_vals[dtype]
+
+    # create profile
+    profile.update(
+        driver='GTiff',
+        dtype=dtype,
+        tiled=True,
+        blockxsize=512,
+        blockysize=512,
+        nodata=nodata,
+        compress=compress.value,
+        interleave=interleave,
+        photometric=photometric,
+        bigtiff='if_safer',
+    )
+    return profile, write_mask
