@@ -136,75 +136,6 @@ class PanSharpen:
             )
         return pan_profile, ms_profile
 
-    def _create_out_profile(
-        self,
-        pan_im: rio.DatasetReader,
-        ms_im: rio.DatasetReader,
-        dtype: str,
-        compress: str | Compress | None,
-        write_mask: bool | None,
-    ) -> tuple[dict, bool]:
-        """Return a rasterio profile for the pan sharpened image."""
-        # TODO: make common fn for use here and in Ortho
-        # Determine dtype, check dtype support
-        # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with
-        # nearest interp so these dtypes are excluded).
-        out_profile = dict(**self._pan_profile)
-        dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
-
-        # setup compression, data interleaving and photometric interpretation
-        if compress is None:
-            compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
-        else:
-            compress = Compress(compress)
-            if compress == Compress.jpeg:
-                if dtype == 'uint16':
-                    warnings.warn(
-                        'Attempting a 12 bit JPEG output configuration.  Support is rasterio build '
-                        'dependent.',
-                        category=OrthorityWarning,
-                    )
-                    out_profile.update(nbits=12)
-                elif dtype != 'uint8':
-                    raise ValueError(
-                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
-                    )
-
-        if compress == Compress.jpeg:
-            interleave, photometric = (
-                ('pixel', 'ycbcr') if ms_im.count == 3 else ('band', 'minisblack')
-            )
-        else:
-            interleave, photometric = ('band', 'minisblack')
-
-        # resolve auto write_mask (=None) to write masks for jpeg compression
-        if write_mask is None:
-            write_mask = True if compress == Compress.jpeg else False
-
-        # set nodata to None when writing internal masks to force external tools to use mask,
-        # otherwise set by dtype
-        if write_mask:
-            nodata = None
-        else:
-            nodata = float('nan') if np.issubdtype(dtype, np.floating) else np.iinfo(dtype).min
-
-        # create ortho profile
-        out_profile.update(
-            driver='GTiff',
-            dtype=dtype,
-            count=ms_im.count,  # TODO: should be len of indexes
-            tiled=True,
-            blockxsize=Ortho._default_blocksize[0],
-            blockysize=Ortho._default_blocksize[1],
-            nodata=nodata,
-            compress=compress.value,
-            interleave=interleave,
-            photometric=photometric,
-            bigtiff='if_safer',
-        )
-
-        return out_profile, write_mask
-
     def _get_stats(
         self,
         pan_im: rio.DatasetReader,
@@ -520,15 +451,24 @@ class PanSharpen:
             indexes = indexes or ms_im.indexes
 
             # open output image
-            out_profile, write_mask = self._create_out_profile(
-                pan_im, ms_im, dtype, compress, write_mask
+            dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
+            out_profile, write_mask = utils.create_profile(
+                dtype, compress=compress, write_mask=write_mask, colorinterp=ms_im.colorinterp
             )
-            out_profile.update(count=len(indexes))
+            out_profile.update(
+                crs=self._pan_profile['crs'],
+                transform=self._pan_profile['transform'],
+                width=self._pan_profile['width'],
+                height=self._pan_profile['height'],
+                count=len(indexes),
+            )
             out_im = exit_stack.enter_context(
                 utils.OpenRaster(out_file, 'w', overwrite=overwrite, **out_profile)
             )
 
             # find pan sharpening parameters from image stats
+            # TODO: Keep stats & params as state (depends on interp & indexes)?  Or find stats
+            #  with fixed interp and all indexes, then select specified indexes here?
             means, cov = self._get_stats(pan_im, ms_im, indexes, interp, progress)
             params = self._get_params(means, cov, weights)
 

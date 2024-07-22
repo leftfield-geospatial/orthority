@@ -170,7 +170,7 @@ class Ortho:
         """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
         DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
         """
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file, 'r') as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 dem_name = utils.get_filename(dem_file)
                 raise ValueError(
@@ -304,6 +304,7 @@ class Ortho:
         # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie just inside
         #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
         #  bounds so am leaving as is for now.
+        # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
 
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
@@ -377,77 +378,6 @@ class Ortho:
             dem_array[~dem_mask] = np.nan
 
         return dem_array, dem_transform
-
-    def _create_ortho_profile(
-        self,
-        src_im: rio.DatasetReader,
-        shape: Sequence[int],
-        transform: rio.Affine,
-        dtype: str,
-        compress: str | Compress | None,
-        write_mask: bool | None,
-    ) -> tuple[dict, bool]:
-        """Return a rasterio profile for the ortho image."""
-        # Determine dtype, check dtype support
-        # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with
-        # nearest interp so these dtypes are excluded).
-        ortho_profile = {}
-        dtype = dtype or src_im.profile.get('dtype', None)
-        if dtype not in Ortho._nodata_vals:
-            raise ValueError(f"Data type '{dtype}' is not supported.")
-
-        # setup compression, data interleaving and photometric interpretation
-        if compress is None:
-            compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
-        else:
-            compress = Compress(compress)
-            if compress == Compress.jpeg:
-                if dtype == 'uint16':
-                    warnings.warn(
-                        'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
-                        'dependent.',
-                        category=OrthorityWarning,
-                    )
-                    ortho_profile.update(nbits=12)
-                elif dtype != 'uint8':
-                    raise ValueError(
-                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
-                    )
-
-        if compress == Compress.jpeg:
-            interleave, photometric = (
-                ('pixel', 'ycbcr') if src_im.count == 3 else ('band', 'minisblack')
-            )
-        else:
-            interleave, photometric = ('band', 'minisblack')
-
-        # resolve auto write_mask (=None) to write masks for jpeg compression
-        if write_mask is None:
-            write_mask = True if compress == Compress.jpeg else False
-
-        # set nodata to None when writing internal masks to force external tools to use mask,
-        # otherwise set by dtype
-        nodata = None if write_mask else Ortho._nodata_vals[dtype]
-
-        # create ortho profile
-        ortho_profile.update(
-            driver='GTiff',
-            dtype=dtype,
-            crs=self._crs,
-            transform=transform,
-            width=shape[1],
-            height=shape[0],
-            count=src_im.count,
-            tiled=True,
-            blockxsize=Ortho._default_blocksize[0],
-            blockysize=Ortho._default_blocksize[1],
-            nodata=nodata,
-            compress=compress.value,
-            interleave=interleave,
-            photometric=photometric,
-        )
-
-        return ortho_profile, write_mask
 
     def _remap_tile(
         self,
@@ -688,13 +618,16 @@ class Ortho:
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & set write_mask
-            ortho_profile, write_mask = self._create_ortho_profile(
-                src_im,
-                dem_array.shape,
-                dem_transform,
-                dtype=dtype,
-                compress=compress,
-                write_mask=write_mask,
+            dtype = dtype or src_im.dtypes[0]
+            ortho_profile, write_mask = utils.create_profile(
+                dtype, compress=compress, write_mask=write_mask, colorinterp=src_im.colorinterp
+            )
+            ortho_profile.update(
+                crs=self._crs,
+                transform=dem_transform,
+                width=dem_array.shape[1],
+                height=dem_array.shape[0],
+                count=src_im.count,
             )
             ortho_im = exit_stack.enter_context(
                 utils.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
