@@ -23,8 +23,10 @@ import fsspec
 import numpy as np
 import pytest
 import rasterio as rio
+from rasterio.enums import ColorInterp
 
 from orthority import utils
+from orthority.enums import Compress
 
 
 @pytest.mark.parametrize('file', ['odm_image_file', 'odm_image_url'])
@@ -260,3 +262,112 @@ def test_open_not_found_error(file: str):
     with pytest.raises(FileNotFoundError):
         with utils.Open(ofile, 'rt'):
             pass
+
+
+def test_create_profile_non_config_items():
+    """Test create_profile() non-configurable items."""
+    profile, write_mask = utils.create_profile(dtype='uint8')
+
+    exp_profile = {
+        'driver': 'GTiff',
+        'tiled': True,
+        'blockxsize': 512,
+        'blockysize': 512,
+        'bigtiff': 'if_safer',
+    }
+    for k, v in exp_profile.items():
+        assert profile[k] == v
+
+
+@pytest.mark.parametrize(
+    'dtype, compress, exp_value',
+    [
+        # compress defaults to 'jpeg' if dtype is uint8, and to 'deflate' otherwise
+        ('uint8', None, 'jpeg'),
+        ('uint16', None, 'deflate'),
+        # compress is copied through as is when provided
+        ('uint8', 'deflate', 'deflate'),
+        ('uint16', 'jpeg', 'jpeg'),
+    ],
+)
+def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
+    """Test create_profile() ``compress`` configuration."""
+    profile, write_mask = utils.create_profile(dtype=dtype, compress=compress)
+
+    assert profile['dtype'] == dtype
+    assert profile['compress'] == exp_value
+
+
+@pytest.mark.parametrize(
+    'compress, colorinterp, exp_values',
+    [
+        # jpeg compression with any 3 band colorinterp should give 'pixel' / 'ycbcr'
+        ('jpeg', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('pixel', 'ycbcr')),
+        ('jpeg', [ColorInterp.undefined] * 3, ('pixel', 'ycbcr')),
+        # other jpeg compression should give 'band' / None
+        ('jpeg', [ColorInterp.undefined] * 4, ('band', None)),
+        # deflate compression with rgb or rgb* colorinterp should give 'band' / 'rgb'
+        ('deflate', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        (
+            'deflate',
+            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha],
+            ('band', 'rgb'),
+        ),
+        # other deflate compression should give 'band' / None
+        ('deflate', [ColorInterp.undefined] * 3, ('band', None)),
+    ],
+)
+def test_create_profile_interleave_photometric(
+    compress: str, colorinterp: list[ColorInterp], exp_values: tuple
+):
+    """Test create_profile() ``interleave`` / ``photometric`` configuration."""
+    profile, write_mask = utils.create_profile(
+        dtype='uint8', compress=compress, colorinterp=colorinterp
+    )
+
+    assert profile['dtype'] == 'uint8'
+    assert profile['compress'] == compress
+    assert profile['interleave'] == exp_values[0]
+    assert profile['photometric'] == exp_values[1]
+
+
+def test_create_profile_12bit_jpeg():
+    """Test create_profile() correctly configures a 12bit jpeg profile."""
+    # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
+    # jpeg compression.  This test just checks the profile is correct.
+    profile, write_mask = utils.create_profile(dtype='uint16', compress=Compress.jpeg)
+
+    assert write_mask
+    assert profile['dtype'] == 'uint16'
+    assert profile['compress'] == 'jpeg'
+    assert 'nbits' in profile and profile['nbits'] == 12
+
+
+@pytest.mark.parametrize(
+    'dtype, write_mask, exp_values',
+    [
+        # with a uint8 dtype (i.e. jpeg compression) write_mask should default to True and nodata
+        # to None
+        ('uint8', None, (True, None)),
+        # with other dtypes write_mask should default to False and nodata to the dtype min value /
+        # nan
+        ('uint16', None, (False, 0)),
+        ('int16', None, (False, np.iinfo('int16').min)),
+        # when write_mask is False, it should be copied through as is, and nodata set to the
+        # dtype min value / nan
+        ('uint8', False, (False, 0)),
+        ('float32', False, (False, float('nan'))),
+        ('float64', False, (False, float('nan'))),
+        # when write_mask is True, it should be copied through as is, and nodata set to None
+        ('uint8', True, (True, None)),
+    ],
+)
+def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, exp_values: tuple):
+    """Test create_profile() correctly sets ``write_mask`` and ``nodata``."""
+    profile, write_mask = utils.create_profile(dtype=dtype, write_mask=write_mask)
+
+    assert write_mask is exp_values[0]
+    if profile['nodata'] is None or exp_values[1] is None:
+        assert profile['nodata'] is None and exp_values[1] is None
+    else:
+        assert utils.nan_equals(profile['nodata'], exp_values[1])
