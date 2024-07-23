@@ -371,3 +371,50 @@ def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, e
         assert profile['nodata'] is None and exp_values[1] is None
     else:
         assert utils.nan_equals(profile['nodata'], exp_values[1])
+
+
+@pytest.mark.parametrize(
+    'src_dtype, dst_dtype',
+    [
+        ('float32', 'uint8'),
+        ('float32', 'uint16'),
+        ('float32', 'int16'),
+        ('float32', 'int32'),
+        ('float32', 'float32'),
+        ('float32', 'float64'),
+        ('float64', 'float32'),
+        ('float64', 'float64'),
+    ],
+)
+def test_convert_array_dtype(src_dtype: str, dst_dtype: str):
+    """Test convert_array_dtype() conversion with combinations covering rounding and clipping
+    (with and w/o type promotion).
+    """
+    src_info = np.iinfo(src_dtype) if np.issubdtype(src_dtype, np.integer) else np.finfo(src_dtype)
+    dst_info = np.iinfo(dst_dtype) if np.issubdtype(dst_dtype, np.integer) else np.finfo(dst_dtype)
+
+    # create array that spans the src_dtype range & includes decimals
+    array = np.geomspace(1, src_info.max, 50, dtype=src_dtype).reshape(5, 10)
+    if src_info.min != 0:
+        array = np.concatenate(
+            (array, np.geomspace(-1, src_info.min, 50, dtype=src_dtype).reshape(5, 10))
+        )
+
+    # convert to dtype
+    test_array = utils.convert_array_dtype(array, dst_dtype)
+
+    # create rounded & clipped array to test against
+    ref_array = array
+    if np.issubdtype(dst_dtype, np.integer):
+        # promote dtype to clip correctly
+        ref_array = ref_array.astype(np.promote_types(array.dtype, dst_dtype))
+        ref_array = np.clip(np.round(ref_array), dst_info.min, dst_info.max)
+    elif np.issubdtype(src_dtype, np.floating):
+        # don't clip float but set out of range vals to +-inf (as np.astype does)
+        ref_array[ref_array < dst_info.min] = float('-inf')
+        ref_array[ref_array > dst_info.max] = float('inf')
+        assert np.any(ref_array % 1 != 0)  # check contains decimals
+
+    assert test_array.dtype == dst_dtype
+    # use approx test for case of (expected) precision loss e.g. float64->float32
+    assert test_array == pytest.approx(ref_array, rel=1e-6)

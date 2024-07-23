@@ -436,3 +436,35 @@ def create_profile(
         bigtiff='if_safer',
     )
     return profile, write_mask
+
+
+def convert_array_dtype(array: np.ndarray, dtype: str) -> np.array:
+    """Return the ``array`` converted to ``dtype``, rounding and clipping in-place when ``dtype``
+    is integer.  Adapted from :meth:`homonim.raster_array.RasterArray._convert_array_dtype`.
+    """
+    unsafe_cast = not np.can_cast(array.dtype, dtype, casting='safe')
+
+    # round if converting from float to integer dtype
+    if unsafe_cast and np.issubdtype(array.dtype, np.floating) and np.issubdtype(dtype, np.integer):
+        np.round(array, out=array)
+
+    # clip if converting to integer dtype with smaller range than array dtype
+    if unsafe_cast and np.issubdtype(dtype, np.integer):
+        src_info = (
+            np.iinfo(array.dtype)
+            if np.issubdtype(array.dtype, np.integer)
+            else np.finfo(array.dtype)
+        )
+        dst_info = np.iinfo(dtype)
+        if src_info.min < dst_info.min or src_info.max > dst_info.max:
+            if np.issubdtype(array.dtype, np.floating):
+                # promote array dtype to be able to represent destination dtype exactly (if
+                # possible) to clip correctly
+                array = array.astype(np.promote_types(array.dtype, dtype))
+            np.clip(array, dst_info.min, dst_info.max, out=array)
+
+    # convert dtype (ignoring numpy warnings for float overflow or cast of nan to integer)
+    with np.errstate(invalid='ignore', over='ignore'):
+        array = array.astype(dtype, copy=False, casting='unsafe')
+
+    return array
