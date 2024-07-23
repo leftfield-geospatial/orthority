@@ -44,7 +44,6 @@ logger = logging.getLogger(__name__)
 
 class PanSharpen:
     _working_dtype = 'float32'
-    _working_nodata = float('nan')
 
     def __init__(
         self,
@@ -386,7 +385,6 @@ class PanSharpen:
         ms_im: rio.DatasetReader,
         tile_win: Window,
         indexes: Sequence[int],
-        dtype: str | np.dtype,
         out_im: rio.io.DatasetWriter,
         write_mask: bool,
         **params,
@@ -407,8 +405,10 @@ class PanSharpen:
         ms_array_ = ms_array[:, mask].reshape(len(indexes), -1)
 
         # pan sharpen masked data and write into output mask area
-        out_array = np.full(ms_array.shape, fill_value=out_im.nodata or 0, dtype=dtype)
-        out_array[:, mask] = self._process_tile_array(pan_array_, ms_array_, **params)
+        out_array_ = self._process_tile_array(pan_array_, ms_array_, **params)
+        out_array_ = utils.convert_array_dtype(out_array_, out_im.dtypes[0])
+        out_array = np.full(ms_array.shape, fill_value=out_im.nodata or 0, dtype=out_im.dtypes[0])
+        out_array[:, mask] = out_array_
 
         # write pan sharpened tile
         with self._out_lock:
@@ -492,7 +492,6 @@ class PanSharpen:
                         ms_im,
                         tile_win,
                         indexes,
-                        working_dtype,
                         out_im,
                         write_mask,
                         **params,
