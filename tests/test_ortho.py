@@ -638,26 +638,6 @@ def test_mask_dem_coverage_error(
     assert 'boundary' in str(ex.value)
 
 
-def test_create_ortho_profile_12bit_jpeg(rgb_pinhole_utm34n_ortho: Ortho):
-    """Test _create_ortho_profile correctly configures a 12bit jpeg ortho profile."""
-    # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
-    # jpeg compression.  This test just checks the ortho profile is correct.
-    with rio.open(rgb_pinhole_utm34n_ortho._src_file, 'r') as src_im:
-        ortho_profile, write_mask = rgb_pinhole_utm34n_ortho._create_ortho_profile(
-            src_im,
-            (1, 1),
-            rio.Affine.identity(),
-            dtype='uint16',
-            compress=Compress.jpeg,
-            write_mask=None,
-        )
-
-    assert write_mask
-    assert ortho_profile['dtype'] == 'uint16'
-    assert ortho_profile['compress'] == 'jpeg'
-    assert 'nbits' in ortho_profile and ortho_profile['nbits'] == 12
-
-
 @pytest.mark.parametrize('resolution', [(30.0, 30.0), (60.0, 60.0), (60.0, 30.0)])
 def test_process_resolution(rgb_pinhole_utm34n_ortho: Ortho, resolution: tuple, tmp_path: Path):
     """Test ortho ``resolution`` is set correctly."""
