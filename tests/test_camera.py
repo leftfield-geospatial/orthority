@@ -24,9 +24,15 @@ import pytest
 import rasterio as rio
 from rasterio.transform import from_bounds
 
-from orthority import utils
+from orthority import common
 from orthority.camera import (
-    BrownCamera, Camera, create_camera, FisheyeCamera, FrameCamera, OpenCVCamera, PinholeCamera,
+    BrownCamera,
+    Camera,
+    create_camera,
+    FisheyeCamera,
+    FrameCamera,
+    OpenCVCamera,
+    PinholeCamera,
     RpcCamera,
 )
 from orthority.enums import CameraType, Interp
@@ -925,7 +931,7 @@ def test_frame_undistort(camera: str, request: pytest.FixtureRequest):
     im_array = np.expand_dims(checkerboard(camera.im_size[::-1]), axis=0)
 
     # distort then undistort
-    dist_array = utils.distort_image(camera, im_array, nodata=nodata, interp=interp)
+    dist_array = common.distort_image(camera, im_array, nodata=nodata, interp=interp)
     undist_array = camera._undistort_im(dist_array, nodata=nodata, interp=interp)
 
     # test similarity of source and distorted-undistorted images
@@ -1001,9 +1007,9 @@ def test_frame_read_undistort(
     assert test_array.dtype == ref_array.dtype == dtype
 
     # compare to reference
-    test_mask = utils.nan_equals(test_array, nodata)
+    test_mask = common.nan_equals(test_array, nodata)
     assert np.any(test_mask)
-    assert np.all(utils.nan_equals(test_array, ref_array))
+    assert np.all(common.nan_equals(test_array, ref_array))
 
 
 @pytest.mark.parametrize(
@@ -1037,7 +1043,7 @@ def test_remap(
 
     # mask, dtype and shape tests
     assert np.any(remap_mask)
-    assert np.all(remap_mask == np.all(utils.nan_equals(remap_array, nodata), axis=0))
+    assert np.all(remap_mask == np.all(common.nan_equals(remap_array, nodata), axis=0))
     assert remap_array.dtype == dtype
     assert remap_array.ndim == 3
     assert remap_array.shape[0] == im_array.shape[0]
@@ -1093,7 +1099,7 @@ def test_frame_remap_mask_dilation(
 
     # test_mask, dtype and shape tests
     assert np.any(test_mask)
-    assert np.all(test_mask == np.all(utils.nan_equals(test_array, nodata), axis=0))
+    assert np.all(test_mask == np.all(common.nan_equals(test_array, nodata), axis=0))
     assert test_array.dtype == dtype
     assert test_array.ndim == 3
     assert test_array.shape[0] == im_array.shape[0]

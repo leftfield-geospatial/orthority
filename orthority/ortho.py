@@ -36,7 +36,7 @@ from rasterio.warp import reproject, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
 
-from orthority import utils
+from orthority import common
 from orthority.camera import Camera, FrameCamera
 from orthority.enums import Compress, Interp
 from orthority.errors import CrsMissingError, OrthorityWarning
@@ -123,7 +123,7 @@ class Ortho:
             raise TypeError("'camera' is not a Camera instance.")
 
         self._src_file = src_file
-        self._src_name = utils.get_filename(src_file)
+        self._src_name = common.get_filename(src_file)
         self._camera = camera
         self._write_lock = threading.Lock()
 
@@ -141,7 +141,7 @@ class Ortho:
         if crs:
             crs = CRS.from_string(crs) if isinstance(crs, str) else crs
         else:
-            with utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
+            with common.suppress_no_georef(), common.OpenRaster(self._src_file, 'r') as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
@@ -157,9 +157,9 @@ class Ortho:
         """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
         DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
         """
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(dem_file, 'r') as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
-                dem_name = utils.get_filename(dem_file)
+                dem_name = common.get_filename(dem_file)
                 raise ValueError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
@@ -194,7 +194,7 @@ class Ortho:
                     raise ValueError(
                         f"Ortho for '{self._src_name}' lies outside, or underneath the DEM."
                     )
-                return utils.expand_window_to_grid(dem_win)
+                return common.expand_window_to_grid(dem_win)
 
             # get a dem window containing the ortho bounds at min & max possible altitude, read the
             # window from the dem
@@ -572,7 +572,7 @@ class Ortho:
             else:
                 progress = tqdm(**progress)
             progress = exit_stack.enter_context(progress)
-            # exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
+            # exit_stack.enter_context(common.profiler())  # run common.profiler in DEBUG log level
 
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
@@ -585,8 +585,8 @@ class Ortho:
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
             exit_stack.enter_context(env)
-            exit_stack.enter_context(utils.suppress_no_georef())
-            src_im = exit_stack.enter_context(utils.OpenRaster(self._src_file, 'r'))
+            exit_stack.enter_context(common.suppress_no_georef())
+            src_im = exit_stack.enter_context(common.OpenRaster(self._src_file, 'r'))
 
             # warn if source dimensions don't match camera
             if src_im.shape[::-1] != self._camera.im_size:
@@ -606,7 +606,7 @@ class Ortho:
 
             # open the ortho image & set write_mask
             dtype = dtype or src_im.dtypes[0]
-            ortho_profile, write_mask = utils.create_profile(
+            ortho_profile, write_mask = common.create_profile(
                 dtype, compress=compress, write_mask=write_mask, colorinterp=src_im.colorinterp
             )
             ortho_profile.update(
@@ -617,7 +617,7 @@ class Ortho:
                 count=src_im.count,
             )
             ortho_im = exit_stack.enter_context(
-                utils.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
+                common.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
             )
 
             # orthorectify
@@ -633,7 +633,7 @@ class Ortho:
 
             if build_ovw:
                 # TODO: is it possible to convert to COG here?
-                utils.build_overviews(ortho_im)
+                common.build_overviews(ortho_im)
 
 
 ##

@@ -34,7 +34,7 @@ from rasterio.warp import transform_bounds
 from rasterio.windows import intersect, Window
 from tqdm.std import tqdm
 
-from orthority import utils
+from orthority import common
 from orthority.enums import Compress, Interp
 from orthority.errors import OrthorityWarning
 from orthority.ortho import Ortho
@@ -75,7 +75,7 @@ class PanSharpen:
         and cropped (as necessary) to lie on the pan grid.
         """
         # TODO: what if the images have GCPs but not transforms?
-        with utils.OpenRaster(pan_file) as pan_ds, utils.OpenRaster(ms_file) as ms_ds:
+        with common.OpenRaster(pan_file) as pan_ds, common.OpenRaster(ms_file) as ms_ds:
             if np.any(np.array(pan_ds.res) > ms_ds.res):
                 raise ValueError(
                     f'Pan resolution: {pan_ds.res} exceeds multispectral resolution: {ms_ds.res}.'
@@ -406,7 +406,7 @@ class PanSharpen:
 
         # pan sharpen masked data and write into output mask area
         out_array_ = self._process_tile_array(pan_array_, ms_array_, **params)
-        out_array_ = utils.convert_array_dtype(out_array_, out_im.dtypes[0])
+        out_array_ = common.convert_array_dtype(out_array_, out_im.dtypes[0])
         out_array = np.full(ms_array.shape, fill_value=out_im.nodata or 0, dtype=out_im.dtypes[0])
         out_array[:, mask] = out_array_
 
@@ -447,13 +447,13 @@ class PanSharpen:
 
             # open pan & MS images
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
-            pan_im = exit_stack.enter_context(utils.OpenRaster(self._pan_file, 'r'))
-            ms_im = exit_stack.enter_context(utils.OpenRaster(self._ms_file, 'r'))
+            pan_im = exit_stack.enter_context(common.OpenRaster(self._pan_file, 'r'))
+            ms_im = exit_stack.enter_context(common.OpenRaster(self._ms_file, 'r'))
             indexes = indexes or ms_im.indexes
 
             # open output image
             dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
-            out_profile, write_mask = utils.create_profile(
+            out_profile, write_mask = common.create_profile(
                 dtype, compress=compress, write_mask=write_mask, colorinterp=ms_im.colorinterp
             )
             out_profile.update(
@@ -464,7 +464,7 @@ class PanSharpen:
                 count=len(indexes),
             )
             out_im = exit_stack.enter_context(
-                utils.OpenRaster(out_file, 'w', overwrite=overwrite, **out_profile)
+                common.OpenRaster(out_file, 'w', overwrite=overwrite, **out_profile)
             )
 
             # find pan sharpening parameters from image stats
@@ -504,4 +504,4 @@ class PanSharpen:
                     future.result()
 
                 if build_ovw:
-                    utils.build_overviews(out_im)
+                    common.build_overviews(out_im)

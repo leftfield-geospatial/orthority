@@ -14,8 +14,8 @@ from rasterio.transform import GCPTransformer
 from rasterio.warp import reproject, transform_bounds
 
 from orthority import param_io
+from orthority.common import expand_window_to_grid
 from orthority.exif import Exif
-from orthority.utils import expand_window_to_grid
 
 ngi_src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
 ngi_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/ngi')

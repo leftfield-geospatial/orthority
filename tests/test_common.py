@@ -25,7 +25,7 @@ import pytest
 import rasterio as rio
 from rasterio.enums import ColorInterp
 
-from orthority import utils
+from orthority import common
 from orthority.enums import Compress
 from tests.conftest import checkerboard, create_profile
 
@@ -35,13 +35,13 @@ def test_get_filename(file: str, request: pytest.FixtureRequest):
     """Test get_filename() returns with different ``file`` objects."""
     file = request.getfixturevalue(file)
     exp_val = Path(file).name
-    assert utils.get_filename(file) == exp_val
+    assert common.get_filename(file) == exp_val
     ofile = fsspec.open(file, 'rb')
-    assert utils.get_filename(ofile) == exp_val
-    with utils.Open(file, 'rb') as f:
-        assert utils.get_filename(f) == exp_val
-    with utils.OpenRaster(file, 'r') as f:
-        assert utils.get_filename(f) == exp_val
+    assert common.get_filename(ofile) == exp_val
+    with common.Open(file, 'rb') as f:
+        assert common.get_filename(f) == exp_val
+    with common.OpenRaster(file, 'r') as f:
+        assert common.get_filename(f) == exp_val
 
 
 @pytest.mark.parametrize('file', ['odm_image_file', 'odm_image_url'])
@@ -61,7 +61,7 @@ def test_join_ofile(file: str, request: pytest.FixtureRequest):
             rel_path = '/'.join(parts[-pidx:])
 
             for base_path in map(path_type, [_base_path, _base_path + '/']):
-                join_ofile = utils.join_ofile(base_path, rel_path)
+                join_ofile = common.join_ofile(base_path, rel_path)
                 assert isinstance(join_ofile, fsspec.core.OpenFile)
                 assert join_ofile.path == ofile.path
                 assert join_ofile.fs.exists(join_ofile.path)
@@ -74,7 +74,7 @@ def test_open_raster_read(raster_file: str, request: pytest.FixtureRequest):
 
     def _test_open_raster_read(_raster_file, test_closed: bool = True):
         """Test OpenRaster for the given ``_raster_file`` object."""
-        with utils.OpenRaster(_raster_file, 'r') as _ds:
+        with common.OpenRaster(_raster_file, 'r') as _ds:
             assert isinstance(_ds, rio.DatasetReader)
             assert not _ds.closed
             assert _ds.filename == Path(raster_file).name
@@ -84,7 +84,7 @@ def test_open_raster_read(raster_file: str, request: pytest.FixtureRequest):
 
     _test_open_raster_read(raster_file)
     _test_open_raster_read(fsspec.open(raster_file, 'rb'))
-    with utils.OpenRaster(raster_file, 'r') as ds:
+    with common.OpenRaster(raster_file, 'r') as ds:
         _test_open_raster_read(ds, test_closed=False)
     assert ds.closed
 
@@ -107,7 +107,7 @@ def test_open_raster_write(tmp_path: Path):
 
     def _test_open_raster_write(_raster_file, test_closed: bool = True):
         """Test OpenRaster for the given ``_raster_file`` object."""
-        with utils.OpenRaster(_raster_file, 'w', **profile) as _ds:
+        with common.OpenRaster(_raster_file, 'w', **profile) as _ds:
             assert isinstance(_ds, rio.io.DatasetWriter)
             assert not _ds.closed
             assert _ds.filename == Path(raster_file).name
@@ -120,7 +120,7 @@ def test_open_raster_write(tmp_path: Path):
     with _test_temp_file(raster_file):
         _test_open_raster_write(fsspec.open(str(raster_file), 'wb'))
     with _test_temp_file(raster_file):
-        with utils.OpenRaster(raster_file, 'w', **profile) as ds:
+        with common.OpenRaster(raster_file, 'w', **profile) as ds:
             _test_open_raster_write(ds, test_closed=False)
         assert ds.closed
 
@@ -134,7 +134,7 @@ def test_open_raster_overwrite(tmp_path: Path):
     raster_file.touch()
 
     def _test_open_raster_overwrite(_raster_file, overwrite: bool):
-        with utils.OpenRaster(_raster_file, 'w', overwrite=overwrite, **profile) as _ds:
+        with common.OpenRaster(_raster_file, 'w', overwrite=overwrite, **profile) as _ds:
             _ds.write(array, indexes=1)
 
     # test overwriting an existing file with overwrite=True
@@ -157,11 +157,11 @@ def test_open_raster_overwrite(tmp_path: Path):
 def test_open_raster_not_found_error(raster_file: str):
     """Test OpenRaster raises a FileNotFoundError error with non-existing file path / URIs."""
     with pytest.raises(FileNotFoundError):
-        with utils.OpenRaster(raster_file, 'r'):
+        with common.OpenRaster(raster_file, 'r'):
             pass
     ofile = fsspec.open(raster_file, 'rb')
     with pytest.raises(FileNotFoundError):
-        with utils.OpenRaster(ofile, 'r'):
+        with common.OpenRaster(ofile, 'r'):
             pass
 
 
@@ -178,7 +178,7 @@ def test_open_read(file: str, kwargs: dict, request: pytest.FixtureRequest):
 
     def _test_open_read(_file, test_closed: bool = True, **kwargs):
         """Test Open for the given ``_file`` object."""
-        with utils.Open(_file, 'rt', **kwargs) as _f:
+        with common.Open(_file, 'rt', **kwargs) as _f:
             assert isinstance(_f, TextIOWrapper)
             assert not _f.closed
             assert _f.filename == Path(file).name
@@ -188,7 +188,7 @@ def test_open_read(file: str, kwargs: dict, request: pytest.FixtureRequest):
 
     _test_open_read(file)
     _test_open_read(fsspec.open(file, 'rt'))
-    with utils.Open(file, 'rt', **kwargs) as f:
+    with common.Open(file, 'rt', **kwargs) as f:
         _test_open_read(f, test_closed=False, **kwargs)
     assert f.closed
 
@@ -209,7 +209,7 @@ def test_open_write(tmp_path: Path):
 
     def _test_open_write(_file, test_closed: bool = True, **kwargs):
         """Test Open for the given ``_file`` object."""
-        with utils.Open(_file, 'wt', **kwargs) as _f:
+        with common.Open(_file, 'wt', **kwargs) as _f:
             assert isinstance(_f, TextIOWrapper)
             assert not _f.closed
             assert _f.filename == Path(file).name
@@ -223,7 +223,7 @@ def test_open_write(tmp_path: Path):
     with _test_temp_file(file):
         _test_open_write(fsspec.open(str(file), 'wt'), **kwargs)
     with _test_temp_file(file):
-        with utils.Open(file, 'wt', **kwargs) as f:
+        with common.Open(file, 'wt', **kwargs) as f:
             _test_open_write(f, test_closed=False, **kwargs)
         assert f.closed
 
@@ -234,7 +234,7 @@ def test_open_overwrite(tmp_path: Path):
     file.touch()
 
     def _test_open_overwrite(_file, overwrite: bool):
-        with utils.Open(_file, 'wt', overwrite=overwrite) as _f:
+        with common.Open(_file, 'wt', overwrite=overwrite) as _f:
             _f.write('test')
 
     # test overwriting an existing file with overwrite=True
@@ -257,17 +257,17 @@ def test_open_overwrite(tmp_path: Path):
 def test_open_not_found_error(file: str):
     """Test Open raises a FileNotFoundError error with non-existing file path / URIs."""
     with pytest.raises(FileNotFoundError):
-        with utils.Open(file, 'rt'):
+        with common.Open(file, 'rt'):
             pass
     ofile = fsspec.open(file, 'rt')
     with pytest.raises(FileNotFoundError):
-        with utils.Open(ofile, 'rt'):
+        with common.Open(ofile, 'rt'):
             pass
 
 
 def test_create_profile_non_config_items():
     """Test create_profile() non-configurable items."""
-    profile, write_mask = utils.create_profile(dtype='uint8')
+    profile, write_mask = common.create_profile(dtype='uint8')
 
     exp_profile = {
         'driver': 'GTiff',
@@ -293,7 +293,7 @@ def test_create_profile_non_config_items():
 )
 def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
     """Test create_profile() ``compress`` configuration."""
-    profile, write_mask = utils.create_profile(dtype=dtype, compress=compress)
+    profile, write_mask = common.create_profile(dtype=dtype, compress=compress)
 
     assert profile['dtype'] == dtype
     assert profile['compress'] == exp_value
@@ -322,7 +322,7 @@ def test_create_profile_interleave_photometric(
     compress: str, colorinterp: list[ColorInterp], exp_values: tuple
 ):
     """Test create_profile() ``interleave`` / ``photometric`` configuration."""
-    profile, write_mask = utils.create_profile(
+    profile, write_mask = common.create_profile(
         dtype='uint8', compress=compress, colorinterp=colorinterp
     )
 
@@ -336,7 +336,7 @@ def test_create_profile_12bit_jpeg():
     """Test create_profile() correctly configures a 12bit jpeg profile."""
     # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
     # jpeg compression.  This test just checks the profile is correct.
-    profile, write_mask = utils.create_profile(dtype='uint16', compress=Compress.jpeg)
+    profile, write_mask = common.create_profile(dtype='uint16', compress=Compress.jpeg)
 
     assert write_mask
     assert profile['dtype'] == 'uint16'
@@ -365,13 +365,13 @@ def test_create_profile_12bit_jpeg():
 )
 def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, exp_values: tuple):
     """Test create_profile() correctly sets ``write_mask`` and ``nodata``."""
-    profile, write_mask = utils.create_profile(dtype=dtype, write_mask=write_mask)
+    profile, write_mask = common.create_profile(dtype=dtype, write_mask=write_mask)
 
     assert write_mask is exp_values[0]
     if profile['nodata'] is None or exp_values[1] is None:
         assert profile['nodata'] is None and exp_values[1] is None
     else:
-        assert utils.nan_equals(profile['nodata'], exp_values[1])
+        assert common.nan_equals(profile['nodata'], exp_values[1])
 
 
 @pytest.mark.parametrize(
@@ -402,7 +402,7 @@ def test_convert_array_dtype(src_dtype: str, dst_dtype: str):
         )
 
     # convert to dtype
-    test_array = utils.convert_array_dtype(array, dst_dtype)
+    test_array = common.convert_array_dtype(array, dst_dtype)
 
     # create rounded & clipped array to test against
     ref_array = array
@@ -431,7 +431,7 @@ def test_build_overviews():
     with rio.open(buf, 'w', driver='GTiff', **profile) as im:
         im.write(array)
         # build overviews
-        utils.build_overviews(im)
+        common.build_overviews(im)
 
     with rio.open(buf, 'r') as im:
         assert len(im.overviews(1)) > 0

@@ -31,7 +31,7 @@ from rasterio.rpc import RPC
 from rasterio.transform import GCPTransformer, GroundControlPoint, RPCTransformer
 from rasterio.warp import transform as warp
 
-from orthority import utils
+from orthority import common
 from orthority.enums import CameraType, Interp
 from orthority.errors import CameraInitError, OrthorityWarning
 from orthority.param_io import _opk_to_rotation
@@ -315,7 +315,7 @@ class Camera(ABC):
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
-        with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
+        with common.suppress_no_georef(), env, common.OpenRaster(im_file) as im:
             dtype = dtype or im.dtypes[0]
             return im.read(indexes, out_dtype=dtype)
 
@@ -398,7 +398,7 @@ class Camera(ABC):
             )
 
         # find nodata mask
-        remap_mask = np.all(utils.nan_equals(remap_array, nodata), axis=0)
+        remap_mask = np.all(common.nan_equals(remap_array, nodata), axis=0)
         return remap_array, remap_mask
 
 

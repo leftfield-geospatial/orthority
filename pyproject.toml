@@ -55,5 +55,5 @@ line-length = 100
 skip-string-normalization = true
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 format = { quote-style = 'preserve' }

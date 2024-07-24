@@ -42,7 +42,7 @@ from rasterio.transform import RPC
 from rasterio.warp import transform
 from tqdm.std import tqdm
 
-from orthority import utils
+from orthority import common
 from orthority.enums import CameraType, CsvFormat
 from orthority.errors import CrsError, CrsMissingError, ParamError
 from orthority.exif import Exif
@@ -215,7 +215,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
         file object, opened in text mode (``'rt'``).
     """
-    with utils.Open(file, 'rt') as f:
+    with common.Open(file, 'rt') as f:
         yaml_dict = yaml.safe_load(f)
 
     def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
@@ -282,7 +282,7 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
         file object, opened in text mode (``'rt'``).
     """
-    with utils.Open(file, 'rt') as f:
+    with common.Open(file, 'rt') as f:
         json_dict = json.load(f)
 
     return _read_osfm_int_param(json_dict)
@@ -323,8 +323,8 @@ def read_im_rpc_param(
         file: str | PathLike | OpenFile | rio.DatasetReader,
     ) -> dict[str, dict[str, Any]]:
         """Read RPC camera parameters from an image file."""
-        filename = utils.get_filename(file)
-        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+        filename = common.get_filename(file)
+        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
             file, 'r'
         ) as im:
             # TODO: what is the speed of this for a large remote image?  does it just read the
@@ -365,7 +365,7 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
         file object, opened in text mode (``'rt'``).
     """
-    with utils.Open(file, 'rt') as f:
+    with common.Open(file, 'rt') as f:
         yaml_dict = yaml.safe_load(f)
 
     # template to test yaml_dict items against
@@ -395,10 +395,10 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         try:
             if not isinstance(filename, str):
                 raise TypeError(f"'{filename}' key is not an an instance of 'str'.")
-            utils.validate_collection(schema, rpc_param)
+            common.validate_collection(schema, rpc_param)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
-                f"'{utils.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}."
+                f"'{common.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}."
             )
         rpc_param_dict[filename] = dict(
             cam_type=CameraType.rpc, im_size=tuple(rpc_param['im_size']), rpc=rpc_param['rpc']
@@ -426,8 +426,8 @@ def read_im_gcps(
         file: str | PathLike | OpenFile | rio.DatasetReader,
     ) -> dict[str, dict[str, Any]]:
         """Read GCPs from an image file."""
-        filename = utils.get_filename(file)
-        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+        filename = common.get_filename(file)
+        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
             file, 'r'
         ) as im:
             gcps, crs = im.gcps
@@ -480,7 +480,7 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
         file object, opened in text mode (``'rt'``).
     """
-    with utils.Open(file, 'rt') as f:
+    with common.Open(file, 'rt') as f:
         json_dict = json.load(f)
 
     # validate file format
@@ -496,9 +496,9 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
         ],
     )
 
-    filename = utils.get_filename(file)
+    filename = common.get_filename(file)
     try:
-        utils.validate_collection(schema, json_dict)
+        common.validate_collection(schema, json_dict)
     except (ValueError, TypeError, KeyError) as ex:
         raise ParamError(f"'{filename}' is not a valid Orthority GCP file: {str(ex)}.")
 
@@ -544,7 +544,7 @@ def write_int_param(
         yaml_param.update(**{k: v for k, v in int_param.items() if k != 'cam_type'})
         yaml_dict[cam_id] = yaml_param
 
-    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+    with common.Open(file, 'wt', overwrite=overwrite) as f:
         yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
 
 
@@ -592,7 +592,7 @@ def write_ext_param(
 
     json_dict = dict(type='FeatureCollection', world_crs=crs.to_string(), features=feat_list)
 
-    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+    with common.Open(file, 'wt', overwrite=overwrite) as f:
         json.dump(json_dict, f, indent=4)
 
 
@@ -617,7 +617,7 @@ def write_rpc_param(
     for filename, rpm_param in rpc_param_dict.items():
         yaml_dict[filename] = {k: v for k, v in rpm_param.items() if k != 'cam_type'}
 
-    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+    with common.Open(file, 'wt', overwrite=overwrite) as f:
         yaml.safe_dump(yaml_dict, f, sort_keys=False, indent=4, default_flow_style=None)
 
 
@@ -647,7 +647,7 @@ def write_gcps(
 
     json_dict = dict(type='FeatureCollection', features=feat_list)
 
-    with utils.Open(file, 'wt', overwrite=overwrite) as f:
+    with common.Open(file, 'wt', overwrite=overwrite) as f:
         json.dump(json_dict, f, indent=4)
 
 
@@ -912,7 +912,7 @@ class CsvReader(FrameReader):
 
         # read file once into a buffer (newline=None works around some delimiter detection problems
         # with newline='')
-        with utils.Open(self._ofile or file, 'rt', newline=None) as f:
+        with common.Open(self._ofile or file, 'rt', newline=None) as f:
             self._buffer = StringIO(f.read())
 
         self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
@@ -998,12 +998,12 @@ class CsvReader(FrameReader):
             latlons.append(latlon)
 
         mean_latlon = np.array(latlons).mean(axis=0)
-        return utils.utm_crs_from_latlon(*mean_latlon)
+        return common.utm_crs_from_latlon(*mean_latlon)
 
     def _get_crs(self) -> CRS:
         """Read / auto-determine and validate a CRS when no user CRS was supplied."""
         crs = None
-        filename = utils.get_filename(self._file)
+        filename = common.get_filename(self._file)
         if self._format is CsvFormat.xyz_opk or self._format is CsvFormat.xyz_rpy:
             if self._ofile:
                 # read CRS of xyz positions / opk orientations from .prj file, if it exists
@@ -1121,7 +1121,7 @@ class OsfmReader(FrameReader):
     @staticmethod
     def _read_json_dict(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict]:
         """Read and validate the reconstruction JSON file."""
-        with utils.Open(file, 'rt') as f:
+        with common.Open(file, 'rt') as f:
             json_data = json.load(f)
 
         schema = [
@@ -1132,10 +1132,10 @@ class OsfmReader(FrameReader):
             )
         ]
         try:
-            utils.validate_collection(schema, json_data)
+            common.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
-                f"'{utils.get_filename(file)}' is not a valid OpenSfM reconstruction file: "
+                f"'{common.get_filename(file)}' is not a valid OpenSfM reconstruction file: "
                 f"{str(ex)}."
             )
 
@@ -1148,7 +1148,7 @@ class OsfmReader(FrameReader):
         """Return a UTM CRS that covers the reconstruction reference point."""
         ref_lla = self._json_dict['reference_lla']
         ref_lla = (ref_lla['latitude'], ref_lla['longitude'], ref_lla['altitude'])
-        return utils.utm_crs_from_latlon(*ref_lla[:2])
+        return common.utm_crs_from_latlon(*ref_lla[:2])
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
         """Read interior camera parameters."""
@@ -1256,7 +1256,7 @@ class ExifReader(FrameReader):
             llas.append(e.lla)
 
         mean_latlon = np.array(llas)[:, :2].mean(axis=0)
-        return utils.utm_crs_from_latlon(*mean_latlon)
+        return common.utm_crs_from_latlon(*mean_latlon)
         # return CRS.from_proj4(f'+proj=ortho +lat_0={mean_latlon[0]} +lon_0={mean_latlon[1]}'
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
@@ -1293,7 +1293,7 @@ class OtyReader(FrameReader):
     @staticmethod
     def _read_json_dict(file: str | PathLike | OpenFile | IO[str], crs: CRS) -> tuple[CRS, dict]:
         """Read and validate the GeoJSON file."""
-        with utils.Open(file, 'rt') as f:
+        with common.Open(file, 'rt') as f:
             json_dict = json.load(f)
 
         schema = dict(
@@ -1308,9 +1308,9 @@ class OtyReader(FrameReader):
             ],
         )
 
-        filename = utils.get_filename(file)
+        filename = common.get_filename(file)
         try:
-            utils.validate_collection(schema, json_dict)
+            common.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
             raise ParamError(
                 f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}."

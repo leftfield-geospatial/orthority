@@ -32,9 +32,9 @@ from rasterio.windows import from_bounds
 
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
+from orthority.common import nan_equals
 from orthority.enums import CameraType, Compress, Interp
 from orthority.ortho import Ortho
-from orthority.utils import nan_equals
 from tests.conftest import _dem_resolution
 
 logger = logging.getLogger(__name__)

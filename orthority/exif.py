@@ -26,7 +26,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 
-from orthority import utils
+from orthority import common
 from orthority.errors import OrthorityWarning
 
 logger = logging.getLogger(__name__)
@@ -109,8 +109,8 @@ class Exif:
     """
 
     def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):
-        self._filename = utils.get_filename(file)
-        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+        self._filename = common.get_filename(file)
+        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
             file, 'r'
         ) as ds:
             # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset

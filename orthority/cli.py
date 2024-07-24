@@ -32,7 +32,7 @@ from fsspec.core import OpenFile
 from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm.std import tqdm
 
-from orthority import root_path, utils
+from orthority import root_path, common
 from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp, RpcRefine
 from orthority.errors import CrsError, CrsMissingError, ParamError
@@ -44,7 +44,7 @@ from orthority.version import __version__
 logger = logging.getLogger(__name__)
 
 # TODO: use universal_pathlib if/when it matures for all filename options instead of OpenFile,
-#  and the utils.get_filename and utils.join_ofile work arounds.
+#  and the common.get_filename and common.join_ofile work arounds.
 
 
 class RstCommand(click.Command):
@@ -141,12 +141,12 @@ def _read_crs(crs: str):
     crs_path = Path(crs)
     if crs_path.suffix.lower() in ['.tif', '.tiff']:
         # read CRS from geotiff path / URL
-        with utils.suppress_no_georef(), utils.OpenRaster(crs, 'r') as im:
+        with common.suppress_no_georef(), common.OpenRaster(crs, 'r') as im:
             crs = im.crs
     else:
         if crs_path.exists() or urlparse(crs).scheme in fsspec.available_protocols():
             # read string from text file path / valid URI
-            with utils.Open(crs, 'rt') as f:
+            with common.Open(crs, 'rt') as f:
                 crs = f.read()
         # read CRS from string
         crs = rio.CRS.from_string(crs)
@@ -243,7 +243,7 @@ def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFi
 def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) -> OpenFile:
     """Click callback to create the default, or validate a user-supplied, ODM output directory."""
     if not out_dir:
-        ofile = utils.join_ofile(ctx.params['dataset_dir'], 'orthority')
+        ofile = common.join_ofile(ctx.params['dataset_dir'], 'orthority')
         try:
             # Note this does not raise an exception for (read-only) html protocol.  Not ideal, but
             # this code won't be reached for html as _dir_cb does raise an exception for
@@ -318,14 +318,14 @@ def _ortho(
     # open & validate dem_file (open it once here so it is not opened repeatedly in
     # orthorectification below)
     try:
-        dem_ctx = utils.OpenRaster(dem_file, 'r')
+        dem_ctx = common.OpenRaster(dem_file, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(str(ex), param_hint="'-d' / '--dem'")
 
     with dem_ctx as dem_im:
         # validate dem_band
         if dem_band <= 0 or dem_band > dem_im.count:
-            dem_name = utils.get_filename(dem_im)
+            dem_name = common.get_filename(dem_im)
             raise click.BadParameter(
                 f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
@@ -344,7 +344,7 @@ def _ortho(
 
             # open & validate src_file (open it once here so it is not opened repeatedly)
             try:
-                src_ctx = utils.OpenRaster(src_file, 'r')
+                src_ctx = common.OpenRaster(src_file, 'r')
             except FileNotFoundError as ex:
                 raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
@@ -356,7 +356,7 @@ def _ortho(
 
                 # orthorectify
                 ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
-                ortho_ofile = utils.join_ofile(
+                ortho_ofile = common.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
                 try:
@@ -573,7 +573,7 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 
     # enter context managers for sub-command raster operations
     env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
-    ctx.with_resource(utils.suppress_no_georef())
+    ctx.with_resource(common.suppress_no_georef())
     ctx.with_resource(env)
 
     # redirect logs through tqdm.write, so they do not interfere with progress bars
@@ -809,7 +809,7 @@ def odm(
     """
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
-    images_ofile = utils.join_ofile(dataset_dir, 'images/')
+    images_ofile = common.join_ofile(dataset_dir, 'images/')
     src_files = images_ofile.fs.find(images_ofile.path)  # use existing fs rather than open_files
     src_files = [sf for sf in src_files if sf[sf.rfind('.') :].lower() in src_exts]
     src_files = [OpenFile(images_ofile.fs, sf, 'rb') for sf in src_files]
@@ -819,9 +819,9 @@ def odm(
         )
 
     # read CRS from DSM
-    dem_ofile = utils.join_ofile(dataset_dir, 'odm_dem/dsm.tif', mode='rb')
+    dem_ofile = common.join_ofile(dataset_dir, 'odm_dem/dsm.tif', mode='rb')
     try:
-        dem_ctx = utils.OpenRaster(dem_ofile, 'r')
+        dem_ctx = common.OpenRaster(dem_ofile, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(
             f"No DSM found in '<dataset-dir>/odm_dem/'. {str(ex)}",
@@ -831,7 +831,7 @@ def odm(
         crs = crs or dem_im.crs
 
     # create camera factory
-    rec_ofile = utils.join_ofile(dataset_dir, 'opensfm/reconstruction.json', mode='rt')
+    rec_ofile = common.join_ofile(dataset_dir, 'opensfm/reconstruction.json', mode='rt')
     try:
         cameras = FrameCameras(
             int_param=rec_ofile,
@@ -1129,7 +1129,7 @@ def _simple_ortho(
                 ortho_filename = Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
 
                 # Get src size
-                with utils.suppress_no_georef(), rio.open(src_filename) as src_im:
+                with common.suppress_no_georef(), rio.open(src_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
                 if not camera:
