@@ -95,10 +95,10 @@ def refine_rpc(
         err = ((ji_gcp - ji_refine).T * (rpc['samp_scale'], rpc['line_scale'])).T  # pixels
         err_dist = np.sum(err**2, axis=0)
         logger.debug(f"Refinement transform: \n{refine_tform}")
-        logger.debug(f"Refinement RMSE (pixels): {np.sqrt(np.mean(err_dist)):.5f}")
+        logger.debug(f"Refinement RMSE (pixels): {np.sqrt(np.mean(err_dist)):.4f}")
         logger.debug(
             f"Refinement min - max error (pixels): "
-            f"{np.sqrt(np.min(err_dist)):.5f} - {np.sqrt(np.max(err_dist)):.5f}"
+            f"{np.sqrt(np.min(err_dist)):.5f} - {np.sqrt(np.max(err_dist)):.4f}"
         )
 
     # incorporate the refinement transform into the original RPC coefficients
