@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from io import TextIOWrapper
+from io import BytesIO, TextIOWrapper
 from pathlib import Path
 
 import fsspec
@@ -27,6 +27,7 @@ from rasterio.enums import ColorInterp
 
 from orthority import utils
 from orthority.enums import Compress
+from tests.conftest import checkerboard, create_profile
 
 
 @pytest.mark.parametrize('file', ['odm_image_file', 'odm_image_url'])
@@ -418,3 +419,19 @@ def test_convert_array_dtype(src_dtype: str, dst_dtype: str):
     assert test_array.dtype == dst_dtype
     # use approx test for case of (expected) precision loss e.g. float64->float32
     assert test_array == pytest.approx(ref_array, rel=1e-6)
+
+
+def test_build_overviews():
+    """Test build_overviews() builds overviews for an open in-memory dataset."""
+    # create in-memory dataset
+    array = checkerboard((768, 1024)).astype('uint8')
+    array = np.stack((array,) * 3, axis=0)
+    profile = create_profile(array)
+    buf = BytesIO()
+    with rio.open(buf, 'w', driver='GTiff', **profile) as im:
+        im.write(array)
+        # build overviews
+        utils.build_overviews(im)
+
+    with rio.open(buf, 'r') as im:
+        assert len(im.overviews(1)) > 0

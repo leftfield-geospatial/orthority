@@ -34,6 +34,7 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from rasterio.enums import Resampling
 
 try:
     from fsspec.implementations.http import HTTPFileSystem
@@ -468,3 +469,27 @@ def convert_array_dtype(array: np.ndarray, dtype: str) -> np.array:
         array = array.astype(dtype, copy=False, casting='unsafe')
 
     return array
+
+
+def build_overviews(
+    im: DatasetWriter,
+    max_num_levels: int = 8,
+    min_level_pixels: int = 256,
+) -> None:
+    """
+    Build internal overviews for an open rasterio dataset.  Each overview level is decimated by a
+    factor of 2.  The number of overview levels is determined by whichever of the
+    ``max_num_levels`` or ``min_level_pixels`` limits is reached first.
+
+    :param im:
+        Rasterio dataset opened in 'r+' or 'w' mode.
+    :param max_num_levels:
+        Maximum number of overview levels.
+    :param min_level_pixels:
+        Minimum overview width / height in pixels.
+    """
+    max_ovw_levels = int(np.min(np.log2(im.shape)))
+    min_level_shape_pow2 = int(np.log2(min_level_pixels))
+    num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+    ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
+    im.build_overviews(ovw_levels, Resampling.average)

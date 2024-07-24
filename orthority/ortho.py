@@ -32,7 +32,7 @@ from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
 from rasterio.transform import array_bounds
-from rasterio.warp import reproject, Resampling, transform, transform_bounds
+from rasterio.warp import reproject, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.std import tqdm, tqdm as std_tqdm
 
@@ -135,19 +135,6 @@ class Ortho:
     def camera(self) -> Camera | FrameCamera:
         """Source image camera model."""
         return self._camera
-
-    @staticmethod
-    def _build_overviews(
-        im: DatasetWriter,
-        max_num_levels: int = 8,
-        min_level_pixels: int = 256,
-    ) -> None:
-        """Build internal overviews for a given rasterio dataset."""
-        max_ovw_levels = int(np.min(np.log2(im.shape)))
-        min_level_shape_pow2 = int(np.log2(min_level_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-        im.build_overviews(ovw_levels, Resampling.average)
 
     def _parse_crs(self, crs: str | CRS) -> CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
@@ -646,7 +633,7 @@ class Ortho:
 
             if build_ovw:
                 # TODO: is it possible to convert to COG here?
-                self._build_overviews(ortho_im)
+                utils.build_overviews(ortho_im)
 
 
 ##
