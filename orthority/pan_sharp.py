@@ -412,8 +412,9 @@ class PanSharpen:
 
         # write pan sharpened tile
         with self._out_lock:
-            # TODO: dtype rounding & clipping, and write mask if it has one
-            out_im.write(out_array, window=tile_win, masked=write_mask)
+            out_im.write(out_array, window=tile_win)
+            if write_mask:
+                out_im.write_mask(mask, window=tile_win)
 
     def process(
         self,
@@ -503,5 +504,4 @@ class PanSharpen:
                     future.result()
 
                 if build_ovw:
-                    # TODO: make utils function
-                    Ortho._build_overviews(out_im)
+                    utils.build_overviews(out_im)
