@@ -37,13 +37,14 @@ from tqdm.std import tqdm
 from orthority import common
 from orthority.enums import Compress, Interp
 from orthority.errors import OrthorityWarning
-from orthority.ortho import Ortho
 
 logger = logging.getLogger(__name__)
 
 
 class PanSharpen:
     _working_dtype = 'float32'
+    # default algorithm configuration values for PanSharpen.process()
+    _default_alg_config = dict(interp=Interp.cubic)
 
     def __init__(
         self,
@@ -421,30 +422,28 @@ class PanSharpen:
         out_file: str | PathLike | OpenFile,
         indexes: Sequence[int] = None,
         weights: bool | Sequence[float] = None,
-        interp: str | Interp = Ortho._default_config['interp'],
-        write_mask: bool | None = Ortho._default_config['write_mask'],
-        dtype: str = Ortho._default_config['dtype'],
-        compress: str | Compress | None = Ortho._default_config['compress'],
-        build_ovw: bool = Ortho._default_config['build_ovw'],
-        overwrite: bool = Ortho._default_config['overwrite'],
-        progress: bool | dict = False,
+        interp: str | Interp = _default_alg_config['interp'],
+        write_mask: bool | None = common._default_out_config['write_mask'],
+        dtype: str = common._default_out_config['dtype'],
+        compress: str | Compress | None = common._default_out_config['compress'],
+        build_ovw: bool = common._default_out_config['build_ovw'],
+        overwrite: bool = common._default_out_config['overwrite'],
+        progress: bool | Sequence[dict] = False,
     ):
         # TODO: allow pan index e.g. Landsat can have all bands incl pan at different resolutions
         #  in a single file
+        # set up progress bars
+        if progress is True:
+            progress = [
+                common.get_tqdm_kwargs(desc=desc, unit='blocks')
+                for desc in ['Statistics', 'Sharpening']
+            ]
+        elif progress is False:
+            progress = [dict(disable=True, leave=False)] * 2
 
         exit_stack = ExitStack()
         interp = Interp(interp).to_rio()
         with exit_stack:
-            # TODO: progress bar labels for reading stats and transforming with internal and user
-            #  provided progress params
-            if progress is True:
-                progress = Ortho._default_tqdm_kwargs
-            elif progress is False:
-                progress = dict(disable=True, leave=False)
-            # else:
-            #     progress = tqdm(**progress)
-            # progress = exit_stack.enter_context(progress)
-
             # open pan & MS images
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
             pan_im = exit_stack.enter_context(common.OpenRaster(self._pan_file, 'r'))
@@ -470,7 +469,7 @@ class PanSharpen:
             # find pan sharpening parameters from image stats
             # TODO: Keep stats & params as state (depends on interp & indexes)?  Or find stats
             #  with fixed interp and all indexes, then select specified indexes here?
-            means, cov = self._get_stats(pan_im, ms_im, indexes, interp, progress)
+            means, cov = self._get_stats(pan_im, ms_im, indexes, interp, progress[0])
             params = self._get_params(means, cov, weights)
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
@@ -500,7 +499,7 @@ class PanSharpen:
                     # for tile_win in self._block_windows(pan_im.shape)
                     for _, tile_win in out_im.block_windows(1)
                 ]
-                for future in tqdm(futures, **progress):
+                for future in tqdm(futures, **progress[1]):
                     future.result()
 
                 if build_ovw:

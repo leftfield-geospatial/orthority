@@ -53,6 +53,18 @@ from orthority.errors import OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
+_nodata_vals = dict(
+    uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan')
+)
+"""Nodata values for supported dtypes.  OpenCV remap doesn't support int8 or uint32, 
+and only supports int32, uint64, int64 with nearest interpolation, so these dtypes are excluded.
+"""
+
+_default_out_config = dict(
+    write_mask=None, dtype=None, compress=None, build_ovw=True, overwrite=False
+)
+"""Default configuration values for output images."""
+
 
 @contextmanager
 def suppress_no_georef():
@@ -375,18 +387,12 @@ def create_profile(
     dimension profile items are not set i.e. ``crs``, ``transform``, ``width``, ``height`` &
     ``count``.
     """
-    # nodata values for supported data types (OpenCV remap doesn't support int8 or uint32,
-    # and only supports int32, uint64, int64 with nearest interp so these dtypes are
-    # excluded).
-    nodata_vals = dict(
-        uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan')
-    )
     colorinterp = colorinterp or []
     profile = {}
 
     # check dtype support
     dtype = str(dtype)
-    if dtype not in nodata_vals:
+    if dtype not in _nodata_vals:
         raise ValueError(f"Data type '{dtype}' is not supported.")
 
     # configure compression
@@ -421,7 +427,7 @@ def create_profile(
 
     # set nodata to None when writing internal masks to force external tools to use mask,
     # otherwise set by dtype
-    nodata = None if write_mask else nodata_vals[dtype]
+    nodata = None if write_mask else _nodata_vals[dtype]
 
     # create profile
     profile.update(
@@ -493,3 +499,11 @@ def build_overviews(
     num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
     ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
     im.build_overviews(ovw_levels, Resampling.average)
+
+
+def get_tqdm_kwargs(**kwargs) -> dict:
+    """Return a dictionary of ``tqdm`` progress bar kwargs with a standard ``bar_format``."""
+    return dict(
+        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} {unit} [{elapsed}<{remaining}]',
+        **kwargs,
+    )

@@ -83,11 +83,6 @@ class Camera(ABC):
                 f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
             )
 
-    @staticmethod
-    def _get_dtype_nodata(dtype: str) -> float | int:
-        """Return a sensible nodata value for the given ``dtype``."""
-        return np.nan if np.issubdtype(dtype, np.floating) else np.iinfo(dtype).min
-
     def _validate_image(self, im_array: np.ndarray) -> None:
         """Utility function to validate an image dtype and dimensions for remapping."""
         if str(im_array.dtype) not in Camera._valid_dtypes:
@@ -366,7 +361,7 @@ class Camera(ABC):
         if not np.issubdtype(z.dtype, np.floating):
             raise ValueError("'z' should have 'float64' or 'float32' data type.")
         if nodata is None:
-            nodata = self._get_dtype_nodata(im_array.dtype)
+            nodata = common._nodata_vals[im_array.dtype]
 
         # find (j, i) image pixel coords corresponding to (x, y, z) world coords
         ji = self.world_to_pixel(np.array((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
@@ -923,7 +918,7 @@ class FrameCamera(Camera):
         # does not support 3D images with >4 bands, and is slower on a re-ordered 3D image than
         # in a loop over bands)
         if nodata is None:
-            nodata = self._get_dtype_nodata(im_array.dtype)
+            nodata = common._nodata_vals[im_array.dtype]
         und_array = np.full(im_array.shape, dtype=im_array.dtype, fill_value=nodata)
 
         for bi in range(im_array.shape[0]):
@@ -1050,7 +1045,7 @@ class FrameCamera(Camera):
 
         if not self._distort:
             if nodata is None:
-                nodata = self._get_dtype_nodata(image.dtype)
+                nodata = common._nodata_vals[image.dtype]
             image = self._undistort_im(image, nodata=nodata, interp=interp)
         return image
 
@@ -1108,7 +1103,7 @@ class FrameCamera(Camera):
             mask = cv2.dilate(mask.view(np.uint8), kernel).view(bool)
 
             if nodata is None:
-                nodata = self._get_dtype_nodata(image.dtype)
+                nodata = common._nodata_vals[image.dtype]
             remap[:, mask] = nodata
 
         return remap, mask

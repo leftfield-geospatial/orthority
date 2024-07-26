@@ -18,7 +18,6 @@ import argparse
 import csv
 import logging
 import re
-import shutil
 import warnings
 from pathlib import Path
 from urllib.parse import urlparse
@@ -263,20 +262,6 @@ def _gcp_refine_cb(
     return _text_file_cb(ctx, param, path_uri) if path_uri != 'tags' else path_uri
 
 
-def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int = None) -> str:
-    """Return a ``tqdm`` ``bar_format`` for the given arguments."""
-    # pad or truncate desc to desc_width
-    lbar = f"{{desc:<{desc_width}.{desc_width}}}:" + "{percentage:3.0f}%|"
-    rbar = '|{n_fmt}/{total_fmt} ' + units + ' [{elapsed}<{remaining}]'
-    # find a bar width that gives enough space for rhs stats with 3 digit n_fmt / total_fmt and
-    # elapsed / remaining as hh:mm:ss
-    if not units_width:
-        units_width = len(units)
-    bar_width = max(shutil.get_terminal_size()[0] - (desc_width + 6 + (10 + units_width + 20)), 10)
-    bar = f"{{bar:{bar_width}}}"
-    return lbar + bar + rbar
-
-
 def _ortho(
     src_files: list[OpenFile],
     dem_file: OpenFile,
@@ -308,13 +293,6 @@ def _ortho(
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
 
-    # set up progress bar formats
-    src_name_lens = [len(Path(src_file.path).name) for src_file in src_files]
-    desc_width = min(max(src_name_lens), 40)
-    # units_width = max(len('files'), len('blocks'))
-    outer_bar_format = _get_bar_format(units='files', desc_width=desc_width, units_width=6)
-    inner_bar_format = _get_bar_format(units='blocks', desc_width=desc_width, units_width=6)
-
     # open & validate dem_file (open it once here so it is not opened repeatedly in
     # orthorectification below)
     try:
@@ -331,11 +309,7 @@ def _ortho(
                 param_hint="'-db' / '--dem-band'",
             )
 
-        for src_file in tqdm(src_files, desc='Total', bar_format=outer_bar_format):
-            # set up progress bar args for the current src_file
-            src_file_path = Path(src_file.path)
-            tqdm_kwargs = dict(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
-
+        for src_file in tqdm(src_files, **common.get_tqdm_kwargs(desc='Total', unit='files')):
             # create camera for src_file
             try:
                 camera = cameras.get(src_file)
@@ -356,6 +330,10 @@ def _ortho(
 
                 # orthorectify
                 ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
+                src_file_path = Path(src_file.path)
+                tqdm_kwargs = common.get_tqdm_kwargs(
+                    desc=src_file_path.name, unit='blocks', leave=False
+                )
                 ortho_ofile = common.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
@@ -447,7 +425,7 @@ dem_band_option = click.option(
     '--dem-band',
     type=click.INT,
     nargs=1,
-    default=Ortho._default_config['dem_band'],
+    default=Ortho._default_alg_config['dem_band'],
     show_default=True,
     help='Index of the DEM band to use (1 based).',
 )
@@ -455,7 +433,7 @@ interp_option = click.option(
     '-i',
     '--interp',
     type=click.Choice(Interp, case_sensitive=False),
-    default=Ortho._default_config['interp'],
+    default=Ortho._default_alg_config['interp'],
     show_default=True,
     help=f'Interpolation method for remapping source to ortho image.',
 )
@@ -463,7 +441,7 @@ dem_interp_option = click.option(
     '-di',
     '--dem-interp',
     type=click.Choice(Interp, case_sensitive=False),
-    default=Ortho._default_config['dem_interp'],
+    default=Ortho._default_alg_config['dem_interp'],
     show_default=True,
     help=f'Interpolation method for DEM reprojection.',
 )
@@ -471,7 +449,7 @@ per_band_option = click.option(
     '-pb/-npb',
     '--per-band/--no-per-band',
     type=click.BOOL,
-    default=Ortho._default_config['per_band'],
+    default=Ortho._default_alg_config['per_band'],
     show_default=True,
     help='Orthorectify band-by-band (``--per-band``) or all bands at once (``--no-per-band``). '
     '``--no-per-band`` is faster but uses more memory.',
@@ -501,7 +479,7 @@ write_mask_option = click.option(
     '-wm/-nwm',
     '--write-mask/--no-write-mask',
     type=click.BOOL,
-    default=Ortho._default_config['write_mask'],
+    default=common._default_out_config['write_mask'],
     show_default='true for jpeg compression.',
     help='Mask valid pixels with an internal mask (``--write-mask``), or with a nodata value '
     'based on ``--dtype`` (``--no-write-mask``). An internal mask helps remove nodata noise '
@@ -510,8 +488,8 @@ write_mask_option = click.option(
 dtype_option = click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(list(Ortho._nodata_vals.keys()), case_sensitive=False),
-    default=Ortho._default_config['dtype'],
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    default=common._default_out_config['dtype'],
     show_default='source image data type.',
     help=f'Ortho image data type.',
 )
@@ -519,7 +497,7 @@ compress_option = click.option(
     '-cm',
     '--compress',
     type=click.Choice(Compress, case_sensitive=False),
-    default=Ortho._default_config['compress'],
+    default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
     help=f'Ortho image compression.',
 )
@@ -722,9 +700,7 @@ def exif(
     can be changed with :option:`--out-dir <oty-exif --out-dir>`.
     """
     # set up progress bar args
-    desc = 'Reading parameters'
-    bar_format = _get_bar_format(units='files', desc_width=len(desc))
-    tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+    tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading parameters', unit='files', leave=False)
 
     # create camera factory
     try:
@@ -962,9 +938,7 @@ def rpc(
             raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
     else:
         # set up progress bar args
-        desc = 'Reading parameters'
-        bar_format = _get_bar_format(units='files', desc_width=len(desc))
-        tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+        tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading parameters', unit='files', leave=False)
 
         # create camera factory from image tags / sidecar file(s)
         try:
@@ -979,21 +953,14 @@ def rpc(
         ref_kwargs = dict(method=refine_method)
         if gcp_refine == 'tags':
             # set up progress bar args
-            desc = 'Reading GCPs'
-            bar_format = _get_bar_format(units='files', desc_width=len(desc))
-            tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+            tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
 
             cameras.refine(src_files, io_kwargs=dict(progress=tqdm_kwargs), ref_kwargs=ref_kwargs)
         else:
             cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
 
     # orthorectify
-    _ortho(
-        src_files=src_files,
-        cameras=cameras,
-        crs=crs,
-        **kwargs,
-    )
+    _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
 
 
 def _simple_ortho(
@@ -1080,7 +1047,7 @@ def _simple_ortho(
         # prepare ortho config
         ortho_config = config.get('ortho', {})
         crs = ortho_config.pop('crs', None)
-        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        dem_band = ortho_config.pop('dem_band', Ortho._default_alg_config['dem_band'])
         for key in ['driver', 'tile_size', 'nodata', 'interleave', 'photometric']:
             if key in ortho_config:
                 ortho_config.pop(key)

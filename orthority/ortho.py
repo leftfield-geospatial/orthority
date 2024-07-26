@@ -69,22 +69,10 @@ class Ortho:
         Index of the DEM band to use (1-based).
     """
 
-    # default configuration values for Ortho.process()
-    _default_config = dict(
-        dem_band=1,
-        resolution=None,
-        interp=Interp.cubic,
-        dem_interp=Interp.cubic,
-        per_band=False,
-        write_mask=None,
-        dtype=None,
-        compress=None,
-        build_ovw=True,
-        overwrite=False,
+    # default algorithm configuration values for Ortho.process()
+    _default_alg_config = dict(
+        dem_band=1, resolution=None, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False
     )
-
-    # default ortho (x, y) block size
-    _default_blocksize = (512, 512)
 
     # EGM96/EGM2008 geoid altitude range i.e. minimum and maximum possible vertical difference with
     # the WGS84 ellipsoid (meters)
@@ -92,22 +80,6 @@ class Ortho:
 
     # Maximum possible ellipsoidal height i.e. approx. that of Everest (meters)
     _z_max = 8850.0
-
-    # nodata values for supported ortho data types
-    _nodata_vals = dict(
-        uint8=0,
-        uint16=0,
-        int16=np.iinfo('int16').min,
-        float32=float('nan'),
-        float64=float('nan'),
-    )
-
-    # default progress bar kwargs
-    _default_tqdm_kwargs = dict(
-        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]',
-        dynamic_ncols=True,
-        leave=True,
-    )
 
     def __init__(
         self,
@@ -381,7 +353,7 @@ class Ortho:
         """Thread safe method to map the source image to an ortho tile.  Returns the tile array
         and mask.
         """
-        dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
+        dtype_nodata = common._nodata_vals[ortho_im.profile['dtype']]
 
         # offset init grids to tile_win
         tile_transform = rio.windows.transform(tile_win, ortho_im.profile['transform'])
@@ -443,8 +415,8 @@ class Ortho:
         # integer pixel coords refer to pixel centers, so the (x, y) coords are offset by half a
         # pixel to account for this.
 
-        j_range = np.arange(0, Ortho._default_blocksize[0])
-        i_range = np.arange(0, Ortho._default_blocksize[1])
+        j_range = np.arange(0, ortho_im.profile.get('blockysize', 512))
+        i_range = np.arange(0, ortho_im.profile.get('blockxsize', 512))
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
         init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
@@ -467,7 +439,7 @@ class Ortho:
             for indexes in index_list:
                 # read source, and optionally undistort, image band(s) (ortho dtype is
                 # required for cv2.remap() to set invalid ortho areas to ortho nodata value)
-                dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
+                dtype_nodata = common._nodata_vals[ortho_im.profile['dtype']]
                 src_array = self._camera.read(
                     src_im,
                     indexes=indexes,
@@ -502,15 +474,15 @@ class Ortho:
     def process(
         self,
         ortho_file: str | PathLike | OpenFile,
-        resolution: tuple[float, float] = _default_config['resolution'],
-        interp: str | Interp = _default_config['interp'],
-        dem_interp: str | Interp = _default_config['dem_interp'],
-        per_band: bool = _default_config['per_band'],
-        write_mask: bool | None = _default_config['write_mask'],
-        dtype: str = _default_config['dtype'],
-        compress: str | Compress | None = _default_config['compress'],
-        build_ovw: bool = _default_config['build_ovw'],
-        overwrite: bool = _default_config['overwrite'],
+        resolution: tuple[float, float] = _default_alg_config['resolution'],
+        interp: str | Interp = _default_alg_config['interp'],
+        dem_interp: str | Interp = _default_alg_config['dem_interp'],
+        per_band: bool = _default_alg_config['per_band'],
+        write_mask: bool | None = common._default_out_config['write_mask'],
+        dtype: str = common._default_out_config['dtype'],
+        compress: str | Compress | None = common._default_out_config['compress'],
+        build_ovw: bool = common._default_out_config['build_ovw'],
+        overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | dict = False,
     ) -> None:
         """
@@ -566,12 +538,10 @@ class Ortho:
         with exit_stack:
             # create the progress bar
             if progress is True:
-                progress = tqdm(**Ortho._default_tqdm_kwargs)
+                progress = common.get_tqdm_kwargs(unit='blocks')
             elif progress is False:
-                progress = tqdm(disable=True, leave=False)
-            else:
-                progress = tqdm(**progress)
-            progress = exit_stack.enter_context(progress)
+                progress = dict(disable=True, leave=False)
+            progress = exit_stack.enter_context(tqdm(**progress))
             # exit_stack.enter_context(common.profiler())  # run common.profiler in DEBUG log level
 
             # use the GSD for auto resolution if resolution not provided

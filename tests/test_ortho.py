@@ -30,9 +30,9 @@ from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
+from orthority import common
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
-from orthority.common import nan_equals
 from orthority.enums import CameraType, Compress, Interp
 from orthority.ortho import Ortho
 from tests.conftest import _dem_resolution
@@ -338,7 +338,7 @@ def test_reproject_dem_crs_equal(
     array, transform = ortho._reproject_dem(Interp.cubic, resolution)
 
     assert transform == ortho._dem_transform
-    assert np.all(nan_equals(array, ortho._dem_array))
+    assert np.all(common.nan_equals(array, ortho._dem_array))
 
 
 @pytest.mark.parametrize(
@@ -757,7 +757,7 @@ def test_process_per_band(
         test_array = test_im.read()
 
         assert test_array.shape == ref_array.shape
-        assert np.all(nan_equals(test_array, ref_array))
+        assert np.all(common.nan_equals(test_array, ref_array))
 
 
 @pytest.mark.parametrize(
@@ -1009,8 +1009,10 @@ def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: P
 
     assert ortho_file.exists()
     with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['dtype'] in Ortho._nodata_vals
-        assert nan_equals(ortho_im.profile['nodata'], Ortho._nodata_vals[ortho_im.profile['dtype']])
+        assert ortho_im.profile['dtype'] in common._nodata_vals
+        assert common.nan_equals(
+            ortho_im.profile['nodata'], common._nodata_vals[ortho_im.profile['dtype']]
+        )
 
 
 @pytest.mark.parametrize(

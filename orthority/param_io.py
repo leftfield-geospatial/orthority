@@ -68,13 +68,6 @@ _opt_frame_schema = {
 _default_lla_crs = CRS.from_epsg(4979)
 """Default CRS for geographic camera coordinates."""
 
-_default_tqdm_kwargs = dict(
-    bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} files [{elapsed}<{remaining}]',
-    dynamic_ncols=True,
-    leave=True,
-)
-"""Default progress bar kwargs."""
-
 
 def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
     """Read interior parameters from an OpenDroneMap / OpenSfM JSON dictionary."""
@@ -342,15 +335,13 @@ def read_im_rpc_param(
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(_read_im_rpc_param, file) for file in files]
 
-        # create / set up progress bar
+        # set up progress bar
         if progress is True:
-            progress = tqdm(futures, **_default_tqdm_kwargs)
+            progress = common.get_tqdm_kwargs(unit='files')
         elif progress is False:
-            progress = tqdm(futures, disable=True, leave=False)
-        else:
-            progress = tqdm(futures, **progress)
+            progress = dict(disable=True, leave=False)
 
-        for future in progress:
+        for future in tqdm(futures, **progress):
             rpc_param_dict.update(**future.result())
 
     return rpc_param_dict
@@ -458,15 +449,13 @@ def read_im_gcps(
     with ThreadPoolExecutor() as executor:
         futures = [executor.submit(_read_im_gcps, file) for file in files]
 
-        # create / set up progress bar
+        # set up progress bar
         if progress is True:
-            progress = tqdm(futures, **_default_tqdm_kwargs)
+            progress = common.get_tqdm_kwargs(unit='files')
         elif progress is False:
-            progress = tqdm(futures, disable=True, leave=False)
-        else:
-            progress = tqdm(futures, **progress)
+            progress = dict(disable=True, leave=False)
 
-        for future in progress:
+        for future in tqdm(futures, **progress):
             gcp_dict.update(**future.result())
 
     return gcp_dict
@@ -1231,15 +1220,13 @@ class ExifReader(FrameReader):
         with ThreadPoolExecutor() as executor:
             futures = [executor.submit(Exif, file) for file in files]
 
-            # create / set up progress bar
+            # set up progress bar
             if progress is True:
-                progress = tqdm(futures, **_default_tqdm_kwargs)
+                progress = common.get_tqdm_kwargs(unit='files')
             elif progress is False:
-                progress = tqdm(futures, disable=True, leave=False)
-            else:
-                progress = tqdm(futures, **progress)
+                progress = dict(disable=True, leave=False)
 
-            for future in progress:
+            for future in tqdm(futures, **progress):
                 exif_obj = future.result()
                 exif_dict[exif_obj.filename] = exif_obj
 
