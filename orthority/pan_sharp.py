@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 class PanSharpen:
     _working_dtype = 'float32'
     # default algorithm configuration values for PanSharpen.process()
-    _default_alg_config = dict(interp=Interp.cubic)
+    _default_alg_config = dict(ms_indexes=None, pan_index=1, weights=None, interp=Interp.cubic)
 
     def __init__(
         self,
@@ -59,23 +59,14 @@ class PanSharpen:
         self._out_lock = Lock()
 
     @staticmethod
-    def _block_windows(
-        im_shape: tuple[int, int], block_shape: tuple[int, int] = (1024, 1024)
-    ) -> Generator[Window]:
-        """Block window generator for the given image and optional block shapes."""
-        xrange = range(0, im_shape[1], block_shape[1])
-        yrange = range(0, im_shape[0], block_shape[0])
-        for xstart, ystart in product(xrange, yrange):
-            xstop = min(xstart + block_shape[1], im_shape[1])
-            ystop = min(ystart + block_shape[0], im_shape[0])
-            yield Window(xstart, ystart, xstop - xstart, ystop - ystart)
-
-    def _get_vrt_profiles(self, pan_file, ms_file) -> tuple[dict, dict]:
+    def _get_vrt_profiles(pan_file, ms_file) -> tuple[dict, dict]:
         """Return pan and MS WarpedVRT profiles for cropping and warping both to a shared pixel
         grid and bounds.  Pan is left on its source grid, and cropped if necessary.  MS is warped
         and cropped (as necessary) to lie on the pan grid.
         """
-        # TODO: what if the images have GCPs but not transforms?
+        # TODO: error checking: what if the images have GCPs but no transforms, or if they are not
+        #  geo-referenced at all (assume they are co-located and derive transforms from relative
+        #  shapes)?
         with common.OpenRaster(pan_file) as pan_ds, common.OpenRaster(ms_file) as ms_ds:
             if np.any(np.array(pan_ds.res) > ms_ds.res):
                 raise ValueError(
@@ -136,11 +127,56 @@ class PanSharpen:
             )
         return pan_profile, ms_profile
 
+    @staticmethod
+    def _block_windows(
+        im_shape: tuple[int, int], block_shape: tuple[int, int] = (1024, 1024)
+    ) -> Generator[Window]:
+        """Block window generator for the given image and optional block shapes."""
+        xrange = range(0, im_shape[1], block_shape[1])
+        yrange = range(0, im_shape[0], block_shape[0])
+        for xstart, ystart in product(xrange, yrange):
+            xstop = min(xstart + block_shape[1], im_shape[1])
+            ystop = min(ystart + block_shape[0], im_shape[0])
+            yield Window(xstart, ystart, xstop - xstart, ystop - ystart)
+
+    def _validate_pan_ms_params(
+        self,
+        pan_im: rio.DatasetReader,
+        ms_im: rio.DatasetReader,
+        pan_index: int,
+        ms_indexes: Sequence[int],
+        weights: Sequence[float] | None,
+    ) -> tuple[Sequence[int], Sequence[float] | None]:
+        """Validate pan / MS indexes and weights."""
+        if pan_index <= 0 or pan_index > pan_im.count:
+            pan_name = common.get_filename(pan_im)
+            raise ValueError(
+                f"Pan index {pan_index} is invalid for '{pan_name}' with {pan_im.count} band(s)"
+            )
+
+        ms_indexes = ms_im.indexes if ms_indexes is None or len(ms_indexes) == 0 else ms_indexes
+        if np.any(ms_indexes_ := np.array(ms_indexes) <= 0) or np.any(ms_indexes_ > ms_im.count):
+            ms_name = common.get_filename(ms_im)
+            raise ValueError(
+                f"Multispectral indexes {tuple(ms_indexes.tolist())} contain invalid values for "
+                f"'{ms_name}' with {ms_im.count} band(s)"
+            )
+
+        weights = None if weights is None or len(weights) == 0 else weights
+        if (weights is not None) and (len(weights) != len(ms_indexes)):
+            raise ValueError(
+                f"There should be the same number of multispectral to pan weights ({len(weights)}) "
+                f"as multispectral indexes ({len(ms_indexes)})."
+            )
+
+        return ms_indexes, weights
+
     def _get_stats(
         self,
         pan_im: rio.DatasetReader,
         ms_im: rio.DatasetReader,
-        indexes: Sequence[int] | np.ndarray,
+        pan_index: int,
+        ms_indexes: Sequence[int] | np.ndarray,
         interp: Resampling,
         progress: dict,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -162,18 +198,20 @@ class PanSharpen:
             """
             # read pan and MS tiles & tile masks (without masked arrays which don't release GIL)
             with self._pan_lock:
-                pan_array = pan_im.read(window=tile_win)
-                pan_mask = pan_im.read_masks(window=tile_win).astype('bool', copy=False)
+                pan_array = pan_im.read(indexes=pan_index, window=tile_win)
+                pan_mask = pan_im.read_masks(indexes=pan_index, window=tile_win).astype(
+                    'bool', copy=False
+                )
             with self._ms_lock:
-                ms_array = ms_im.read(indexes=indexes, window=tile_win)
-                ms_mask = ms_im.read_masks(indexes=indexes, window=tile_win).astype(
+                ms_array = ms_im.read(indexes=ms_indexes, window=tile_win)
+                ms_mask = ms_im.read_masks(indexes=ms_indexes, window=tile_win).astype(
                     'bool', copy=False
                 )
 
             # mask and combine pan & MS
-            mask = pan_mask[0] & ms_mask.all(axis=0)
+            mask = pan_mask & ms_mask.all(axis=0)
             pan_ms_array = np.concat(
-                (pan_array[0][mask].reshape(1, -1), ms_array[:, mask].reshape(len(indexes), -1)),
+                (pan_array[mask].reshape(1, -1), ms_array[:, mask].reshape(len(indexes), -1)),
                 axis=0,
             )
 
@@ -212,14 +250,14 @@ class PanSharpen:
 
             # find tile stats in a thread pool and aggregate
             n = 0
-            means = np.zeros(len(indexes) + 1, dtype=working_dtype)
-            prod = np.zeros((len(indexes) + 1,) * 2, dtype=working_dtype)
+            means = np.zeros(len(ms_indexes) + 1, dtype=working_dtype)
+            prod = np.zeros((len(ms_indexes) + 1,) * 2, dtype=working_dtype)
             with ThreadPoolExecutor(max_workers=os.cpu_count()) as ex:
                 # TODO: are custom size block windows helpful here & does WarpedVRT dtype affect
                 #  threading?
                 futures = [
-                    ex.submit(get_tile_stats, pan_im, ms_im, indexes, tile_win)
-                    for _, tile_win in ms_im.block_windows(indexes[0])
+                    ex.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
+                    for _, tile_win in ms_im.block_windows(ms_indexes[0])
                 ]
 
                 for future in tqdm(futures, **progress):
@@ -251,22 +289,31 @@ class PanSharpen:
             estimated from the given pan / MS covariance matrix.
             """
             if weights is None:
-                # find the LS solution for the weights as described in section 2.2 & eq 6
-                weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0]
+                # find the LS solution for the weights as described in section 2.2 & eq 6,
+                # except, if there are negative weights, set those to zero, and redo the LS
+                # without the zero weighted MS bands
+                weights = np.zeros(cov.shape[0] - 1)
+                ms_indexes_ = np.arange(1, cov.shape[0])
+                for _ in range(2):
+                    ms_cov = cov[ms_indexes_, :][:, ms_indexes_]
+                    pan_ms_cov = cov[0, ms_indexes_].reshape(-1, 1)
+                    weights[ms_indexes_ - 1] = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].T
+                    if np.all(weights >= 0):
+                        break
+                    else:
+                        ms_indexes_ = np.where(weights > 0)[0] + 1
             else:
                 weights = np.array(weights)
 
+            # set any remaining -ve weights to 0, normalise & return
+            weights = weights.flatten()
             if np.any(weights < 0):
-                # TODO: instead of zeroing and normalising, redo the least squares with -ve bands
-                #  excluded & set -ve weights to zero.
                 warnings.warn(
                     f'Weights contain negative value(s), setting to zero and normalising: '
                     f'{tuple(weights.round(4).tolist())}.',
                     category=OrthorityWarning,
                 )
-
-            # set any -ve weights to 0, normalise & return
-            weights = weights.flatten().clip(0, None)
+            weights = weights.clip(0, None)
             return weights / weights.sum()
 
         def get_gs_coeffs(cov: np.ndarray, weights: np.ndarray) -> list[np.ndarray]:
@@ -305,7 +352,6 @@ class PanSharpen:
             # find simulated pan mean and std deviation from weights & MS covariances (no
             # corresponding equation in paper, derived from properties of covariance:
             # https://dlsun.github.io/probability/cov-properties.html)
-            # TODO: validate this
             pan_sim_mean = weights.dot(means[1:])
             pan_sim_std = np.sqrt(
                 (weights.reshape(-1, 1).dot(weights.reshape(1, -1)) * cov[1:, 1:]).sum()
@@ -317,8 +363,10 @@ class PanSharpen:
             return gain, bias
 
         weights = get_weights(cov, weights=weights)
+        logger.debug(f"Multispectral to pan weights: {tuple(weights.round(4).tolist())}.")
         coeffs = get_gs_coeffs(cov[1:, 1:], weights)
         gain, bias = get_pan_norm(means, cov, weights)
+        logger.debug(f"Simulated pan gain: {gain:.4f}, bias: {bias:.4f}.")
         return dict(means=means, coeffs=coeffs, weights=weights, gain=gain, bias=bias)
 
     def _process_tile_array(
@@ -335,8 +383,9 @@ class PanSharpen:
         parameters.  Uses the "Process for Enhancing the Spatial Resolution of Multispectral
         Imagery Using Pan-sharpening" method in https://patents.google.com/patent/US6011875A/en.
         """
-        # TODO: document that this finds GS transform of already upsampled MS data, while the paper
-        #  finds GS transform then upsamples
+        # Note: the Gram-Schmidt transform is applied to upsampled MS data, rather than
+        # transforming first then upsampling as in the patent.  This is equivalent and simpler in
+        # code.
 
         def gs_foward(
             ms_array: np.ndarray,
@@ -385,7 +434,8 @@ class PanSharpen:
         pan_im: rio.DatasetReader,
         ms_im: rio.DatasetReader,
         tile_win: Window,
-        indexes: Sequence[int],
+        pan_index: int,
+        ms_indexes: Sequence[int],
         out_im: rio.io.DatasetWriter,
         write_mask: bool,
         **params,
@@ -394,16 +444,20 @@ class PanSharpen:
         # TODO: working dtype precision checks
         # read pan and MS tiles & tile masks (without masked arrays which don't release GIL)
         with self._pan_lock:
-            pan_array = pan_im.read(window=tile_win)
-            pan_mask = pan_im.read_masks(window=tile_win).astype('bool', copy=False)
+            pan_array = pan_im.read(indexes=pan_index, window=tile_win)
+            pan_mask = pan_im.read_masks(indexes=pan_index, window=tile_win).astype(
+                'bool', copy=False
+            )
         with self._ms_lock:
-            ms_array = ms_im.read(indexes=indexes, window=tile_win)
-            ms_mask = ms_im.read_masks(indexes=indexes, window=tile_win).astype('bool', copy=False)
+            ms_array = ms_im.read(indexes=ms_indexes, window=tile_win)
+            ms_mask = ms_im.read_masks(indexes=ms_indexes, window=tile_win).astype(
+                'bool', copy=False
+            )
 
         # mask and reshape pan & MS
-        mask = pan_mask[0] & ms_mask.all(axis=0)
-        pan_array_ = pan_array[0][mask].reshape(1, -1)
-        ms_array_ = ms_array[:, mask].reshape(len(indexes), -1)
+        mask = pan_mask & ms_mask.all(axis=0)
+        pan_array_ = pan_array[mask].reshape(1, -1)
+        ms_array_ = ms_array[:, mask].reshape(len(ms_indexes), -1)
 
         # pan sharpen masked data and write into output mask area
         out_array_ = self._process_tile_array(pan_array_, ms_array_, **params)
@@ -420,8 +474,9 @@ class PanSharpen:
     def process(
         self,
         out_file: str | PathLike | OpenFile,
-        indexes: Sequence[int] = None,
-        weights: bool | Sequence[float] = None,
+        pan_index: int = _default_alg_config['pan_index'],
+        ms_indexes: Sequence[int] = _default_alg_config['ms_indexes'],
+        weights: bool | Sequence[float] = _default_alg_config['weights'],
         interp: str | Interp = _default_alg_config['interp'],
         write_mask: bool | None = common._default_out_config['write_mask'],
         dtype: str = common._default_out_config['dtype'],
@@ -430,8 +485,6 @@ class PanSharpen:
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | Sequence[dict] = False,
     ):
-        # TODO: allow pan index e.g. Landsat can have all bands incl pan at different resolutions
-        #  in a single file
         # set up progress bars
         if progress is True:
             progress = [
@@ -448,7 +501,11 @@ class PanSharpen:
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
             pan_im = exit_stack.enter_context(common.OpenRaster(self._pan_file, 'r'))
             ms_im = exit_stack.enter_context(common.OpenRaster(self._ms_file, 'r'))
-            indexes = indexes or ms_im.indexes
+
+            # validate indexes and weights
+            ms_indexes, weights = self._validate_pan_ms_params(
+                pan_im, ms_im, pan_index, ms_indexes, weights
+            )
 
             # open output image
             dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
@@ -460,7 +517,7 @@ class PanSharpen:
                 transform=self._pan_profile['transform'],
                 width=self._pan_profile['width'],
                 height=self._pan_profile['height'],
-                count=len(indexes),
+                count=len(ms_indexes),
             )
             out_im = exit_stack.enter_context(
                 common.OpenRaster(out_file, 'w', overwrite=overwrite, **out_profile)
@@ -469,7 +526,7 @@ class PanSharpen:
             # find pan sharpening parameters from image stats
             # TODO: Keep stats & params as state (depends on interp & indexes)?  Or find stats
             #  with fixed interp and all indexes, then select specified indexes here?
-            means, cov = self._get_stats(pan_im, ms_im, indexes, interp, progress[0])
+            means, cov = self._get_stats(pan_im, ms_im, pan_index, ms_indexes, interp, progress[0])
             params = self._get_params(means, cov, weights)
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
@@ -491,7 +548,8 @@ class PanSharpen:
                         pan_im,
                         ms_im,
                         tile_win,
-                        indexes,
+                        pan_index,
+                        ms_indexes,
                         out_im,
                         write_mask,
                         **params,
