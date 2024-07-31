@@ -18,10 +18,10 @@ from __future__ import annotations
 import logging
 import os
 import warnings
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from itertools import product
-from os import cpu_count, PathLike
+from os import PathLike
 from threading import Lock
 from typing import Generator, Sequence
 
@@ -42,7 +42,23 @@ logger = logging.getLogger(__name__)
 
 
 class PanSharpen:
-    _working_dtype = 'float32'
+    """
+    Pan sharpener.
+
+    Pan sharpens a multispectral image with a panchromatic image using the Gram-Schmidt method
+    (https://doi.org/10.5194/isprsarchives-XL-1-W1-239-2013).
+
+    :param pan_file:
+        Panchromatic image. Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object
+        in binary mode (``'rb'``), or a dataset reader.
+    :param ms_file:
+        Multispectral image. Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object
+        in binary mode (``'rb'``), or a dataset reader.
+    """
+
+    # dtype for warping and transformations
+    _working_dtype = 'float64'
+
     # default algorithm configuration values for PanSharpen.process()
     _default_alg_config = dict(ms_indexes=None, pan_index=1, weights=None, interp=Interp.cubic)
 
@@ -60,14 +76,13 @@ class PanSharpen:
 
     @staticmethod
     def _get_vrt_profiles(pan_file, ms_file) -> tuple[dict, dict]:
-        """Return pan and MS WarpedVRT profiles for cropping and warping both to a shared pixel
-        grid and bounds.  Pan is left on its source grid, and cropped if necessary.  MS is warped
-        and cropped (as necessary) to lie on the pan grid.
-        """
-        # TODO: error checking: what if the images have GCPs but no transforms, or if they are not
-        #  geo-referenced at all (assume they are co-located and derive transforms from relative
-        #  shapes)?
+        """Return pan & MS resolution WarpedVRT profiles that define shared pixel grids and bounds."""
         with common.OpenRaster(pan_file) as pan_ds, common.OpenRaster(ms_file) as ms_ds:
+            if not pan_ds.crs or not ms_ds.crs:
+                raise ValueError(
+                    f'Pan and multispectral images should be georeferenced with a CRS and '
+                    f'affine transform.'
+                )
             if np.any(np.array(pan_ds.res) > ms_ds.res):
                 raise ValueError(
                     f'Pan resolution: {pan_ds.res} exceeds multispectral resolution: {ms_ds.res}.'
@@ -112,13 +127,12 @@ class PanSharpen:
                 common_win = Window(*common_win)
                 common_bounds = pan_ds.window_bounds(common_win)
 
+            # create the pan & MS resolution WarpedVRT profiles
             pan_win = pan_ds.window(*common_bounds)
             pan_win = Window(*np.array(pan_win.flatten(), dtype='int'))
             pan_transform = pan_ds.window_transform(pan_win)
             ms_size = (np.array((pan_win.width, pan_win.height)) / res_fact).astype('int')
             ms_transform = pan_transform * rio.Affine.scale(*res_fact)
-
-            # create the pan & MS WarpedVRT profiles
             pan_profile = dict(
                 crs=pan_ds.crs, transform=pan_transform, width=pan_win.width, height=pan_win.height
             )
@@ -131,7 +145,7 @@ class PanSharpen:
     def _block_windows(
         im_shape: tuple[int, int], block_shape: tuple[int, int] = (1024, 1024)
     ) -> Generator[Window]:
-        """Block window generator for the given image and optional block shapes."""
+        """Block window generator for the given image, and optional block shape."""
         xrange = range(0, im_shape[1], block_shape[1])
         yrange = range(0, im_shape[0], block_shape[0])
         for xstart, ystart in product(xrange, yrange):
@@ -184,8 +198,6 @@ class PanSharpen:
         Stable Parallel Computation of (Co-)Variance" method described in
         https://doi.org/10.1145/3221269.3223036 to aggregate stats over image tiles.
         """
-        # working dtype of float64 for aggregating over large images / tiles or large image dtypes
-        working_dtype = 'float64'
 
         def get_tile_stats(
             pan_im: rio.DatasetReader,
@@ -228,40 +240,34 @@ class PanSharpen:
             # common bounds
             pan_im = ex_stack.enter_context(
                 WarpedVRT(
-                    pan_im, **self._ms_profile, resampling=Resampling.average, dtype=working_dtype
+                    pan_im,
+                    **self._ms_profile,
+                    resampling=Resampling.average,
+                    dtype=self._working_dtype,
                 )
             )
             # reproject MS to pan_im grid if necessary
             ms_im = ex_stack.enter_context(
-                WarpedVRT(ms_im, **self._ms_profile, resampling=interp, dtype=working_dtype)
+                WarpedVRT(ms_im, **self._ms_profile, resampling=interp, dtype=self._working_dtype)
             )
-
-            # reference full band mean & cov for testing
-            # pan_array = pan_im.read(masked=True)
-            # ms_array = ms_im.read(indexes=indexes, masked=True)
-            # mask = pan_array.mask[0] | ms_array.mask.any(axis=0)
-            # pan_array.mask = ms_array.mask = mask
-            # pan_ms_array = np.ma.concatenate(
-            #     (pan_array[0].reshape(1, -1), ms_array.reshape(len(indexes), -1)), axis=0
-            # )
-            # ref_cov = np.ma.cov(pan_ms_array)
-            # ref_means = pan_ms_array.mean(axis=1)
-            # del pan_array, ms_array, pan_ms_array
 
             # find tile stats in a thread pool and aggregate
             n = 0
-            means = np.zeros(len(ms_indexes) + 1, dtype=working_dtype)
-            prod = np.zeros((len(ms_indexes) + 1,) * 2, dtype=working_dtype)
-            with ThreadPoolExecutor(max_workers=os.cpu_count()) as ex:
-                # TODO: are custom size block windows helpful here & does WarpedVRT dtype affect
-                #  threading?
+            means = np.zeros(len(ms_indexes) + 1, dtype=self._working_dtype)
+            prod = np.zeros((len(ms_indexes) + 1,) * 2, dtype=self._working_dtype)
+            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 futures = [
-                    ex.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                    for _, tile_win in ms_im.block_windows(ms_indexes[0])
+                    executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
+                    for tile_win in self._block_windows(ms_im.shape)
                 ]
 
-                for future in tqdm(futures, **progress):
-                    tile_n, tile_mean, tile_prod = future.result()
+                for future in tqdm(as_completed(futures), **progress, total=len(futures)):
+                    # TODO: put this shutdown logic in all thread pools
+                    try:
+                        tile_n, tile_mean, tile_prod = future.result()
+                    except Exception as ex:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise RuntimeError('Could not get tile statistics.') from ex
 
                     if tile_n > 0:
                         # eq 21 from the paper
@@ -286,26 +292,26 @@ class PanSharpen:
 
         def get_weights(cov: np.ndarray, weights: np.ndarray = None) -> np.ndarray:
             """Return normalised MS to pan weights.  If ``weights`` is not provided, weights are
-            estimated from the given pan / MS covariance matrix.
+            estimated from the given pan / MS covariance.
             """
             if weights is None:
-                # find the LS solution for the weights as described in section 2.2 & eq 6,
-                # except, if there are negative weights, set those to zero, and redo the LS
-                # without the zero weighted MS bands
-                weights = np.zeros(cov.shape[0] - 1)
-                ms_indexes_ = np.arange(1, cov.shape[0])
-                for _ in range(2):
+                # find the LS solution for the weights as described in section 2.2 & eq 6
+                weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0].T
+
+                # redo the LS without negatively weighted bands if there are any
+                if np.any(weights < 0):
+                    ms_indexes_ = np.where(weights > 0)[0] + 1
                     ms_cov = cov[ms_indexes_, :][:, ms_indexes_]
                     pan_ms_cov = cov[0, ms_indexes_].reshape(-1, 1)
-                    weights[ms_indexes_ - 1] = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].T
-                    if np.all(weights >= 0):
-                        break
-                    else:
-                        ms_indexes_ = np.where(weights > 0)[0] + 1
+                    weights_ = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].T
+
+                    # use the updated weights if they are positive
+                    if np.all(weights_ >= 0):
+                        weights[ms_indexes_ - 1] = weights_
             else:
                 weights = np.array(weights)
 
-            # set any remaining -ve weights to 0, normalise & return
+            # set any remaining negative weights to 0, normalise & return
             weights = weights.flatten()
             if np.any(weights < 0):
                 warnings.warn(
@@ -313,7 +319,7 @@ class PanSharpen:
                     f'{tuple(weights.round(4).tolist())}.',
                     category=OrthorityWarning,
                 )
-            weights = weights.clip(0, None)
+                weights = weights.clip(0, None)
             return weights / weights.sum()
 
         def get_gs_coeffs(cov: np.ndarray, weights: np.ndarray) -> list[np.ndarray]:
@@ -342,11 +348,11 @@ class PanSharpen:
             means: np.ndarray, cov: np.ndarray, weights: np.ndarray
         ) -> tuple[float, float]:
             """Return the gain and bias to convert the actual pan to the mean and standard
-            deviation of the simulated pan, given the pan / MS means & covariance, and MS to pan
-            weights. Note this uses downsampled actual pan stats while the paper
-            uses full resolution actual pan stats.  As the simulated pan stats are at MS
-            (downsampled) resolution, it seems the correct to use both at same resolution.
+            deviation of the simulated pan.
             """
+            # Note: this uses MS resolution, while the paper uses pan resolution actual pan
+            # stats.  As the simulated pan stats are also at the MS resolution, this seems correct.
+
             pan_mean, pan_std = means[0], np.sqrt(cov[0, 0])
 
             # find simulated pan mean and std deviation from weights & MS covariances (no
@@ -379,7 +385,7 @@ class PanSharpen:
         gain: float,
         bias: float,
     ) -> np.ndarray:
-        """Return the pan-sharpened tile for the given pan tile, MS tile and Gram-Schmidt
+        """Return the pan-sharpened tile for the given pan & MS tiles, and Gram-Schmidt
         parameters.  Uses the "Process for Enhancing the Spatial Resolution of Multispectral
         Imagery Using Pan-sharpening" method in https://patents.google.com/patent/US6011875A/en.
         """
@@ -395,7 +401,9 @@ class PanSharpen:
         ) -> np.ndarray:
             """Forward Gram-Schmidt transform of the given MS array with given parameters."""
             # equations 10-12 of the patent
-            gs_array = np.zeros((ms_array.shape[0] + 1, ms_array.shape[1]), dtype=ms_array.dtype)
+            gs_array = np.zeros(
+                (ms_array.shape[0] + 1, ms_array.shape[1]), dtype=self._working_dtype
+            )
             gs_array[0] = weights.dot(ms_array)
             for bi in range(0, ms_array.shape[0]):
                 phi = coeffs[bi]
@@ -409,12 +417,12 @@ class PanSharpen:
             coeffs: list[np.ndarray],
             ms_array: np.ndarray | None = None,
         ) -> np.ndarray:
-            """Reverse Gram-Schmidt transform of the given Gram-Schmidt array (with substituted
-            pan band) with given parameters.  Optionally writes into ``ms_array`` if provided.
+            """Reverse Gram-Schmidt transform of the given Gram-Schmidt array with given
+            parameters.  Optionally writes into ``ms_array`` if provided.
             """
             if ms_array is None:
                 ms_array = np.zeros(
-                    (gs_array.shape[0] - 1, gs_array.shape[1]), dtype=gs_array.dtype
+                    (gs_array.shape[0] - 1, gs_array.shape[1]), dtype=self._working_dtype
                 )
 
             # equation 14 of the patent
@@ -441,7 +449,6 @@ class PanSharpen:
         **params,
     ) -> None:
         """Thread-safe function to pan-sharpen a MS tile and write it to a dataset."""
-        # TODO: working dtype precision checks
         # read pan and MS tiles & tile masks (without masked arrays which don't release GIL)
         with self._pan_lock:
             pan_array = pan_im.read(indexes=pan_index, window=tile_win)
@@ -485,6 +492,49 @@ class PanSharpen:
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | Sequence[dict] = False,
     ):
+        """
+        Pan-sharpen.
+
+        Image statistics are aggregated tile-by-tile and used to derive the Gramm-Schmidt
+        parameters in a first step.  Then the pan-sharpened image is created tile-by-tile in a
+        second step.
+
+        :param out_file:
+            Output image file to create.  Can be a path or URI string, or an
+            :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
+        :param pan_index:
+            Index of the pan band to use (1-based).
+        :param ms_indexes:
+            Indexes of the multispectral bands to use (1-based).  If set to ``None`` (the default),
+            all multispectral bands are used.
+        :param weights:
+            Multi-spectral to pan weights.  If set to ``None`` (the default), weights are
+            estimated from the images.
+        :param interp:
+            Interpolation method for resampling the multispectral image.
+        :param write_mask:
+            Mask valid output pixels with an internal mask (``True``), or with a nodata value
+            based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
+            lossy compression. If set to ``None`` (the default), the mask will be written when
+            JPEG compression is used.
+        :param dtype:
+            Output image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or
+            ``float64``).  If set to ``None`` (the default), the source image data type is used.
+        :param compress:
+            Output image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
+            any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
+            builds, ``jpeg`` can also be used with uint16, in which case the output is 12 bit JPEG
+            compressed. If ``compress`` is set to ``None`` (the default), ``jpeg`` is used for the
+            uint8 ``dtype``, and ``deflate`` otherwise.
+        :param build_ovw:
+            Whether to build overviews for the output image.
+        :param overwrite:
+            Whether to overwrite the output image if it exists.
+        :param progress:
+            Whether to display a progress bar monitoring the portion of tiles processed in each
+            step. Can be set to a sequence of two argument dictionaries defining a custom
+            `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar for each step.
+        """
         # set up progress bars
         if progress is True:
             progress = [
@@ -524,24 +574,21 @@ class PanSharpen:
             )
 
             # find pan sharpening parameters from image stats
-            # TODO: Keep stats & params as state (depends on interp & indexes)?  Or find stats
-            #  with fixed interp and all indexes, then select specified indexes here?
             means, cov = self._get_stats(pan_im, ms_im, pan_index, ms_indexes, interp, progress[0])
             params = self._get_params(means, cov, weights)
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
             # common bounds
-            working_dtype = str(np.promote_types(self._working_dtype, out_profile['dtype']))
             pan_im = exit_stack.enter_context(
-                WarpedVRT(pan_im, **self._pan_profile, dtype=working_dtype)
+                WarpedVRT(pan_im, **self._pan_profile, dtype=self._working_dtype)
             )
             ms_im = exit_stack.enter_context(
-                WarpedVRT(ms_im, **self._pan_profile, resampling=interp, dtype=working_dtype)
+                WarpedVRT(ms_im, **self._pan_profile, resampling=interp, dtype=self._working_dtype),
             )
 
             # pan sharpen tiles in a thread pool
             # TODO: use output or custom block windows?
-            with ThreadPoolExecutor(max_workers=cpu_count()) as executor:
+            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
                 futures = [
                     executor.submit(
                         self._process_tile,
@@ -554,11 +601,15 @@ class PanSharpen:
                         write_mask,
                         **params,
                     )
-                    # for tile_win in self._block_windows(pan_im.shape)
-                    for _, tile_win in out_im.block_windows(1)
+                    for tile_win in self._block_windows(pan_im.shape, block_shape=(1024, 1024))
+                    # for _, tile_win in out_im.block_windows(1)
                 ]
-                for future in tqdm(futures, **progress[1]):
-                    future.result()
+                for future in tqdm(as_completed(futures), **progress[1], total=len(futures)):
+                    try:
+                        future.result()
+                    except Exception as ex:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise RuntimeError('Could not process tile.') from ex
 
                 if build_ovw:
                     common.build_overviews(out_im)
