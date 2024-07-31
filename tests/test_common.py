@@ -305,16 +305,20 @@ def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
         # jpeg compression with any 3 band colorinterp should give 'pixel' / 'ycbcr'
         ('jpeg', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('pixel', 'ycbcr')),
         ('jpeg', [ColorInterp.undefined] * 3, ('pixel', 'ycbcr')),
-        # other jpeg compression should give 'band' / None
-        ('jpeg', [ColorInterp.undefined] * 4, ('band', None)),
-        # deflate compression with rgb or rgb* colorinterp should give 'band' / 'rgb'
-        ('deflate', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        # any compression with rgb or rgb* colorinterp should give 'band' / 'rgb'
         (
-            'deflate',
+            'jpeg',
             [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha],
             ('band', 'rgb'),
         ),
-        # other deflate compression should give 'band' / None
+        ('deflate', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        (
+            'deflate',
+            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined],
+            ('band', 'rgb'),
+        ),
+        # any other configuration should give 'band' / None
+        ('jpeg', [ColorInterp.undefined] * 4, ('band', None)),
         ('deflate', [ColorInterp.undefined] * 3, ('band', None)),
     ],
 )
@@ -377,6 +381,9 @@ def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, e
 @pytest.mark.parametrize(
     'src_dtype, dst_dtype',
     [
+        ('uint16', 'uint8'),
+        ('uint16', 'int16'),
+        ('uint16', 'float32'),
         ('float32', 'uint8'),
         ('float32', 'uint16'),
         ('float32', 'int16'),

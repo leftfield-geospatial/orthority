@@ -414,8 +414,8 @@ def create_profile(
                 )
 
     # configure interleaving and color interpretation
-    if compress == Compress.jpeg:
-        interleave, photometric = ('pixel', 'ycbcr') if len(colorinterp) == 3 else ('band', None)
+    if compress == Compress.jpeg and len(colorinterp) == 3:
+        interleave, photometric = ('pixel', 'ycbcr')
     elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
         interleave, photometric = ('band', 'rgb')
     else:
@@ -464,10 +464,9 @@ def convert_array_dtype(array: np.ndarray, dtype: str) -> np.array:
         )
         dst_info = np.iinfo(dtype)
         if src_info.min < dst_info.min or src_info.max > dst_info.max:
-            if np.issubdtype(array.dtype, np.floating):
-                # promote array dtype to be able to represent destination dtype exactly (if
-                # possible) to clip correctly
-                array = array.astype(np.promote_types(array.dtype, dtype))
+            # promote array dtype to be able to represent destination dtype exactly (if
+            # possible) to clip correctly
+            array = array.astype(np.promote_types(array.dtype, dtype))
             np.clip(array, dst_info.min, dst_info.max, out=array)
 
     # convert dtype (ignoring numpy warnings for float overflow or cast of nan to integer)
