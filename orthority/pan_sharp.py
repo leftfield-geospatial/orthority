@@ -56,8 +56,9 @@ class PanSharpen:
         in binary mode (``'rb'``), or a dataset reader.
     """
 
-    # dtype for warping and transformations
+    # dtype & nodata for warping and transformations
     _working_dtype = 'float64'
+    _working_nodata = common._nodata_vals[_working_dtype]
 
     # default algorithm configuration values for PanSharpen.process()
     _default_alg_config = dict(ms_indexes=None, pan_index=1, weights=None, interp=Interp.cubic)
@@ -76,7 +77,9 @@ class PanSharpen:
 
     @staticmethod
     def _get_vrt_profiles(pan_file, ms_file) -> tuple[dict, dict]:
-        """Return pan & MS resolution WarpedVRT profiles that define shared pixel grids and bounds."""
+        """Return pan & MS resolution WarpedVRT profiles that define shared pixel grids and
+        bounds.
+        """
         with common.OpenRaster(pan_file) as pan_ds, common.OpenRaster(ms_file) as ms_ds:
             if not pan_ds.crs or not ms_ds.crs:
                 raise ValueError(
@@ -134,10 +137,22 @@ class PanSharpen:
             ms_size = (np.array((pan_win.width, pan_win.height)) / res_fact).astype('int')
             ms_transform = pan_transform * rio.Affine.scale(*res_fact)
             pan_profile = dict(
-                crs=pan_ds.crs, transform=pan_transform, width=pan_win.width, height=pan_win.height
+                crs=pan_ds.crs,
+                transform=pan_transform,
+                width=pan_win.width,
+                height=pan_win.height,
+                dtype=PanSharpen._working_dtype,
+                nodata=PanSharpen._working_nodata,
+                num_threads=os.cpu_count(),
             )
             ms_profile = dict(
-                crs=pan_ds.crs, transform=ms_transform, width=ms_size[0], height=ms_size[1]
+                crs=pan_ds.crs,
+                transform=ms_transform,
+                width=ms_size[0],
+                height=ms_size[1],
+                dtype=PanSharpen._working_dtype,
+                nodata=PanSharpen._working_nodata,
+                num_threads=os.cpu_count(),
             )
         return pan_profile, ms_profile
 
@@ -208,20 +223,16 @@ class PanSharpen:
             """Return pan / MS pixel count, mean & sum of deviation products for the given
             ``tile_win``.  Fully masked tiles produce zeros for count, means & products.
             """
-            # read pan and MS tiles & tile masks (without masked arrays which don't release GIL)
+            # read pan and MS tiles (without masked arrays which don't release GIL)
             with self._pan_lock:
                 pan_array = pan_im.read(indexes=pan_index, window=tile_win)
-                pan_mask = pan_im.read_masks(indexes=pan_index, window=tile_win).astype(
-                    'bool', copy=False
-                )
             with self._ms_lock:
                 ms_array = ms_im.read(indexes=ms_indexes, window=tile_win)
-                ms_mask = ms_im.read_masks(indexes=ms_indexes, window=tile_win).astype(
-                    'bool', copy=False
-                )
 
             # mask and combine pan & MS
-            mask = pan_mask & ms_mask.all(axis=0)
+            pan_mask = np.logical_not(common.nan_equals(pan_array, pan_im.nodata))
+            ms_mask = np.logical_not(common.nan_equals(ms_array, ms_im.nodata)).all(axis=0)
+            mask = pan_mask & ms_mask
             pan_ms_array = np.concat(
                 (pan_array[mask].reshape(1, -1), ms_array[:, mask].reshape(len(indexes), -1)),
                 axis=0,
@@ -239,44 +250,37 @@ class PanSharpen:
             # open MS & downsampled pan WarpedVRTs that lie on a MS resolution grid, and have
             # common bounds
             pan_im = ex_stack.enter_context(
-                WarpedVRT(
-                    pan_im,
-                    **self._ms_profile,
-                    resampling=Resampling.average,
-                    dtype=self._working_dtype,
-                )
+                WarpedVRT(pan_im, **self._ms_profile, resampling=Resampling.average)
             )
             # reproject MS to pan_im grid if necessary
-            ms_im = ex_stack.enter_context(
-                WarpedVRT(ms_im, **self._ms_profile, resampling=interp, dtype=self._working_dtype)
-            )
+            ms_im = ex_stack.enter_context(WarpedVRT(ms_im, **self._ms_profile, resampling=interp))
 
             # find tile stats in a thread pool and aggregate
             n = 0
             means = np.zeros(len(ms_indexes) + 1, dtype=self._working_dtype)
             prod = np.zeros((len(ms_indexes) + 1,) * 2, dtype=self._working_dtype)
-            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-                futures = [
-                    executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                    for tile_win in self._block_windows(ms_im.shape)
-                ]
+            executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
+            futures = [
+                executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
+                for tile_win in self._block_windows(ms_im.shape)
+            ]
 
-                for future in tqdm(as_completed(futures), **progress, total=len(futures)):
-                    # TODO: put this shutdown logic in all thread pools
-                    try:
-                        tile_n, tile_mean, tile_prod = future.result()
-                    except Exception as ex:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        raise RuntimeError('Could not get tile statistics.') from ex
+            for future in tqdm(as_completed(futures), **progress, total=len(futures)):
+                # TODO: put this shutdown logic in all thread pools
+                try:
+                    tile_n, tile_mean, tile_prod = future.result()
+                except Exception as ex:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise RuntimeError('Could not get tile statistics.') from ex
 
-                    if tile_n > 0:
-                        # eq 21 from the paper
-                        mean_diffs = tile_mean - means
-                        mean_diffs_ = mean_diffs.reshape(-1, 1).dot(mean_diffs.reshape(1, -1))
-                        prod += tile_prod + mean_diffs_ * (n * tile_n) / (n + tile_n)
-                        # eq 17 from the paper
-                        n += tile_n
-                        means += mean_diffs * tile_n / n
+                if tile_n > 0:
+                    # eq 21 from the paper
+                    mean_diffs = tile_mean - means
+                    mean_diffs_ = mean_diffs.reshape(-1, 1).dot(mean_diffs.reshape(1, -1))
+                    prod += tile_prod + mean_diffs_ * (n * tile_n) / (n + tile_n)
+                    # eq 17 from the paper
+                    n += tile_n
+                    means += mean_diffs * tile_n / n
 
         # convert prod to unbiased covariance (as with numpy.cov default)
         cov = prod / (n - 1)
@@ -449,20 +453,16 @@ class PanSharpen:
         **params,
     ) -> None:
         """Thread-safe function to pan-sharpen a MS tile and write it to a dataset."""
-        # read pan and MS tiles & tile masks (without masked arrays which don't release GIL)
+        # read pan and MS tiles (without masked arrays which don't release GIL)
         with self._pan_lock:
             pan_array = pan_im.read(indexes=pan_index, window=tile_win)
-            pan_mask = pan_im.read_masks(indexes=pan_index, window=tile_win).astype(
-                'bool', copy=False
-            )
         with self._ms_lock:
             ms_array = ms_im.read(indexes=ms_indexes, window=tile_win)
-            ms_mask = ms_im.read_masks(indexes=ms_indexes, window=tile_win).astype(
-                'bool', copy=False
-            )
 
         # mask and reshape pan & MS
-        mask = pan_mask & ms_mask.all(axis=0)
+        pan_mask = np.logical_not(common.nan_equals(pan_array, pan_im.nodata))
+        ms_mask = np.logical_not(common.nan_equals(ms_array, ms_im.nodata)).all(axis=0)
+        mask = pan_mask & ms_mask
         pan_array_ = pan_array[mask].reshape(1, -1)
         ms_array_ = ms_array[:, mask].reshape(len(ms_indexes), -1)
 
@@ -579,37 +579,37 @@ class PanSharpen:
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
             # common bounds
-            pan_im = exit_stack.enter_context(
-                WarpedVRT(pan_im, **self._pan_profile, dtype=self._working_dtype)
-            )
+            pan_im = exit_stack.enter_context(WarpedVRT(pan_im, **self._pan_profile))
             ms_im = exit_stack.enter_context(
-                WarpedVRT(ms_im, **self._pan_profile, resampling=interp, dtype=self._working_dtype),
+                WarpedVRT(ms_im, **self._pan_profile, resampling=interp),
             )
 
             # pan sharpen tiles in a thread pool
-            # TODO: use output or custom block windows?
-            with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-                futures = [
-                    executor.submit(
-                        self._process_tile,
-                        pan_im,
-                        ms_im,
-                        tile_win,
-                        pan_index,
-                        ms_indexes,
-                        out_im,
-                        write_mask,
-                        **params,
-                    )
-                    for tile_win in self._block_windows(pan_im.shape, block_shape=(1024, 1024))
-                    # for _, tile_win in out_im.block_windows(1)
-                ]
-                for future in tqdm(as_completed(futures), **progress[1], total=len(futures)):
-                    try:
-                        future.result()
-                    except Exception as ex:
-                        executor.shutdown(wait=False, cancel_futures=True)
-                        raise RuntimeError('Could not process tile.') from ex
+            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
+            futures = [
+                executor.submit(
+                    self._process_tile,
+                    pan_im,
+                    ms_im,
+                    tile_win,
+                    pan_index,
+                    ms_indexes,
+                    out_im,
+                    write_mask,
+                    **params,
+                )
+                for tile_win in self._block_windows(out_im.shape)
+            ]
 
-                if build_ovw:
-                    common.build_overviews(out_im)
+            pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))
+            for future in futures:
+                try:
+                    future.result()
+                except Exception as ex:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise RuntimeError('Could not process tile.') from ex
+                pbar.update()
+            pbar.refresh()
+
+            if build_ovw:
+                common.build_overviews(out_im)
