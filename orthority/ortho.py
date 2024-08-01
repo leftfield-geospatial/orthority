@@ -517,8 +517,8 @@ class Ortho:
             lossy compression. If set to ``None`` (the default), the mask will be written when
             JPEG compression is used.
         :param dtype:
-            Ortho image data type (``uint8``, ``uint16``, ``float32`` or ``float64``).  If set to
-            ``None`` (the default), the source image data type is used.
+            Ortho image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or ``float64``).
+            If set to ``None`` (the default), the source image data type is used.
         :param compress:
             Ortho image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
             any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
