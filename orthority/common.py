@@ -504,5 +504,6 @@ def get_tqdm_kwargs(**kwargs) -> dict:
     """Return a dictionary of ``tqdm`` progress bar kwargs with a standard ``bar_format``."""
     return dict(
         bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} {unit} [{elapsed}<{remaining}]',
+        dynamic_ncols=True,
         **kwargs,
     )
