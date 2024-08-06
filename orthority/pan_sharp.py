@@ -32,6 +32,7 @@ from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from rasterio.windows import intersect, Window
+from rasterio.windows import transform as window_transform
 from tqdm.std import tqdm
 
 from orthority import common
@@ -45,8 +46,11 @@ class PanSharpen:
     """
     Pan sharpener.
 
-    Pan sharpens a multispectral image with a panchromatic image using the Gram-Schmidt method
-    (https://doi.org/10.5194/isprsarchives-XL-1-W1-239-2013).
+    Increases the resolution of a multispectral image to that of a panchromatic image using the
+    Gram-Schmidt method (https://doi.org/10.5194/isprsarchives-XL-1-W1-239-2013).
+
+    Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
+    or both of the images are not georeferenced, they are assumed to having matching bounds.
 
     :param pan_file:
         Panchromatic image. Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object
@@ -70,91 +74,113 @@ class PanSharpen:
     ):
         self._pan_file = pan_file
         self._ms_file = ms_file
-        self._pan_profile, self._ms_profile = self._get_vrt_profiles(pan_file, ms_file)
+        self._profiles = self._get_vrt_profiles(pan_file, ms_file)
         self._pan_lock = Lock()
         self._ms_lock = Lock()
         self._out_lock = Lock()
 
     @staticmethod
-    def _get_vrt_profiles(pan_file, ms_file) -> tuple[dict, dict]:
-        """Return pan & MS resolution WarpedVRT profiles that define shared pixel grids and
-        bounds.
+    def _get_vrt_profiles(pan_file, ms_file) -> dict[str, dict]:
+        """Return a dictionary of WarpedVRT profiles for warping pan/MS to pan and MS grids.  The
+        pan and MS grids are cropped versions of the source grids that define shared bounds.
         """
-        with common.OpenRaster(pan_file) as pan_ds, common.OpenRaster(ms_file) as ms_ds:
-            if not pan_ds.crs or not ms_ds.crs:
-                raise ValueError(
-                    f'Pan and multispectral images should be georeferenced with a CRS and '
-                    f'affine transform.'
+        with ExitStack() as exit_stack:
+            # open files
+            pan_ds = exit_stack.enter_context(common.OpenRaster(pan_file))
+            ms_ds = exit_stack.enter_context(common.OpenRaster(ms_file))
+            # maintain source transforms separately as un-georeferenced images get custom
+            # transforms
+            pan_src_transform = pan_ds.transform
+            ms_src_transform = ms_ds.transform
+
+            # find shared pan & MS bounds as pan & MS windows in their own CRSs
+            if ms_ds.crs is None and ms_ds.transform.is_identity:
+                # MS is not georeferenced and pan may or may not be georeferenced. Assume pan &
+                # MS bounds match.
+                warnings.warn(
+                    'Multispectral image is not georeferenced with a CRS and affine transform - '
+                    'assuming its CRS and bounds match the pan image.',
+                    category=OrthorityWarning,
                 )
-            if np.any(np.array(pan_ds.res) > ms_ds.res):
-                raise ValueError(
-                    f'Pan resolution: {pan_ds.res} exceeds multispectral resolution: {ms_ds.res}.'
+                # create a custom MS transform that matches MS to pan bounds
+                ms_scale = np.array(pan_ds.shape[::-1]) / ms_ds.shape[::-1]
+                ms_src_transform = pan_ds.transform * rio.Affine.scale(*ms_scale)
+                # full / matching pan & MS windows
+                pan_win = Window(0, 0, pan_ds.width, pan_ds.height)
+                ms_win = Window(0, 0, ms_ds.width, ms_ds.height)
+
+            elif pan_ds.crs is None and pan_ds.transform.is_identity:
+                # Pan is not georeferenced and MS is georeferenced. Assume pan & MS bounds match.
+                warnings.warn(
+                    'Pan image is not georeferenced with a CRS and affine transform - assuming '
+                    'its CRS and bounds match the multispectral image.',
+                    category=OrthorityWarning,
                 )
+                # create a custom pan transform that matches pan to MS bounds
+                pan_scale = np.array(ms_ds.shape[::-1]) / pan_ds.shape[::-1]
+                pan_src_transform = pan_ds.transform * rio.Affine.scale(*pan_scale)
+                # full / matching pan & MS windows
+                pan_win = Window(0, 0, pan_ds.width, pan_ds.height)
+                ms_win = Window(0, 0, ms_ds.width, ms_ds.height)
 
-            # MS bounds, bounding window and resolution in pan coordinates
-            ms_bounds_ = np.array(transform_bounds(ms_ds.crs, pan_ds.crs, *ms_ds.bounds))
-            ms_win_ = pan_ds.window(*ms_bounds_)
-            if not intersect((pan_ds.window(*pan_ds.bounds), ms_win_)):
-                raise ValueError('Pan and multispectral extents do not overlap.')
-            ms_win_off_ = np.array((ms_win_.col_off, ms_win_.row_off))
-            ms_res_ = (ms_bounds_[2:] - ms_bounds_[:2]) / (ms_ds.width, ms_ds.height)
-
-            # ratio between ms and pan resolution in pan coordinates
-            res_fact = ms_res_ / pan_ds.res
-
-            if (
-                (pan_ds.crs == ms_ds.crs)
-                and np.all(ms_win_off_ == ms_win_off_.round())
-                and np.all(res_fact == res_fact.round())
-            ):
-                # The pan and MS pixel grids coincide.  Find common pan and MS bounds that lie on
-                # the MS pixel grid.
-                pan_win_ = ms_ds.window(*pan_ds.bounds)
-                common_win = pan_win_.intersection(ms_ds.window(*ms_ds.bounds))
-                assert common_win.round_offsets() == common_win
-                common_win = Window(*np.array(common_win.flatten(), dtype='int'))
-                common_bounds = ms_ds.window_bounds(common_win)
             else:
-                # The pan and MS pixel grids do not coincide.  Find common pan and MS bounds,
-                # that lie on the pan and reprojected MS pixel grids.
-                logger.debug(
-                    'Multispectral image will be reprojected to coincide with the pan pixel grid.'
-                )
-                res_fact = res_fact.round()
-                common_win = pan_ds.window(*pan_ds.bounds).intersection(ms_win_)
-                common_win = np.array(common_win.flatten())
-                common_win = np.array(
-                    (*np.ceil(common_win[:2]), *np.floor(common_win[-2:] / res_fact) * res_fact),
-                    dtype='int',
-                )
-                common_win = Window(*common_win)
-                common_bounds = pan_ds.window_bounds(common_win)
+                # both pan and MS are georeferenced
+                # find shared bounds pan window
+                ms_bounds_ = transform_bounds(ms_ds.crs, pan_ds.crs, *ms_ds.bounds)
+                ms_win_ = pan_ds.window(*ms_bounds_)
+                if not intersect((ms_win_, pan_ds.window(*pan_ds.bounds))):
+                    raise ValueError('Pan and multispectral bounds do not overlap.')
+                pan_win = ms_win_.intersection(pan_ds.window(*pan_ds.bounds))
+                pan_win = common.expand_window_to_grid(pan_win)
 
-            # create the pan & MS resolution WarpedVRT profiles
-            pan_win = pan_ds.window(*common_bounds)
-            pan_win = Window(*np.array(pan_win.flatten(), dtype='int'))
-            pan_transform = pan_ds.window_transform(pan_win)
-            ms_size = (np.array((pan_win.width, pan_win.height)) / res_fact).astype('int')
-            ms_transform = pan_transform * rio.Affine.scale(*res_fact)
-            pan_profile = dict(
+                # find shared bounds MS window
+                pan_bounds_ = transform_bounds(pan_ds.crs, ms_ds.crs, *pan_ds.bounds)
+                pan_win_ = ms_ds.window(*pan_bounds_)
+                ms_win = pan_win_.intersection(ms_ds.window(*ms_ds.bounds))
+                ms_win = common.expand_window_to_grid(ms_win)
+
+            # test resolutions
+            pan_res = np.abs((pan_src_transform[0], pan_src_transform[4]))
+            ms_res = np.abs((ms_src_transform[0], ms_src_transform[4]))
+            if np.any(pan_res > ms_res):
+                raise ValueError(
+                    f'Pan resolution: {tuple(pan_res.tolist())} exceeds multispectral resolution: '
+                    f'{tuple(ms_res.tolist())}.'
+                )
+
+            # create the WarpedVRT profiles ('src_transform' items are required for
+            # un-georeferenced images)
+            profiles = {}
+            pan_transform = window_transform(pan_win, pan_src_transform)
+            ms_transform = window_transform(ms_win, ms_src_transform)
+            profiles['pan_to_pan'] = dict(
                 crs=pan_ds.crs,
+                src_transform=pan_src_transform,
                 transform=pan_transform,
                 width=pan_win.width,
                 height=pan_win.height,
-                dtype=PanSharpen._working_dtype,
-                nodata=PanSharpen._working_nodata,
-                num_threads=os.cpu_count(),
             )
-            ms_profile = dict(
-                crs=pan_ds.crs,
+            profiles['ms_to_pan'] = profiles['pan_to_pan'].copy()
+            profiles['ms_to_pan'].update(src_transform=ms_src_transform)
+
+            profiles['ms_to_ms'] = dict(
+                crs=ms_ds.crs,
+                src_transform=ms_src_transform,
                 transform=ms_transform,
-                width=ms_size[0],
-                height=ms_size[1],
-                dtype=PanSharpen._working_dtype,
-                nodata=PanSharpen._working_nodata,
-                num_threads=os.cpu_count(),
+                width=ms_win.width,
+                height=ms_win.height,
             )
-        return pan_profile, ms_profile
+            profiles['pan_to_ms'] = profiles['ms_to_ms'].copy()
+            profiles['pan_to_ms'].update(src_transform=pan_src_transform)
+
+            # add common config items
+            for profile in profiles.values():
+                profile.update(
+                    dtype=PanSharpen._working_dtype,
+                    nodata=PanSharpen._working_nodata,
+                    num_threads=os.cpu_count(),
+                )
+        return profiles
 
     @staticmethod
     def _block_windows(
@@ -250,10 +276,9 @@ class PanSharpen:
             # open MS & downsampled pan WarpedVRTs that lie on a MS resolution grid, and have
             # common bounds
             pan_im = ex_stack.enter_context(
-                WarpedVRT(pan_im, **self._ms_profile, resampling=Resampling.average)
+                WarpedVRT(pan_im, **self._profiles['pan_to_ms'], resampling=Resampling.average)
             )
-            # reproject MS to pan_im grid if necessary
-            ms_im = ex_stack.enter_context(WarpedVRT(ms_im, **self._ms_profile, resampling=interp))
+            ms_im = ex_stack.enter_context(WarpedVRT(ms_im, **self._profiles['ms_to_ms']))
 
             # find tile stats in a thread pool and aggregate
             n = 0
@@ -298,6 +323,7 @@ class PanSharpen:
             """Return normalised MS to pan weights.  If ``weights`` is not provided, weights are
             estimated from the given pan / MS covariance.
             """
+            # TODO: weights for different sections of the same image should be the ~same, but aren't
             if weights is None:
                 # find the LS solution for the weights as described in section 2.2 & eq 6
                 weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0].T
@@ -372,6 +398,8 @@ class PanSharpen:
             bias = pan_sim_mean - (gain * pan_mean)
             return gain, bias
 
+        logger.debug(f"Pan / multispectral means: {means.round(4)}.")
+        logger.debug(f"Pan / multispectral covariance: \n{cov.round(4)}.")
         weights = get_weights(cov, weights=weights)
         logger.debug(f"Multispectral to pan weights: {tuple(weights.round(4).tolist())}.")
         coeffs = get_gs_coeffs(cov[1:, 1:], weights)
@@ -495,23 +523,27 @@ class PanSharpen:
         """
         Pan-sharpen.
 
-        Image statistics are aggregated tile-by-tile and used to derive the Gramm-Schmidt
-        parameters in a first step.  Then the pan-sharpened image is created tile-by-tile in a
-        second step.
+        The pan-sharpened image is created on the panchromatic pixel grid.  Pan-sharpened image
+        bounds are the intersection of the panchromatic and multispectral image bounds.
+
+        Pan-sharpening consists of two steps, both of which operate tile-by-tile::
+
+        # Derive the Gram-Schmidt parameters from image statistics.
+        # Generate the pan-sharpened image.
 
         :param out_file:
-            Output image file to create.  Can be a path or URI string, or an
+            Pan-sharpened image file to create.  Can be a path or URI string, or an
             :class:`~fsspec.core.OpenFile` object in binary mode (``'wb'``).
         :param pan_index:
-            Index of the pan band to use (1-based).
+            Index of the panchromatic band to use (1-based).
         :param ms_indexes:
             Indexes of the multispectral bands to use (1-based).  If set to ``None`` (the default),
             all multispectral bands are used.
         :param weights:
-            Multi-spectral to pan weights.  If set to ``None`` (the default), weights are
+            Multi-spectral to panchromatic weights.  If set to ``None`` (the default), weights are
             estimated from the images.
         :param interp:
-            Interpolation method for resampling the multispectral image.
+            Interpolation method for upsampling the multispectral image.
         :param write_mask:
             Mask valid output pixels with an internal mask (``True``), or with a nodata value
             based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
@@ -532,7 +564,7 @@ class PanSharpen:
             Whether to overwrite the output image if it exists.
         :param progress:
             Whether to display a progress bar monitoring the portion of tiles processed in each
-            step. Can be set to a sequence of two argument dictionaries defining a custom
+            step. Can be set to a sequence of two argument dictionaries that define a custom
             `tqdm <https://tqdm.github.io/docs/tqdm/>`_ bar for each step.
         """
         # set up progress bars
@@ -562,11 +594,12 @@ class PanSharpen:
             out_profile, write_mask = common.create_profile(
                 dtype, compress=compress, write_mask=write_mask, colorinterp=ms_im.colorinterp
             )
+            pan_profile = self._profiles['pan_to_pan']
             out_profile.update(
-                crs=self._pan_profile['crs'],
-                transform=self._pan_profile['transform'],
-                width=self._pan_profile['width'],
-                height=self._pan_profile['height'],
+                crs=pan_profile['crs'],
+                transform=pan_profile['transform'],
+                width=pan_profile['width'],
+                height=pan_profile['height'],
                 count=len(ms_indexes),
             )
             out_im = exit_stack.enter_context(
@@ -579,9 +612,9 @@ class PanSharpen:
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
             # common bounds
-            pan_im = exit_stack.enter_context(WarpedVRT(pan_im, **self._pan_profile))
+            pan_im = exit_stack.enter_context(WarpedVRT(pan_im, **self._profiles['pan_to_pan']))
             ms_im = exit_stack.enter_context(
-                WarpedVRT(ms_im, **self._pan_profile, resampling=interp),
+                WarpedVRT(ms_im, **self._profiles['ms_to_pan'], resampling=interp),
             )
 
             # pan sharpen tiles in a thread pool
