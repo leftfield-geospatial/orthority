@@ -19,6 +19,7 @@ import csv
 import logging
 import re
 import warnings
+from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -38,6 +39,7 @@ from orthority.errors import CrsError, CrsMissingError, ParamError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
 from orthority.fit import _default_rpc_refine_method
 from orthority.ortho import Ortho
+from orthority.pan_sharp import PanSharpen
 from orthority.version import __version__
 
 logger = logging.getLogger(__name__)
@@ -169,7 +171,7 @@ def _src_files_cb(
     list of file paths / URIs, or a list of path / URI glob patterns.
     """
     if not src_files or len(src_files) == 0:
-        return ()
+        return []
     try:
         src_files = fsspec.open_files(src_files, 'rb')
     except Exception as ex:
@@ -179,23 +181,14 @@ def _src_files_cb(
     return src_files
 
 
-def _raster_file_cb(ctx: click.Context, param: click.Parameter, path_uri: str) -> OpenFile:
-    """Click callback to convert a file path / URI to an OpenFile instance in binary read mode."""
+def _file_cb(
+    ctx: click.Context, param: click.Parameter, path_uri: str, mode: str = 'rb'
+) -> OpenFile:
+    """Click callback to convert a file path / URI to an OpenFile instance."""
     ofile = None
     if path_uri:
         try:
-            ofile = fsspec.open(path_uri, 'rb')
-        except Exception as ex:
-            raise click.BadParameter(str(ex), param=param)
-    return ofile
-
-
-def _text_file_cb(ctx: click.Context, param: click.Parameter, path_uri: str) -> OpenFile:
-    """Click callback to convert a file path / URI to an OpenFile instance in text read mode."""
-    ofile = None
-    if path_uri:
-        try:
-            ofile = fsspec.open(path_uri, 'rt')
+            ofile = fsspec.open(path_uri, mode)
         except Exception as ex:
             raise click.BadParameter(str(ex), param=param)
     return ofile
@@ -259,7 +252,15 @@ def _gcp_refine_cb(
     ctx: click.Context, param: click.Parameter, path_uri: str | bool
 ) -> OpenFile | bool:
     """Click callback to parse the ``--gcp-refine`` option."""
-    return _text_file_cb(ctx, param, path_uri) if path_uri != 'tags' else path_uri
+    return _file_cb(ctx, param, path_uri, mode='rt') if path_uri != 'tags' else path_uri
+
+
+def _weights_cb(ctx: click.Context, param: click.Parameter, weights: list[float]):
+    """Click callback to validate the ``--weight`` option."""
+    if weights is not None:
+        if np.any(weights_ := np.array(weights) < 0) or np.any(weights_ > 1):
+            raise click.BadParameter(f"Weight values should be 0-1.", param=param)
+    return weights
 
 
 def _ortho(
@@ -357,7 +358,7 @@ dem_file_option = click.option(
     'dem_file',
     type=click.Path(dir_okay=False),
     default=None,
-    callback=_raster_file_cb,
+    callback=partial(_file_cb, mode='rb'),
     help='Path / URI of a DEM file covering the source image(s).',
 )
 int_param_file_option = click.option(
@@ -367,7 +368,7 @@ int_param_file_option = click.option(
     type=click.Path(dir_okay=False),
     required=True,
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an interior parameter file.',
 )
 ext_param_file_option = click.option(
@@ -377,7 +378,7 @@ ext_param_file_option = click.option(
     type=click.Path(dir_okay=False),
     required=True,
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an exterior parameter file.',
 )
 crs_option = click.option(
@@ -850,7 +851,7 @@ def odm(
     'rpc_param_file',
     type=click.Path(dir_okay=False),
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an Orthority RPC parameter file.',
 )
 @click.option(
@@ -961,6 +962,180 @@ def rpc(
 
     # orthorectify
     _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
+
+
+@cli.command(
+    cls=RstCommand,
+    short_help='Pan-sharpen.',
+    epilog='See https://orthority.readthedocs.io/ for more detail.',
+)
+@click.option(
+    '-p',
+    '--pan',
+    'pan_file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='rb'),
+    help='Path / URI of the panchromatic image.',
+)
+@click.option(
+    '-ms',
+    '--multispectral',
+    'ms_file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='rb'),
+    help='Path / URI of the multispectral image.',
+)
+@click.option(
+    '-of',
+    '--out_file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='wb'),
+    help='Path / URI of the pan-sharpened image.',
+)
+@click.option(
+    '-pi',
+    '--pan-index',
+    type=click.INT,
+    default=PanSharpen._default_alg_config['pan_index'],
+    show_default=True,
+    help='Index of the panchromatic band to use (1 based).',
+)
+@click.option(
+    '-mi',
+    '--ms-index',
+    'ms_indexes',
+    type=click.INT,
+    multiple=True,
+    default=PanSharpen._default_alg_config['ms_indexes'],
+    show_default='all bands',
+    help='Indexes of the multispectral bands to use (1 based).',
+)
+@click.option(
+    '-w',
+    '--weight',
+    'weights',
+    type=click.FLOAT,
+    multiple=True,
+    default=PanSharpen._default_alg_config['weights'],
+    show_default='auto',
+    callback=_weights_cb,
+    help='Multispectral to panchromatic weights (0-1).',
+)
+@click.option(
+    '-i',
+    '--interp',
+    type=click.Choice(Interp, case_sensitive=False),
+    default=PanSharpen._default_alg_config['interp'],
+    show_default=True,
+    help=f'Interpolation method for upsampling the multispectral image.',
+)
+@write_mask_option
+@click.option(
+    '-dt',
+    '--dtype',
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    default=common._default_out_config['dtype'],
+    show_default='source image data type.',
+    help=f'Pan-sharpened image data type.',
+)
+@click.option(
+    '-cm',
+    '--compress',
+    type=click.Choice(Compress, case_sensitive=False),
+    default=common._default_out_config['compress'],
+    show_default="jpeg for uint8 --dtype, deflate otherwise",
+    help=f'Pan-sharpened image compression.',
+)
+@click.option(
+    '-bo/-nbo',
+    '--build-ovw/--no-build-ovw',
+    type=click.BOOL,
+    default=True,
+    show_default=True,
+    help='Build overviews for the pan-sharpened image.',
+)
+@overwrite_option
+def sharpen(
+    pan_file: OpenFile,
+    ms_file: OpenFile,
+    pan_index: int,
+    ms_indexes: list[int],
+    weights: list[float],
+    **kwargs,
+) -> None:
+    """
+    Increases the resolution of a multispectral image to that of a panchromatic image using the
+    Gram-Schmidt method.
+
+    Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
+    or both of the images are not georeferenced, they are assumed to having matching bounds.
+
+    Panchromatic and multispectral images are specified with :option:`--pan <oty-sharpen --pan>`
+    and :option:`--multispectral <oty-sharpen --multispectral>`, and the pan-sharpened output
+    with :option:`--out-file <oty-sharpen --out-file>`::
+
+        oty sharpen --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+
+    A subset of multispectral bands for sharpening can be specified with :option:`--ms-index
+    <oty-sharpen --ms-index>`::
+
+        oty sharpen -mi 3 -mi 2 -mi 1 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+
+    Multispectral to panchromatic weights are estimated from the images by default.  User values
+    can be provided with :option:`--weight <oty-sharpen --weight>`.  There should be as many
+    weights as multispectral bands::
+
+        oty sharpen -mi 3 -mi 2 -mi 1 -w 0.4 -w 0.5 -w 0.3 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+    """
+    # open pan & ms files
+    try:
+        pan_ctx = common.OpenRaster(pan_file, 'r')
+    except FileNotFoundError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-p' / '--pan'")
+
+    try:
+        ms_ctx = common.OpenRaster(ms_file, 'r')
+    except FileNotFoundError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-ms' / '--multispectral'")
+
+    with pan_ctx as pan_im, ms_ctx as ms_im:
+        # validate indexes
+        if pan_index <= 0 or pan_index > pan_im.count:
+            pan_name = common.get_filename(pan_im)
+            raise click.BadParameter(
+                f"Pan index {pan_index} is invalid for '{pan_name}' with {pan_im.count} band(s).",
+                param_hint="'-pi' / '--pan-index'",
+            )
+
+        if len(ms_indexes) > 0 and (
+            np.any(ms_indexes_ := np.array(ms_indexes) <= 0) or np.any(ms_indexes_ > ms_im.count)
+        ):
+            ms_name = common.get_filename(ms_im)
+            raise click.BadParameter(
+                f"Multispectral indexes {tuple(ms_indexes)} contain invalid values for '{ms_name}' "
+                f"with {ms_im.count} band(s).",
+                param_hint="'-mi' / '--ms-index'",
+            )
+
+        # validate weights
+        ms_indexes = ms_im.indexes if len(ms_indexes) == 0 else ms_indexes
+        if len(weights) > 0 and len(weights) != len(ms_indexes):
+            raise ValueError(
+                f"There should be the same number of multispectral to panchromatic weights "
+                f"({len(weights)}) as multispectral indexes ({len(ms_indexes)})."
+            )
+
+        # pan sharpen
+        pan_sharp = PanSharpen(pan_im, ms_im)
+        pan_sharp.process(
+            pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
+        )
 
 
 def _simple_ortho(
