@@ -252,7 +252,9 @@ def _gcp_refine_cb(
     ctx: click.Context, param: click.Parameter, path_uri: str | bool
 ) -> OpenFile | bool:
     """Click callback to parse the ``--gcp-refine`` option."""
-    return _file_cb(ctx, param, path_uri, mode='rt') if path_uri != 'tags' else path_uri
+    return (
+        _file_cb(ctx, param, path_uri, mode='rt') if str(path_uri).lower() != 'tags' else path_uri
+    )
 
 
 def _weights_cb(ctx: click.Context, param: click.Parameter, weights: list[float]):
@@ -857,12 +859,11 @@ def odm(
 @click.option(
     '-gr',
     '--gcp-refine',
-    is_flag=False,
-    flag_value='tags',
+    type=click.Path(dir_okay=False),
     default=None,
     callback=_gcp_refine_cb,
-    help='Refine camera model(s) with GCP(s).  Can be supplied without a value to read GCPs from '
-    'source image tags, or with the path / URI value of an Orthority format GCP file.',
+    help="Refine camera model(s) with GCP(s).  Can be supplied with the path / URI value of an "
+    "Orthority format GCP file, or with 'tags' to read GCPs from source image tags.",
 )
 @click.option(
     '-rm',
@@ -952,7 +953,7 @@ def rpc(
     if gcp_refine is not None:
         # refine model(s) with GCPs
         ref_kwargs = dict(method=refine_method)
-        if gcp_refine == 'tags':
+        if str(gcp_refine).lower() == 'tags':
             # set up progress bar args
             tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
 
