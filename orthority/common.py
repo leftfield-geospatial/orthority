@@ -83,9 +83,7 @@ def expand_window_to_grid(win: Window, expand_pixels: tuple[int, int] = (0, 0)) 
     row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
     width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
     height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
-    exp_win = Window(
-        col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int')
-    )
+    exp_win = Window(int(col_off), int(row_off), int(width), int(height))
     return exp_win
 
 
@@ -387,6 +385,7 @@ def create_profile(
     dimension profile items are not set i.e. ``crs``, ``transform``, ``width``, ``height`` &
     ``count``.
     """
+    # TODO: add support for LZW and if possible WEBP compression and COG driver
     colorinterp = colorinterp or []
     profile = {}
 
@@ -418,6 +417,8 @@ def create_profile(
         interleave, photometric = ('pixel', 'ycbcr')
     elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
         interleave, photometric = ('band', 'rgb')
+    elif len(colorinterp) == 1:
+        interleave, photometric = ('pixel', None)
     else:
         interleave, photometric = ('band', None)
 
