@@ -38,7 +38,7 @@ def refine_rpc(
 
     Finds the least squares solution to the "shift" and "shift-and-drift" bias compensation
     refinements described in https://doi.org/10.1016/j.isprsjprs.2005.11.001, for a single image,
-    and incorporates this into the provided RPC model.  The approach is suited to narrow field
+    and incorporate this into the provided RPC model.  The approach is suited to narrow field
     of view satellite imagery.
 
     :param rpc:
@@ -52,8 +52,10 @@ def refine_rpc(
     :return:
         Refined RPC parameters as a dictionary.
     """
-    # TODO: robustness to outliers, maybe with optional inclusion of scipy
-    # TODO: full affine model, or the method described in https://doi.org/10.14358/PERS.75.9.1083
+    # TODO:
+    #  - robustness to outliers, maybe with optional inclusion of scipy
+    #  - full affine model, or the method described in https://doi.org/10.14358/PERS.75.9.1083
+    #  - fit evaluation with warnings
     method = RpcRefine(method)
     camera = RpcCamera(None, rpc)
     rpc = rpc.to_dict() if isinstance(rpc, RPC) else rpc
@@ -83,14 +85,14 @@ def refine_rpc(
         refine_tform[:, -1] = off.mean(axis=1)
     else:
         for axis in range(2):
-            ji_rpc_ = np.row_stack((ji_rpc[axis], np.ones((ji_rpc.shape[1]))))
+            ji_rpc_ = np.vstack((ji_rpc[axis], np.ones((ji_rpc.shape[1]))))
             (m, c), res, rank, s = np.linalg.lstsq(ji_rpc_.T, ji_gcp[axis], rcond=None)
             refine_tform[axis, axis] = m
             refine_tform[axis, 2] = c
 
     if logger.getEffectiveLevel() <= logging.DEBUG:
         # log the refinement transform and accuracy
-        ji_rpc_ = np.row_stack((ji_rpc, np.ones(ji_rpc.shape[1])))
+        ji_rpc_ = np.vstack((ji_rpc, np.ones(ji_rpc.shape[1])))
         ji_refine = refine_tform.dot(ji_rpc_)
         err = ((ji_gcp - ji_refine).T * (rpc['samp_scale'], rpc['line_scale'])).T  # pixels
         err_dist = np.sum(err**2, axis=0)
@@ -107,8 +109,6 @@ def refine_rpc(
         range(2), ['samp_num_coeff', 'line_num_coeff'], ['samp_den_coeff', 'line_den_coeff']
     ):
         refined_rpc[num_key] = np.array(refined_rpc[num_key]) * refine_tform[axis, axis]
-        refined_rpc[den_key] = np.array(refined_rpc[den_key]) * refine_tform[axis, axis]
-        refined_rpc[num_key] += refined_rpc[den_key] * refine_tform[axis, 2]
+        refined_rpc[num_key] += np.array(refined_rpc[den_key]) * refine_tform[axis, 2]
         refined_rpc[num_key] = refined_rpc[num_key].tolist()
-        refined_rpc[den_key] = refined_rpc[den_key].tolist()
     return refined_rpc
