@@ -242,7 +242,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         int_param.update(**yaml_param)
         return int_param
 
-    # flatten if in original simple-ortho format
+    # warn if in original simple-ortho format
     if 'camera' in yaml_dict:
         warnings.warn(
             "Support for the 'config.yaml' format is deprecated and will be removed in future. "
@@ -251,7 +251,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         )
         yaml_dict = yaml_dict['camera']
 
-    # convert to nested dict if in flat format
+    # convert to nested dict if in flat / simple-ortho format
     first_value = next(iter(yaml_dict.values()))
     if not isinstance(first_value, dict):
         cam_id = yaml_dict['name'] if 'name' in yaml_dict else 'unknown'
@@ -362,23 +362,23 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     # template to test yaml_dict items against
     schema = dict(
         im_size=list,
-        rpc=dict(
-            height_off=float,
-            height_scale=float,
-            lat_off=float,
-            lat_scale=float,
+            rpc=dict(
+                height_off=float,
+                height_scale=float,
+                lat_off=float,
+                lat_scale=float,
             line_den_coeff=[float],
             line_num_coeff=[float],
-            line_off=(int, float),
-            line_scale=(int, float),
-            long_off=float,
-            long_scale=float,
+                line_off=(int, float),
+                line_scale=(int, float),
+                long_off=float,
+                long_scale=float,
             samp_den_coeff=[float],
             samp_num_coeff=[float],
-            samp_off=(int, float),
-            samp_scale=(int, float),
-        ),
-    )
+                samp_off=(int, float),
+                samp_scale=(int, float),
+            ),
+        )
 
     # validate and convert yaml_dict
     rpc_param_dict = {}
@@ -431,15 +431,13 @@ def read_im_gcps(
         if crs != _default_lla_crs:
             xyz = np.array(transform(crs, _default_lla_crs, *xyz))
 
-        # convert to standard format dicts
+        # Convert to standard format dicts. GDAL leaves it to the application to interpret GCP
+        # pixel coordinates as upper left or center conventions:
+        # https://gdal.org/user/raster_data_model.html#gcps.  This assumes image GCPs are in
+        # center of pixel coordinate convention.
         oty_gcps = []
         for gcp, xyz in zip(gcps, xyz.T):
-            # offset from UL (GDAL / rasterio) to center (Orthority) pixel coordinates - see e.g.
-            # https://gis.stackexchange.com/questions/122670/is-there-a-standard-for-the-coordinates-of-pixels-in-georeferenced-rasters
-            # TODO: GDAL / rasterio apparently uses the UL pixel coordinate convention but as anyone
-            #  can populate the GeoTIFF GCP metadata, we don't actually know what convention they
-            #  are in
-            gcp = dict(ji=(gcp.col - 0.5, gcp.row - 0.5), xyz=tuple(xyz), id=gcp.id, info=gcp.info)
+            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz.tolist()), id=gcp.id, info=gcp.info)
             oty_gcps.append(gcp)
 
         return {filename: oty_gcps}
@@ -476,7 +474,6 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
     schema = dict(
         type='FeatureCollection',
         features=[
-            # TODO: combine row and col into ji tuple / list?
             dict(
                 type='Feature',
                 properties=dict(ji=list, filename=str, id=None, info=None),
