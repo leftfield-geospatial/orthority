@@ -196,7 +196,25 @@ def test_frame_int_param_ext_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'not supported' in result.stdout.lower()
+    assert 'interior parameter' in result.stdout and 'not supported' in result.stdout
+
+
+def test_frame_int_param_invalid_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    rpc_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty frame`` with an invalid ``--int-param`` file raises an error."""
+    cli_str = (
+        f'frame --dem {ngi_dem_file} --int-param {rpc_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Could not parse' in result.stdout and rpc_param_file.name in result.stdout
 
 
 def test_frame_ext_param_missing_error(
@@ -248,7 +266,25 @@ def test_frame_ext_param_ext_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'not supported' in result.stdout.lower()
+    assert 'exterior parameter' in result.stdout and 'not supported' in result.stdout
+
+
+def test_frame_ext_param_invalid_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    gcp_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty frame`` with an invalid ``--ext-param`` file raises an error."""
+    cli_str = (
+        f'frame --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {gcp_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Could not parse' in result.stdout and gcp_file.name in result.stdout
 
 
 def test_frame_crs_src(
@@ -939,7 +975,11 @@ def test_exif_source_error(
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout and 'tags' in result.stdout.lower()
+    assert (
+        'SOURCE' in result.stdout
+        and 'tags' in result.stdout
+        and ngi_image_file.name in result.stdout
+    )
 
 
 def test_exif_source_not_found_error(
@@ -1193,7 +1233,7 @@ def test_rpc_param_file_invalid_error(
     assert result.exit_code != 0, result.stdout
     assert (
         '--rpc-param' in result.stdout
-        and 'valid' in result.stdout
+        and 'Could not parse' in result.stdout
         and ngi_oty_int_param_file.name in result.stdout
     )
 
@@ -1266,6 +1306,112 @@ def test_rpc_option(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
 
     with rio.open(ortho_files[0], 'r') as im:
         assert im.res == (res, res)
+
+
+def test_rpc_gcp_refine(
+    rpc_image_file: Path, ngi_dem_file: Path, gcp_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` with the ``--gcp-refine`` option by comparing orthos with and without
+    refinement.
+    """
+    # create source image with no GCPs (and same name as rpc_image_file)
+    no_gcp_file = tmp_path.joinpath(rpc_image_file.name)
+    with rio.open(rpc_image_file, 'r') as gcp_im:
+        profile = gcp_im.profile
+        profile.update(rpcs=gcp_im.rpcs)
+        profile.pop('gcps', None)  # make sure no GCPs
+        with rio.open(no_gcp_file, 'w', **profile) as no_gcp_im:
+            no_gcp_im.write(gcp_im.read())
+
+    ortho_bounds = []
+    for i, (gcp_refine_str, src_file) in enumerate(
+        zip(
+            ['', '--gcp-refine tags', f'--gcp-refine {gcp_file}'],
+            [rpc_image_file, rpc_image_file, no_gcp_file],
+        )
+    ):
+        # create ortho
+        out_dir = tmp_path.joinpath(str(i))
+        out_dir.mkdir()
+        cli_str = f"rpc --dem {ngi_dem_file} {gcp_refine_str} --out-dir {out_dir} -o {src_file}"
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
+
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
+
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=1e-4)
+    assert ortho_bounds[2] != pytest.approx(ortho_bounds[0], abs=1e-4)
+
+
+def test_rpc_gcp_refine_file_invalid_error(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    odm_reconstruction_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--gcp-refine`` raises an error with an invalid GCP file."""
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --gcp-refine {odm_reconstruction_file} --out-dir {tmp_path}'
+        f' {rpc_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--gcp-refine' in result.stdout
+        and 'Could not parse' in result.stdout
+        and odm_reconstruction_file.name in result.stdout
+    )
+
+
+def test_rpc_gcp_refine_file_not_found_error(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--gcp-refine`` raises an error with a non-existent GCP file."""
+    cli_str = f'rpc --dem {ngi_dem_file} --gcp-refine unknown --out-dir {tmp_path} {rpc_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--gcp-refine' in result.stdout
+        and 'No such file' in result.stdout
+        and 'unknown' in result.stdout
+    )
+
+
+def test_rpc_refine_method(
+    rpc_image_file: Path, ngi_dem_file: Path, gcp_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` with the ``--refine-method`` option by comparing orthos refined with
+    different methods.
+    """
+    ortho_bounds = []
+    for refine_method in ['shift', 'shift-drift']:
+        # create ortho
+        out_dir = tmp_path.joinpath(refine_method)
+        out_dir.mkdir()
+        cli_str = (
+            f"rpc --dem {ngi_dem_file} --gcp-refine tags --refine-method {refine_method} "
+            f"--out-dir {out_dir} -o {rpc_image_file}"
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
+
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
+
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=1e-6)
 
 
 def test_simple_ortho(
