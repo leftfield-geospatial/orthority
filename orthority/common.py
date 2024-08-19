@@ -27,7 +27,7 @@ from contextlib import contextmanager, ExitStack
 from io import IOBase
 from os import PathLike
 from pathlib import Path
-from typing import IO, Iterable, Sequence
+from typing import IO, Sequence
 
 import cv2
 import fsspec
@@ -159,38 +159,63 @@ def utm_crs_from_latlon(lat: float, lon: float) -> CRS:
     return CRS.from_epsg(epsg)
 
 
-def validate_collection(template: Iterable, coll: Iterable):
+def validate_collection(schema: dict | list, coll: dict | list):
     """
-    Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples
-    of types, and values (``template``).
+    Validate a nested dict / list of values (``coll``) against a nested dict / list of types,
+    tuples of types, and values (``schema``).
 
-    All items in a ``coll`` list are validated against the first item in the corresponding
-    ``template`` list.
+    - All items in a ``coll`` dict are validated against the first item in the corresponding
+    ``schema`` dict, if it has one item with a type key.  Otherwise, ``coll`` items are validated
+    against the same key ``schema`` item.
+    - All items in a ``coll`` list are validated against the first item in the corresponding
+    ``schema`` list, if it has one item.  Otherwise ``coll`` items are validated against
+    corresponding ``schema`` items.
+    - ``coll`` values are not validated against corresponding None values in ``schema``.
     """
-    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
-    if isinstance(template, dict) and isinstance(coll, dict):
-        # struct is a dict of types or other dicts
-        for k in template:
-            if k in coll:
-                validate_collection(template[k], coll[k])
-            else:
-                raise KeyError(f"No key: '{k}'.")
-    elif isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
-        # struct is list in the form [type or dict]
-        for item in coll:
-            validate_collection(template[0], item)
-    elif isinstance(template, type):
-        # struct is the type of conf
-        if not isinstance(coll, template):
-            raise TypeError(f"'{coll}' is not an instance of {template}.")
-    elif isinstance(template, tuple) and all([isinstance(item, type) for item in template]):
-        # struct is a tuple of types
-        if not isinstance(coll, template):
-            raise TypeError(f"'{coll}' is not an instance of any of {template}.")
-    elif isinstance(template, object) and template is not None:
-        # struct is the value of conf
-        if not coll == template:
-            raise ValueError(f"'{coll}' does not equal '{template}'.")
+    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or
+    #  -schema-of-dictionary-in-python
+    if isinstance(schema, dict) and isinstance(coll, dict):
+        # schema is a dict
+        first_key = [*schema][0]
+        if len(schema) == 1 and isinstance(first_key, type):
+            for k in coll:
+                if not isinstance(k, first_key):
+                    raise TypeError(f"'{k}' is not an instance of {first_key}.")
+                validate_collection(schema[first_key], coll[k])
+        else:
+            for k in schema:
+                if k in coll:
+                    validate_collection(schema[k], coll[k])
+                else:
+                    raise KeyError(f"No key: '{k}'.")
+    elif isinstance(schema, list) and isinstance(coll, list) and len(schema) and len(coll):
+        # schema is a list
+        if len(schema) == 1:
+            for item in coll:
+                validate_collection(schema[0], item)
+        else:
+            if len(coll) != len(schema):
+                raise ValueError(f'{coll} should have {len(schema)} items.')
+            for template_item, coll_item in zip(schema, coll):
+                validate_collection(template_item, coll_item)
+    elif isinstance(schema, type):
+        # schema is a type
+        if not isinstance(coll, schema):
+            raise TypeError(f"'{coll}' is not an instance of {schema}.")
+    elif isinstance(schema, tuple) and all([isinstance(item, type) for item in schema]):
+        # schema is a tuple of types
+        if not isinstance(coll, schema):
+            raise TypeError(f"'{coll}' is not an instance of any of {schema}.")
+    elif isinstance(schema, (str, int, float)):
+        # schema is a value of a basic type
+        if not coll == schema:
+            raise ValueError(f"'{coll}' does not equal '{schema}'.")
+    elif schema is None:
+        # don't test
+        pass
+    else:
+        # something else is wrong
+        raise ValueError("Invalid collection.")
 
 
 def get_filename(file: str | PathLike | OpenFile | DatasetReaderBase | IO) -> str:
