@@ -70,7 +70,9 @@ _default_lla_crs = CRS.from_epsg(4979)
 
 
 def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
-    """Read interior parameters from an OpenDroneMap / OpenSfM JSON dictionary."""
+    """Read interior parameters from the ``cameras`` section of an OpenDroneMap / OpenSfM JSON
+    dictionary.
+    """
 
     def parse_json_param(json_param: dict, cam_id: str) -> dict[str, Any]:
         """Validate & convert the given JSON dictionary for a single camera."""
@@ -112,9 +114,12 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         int_param.update(**json_param)
         return int_param
 
-    # extract cameras section if json_dict is from an OpenSfM reconstruction.json file
-    if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
-        json_dict = json_dict[0]['cameras']
+    # validate root dict
+    try:
+        common.validate_collection({str: dict}, json_dict)
+    except (TypeError, KeyError, ValueError) as ex:
+        # repackage all formatting errors in ParamError for callers
+        raise ParamError(str(ex)) from ex
 
     # parse each set of interior parameters
     int_param_dict = {}
@@ -209,7 +214,11 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         file object, opened in text mode (``'rt'``).
     """
     with common.Open(file, 'rt') as f:
-        yaml_dict = yaml.safe_load(f)
+        filename = common.get_filename(file)
+        try:
+            yaml_dict = yaml.safe_load(f)
+        except Exception as ex:
+            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
     def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
         """Validate & convert the given YAML dictionary for a single camera."""
@@ -257,10 +266,21 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         cam_id = yaml_dict['name'] if 'name' in yaml_dict else 'unknown'
         yaml_dict = {cam_id: yaml_dict}
 
+    # validate root dict
+    try:
+        common.validate_collection({str: dict}, yaml_dict)
+    except (TypeError, KeyError, ValueError):
+        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+
     # parse each set of interior parameters
     int_param_dict = {}
     for cam_id, yaml_param in yaml_dict.items():
-        int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
+        try:
+            int_param_dict[cam_id] = parse_yaml_param(yaml_param, cam_id)
+        except ParamError as ex:
+            # repackage error with filename
+            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+
     return int_param_dict
 
 
@@ -276,9 +296,23 @@ def read_osfm_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, 
         file object, opened in text mode (``'rt'``).
     """
     with common.Open(file, 'rt') as f:
-        json_dict = json.load(f)
+        filename = common.get_filename(file)
+        try:
+            json_dict = json.load(f)
+        except Exception as ex:
+            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
-    return _read_osfm_int_param(json_dict)
+    # extract cameras section if file is an OpenSfM reconstruction.json file
+    if isinstance(json_dict, list) and len(json_dict) == 1 and 'cameras' in json_dict[0]:
+        json_dict = json_dict[0]['cameras']
+
+    try:
+        int_param_dict = _read_osfm_int_param(json_dict)
+    except ParamError as ex:
+        # repackage error with filename
+        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+
+    return int_param_dict
 
 
 def read_exif_int_param(
@@ -341,8 +375,16 @@ def read_im_rpc_param(
         elif progress is False:
             progress = dict(disable=True, leave=False)
 
-        for future in tqdm(futures, **progress):
-            rpc_param_dict.update(**future.result())
+        for future, file in zip(tqdm(futures, **progress), files):
+            try:
+                rpc_param_dict.update(**future.result())
+            except (FileNotFoundError, ParamError):
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            except Exception as ex:
+                filename = common.get_filename(file)
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise RuntimeError(f"Could not read RPC tags from '{filename}'.") from ex
 
     return rpc_param_dict
 
@@ -357,40 +399,43 @@ def read_oty_rpc_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         file object, opened in text mode (``'rt'``).
     """
     with common.Open(file, 'rt') as f:
-        yaml_dict = yaml.safe_load(f)
+        filename = common.get_filename(file)
+        try:
+            yaml_dict = yaml.safe_load(f)
+        except Exception as ex:
+            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
-    # template to test yaml_dict items against
-    schema = dict(
-        im_size=list,
+    # validate file format
+    schema = {
+        str: dict(
+            im_size=[(float, int)] * 2,
             rpc=dict(
                 height_off=float,
                 height_scale=float,
                 lat_off=float,
                 lat_scale=float,
-            line_den_coeff=[float],
-            line_num_coeff=[float],
+                line_den_coeff=[float] * 20,
+                line_num_coeff=[float] * 20,
                 line_off=(int, float),
                 line_scale=(int, float),
                 long_off=float,
                 long_scale=float,
-            samp_den_coeff=[float],
-            samp_num_coeff=[float],
+                samp_den_coeff=[float] * 20,
+                samp_num_coeff=[float] * 20,
                 samp_off=(int, float),
                 samp_scale=(int, float),
             ),
         )
+    }
 
-    # validate and convert yaml_dict
+    try:
+        common.validate_collection(schema, yaml_dict)
+    except (ValueError, TypeError, KeyError) as ex:
+        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
+
+    # convert to standard format dict
     rpc_param_dict = {}
     for filename, rpc_param in yaml_dict.items():
-        try:
-            if not isinstance(filename, str):
-                raise TypeError(f"'{filename}' key is not an an instance of 'str'.")
-            common.validate_collection(schema, rpc_param)
-        except (ValueError, TypeError, KeyError) as ex:
-            raise ParamError(
-                f"'{common.get_filename(file)}' is not a valid Orthority RPC file: {str(ex)}."
-            )
         rpc_param_dict[filename] = dict(
             cam_type=CameraType.rpc, im_size=tuple(rpc_param['im_size']), rpc=rpc_param['rpc']
         )
@@ -453,8 +498,16 @@ def read_im_gcps(
         elif progress is False:
             progress = dict(disable=True, leave=False)
 
-        for future in tqdm(futures, **progress):
-            gcp_dict.update(**future.result())
+        for future, file in zip(tqdm(futures, **progress), files):
+            try:
+                gcp_dict.update(**future.result())
+            except (FileNotFoundError, ParamError):
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
+            except Exception as ex:
+                filename = common.get_filename(file)
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise RuntimeError(f"Could not read GCPs from '{filename}'.") from ex
 
     return gcp_dict
 
@@ -468,7 +521,11 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
         file object, opened in text mode (``'rt'``).
     """
     with common.Open(file, 'rt') as f:
-        json_dict = json.load(f)
+        filename = common.get_filename(file)
+        try:
+            json_dict = json.load(f)
+        except Exception as ex:
+            raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
     # validate file format
     schema = dict(
@@ -476,19 +533,18 @@ def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[d
         features=[
             dict(
                 type='Feature',
-                properties=dict(ji=list, filename=str, id=None, info=None),
-                geometry=dict(type='Point', coordinates=list),
+                properties=dict(ji=[(int, float)] * 2, filename=str, id=None, info=None),
+                geometry=dict(type='Point', coordinates=[(int, float)] * 3),
             )
         ],
     )
 
-    filename = common.get_filename(file)
     try:
         common.validate_collection(schema, json_dict)
     except (ValueError, TypeError, KeyError) as ex:
-        raise ParamError(f"'{filename}' is not a valid Orthority GCP file: {str(ex)}.")
+        raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
 
-    # convert file to GCP dictionary
+    # convert to standard format dict
     gcp_dict = {}
     for feat_dict in json_dict['features']:
         prop_dict = feat_dict['properties']
@@ -561,7 +617,7 @@ def write_ext_param(
     try:
         crs = CRS.from_string(crs) if isinstance(crs, str) else crs
     except RioCrsError as ex:
-        raise CrsError(f"Could not interpret 'crs': {str(ex)}.")
+        raise CrsError(f"Could not interpret 'crs': {str(ex)}")
     if not crs.is_projected:
         raise CrsError(f"'crs' should be a projected system.")
 
@@ -795,7 +851,7 @@ class FrameReader(ABC):
             try:
                 crs = CRS.from_string(crs) if isinstance(crs, str) else crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'crs': {str(ex)}.")
+                raise CrsError(f"Could not interpret 'crs': {str(ex)}")
             if not crs.is_projected:
                 raise CrsError(f"'crs' should be a projected system.")
 
@@ -803,7 +859,7 @@ class FrameReader(ABC):
             try:
                 lla_crs = CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'lla_crs': {str(ex)}.")
+                raise CrsError(f"Could not interpret 'lla_crs': {str(ex)}")
             if not lla_crs.is_geographic:
                 raise CrsError(f"'lla_crs' should be a geographic system.")
         return crs, lla_crs
@@ -901,9 +957,14 @@ class CsvReader(FrameReader):
         with common.Open(self._ofile or file, 'rt', newline=None) as f:
             self._buffer = StringIO(f.read())
 
-        self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
-            self._buffer, fieldnames=fieldnames, dialect=dialect
-        )
+        try:
+            self._fieldnames, self._dialect, self._has_header, self._format = self._parse_file(
+                self._buffer, fieldnames=fieldnames, dialect=dialect
+            )
+        except ParamError as ex:
+            # repackage error with filename
+            raise ParamError(f"Could not parse '{common.get_filename(file)}': {str(ex)}") from ex
+
         self._crs = self._crs or self._get_crs()
 
     @staticmethod
@@ -1005,9 +1066,9 @@ class CsvReader(FrameReader):
 
                     logger.debug(f"Using '{prj_name}' CRS: '{crs.to_string()}'")
                 except FileNotFoundError as ex:
-                    logger.debug(f"Could not open '{prj_name}': {str(ex)}.")
+                    logger.debug(f"Could not open '{prj_name}': {str(ex)}")
                 except RioCrsError as ex:
-                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {str(ex)}.")
+                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {str(ex)}")
             else:
                 # a file object was passed to __init__ so the CSV file path / URI is unknown and a
                 # .prj file cannot be found
@@ -1100,6 +1161,13 @@ class OsfmReader(FrameReader):
     ) -> None:
         FrameReader.__init__(self, crs=crs, lla_crs=lla_crs)
         self._json_dict = self._read_json_dict(file)
+        try:
+            # read interior parameters now for early validation of the 'cameras' section
+            self._int_param_dict = _read_osfm_int_param(self._json_dict['cameras'])
+        except ParamError as ex:
+            # repackage error with filename
+            raise ParamError(f"Could not parse '{common.get_filename(file)}': {str(ex)}") from ex
+
         if not self._crs:
             self._crs = self._find_utm_crs()
             logger.debug(f"Using auto UTM CRS: '{self._crs.to_proj4()}'")
@@ -1108,22 +1176,23 @@ class OsfmReader(FrameReader):
     def _read_json_dict(file: str | PathLike | OpenFile | IO[str]) -> dict[str, dict]:
         """Read and validate the reconstruction JSON file."""
         with common.Open(file, 'rt') as f:
-            json_data = json.load(f)
+            filename = common.get_filename(file)
+            try:
+                json_data = json.load(f)
+            except Exception as ex:
+                raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
         schema = [
             dict(
-                cameras=dict,
-                shots=dict,
+                cameras=dict,  # items validated in _read_osfm_int_param()
+                shots={str: dict(rotation=[float] * 3, translation=[float] * 3, camera=str)},
                 reference_lla=dict(latitude=float, longitude=float, altitude=float),
             )
         ]
         try:
             common.validate_collection(schema, json_data)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamError(
-                f"'{common.get_filename(file)}' is not a valid OpenSfM reconstruction file: "
-                f"{str(ex)}."
-            )
+            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
 
         # keep root schema keys and delete the rest
         json_dict = {k: json_data[0][k] for k in schema[0].keys()}
@@ -1138,7 +1207,7 @@ class OsfmReader(FrameReader):
 
     def read_int_param(self) -> dict[str, dict[str, Any]]:
         """Read interior camera parameters."""
-        return _read_osfm_int_param(self._json_dict['cameras'])
+        return self._int_param_dict
 
     def read_ext_param(self) -> dict[str, dict[str, Any]]:
         # transform reference coordinates to the world CRS
@@ -1223,8 +1292,17 @@ class ExifReader(FrameReader):
             elif progress is False:
                 progress = dict(disable=True, leave=False)
 
-            for future in tqdm(futures, **progress):
-                exif_obj = future.result()
+            for future, file in zip(tqdm(futures, **progress), files):
+                try:
+                    exif_obj = future.result()
+                except FileNotFoundError:
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise
+                except Exception as ex:
+                    filename = common.get_filename(file)
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    raise RuntimeError(f"Could not read EXIF tags from '{filename}'.") from ex
+
                 exif_dict[exif_obj.filename] = exif_obj
 
         return exif_dict
@@ -1278,7 +1356,11 @@ class OtyReader(FrameReader):
     def _read_json_dict(file: str | PathLike | OpenFile | IO[str], crs: CRS) -> tuple[CRS, dict]:
         """Read and validate the GeoJSON file."""
         with common.Open(file, 'rt') as f:
-            json_dict = json.load(f)
+            filename = common.get_filename(file)
+            try:
+                json_dict = json.load(f)
+            except Exception as ex:
+                raise ParamError(f"Could not load '{filename}': {str(ex)}") from ex
 
         schema = dict(
             type='FeatureCollection',
@@ -1286,25 +1368,24 @@ class OtyReader(FrameReader):
             features=[
                 dict(
                     type='Feature',
-                    properties=dict(filename=str, camera=None, xyz=list, opk=list),
-                    geometry=dict(type='Point', coordinates=list),
+                    properties=dict(
+                        filename=str, camera=None, xyz=[(int, float)] * 3, opk=[(int, float)] * 3
+                    ),
+                    geometry=dict(type='Point', coordinates=[(int, float)]),
                 )
             ],
         )
 
-        filename = common.get_filename(file)
         try:
             common.validate_collection(schema, json_dict)
         except (ValueError, TypeError, KeyError) as ex:
-            raise ParamError(
-                f"'{filename}' is not a valid GeoJSON exterior parameter file: {str(ex)}."
-            )
+            raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
 
         if not crs:
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}.")
+                raise ParamError(f"Could not interpret CRS in '{filename}': {str(ex)}")
 
         return crs, json_dict
 
