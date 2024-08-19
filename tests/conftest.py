@@ -115,12 +115,14 @@ def create_profile(
     transform: rio.Affine = None,
     crs: str | rio.CRS = None,
     nodata: int | float = None,
+    **kwargs,
 ) -> dict:
     """Return a Rasterio profile for the given parameters."""
     if array.ndim != 2 and array.ndim != 3:
         raise ValueError("'array' should be 2D or 3D.")
     shape = (1, *array.shape) if array.ndim == 2 else array.shape
     return dict(
+        drtiver='GTiff',
         crs=crs,
         transform=transform,
         dtype=array.dtype,
@@ -128,6 +130,7 @@ def create_profile(
         height=shape[1],
         count=shape[0],
         nodata=nodata,
+        **kwargs,
     )
 
 
@@ -858,6 +861,12 @@ def rpc_image_file() -> Path:
 def rpc_param_file() -> Path:
     """Orthority RPC parameter file for the Quickbird2 image."""
     return root_path.joinpath('tests/data/rpc/rpc_param.yaml')
+
+
+@pytest.fixture(scope='session')
+def gcp_file() -> Path:
+    """Orthority GCP file for the Quickbird2 image."""
+    return root_path.joinpath('tests/data/rpc/gcps.geojson')
 
 
 @pytest.fixture(scope='session')
