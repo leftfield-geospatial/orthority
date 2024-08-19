@@ -30,6 +30,46 @@ from orthority.enums import Compress
 from tests.conftest import checkerboard, create_profile
 
 
+@pytest.mark.parametrize(
+    'schema, coll',
+    [
+        ({str: int}, dict(a=1, b=2)),
+        (dict(a=1, b=2.2, c='c'), dict(a=1, b=2.2, c='c')),
+        (dict(dict(a=1)), dict(dict(a=1))),
+        ([int], [1, 2]),
+        ([1, 2.2, 'c'], [1, 2.2, 'c']),
+        ([[1]], [[1]]),
+        ([dict], [dict(dict(a=1))]),
+        (dict(a=None, b=None), dict(a=1, b=2)),
+        ([None], [1, 2]),
+    ],
+)
+def test_validate_collection(schema: list | dict, coll: list | dict):
+    """Test ``validate_collection`` passes valid ``schema`` / ``coll`` combinations."""
+    common.validate_collection(schema, coll)
+
+
+@pytest.mark.parametrize(
+    'schema, coll',
+    [
+        ({str: int}, {1: 1}),
+        ({str: int}, {'a': 'a'}),
+        (dict(a=1), dict(a=2)),
+        (dict(a=1), dict(b=1)),
+        ([int], ['a']),
+        ([1, 2.2], [1, 2.3]),
+        ([dict(dict(a=1))], [dict()]),
+        (dict(a=[]), dict()),
+        ([[]], [dict()]),
+        ([dict()], [[]]),
+    ],
+)
+def test_validate_collection_error(schema: list | dict, coll: list | dict):
+    """Test ``validate_collection`` fails invalid ``schema`` / ``coll`` combinations."""
+    with pytest.raises((ValueError, TypeError, KeyError)):
+        common.validate_collection(schema, coll)
+
+
 @pytest.mark.parametrize('file', ['odm_image_file', 'odm_image_url'])
 def test_get_filename(file: str, request: pytest.FixtureRequest):
     """Test get_filename() returns with different ``file`` objects."""
