@@ -953,13 +953,17 @@ def rpc(
     if gcp_refine is not None:
         # refine model(s) with GCPs
         ref_kwargs = dict(method=refine_method)
-        if str(gcp_refine).lower() == 'tags':
-            # set up progress bar args
-            tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
-
-            cameras.refine(src_files, io_kwargs=dict(progress=tqdm_kwargs), ref_kwargs=ref_kwargs)
-        else:
-            cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
+        try:
+            if str(gcp_refine).lower() == 'tags':
+                # set up progress bar args
+                tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
+                cameras.refine(
+                    src_files, io_kwargs=dict(progress=tqdm_kwargs), ref_kwargs=ref_kwargs
+                )
+            else:
+                cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
+        except (FileNotFoundError, ParamError) as ex:
+            raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'")
 
     # orthorectify
     _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
