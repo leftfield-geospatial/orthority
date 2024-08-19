@@ -300,13 +300,11 @@ def create_rpc_test_data():
         # converts back from UL to center pixel coords as expected by param_io.write_gcps()
         gcp['ji'] = (gcp['ji'] - np.array((win.col_off, win.row_off)) + 0.5) / ds_fact - 0.5
 
-    # convert GCPs to rasterio format for storing in image metadata
+    # convert GCPs to rasterio format for storing in image metadata (leave in center pixel
+    # coordinate convention)
     rio_gcps = []
     for gcp in gcps:
-        # +0.5 converts from center to UL pixel convention as used by oty/QGIS/QB2 for image
-        # metadata GCPs
-        ij = (gcp['ji'][1] + 0.5, gcp['ji'][0] + 0.5)
-        rio_gcps.append(GroundControlPoint(*ij, *gcp['xyz'], gcp['id'], gcp['info']))
+        rio_gcps.append(GroundControlPoint(*gcp['ji'][::-1], *gcp['xyz'], gcp['id'], gcp['info']))
 
     # adjust existing metadata GCPs for crop and downsample
     # rio_gcps = src_im.gcps[0]
