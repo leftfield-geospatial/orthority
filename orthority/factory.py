@@ -186,7 +186,7 @@ class FrameCameras(Cameras):
                 reader = param_io.OtyReader(ext_param)
             else:
                 raise ParamError(
-                    f"'{ext_param_suffix}' exterior paramater file type not supported."
+                    f"'{ext_param_suffix}' exterior parameter file type not supported."
                 )
             ext_param_dict = reader.read_ext_param()
             crs = reader.crs
@@ -339,8 +339,6 @@ class RpcCameras(Cameras):
             Optional dictionary of keyword arguments for :meth:`~orthority.fit.refine_rpc`.
             Should exclude ``rpc`` and ``gcps``, which are passed internally.
         """
-        self._cameras = {}
-
         if gcps and not isinstance(gcps, dict):
             # read GCPs
             if isinstance(gcps, Sequence):
@@ -350,20 +348,21 @@ class RpcCameras(Cameras):
         else:
             self._gcp_dict = gcps
 
-        if self._gcp_dict:
-            # refine RPC parameters with GCPs
-            for filename, rpc_param in self._rpc_param_dict.items():
-                if filename in self._gcp_dict:
-                    rpc_param['rpc'] = refine_rpc(
-                        rpc_param['rpc'], self._gcp_dict[filename], **(ref_kwargs or {})
-                    )
-                else:
-                    warnings.warn(
-                        f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
-                    )
+        # refine RPC parameters with GCPs
+        for filename, rpc_param in self._rpc_param_dict.items():
+            filename = Path(filename)
+            gcps = self._gcp_dict.get(filename.name, self._gcp_dict.get(filename.stem, None))
+
+            if gcps:
+                self._cameras.pop(filename.name, None)  # force camera recreation
+                rpc_param['rpc'] = refine_rpc(rpc_param['rpc'], gcps, **(ref_kwargs or {}))
+            else:
+                warnings.warn(
+                    f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
+                )
 
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:
-        # get rpc params for filename
+        # get RPC params for filename
         filename = Path(common.get_filename(filename))
         rpc_param = self._rpc_param_dict.get(
             filename.name, self._rpc_param_dict.get(filename.stem, None)
