@@ -870,6 +870,18 @@ def gcp_file() -> Path:
 
 
 @pytest.fixture(scope='session')
+def pan_file() -> Path:
+    """Panchromatic image without georeferencing."""
+    return root_path.joinpath('tests/data/pan_sharp/pan.tif')
+
+
+@pytest.fixture(scope='session')
+def ms_file() -> Path:
+    """Multispectral (RGB) image without georeferencing."""
+    return root_path.joinpath('tests/data/pan_sharp/ms.tif')
+
+
+@pytest.fixture(scope='session')
 def pinhole_int_param_dict(interior_args: dict) -> dict:
     """A pinhole camera interior parameter dictionary."""
     return {'pinhole test camera': dict(cam_type=CameraType.pinhole, **interior_args)}
