@@ -118,7 +118,7 @@ class PanSharpen:
                 )
                 # create a custom pan transform that matches pan to MS bounds
                 pan_scale = np.array(ms_ds.shape[::-1]) / pan_ds.shape[::-1]
-                pan_src_transform = pan_ds.transform * rio.Affine.scale(*pan_scale)
+                pan_src_transform = ms_ds.transform * rio.Affine.scale(*pan_scale)
                 # full / matching pan & MS windows
                 pan_win = Window(0, 0, pan_ds.width, pan_ds.height)
                 ms_win = Window(0, 0, ms_ds.width, ms_ds.height)
@@ -203,6 +203,7 @@ class PanSharpen:
         weights: Sequence[float] | None,
     ) -> tuple[Sequence[int], Sequence[float] | None]:
         """Validate pan / MS indexes and weights."""
+        # TODO: exclude alpha band from ms_indexes
         if pan_index <= 0 or pan_index > pan_im.count:
             pan_name = common.get_filename(pan_im)
             raise ValueError(
@@ -210,11 +211,12 @@ class PanSharpen:
             )
 
         ms_indexes = ms_im.indexes if ms_indexes is None or len(ms_indexes) == 0 else ms_indexes
-        if np.any(ms_indexes_ := np.array(ms_indexes) <= 0) or np.any(ms_indexes_ > ms_im.count):
+        ms_indexes_ = np.array(ms_indexes)
+        if np.any(ms_indexes_ <= 0) or np.any(ms_indexes_ > ms_im.count):
             ms_name = common.get_filename(ms_im)
             raise ValueError(
-                f"Multispectral indexes {tuple(ms_indexes.tolist())} contain invalid values for "
-                f"'{ms_name}' with {ms_im.count} band(s)"
+                f"Multispectral indexes {tuple(ms_indexes)} contain invalid values for '{ms_name}' "
+                f"with {ms_im.count} band(s)"
             )
 
         weights = None if weights is None or len(weights) == 0 else weights
@@ -232,7 +234,6 @@ class PanSharpen:
         ms_im: rio.DatasetReader,
         pan_index: int,
         ms_indexes: Sequence[int] | np.ndarray,
-        interp: Resampling,
         progress: dict,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Return pan / MS means and covariances for the given datasets. Uses the "Numerically
@@ -323,17 +324,18 @@ class PanSharpen:
             """Return normalised MS to pan weights.  If ``weights`` is not provided, weights are
             estimated from the given pan / MS covariance.
             """
-            # TODO: weights for different sections of the same image should be the ~same, but aren't
+            # TODO: understand the behaviour of user provided weights with zeros
             if weights is None:
                 # find the LS solution for the weights as described in section 2.2 & eq 6
-                weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0].T
+                weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0]
+                weights = weights.squeeze()
 
                 # redo the LS without negatively weighted bands if there are any
                 if np.any(weights < 0):
                     ms_indexes_ = np.where(weights > 0)[0] + 1
                     ms_cov = cov[ms_indexes_, :][:, ms_indexes_]
                     pan_ms_cov = cov[0, ms_indexes_].reshape(-1, 1)
-                    weights_ = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].T
+                    weights_ = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].squeeze()
 
                     # use the updated weights if they are positive
                     if np.all(weights_ >= 0):
@@ -591,8 +593,9 @@ class PanSharpen:
 
             # open output image
             dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
+            colorinterp = [ms_im.colorinterp[mi - 1] for mi in ms_indexes]
             out_profile, write_mask = common.create_profile(
-                dtype, compress=compress, write_mask=write_mask, colorinterp=ms_im.colorinterp
+                dtype, compress=compress, write_mask=write_mask, colorinterp=colorinterp
             )
             pan_profile = self._profiles['pan_to_pan']
             out_profile.update(
@@ -607,7 +610,7 @@ class PanSharpen:
             )
 
             # find pan sharpening parameters from image stats
-            means, cov = self._get_stats(pan_im, ms_im, pan_index, ms_indexes, interp, progress[0])
+            means, cov = self._get_stats(pan_im, ms_im, pan_index, ms_indexes, progress[0])
             params = self._get_params(means, cov, weights)
 
             # open pan & upsampled MS WarpedVRTs that lie on the pan resolution grid, and have
