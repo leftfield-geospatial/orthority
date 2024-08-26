@@ -264,6 +264,8 @@ class Ortho:
         #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
         #  bounds so am leaving as is for now.
         # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
+        # TODO: if possible, read (,mask) and reproject the dem from dataset in blocks as the ortho
+        #  is written.
 
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
@@ -467,7 +469,11 @@ class Ortho:
                     for tile_win in tile_wins
                 ]
                 for future in as_completed(futures):
-                    future.result()
+                    try:
+                        future.result()
+                    except Exception as ex:
+                        executor.shutdown(wait=False, cancel_futures=True)
+                        raise RuntimeError('Could not remap tile.') from ex
                     progress.update()
                 progress.refresh()
 
