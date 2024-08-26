@@ -324,8 +324,7 @@ def test_rpc_cameras_refine_io_kwargs(
 
 
 def test_rpc_cameras_refine_ref_kwargs(rpc_param_file: Path, rpc_image_file: Path):
-    """Test refining a RPC camera factory passes through ``ref_kwargs`` to ``fit.refine_rpc()``.
-    """
+    """Test refining a RPC camera factory passes through ``ref_kwargs`` to ``fit.refine_rpc()``."""
     cameras = RpcCameras(rpc_param_file)
     cameras.refine([rpc_image_file], ref_kwargs=dict(method=RpcRefine.shift))
     shift_rpc_param = copy.deepcopy(cameras._rpc_param_dict[rpc_image_file.name]['rpc'])
