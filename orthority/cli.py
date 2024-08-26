@@ -996,7 +996,7 @@ def rpc(
 )
 @click.option(
     '-of',
-    '--out_file',
+    '--out-file',
     type=click.Path(dir_okay=False),
     required=True,
     default=None,
@@ -1114,33 +1114,36 @@ def sharpen(
         if pan_index <= 0 or pan_index > pan_im.count:
             pan_name = common.get_filename(pan_im)
             raise click.BadParameter(
-                f"Pan index {pan_index} is invalid for '{pan_name}' with {pan_im.count} band(s).",
+                f"Pan index {pan_index} out of range for '{pan_name}' with {pan_im.count} band(s).",
                 param_hint="'-pi' / '--pan-index'",
             )
 
-        if len(ms_indexes) > 0 and (
-            np.any(ms_indexes_ := np.array(ms_indexes) <= 0) or np.any(ms_indexes_ > ms_im.count)
-        ):
+        ms_err_indexes = np.array(ms_indexes)
+        ms_err_indexes = ms_err_indexes[(ms_err_indexes <= 0) | (ms_err_indexes > ms_im.count)]
+        if len(ms_indexes) > 0 and len(ms_err_indexes) > 0:
             ms_name = common.get_filename(ms_im)
             raise click.BadParameter(
-                f"Multispectral indexes {tuple(ms_indexes)} contain invalid values for '{ms_name}' "
-                f"with {ms_im.count} band(s).",
+                f"Multispectral indexes {tuple(ms_err_indexes.tolist())} are out of range for "
+                f"'{ms_name}' with {ms_im.count} band(s).",
                 param_hint="'-mi' / '--ms-index'",
             )
 
         # validate weights
         ms_indexes = ms_im.indexes if len(ms_indexes) == 0 else ms_indexes
         if len(weights) > 0 and len(weights) != len(ms_indexes):
-            raise ValueError(
+            raise click.UsageError(
                 f"There should be the same number of multispectral to panchromatic weights "
                 f"({len(weights)}) as multispectral indexes ({len(ms_indexes)})."
             )
 
         # pan sharpen
         pan_sharp = PanSharpen(pan_im, ms_im)
-        pan_sharp.process(
-            pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
-        )
+        try:
+            pan_sharp.process(
+                pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
+            )
+        except FileExistsError as ex:
+            raise click.UsageError(str(ex))
 
 
 def _simple_ortho(
