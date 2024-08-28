@@ -1020,7 +1020,7 @@ def rpc(
     type=click.INT,
     multiple=True,
     default=PanSharpen._default_alg_config['ms_indexes'],
-    show_default='all bands',
+    show_default='all non-alpha bands',
     help='Indexes of the multispectral bands to use (1 based).',
 )
 @click.option(

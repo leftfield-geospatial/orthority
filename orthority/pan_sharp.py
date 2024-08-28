@@ -28,7 +28,7 @@ from typing import Generator, Sequence
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
-from rasterio.enums import Resampling
+from rasterio.enums import Resampling, ColorInterp
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from rasterio.windows import intersect, Window
@@ -203,14 +203,18 @@ class PanSharpen:
         weights: Sequence[float] | None,
     ) -> tuple[Sequence[int], Sequence[float] | None]:
         """Validate pan / MS indexes and weights."""
-        # TODO: exclude alpha band from ms_indexes
         if pan_index <= 0 or pan_index > pan_im.count:
             pan_name = common.get_filename(pan_im)
             raise ValueError(
                 f"Pan index {pan_index} is invalid for '{pan_name}' with {pan_im.count} band(s)"
             )
 
-        ms_indexes = ms_im.indexes if ms_indexes is None or len(ms_indexes) == 0 else ms_indexes
+        if ms_indexes is None or len(ms_indexes) == 0:
+            # default to non-alpha band indexes
+            ms_indexes = [
+                bi + 1 for bi in range(ms_im.count) if ms_im.colorinterp[bi] != ColorInterp.alpha
+            ]
+
         ms_indexes_ = np.array(ms_indexes)
         if np.any(ms_indexes_ <= 0) or np.any(ms_indexes_ > ms_im.count):
             ms_name = common.get_filename(ms_im)
@@ -546,7 +550,7 @@ class PanSharpen:
             Index of the panchromatic band to use (1-based).
         :param ms_indexes:
             Indexes of the multispectral bands to use (1-based).  If set to ``None`` (the default),
-            all multispectral bands are used.
+            all non-alpha multispectral bands are used.
         :param weights:
             Multi-spectral to panchromatic weights (≥0).  If set to ``None`` (the default),
             weights are estimated from the images.
