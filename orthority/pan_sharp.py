@@ -220,11 +220,14 @@ class PanSharpen:
             )
 
         weights = None if weights is None or len(weights) == 0 else weights
-        if (weights is not None) and (len(weights) != len(ms_indexes)):
-            raise ValueError(
-                f"There should be the same number of multispectral to pan weights ({len(weights)}) "
-                f"as multispectral indexes ({len(ms_indexes)})."
-            )
+        if weights is not None:
+            if len(weights) != len(ms_indexes):
+                raise ValueError(
+                    f"There should be the same number of multispectral to pan weights "
+                    f"({len(weights)}) as multispectral indexes ({len(ms_indexes)})."
+                )
+            if np.any(np.array(weights) < 0):
+                raise ValueError('Weight values should greater than or equal to 0.')
 
         return ms_indexes, weights
 
@@ -292,7 +295,6 @@ class PanSharpen:
             ]
 
             for future in tqdm(as_completed(futures), **progress, total=len(futures)):
-                # TODO: put this shutdown logic in all thread pools
                 try:
                     tile_n, tile_mean, tile_prod = future.result()
                 except Exception as ex:
@@ -324,7 +326,6 @@ class PanSharpen:
             """Return normalised MS to pan weights.  If ``weights`` is not provided, weights are
             estimated from the given pan / MS covariance.
             """
-            # TODO: understand the behaviour of user provided weights with zeros
             if weights is None:
                 # find the LS solution for the weights as described in section 2.2 & eq 6
                 weights = np.linalg.lstsq(cov[1:, 1:], cov[0, 1:].reshape(-1, 1), rcond=None)[0]
@@ -372,7 +373,8 @@ class PanSharpen:
                 for l in range(k + 1):
                     num = a[l].dot(cov[k])
                     den = (a[l].reshape(-1, 1).dot(a[l].reshape(1, -1)) * cov).sum()
-                    coeffs[k][l] = num / den
+                    # the 'if' below avoids dividing by zero with canonical weight vectors
+                    coeffs[k][l] = num / den if np.any(a[l] != 0) else 0
 
             return coeffs
 
@@ -400,13 +402,17 @@ class PanSharpen:
             bias = pan_sim_mean - (gain * pan_mean)
             return gain, bias
 
-        logger.debug(f"Pan / multispectral means: {means.round(4)}.")
-        logger.debug(f"Pan / multispectral covariance: \n{cov.round(4)}.")
         weights = get_weights(cov, weights=weights)
-        logger.debug(f"Multispectral to pan weights: {tuple(weights.round(4).tolist())}.")
         coeffs = get_gs_coeffs(cov[1:, 1:], weights)
         gain, bias = get_pan_norm(means, cov, weights)
-        logger.debug(f"Simulated pan gain: {gain:.4f}, bias: {bias:.4f}.")
+
+        if logger.getEffectiveLevel() <= logging.DEBUG:
+            logger.debug(f"Pan / multispectral means: {means.round(4)}.")
+            logger.debug(f"Pan / multispectral covariance: \n{cov.round(4)}.")
+            logger.debug(f"Multispectral to pan weights: {weights.round(4).tolist()}.")
+            coeffs_str = '\n'.join([str(c.round(4).tolist()) for c in coeffs])
+            logger.debug(f"Gram-Schmidt coefficients: \n{coeffs_str}")
+            logger.debug(f"Simulated pan gain: {gain:.4f}, bias: {bias:.4f}.")
         return dict(means=means, coeffs=coeffs, weights=weights, gain=gain, bias=bias)
 
     def _process_tile_array(
@@ -542,8 +548,8 @@ class PanSharpen:
             Indexes of the multispectral bands to use (1-based).  If set to ``None`` (the default),
             all multispectral bands are used.
         :param weights:
-            Multi-spectral to panchromatic weights.  If set to ``None`` (the default), weights are
-            estimated from the images.
+            Multi-spectral to panchromatic weights (≥0).  If set to ``None`` (the default),
+            weights are estimated from the images.
         :param interp:
             Interpolation method for upsampling the multispectral image.
         :param write_mask:
