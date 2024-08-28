@@ -1539,14 +1539,17 @@ def test_sharpen_weight(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner)
 
 
 def test_sharpen_weight_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` raises an error when the number of --weight's and MS indexes do not
-    match.
-    """
+    """Test ``oty sharpen`` raises an error when the --weight's are invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight 1'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
     assert 'weights' in result.stdout and 'same number' in result.stdout
+
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight -1'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Weight values' in result.stdout
 
 
 def test_sharpen_interp(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):

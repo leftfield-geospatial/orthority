@@ -260,8 +260,10 @@ def _gcp_refine_cb(
 def _weights_cb(ctx: click.Context, param: click.Parameter, weights: list[float]):
     """Click callback to validate the ``--weight`` option."""
     if weights is not None:
-        if np.any(weights_ := np.array(weights) < 0) or np.any(weights_ > 1):
-            raise click.BadParameter(f"Weight values should be 0-1.", param=param)
+        if np.any(np.array(weights) < 0):
+            raise click.BadParameter(
+                'Weight values should greater than or equal to 0.', param=param
+            )
     return weights
 
 
@@ -1030,7 +1032,7 @@ def rpc(
     default=PanSharpen._default_alg_config['weights'],
     show_default='auto',
     callback=_weights_cb,
-    help='Multispectral to panchromatic weights (0-1).',
+    help='Multispectral to panchromatic weights (≥0).',
 )
 @click.option(
     '-i',
