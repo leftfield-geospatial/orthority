@@ -377,14 +377,14 @@ def test_process_pan_index_error(pan_sharpen: PanSharpen, tmp_path: Path):
 @pytest.mark.parametrize(
     'ms_indexes, weights', [((1, 2, 3), (1, 1, 1)), ((3, 2, 1, 1), (1, 1, 0.5, 0.5))]
 )
-def test_process_ms_index(
+def test_process_ms_indexes(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_indexes: tuple, weights: tuple
 ):
     """Test pan sharpened bands are correctly defined by the ``PanSharpen.process()``
     ``ms_indexes`` argument.
     """
-    # note that ms_indexes and weights must give a weighted sum of indexed MS bands, that equals
-    # the plain sum of MS bands (as pan_file==sum(ms_file bands))
+    # note that for this test to pass, ms_indexes and weights must give a weighted sum of indexed
+    # MS bands, that equals the plain sum of MS bands (as pan_file==sum(ms_file bands))
     pan_sharp = PanSharpen(pan_file, ms_file)
     out_file = tmp_path.joinpath('pan_sharp.tif')
     pan_sharp.process(out_file, ms_indexes=ms_indexes, weights=weights, compress='deflate')
@@ -408,9 +408,38 @@ def test_process_ms_index(
 def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
     """Test ``PanSharpen.process()`` raises an error when ``ms_indexes`` is invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
+    for ms_indexes in [[0], [4]]:
+        with pytest.raises(ValueError) as ex:
+            pan_sharpen.process(out_file, ms_indexes=ms_indexes)
+        assert 'Multispectral indexes' in str(ex)
+
+
+def test_process_weights(pan_file: Path, ms_file: Path, tmp_path: Path):
+    """Test the ``PanSharpen.process()`` ``weights`` argument by comparing pan sharpened images
+    with different weightings.
+    """
+    out_arrays = []
+    for wi, weights in enumerate([(1, 2, 3), (3, 2, 1)]):
+        pan_sharp = PanSharpen(pan_file, ms_file)
+        out_file = tmp_path.joinpath(f'pan_sharp_{wi}.tif')
+        pan_sharp.process(out_file, weights=weights, compress='deflate')
+        assert out_file.exists()
+
+        with rio.open(out_file, 'r') as out_im:
+            out_arrays.append(out_im.read())
+
+    assert np.any(out_arrays[0] != out_arrays[1])
+
+
+def test_process_weights_error(pan_sharpen: PanSharpen, tmp_path: Path):
+    """Test ``PanSharpen.process()`` raises an error when ``weights`` is invalid."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
     with pytest.raises(ValueError) as ex:
-        pan_sharpen.process(out_file, ms_indexes=[4])
-    assert 'Multispectral indexes' in str(ex)
+        pan_sharpen.process(out_file, weights=(1, 1))
+    assert 'weights' in str(ex) and 'same number' in str(ex)
+    with pytest.raises(ValueError) as ex:
+        pan_sharpen.process(out_file, weights=(1, 1, -1))
+    assert 'Weight values' in str(ex)
 
 
 @pytest.mark.parametrize('interp', [Interp.bilinear, Interp.cubic, Interp.lanczos])
