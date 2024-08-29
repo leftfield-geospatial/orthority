@@ -33,7 +33,7 @@ from rasterio.warp import transform as warp
 
 from orthority import common
 from orthority.enums import CameraType, Interp
-from orthority.errors import CameraInitError, OrthorityWarning
+from orthority.errors import CameraInitError, OrthorityWarning, OrthorityError
 from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
@@ -439,8 +439,8 @@ class RpcCamera(Camera):
         for z in [0, 1]:
             xyz = warp(self._rpc_crs, crs, [self._rpc.long_off], [self._rpc.lat_off], [z])
             if not xyz[2][0] == z:
-                raise ValueError(
-                    "RPC camera requires a 'crs' with ellipsoidal height, or no vertical CRS."
+                raise OrthorityError(
+                    "RPC camera requires a 'crs' with ellipsoidal height, or no vertical component."
                 )
         return crs
 
@@ -985,7 +985,9 @@ class FrameCamera(Camera):
         """
         self._test_init()
         if self._horizon_fov():
-            raise ValueError("Camera has a field of view that includes, or is above, the horizon.")
+            raise OrthorityError(
+                "Camera has a field of view that includes, or is above, the horizon."
+            )
 
         ji = self.pixel_boundary(num_pts=num_pts)
         if np.isscalar(z):

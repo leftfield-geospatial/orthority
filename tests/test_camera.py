@@ -36,7 +36,7 @@ from orthority.camera import (
     RpcCamera,
 )
 from orthority.enums import CameraType, Interp
-from orthority.errors import CameraInitError, OrthorityWarning
+from orthority.errors import CameraInitError, OrthorityWarning, OrthorityError
 from tests.conftest import _dem_offset, checkerboard, create_zsurf, ortho_bounds
 
 
@@ -167,7 +167,7 @@ def test_rpc_init_crs_error(im_size: tuple, rpc: dict, crs: str, request: pytest
     """Test ``RpcCamera`` creation raises an error when the world / ortho CRS has a vertical CRS."""
     crs: str = request.getfixturevalue(crs)
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = RpcCamera(im_size, rpc, crs=crs)
 
     assert 'crs' in str(ex.value) and 'ellipsoidal' in str(ex.value)

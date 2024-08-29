@@ -35,7 +35,7 @@ from tqdm.std import tqdm
 from orthority import root_path, common
 from orthority.camera import create_camera, FrameCamera
 from orthority.enums import CameraType, Compress, Interp, RpcRefine
-from orthority.errors import CrsError, CrsMissingError, ParamError
+from orthority.errors import CrsError, CrsMissingError, OrthorityError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
 from orthority.fit import _default_rpc_refine_method
 from orthority.ortho import Ortho
@@ -318,7 +318,7 @@ def _ortho(
             # create camera for src_file
             try:
                 camera = cameras.get(src_file)
-            except ParamError as ex:
+            except OrthorityError as ex:
                 raise click.UsageError(str(ex))
 
             # open & validate src_file (open it once here so it is not opened repeatedly)
@@ -334,7 +334,6 @@ def _ortho(
                     raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
                 # orthorectify
-                ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
                 src_file_path = Path(src_file.path)
                 tqdm_kwargs = common.get_tqdm_kwargs(
                     desc=src_file_path.name, unit='blocks', leave=False
@@ -343,8 +342,9 @@ def _ortho(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
                 try:
+                    ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
                     ortho.process(ortho_ofile, overwrite=overwrite, progress=tqdm_kwargs, **kwargs)
-                except FileExistsError as ex:
+                except (FileExistsError, OrthorityError) as ex:
                     raise click.UsageError(str(ex))
 
 
@@ -634,12 +634,12 @@ def frame(
             io_kwargs=dict(crs=crs, lla_crs=lla_crs, radians=radians),
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
-    except (FileNotFoundError, ParamError) as ex:
-        raise click.UsageError(str(ex))
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
     except CrsError as ex:
         raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+    except (FileNotFoundError, OrthorityError) as ex:
+        raise click.UsageError(str(ex))
 
     # get factory CRS if not set already
     crs = crs or cameras.crs
@@ -714,10 +714,10 @@ def exif(
             io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=tqdm_kwargs),
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
-    except (FileNotFoundError, ParamError) as ex:
-        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
     except CrsError as ex:
         raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+    except (FileNotFoundError, OrthorityError) as ex:
+        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
     # get auto UTM CRS, if CRS not set already
     crs = crs or cameras.crs
@@ -825,7 +825,7 @@ def odm(
             f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {str(ex)}",
             param_hint="'-dd' / '--dataset-dir'",
         )
-    except ParamError as ex:
+    except OrthorityError as ex:
         raise click.UsageError(str(ex))
 
     # orthorectify
@@ -938,7 +938,7 @@ def rpc(
         # create camera factory from parameter file
         try:
             cameras = RpcCameras(rpc_param_file, cam_kwargs=cam_kwargs)
-        except (FileNotFoundError, ParamError) as ex:
+        except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
     else:
         # set up progress bar args
@@ -949,7 +949,7 @@ def rpc(
             cameras = RpcCameras.from_images(
                 src_files, io_kwargs=dict(progress=tqdm_kwargs), cam_kwargs=cam_kwargs
             )
-        except (FileNotFoundError, ParamError) as ex:
+        except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
     if gcp_refine is not None:
@@ -964,7 +964,7 @@ def rpc(
                 )
             else:
                 cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
-        except (FileNotFoundError, ParamError) as ex:
+        except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'")
 
     # orthorectify
@@ -1130,21 +1130,13 @@ def sharpen(
                 param_hint="'-mi' / '--ms-index'",
             )
 
-        # validate weights
-        ms_indexes = ms_im.indexes if len(ms_indexes) == 0 else ms_indexes
-        if len(weights) > 0 and len(weights) != len(ms_indexes):
-            raise click.UsageError(
-                f"There should be the same number of multispectral to panchromatic weights "
-                f"({len(weights)}) as multispectral indexes ({len(ms_indexes)})."
-            )
-
         # pan sharpen
-        pan_sharp = PanSharpen(pan_im, ms_im)
         try:
+            pan_sharp = PanSharpen(pan_im, ms_im)
             pan_sharp.process(
                 pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
             )
-        except FileExistsError as ex:
+        except (FileExistsError, OrthorityError) as ex:
             raise click.UsageError(str(ex))
 
 

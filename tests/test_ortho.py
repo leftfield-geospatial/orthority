@@ -34,6 +34,7 @@ from orthority import common
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
 from orthority.enums import CameraType, Compress, Interp
+from orthority.errors import OrthorityError
 from orthority.ortho import Ortho
 from tests.conftest import _dem_resolution
 
@@ -132,7 +133,7 @@ def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
     """Test Ortho initialisation with incorrect ``dem_band`` raises an error."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
     assert 'DEM band' in str(ex.value)
 
@@ -154,7 +155,7 @@ def test_init_dem_coverage_error(
     camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (0, 0, 0))
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'DEM' in str(ex.value)
 
@@ -167,7 +168,7 @@ def test_init_horizon_fov_error(
     camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (np.pi / 2, 0, 0))
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'horizon' in str(ex.value)
 
@@ -183,7 +184,7 @@ def test_dem_above_camera_error(
     camera.update(_xyz, frame_args['opk'])
 
     # init & reproject
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'DEM' in str(ex.value)
 
@@ -450,7 +451,7 @@ def test_reproject_dem_vert_crs_scale(
 
 def test_reproject_resolution_error(rgb_pinhole_utm34n_ortho: Ortho):
     """Test DEM reprojection raises an error when the resolution exceeds the ortho bounds."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _, _ = rgb_pinhole_utm34n_ortho._reproject_dem(Interp.cubic, (1000, 1000))
     assert 'resolution' in str(ex.value)
 
@@ -633,9 +634,9 @@ def test_mask_dem_coverage_error(
     camera.update((0.0, 0.0, 1000.0), (0.0, 0.0, 0.0))
 
     # test
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
-    assert 'boundary' in str(ex.value)
+    assert 'lies outside' in str(ex.value)
 
 
 @pytest.mark.parametrize('resolution', [(30.0, 30.0), (60.0, 60.0), (60.0, 30.0)])
@@ -990,7 +991,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
     """Test unsupported dtypes raise an error."""
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype)
     assert dtype in str(ex.value)
 
@@ -1068,7 +1069,7 @@ def test_process_compress_jpeg_error(
     ortho = Ortho(float_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         ortho.process(ortho_file, (5, 5), compress=Compress.jpeg)
     assert 'uint8' in str(ex.value)
 

@@ -49,7 +49,7 @@ from rasterio.windows import Window
 from rasterio.enums import ColorInterp
 
 from orthority.enums import Interp, Compress
-from orthority.errors import OrthorityWarning
+from orthority.errors import OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
 
@@ -417,7 +417,7 @@ def create_profile(
     # check dtype support
     dtype = str(dtype)
     if dtype not in _nodata_vals:
-        raise ValueError(f"Data type '{dtype}' is not supported.")
+        raise OrthorityError(f"Data type '{dtype}' is not supported.")
 
     # configure compression
     if compress is None:
@@ -433,7 +433,7 @@ def create_profile(
                 )
                 profile.update(nbits=12)
             elif dtype != 'uint8':
-                raise ValueError(
+                raise OrthorityError(
                     f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
                 )
 

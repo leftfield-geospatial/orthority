@@ -39,7 +39,7 @@ from tqdm.std import tqdm, tqdm as std_tqdm
 from orthority import common
 from orthority.camera import Camera, FrameCamera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsMissingError, OrthorityWarning
+from orthority.errors import CrsMissingError, OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +132,7 @@ class Ortho:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
                 dem_name = common.get_filename(dem_file)
-                raise ValueError(
+                raise OrthorityError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here
@@ -163,9 +163,7 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise ValueError(
-                        f"Ortho for '{self._src_name}' lies outside, or underneath the DEM."
-                    )
+                    raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the DEM.")
                 return common.expand_window_to_grid(dem_win)
 
             # get a dem window containing the ortho bounds at min & max possible altitude, read the
@@ -248,7 +246,9 @@ class Ortho:
         ortho_bounds = np.array(transform_bounds(self._dem_crs, self._crs, *init_bounds))
         ortho_size = ortho_bounds[2:] - ortho_bounds[:2]
         if np.any(resolution > ortho_size):
-            raise ValueError(f"'resolution' is larger than the ortho size.")
+            raise OrthorityError(
+                f"Ortho resolution for '{self._src_name}' is larger than the ortho bounds."
+            )
 
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
@@ -265,7 +265,7 @@ class Ortho:
         #  bounds so am leaving as is for now.
         # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
         # TODO: if possible, read (,mask) and reproject the dem from dataset in blocks as the ortho
-        #  is written.
+        #  is written.  or read the dem and src image in parallel, avoiding masked reads
 
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
@@ -314,15 +314,13 @@ class Ortho:
         dem_mask_sum = dem_mask.sum()
 
         if dem_mask_sum == 0:
-            raise ValueError(
-                f"Ortho boundary for '{self._src_name}' lies outside the valid DEM area."
-            )
+            raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the valid DEM area.")
         elif poly_mask.sum() > dem_mask_sum or (
             np.any(np.min(poly_ji, axis=1) < (0, 0))
             or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
             warnings.warn(
-                f"Ortho boundary for '{self._src_name}' is not fully covered by the DEM.",
+                f"Ortho for '{self._src_name}' is not fully covered by the DEM.",
                 category=OrthorityWarning,
             )
 

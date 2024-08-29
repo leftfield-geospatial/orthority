@@ -29,6 +29,7 @@ from rasterio.windows import Window
 
 from orthority import common
 from orthority.enums import Interp, Compress
+from orthority.errors import OrthorityError
 from orthority.pan_sharp import PanSharpen
 
 logger = logging.getLogger(__name__)
@@ -58,14 +59,14 @@ def test_init_res_error(pan_file: Path, ms_file: Path):
     """Test initialisation raises an error when the pan resolution is larger than the multispectral
     resolution.
     """
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = PanSharpen(ms_file, pan_file)
     assert 'resolution' in str(ex.value)
 
 
 def test_init_bounds_error(odm_dem_file: Path, ngi_dem_file: Path):
     """Test initialisation raises an error when pan and multispectral bounds don't overlap."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = PanSharpen(odm_dem_file, ngi_dem_file)
     assert 'bounds' in str(ex.value)
 
@@ -210,24 +211,24 @@ def test_mask(pan_file: Path, ms_file: Path, tmp_path: Path):
             ms_mask = ms_im.dataset_mask().astype('bool', copy=False)
             ms_array = ms_im.read()
 
-        assert out_file.exists()
+            assert out_file.exists()
 
-        # reproject output to MS grid & read
-        out_profile = dict(
-            transform=ms_transform,
-            width=ms_im.width,
-            height=ms_im.height,
-            resampling=Resampling.average,
-        )
-        with WarpedVRT(rio.open(out_file, 'r'), **out_profile) as out_im:
-            out_mask = out_im.dataset_mask().astype('bool', copy=False)
-            out_array = out_im.read()
+            # reproject output to MS grid & read
+            out_profile = dict(
+                transform=ms_transform,
+                width=ms_im.width,
+                height=ms_im.height,
+                resampling=Resampling.average,
+            )
+            with WarpedVRT(rio.open(out_file, 'r'), **out_profile) as out_im:
+                out_mask = out_im.dataset_mask().astype('bool', copy=False)
+                out_array = out_im.read()
 
-        # compare
-        assert np.all(out_mask == ms_mask)
-        abs_err = np.abs(out_array[:, out_mask] - ms_array[:, ms_mask])
-        assert abs_err.mean() < 1
-        assert abs_err.std() < 1
+            # compare
+            assert np.all(out_mask == ms_mask)
+            abs_err = np.abs(out_array[:, out_mask] - ms_array[:, ms_mask])
+            assert abs_err.mean() < 1
+            assert abs_err.std() < 1
 
 
 def test_stats(pan_file: Path, ms_file: Path, monkeypatch: pytest.MonkeyPatch):
@@ -369,7 +370,7 @@ def test_pan_norm(pan_file: Path, ms_file: Path, weights: tuple):
 def test_process_pan_index_error(pan_sharpen: PanSharpen, tmp_path: Path):
     """Test ``PanSharpen.process()`` raises an error when ``pan_index`` is invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         pan_sharpen.process(out_file, pan_index=2)
     assert 'Pan index' in str(ex)
 
@@ -409,7 +410,7 @@ def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
     """Test ``PanSharpen.process()`` raises an error when ``ms_indexes`` is invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
     for ms_indexes in [[0], [4]]:
-        with pytest.raises(ValueError) as ex:
+        with pytest.raises(OrthorityError) as ex:
             pan_sharpen.process(out_file, ms_indexes=ms_indexes)
         assert 'Multispectral indexes' in str(ex)
 
@@ -434,10 +435,10 @@ def test_process_weights(pan_file: Path, ms_file: Path, tmp_path: Path):
 def test_process_weights_error(pan_sharpen: PanSharpen, tmp_path: Path):
     """Test ``PanSharpen.process()`` raises an error when ``weights`` is invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         pan_sharpen.process(out_file, weights=(1, 1))
     assert 'weights' in str(ex) and 'same number' in str(ex)
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         pan_sharpen.process(out_file, weights=(1, 1, -1))
     assert 'Weight values' in str(ex)
 

@@ -37,7 +37,7 @@ from tqdm.std import tqdm
 
 from orthority import common
 from orthority.enums import Compress, Interp
-from orthority.errors import OrthorityWarning
+from orthority.errors import OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +129,7 @@ class PanSharpen:
                 ms_bounds_ = transform_bounds(ms_ds.crs, pan_ds.crs, *ms_ds.bounds)
                 ms_win_ = pan_ds.window(*ms_bounds_)
                 if not intersect((ms_win_, pan_ds.window(*pan_ds.bounds))):
-                    raise ValueError('Pan and multispectral bounds do not overlap.')
+                    raise OrthorityError('Pan and multispectral bounds do not overlap.')
                 pan_win = ms_win_.intersection(pan_ds.window(*pan_ds.bounds))
                 pan_win = common.expand_window_to_grid(pan_win)
 
@@ -143,7 +143,7 @@ class PanSharpen:
             pan_res = np.abs((pan_src_transform[0], pan_src_transform[4]))
             ms_res = np.abs((ms_src_transform[0], ms_src_transform[4]))
             if np.any(pan_res > ms_res):
-                raise ValueError(
+                raise OrthorityError(
                     f'Pan resolution: {tuple(pan_res.tolist())} exceeds multispectral resolution: '
                     f'{tuple(ms_res.tolist())}.'
                 )
@@ -205,7 +205,7 @@ class PanSharpen:
         """Validate pan / MS indexes and weights."""
         if pan_index <= 0 or pan_index > pan_im.count:
             pan_name = common.get_filename(pan_im)
-            raise ValueError(
+            raise OrthorityError(
                 f"Pan index {pan_index} is invalid for '{pan_name}' with {pan_im.count} band(s)"
             )
 
@@ -218,7 +218,7 @@ class PanSharpen:
         ms_indexes_ = np.array(ms_indexes)
         if np.any(ms_indexes_ <= 0) or np.any(ms_indexes_ > ms_im.count):
             ms_name = common.get_filename(ms_im)
-            raise ValueError(
+            raise OrthorityError(
                 f"Multispectral indexes {tuple(ms_indexes)} contain invalid values for '{ms_name}' "
                 f"with {ms_im.count} band(s)"
             )
@@ -226,12 +226,12 @@ class PanSharpen:
         weights = None if weights is None or len(weights) == 0 else weights
         if weights is not None:
             if len(weights) != len(ms_indexes):
-                raise ValueError(
+                raise OrthorityError(
                     f"There should be the same number of multispectral to pan weights "
                     f"({len(weights)}) as multispectral indexes ({len(ms_indexes)})."
                 )
             if np.any(np.array(weights) < 0):
-                raise ValueError('Weight values should greater than or equal to 0.')
+                raise OrthorityError('Weight values should greater than or equal to 0.')
 
         return ms_indexes, weights
 
