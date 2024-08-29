@@ -172,8 +172,8 @@ def _test_pan_sharp_file(
     # compare output to MS
     assert np.all(out_array.mask == ms_array.mask)
     abs_err = np.ma.abs(out_array - ms_array)
-    assert abs_err.mean() < 1
-    assert abs_err.std() < 1
+    assert np.ma.all(abs_err.mean(axis=(1, 2)) < 1)
+    assert np.ma.all(abs_err.std(axis=(1, 2)) < 1)
 
 
 @pytest.mark.parametrize(
@@ -399,9 +399,7 @@ def test_process_pan_index_error(pan_sharpen: PanSharpen, tmp_path: Path):
     assert 'Pan index' in str(ex)
 
 
-@pytest.mark.parametrize(
-    'ms_indexes, weights', [((1, 2, 3), (1, 1, 1)), ((3, 2, 1, 1), (1, 1, 0.5, 0.5))]
-)
+@pytest.mark.parametrize('ms_indexes, weights', [((1, 2, 3), (1, 1, 1)), ((3, 2, 1), (1, 1, 1))])
 def test_process_ms_indexes(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_indexes: tuple, weights: tuple
 ):
