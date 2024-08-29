@@ -17,13 +17,14 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import ExitStack
 from functools import partial
 from pathlib import Path
 
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio.enums import Resampling, MaskFlags
+from rasterio.enums import Resampling, MaskFlags, ColorInterp
 from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 
@@ -31,6 +32,7 @@ from orthority import common
 from orthority.enums import Interp, Compress
 from orthority.errors import OrthorityError
 from orthority.pan_sharp import PanSharpen
+from tests.conftest import create_profile
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +41,61 @@ logger = logging.getLogger(__name__)
 def pan_sharpen(pan_file: Path, ms_file: Path) -> PanSharpen:
     """A pan sharpener."""
     return PanSharpen(pan_file, ms_file)
+
+
+@pytest.fixture(scope='session')
+def mask_pan_file(
+    pan_file: Path, webmerc_crs: str, tmp_path_factory: pytest.TempPathFactory
+) -> Path:
+    """Panchromatic image with georeferencing and an internal mask defining a buffer of invalid
+    pixels.
+    """
+    # read pan_file
+    with rio.open(pan_file, 'r') as src_im:
+        src_array = src_im.read()
+
+    # pad src_array and create georeferenced profile
+    pwidth = 100
+    pval = 0
+    out_array = np.pad(
+        src_array, ((0, 0), (pwidth, pwidth), (pwidth, pwidth)), constant_values=pval
+    )
+    transform = rio.Affine(2, 0, 10, 0, -2, 20)
+    out_profile = create_profile(out_array, crs=webmerc_crs, transform=transform)
+
+    # write to output file
+    out_file = tmp_path_factory.mktemp('data').joinpath('mask_pan.tif')
+    with rio.open(out_file, 'w', **out_profile) as out_im:
+        out_im.write(out_array)
+        out_im.write_mask((out_array != pval).all(axis=0))
+    return out_file
+
+
+@pytest.fixture(scope='session')
+def mask_ms_file(ms_file: Path, webmerc_crs: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Multispectral image with georeferencing and an internal mask defining a buffer of invalid
+    pixels.
+    """
+    # read pan_file
+    with rio.open(ms_file, 'r') as src_im:
+        src_array = src_im.read()
+
+    # pad src_array  and create georeferenced profile that shares bounds with mask_pan_file
+    scale = 4  # scale relative to mask_pan_file
+    pwidth = int(100 / scale)
+    pval = 0
+    out_array = np.pad(
+        src_array, ((0, 0), (pwidth, pwidth), (pwidth, pwidth)), constant_values=pval
+    )
+    transform = rio.Affine(2, 0, 10, 0, -2, 20) * rio.Affine.scale(scale)
+    out_profile = create_profile(out_array, crs=webmerc_crs, transform=transform)
+
+    # write to output file
+    out_file = tmp_path_factory.mktemp('data').joinpath('mask_ms.tif')
+    with rio.open(out_file, 'w', **out_profile) as out_im:
+        out_im.write(out_array)
+        out_im.write_mask((out_array != pval).all(axis=0))
+    return out_file
 
 
 def test_init_profiles(pan_file: Path, ms_file: Path):
@@ -97,20 +154,22 @@ def _test_pan_sharp_file(out_file: Path, ms_file: Path | rio.DatasetReader):
             transform=ms_transform,
             width=ms_im.width,
             height=ms_im.height,
-            dtype='float32',
-            nodata=float('nan'),
             resampling=Resampling.average,
         )
 
         # read reprojected output
         with WarpedVRT(out_im_, **profile) as out_im:
-            out_array = out_im.read(window=ms_win)
+            out_array = out_im.read(window=ms_win, masked=True, out_dtype='float32')
 
         # read MS window corresponding to output bounds
-        ms_array = ms_im.read(window=ms_win, out_dtype='float32')
+        ms_indexes = [
+            bi + 1 for bi in range(ms_im.count) if ms_im.colorinterp[bi] != ColorInterp.alpha
+        ]
+        ms_array = ms_im.read(ms_indexes, window=ms_win, masked=True, out_dtype='float32')
 
     # compare output to MS
-    abs_err = np.abs(out_array - ms_array)
+    assert np.all(out_array.mask == ms_array.mask)
+    abs_err = np.ma.abs(out_array - ms_array)
     assert abs_err.mean() < 1
     assert abs_err.std() < 1
 
@@ -122,7 +181,9 @@ def _test_pan_sharp_file(out_file: Path, ms_file: Path | rio.DatasetReader):
         (dict(), dict()),
         # pan georeferenced
         (
-            dict(crs='EPSG:3857', src_transform=(t := rio.Affine(2, 0, 10, 0, 2, 20)), transform=t),
+            dict(
+                crs='EPSG:3857', src_transform=(t := rio.Affine(2, 0, 10, 0, -2, 20)), transform=t
+            ),
             dict(),
         ),
         # MS georeferenced
@@ -149,8 +210,8 @@ def _test_pan_sharp_file(out_file: Path, ms_file: Path | rio.DatasetReader):
     ],
 )
 def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: dict, tmp_path: Path):
-    """Test pan sharpening with different combinations of pan & MS georeferencing and bounds
-    (where no combinations include nodata areas).
+    """Test pan sharpening using WarpedVRT to simulate different combinations of pan & MS
+    georeferencing and bounds (all without masks).
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
     with rio.open(pan_file, 'r') as pan_im_, rio.open(ms_file, 'r') as ms_im_:
@@ -170,65 +231,26 @@ def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: di
             _test_pan_sharp_file(out_file, ms_im)
 
 
-def test_mask(pan_file: Path, ms_file: Path, tmp_path: Path):
-    """Test masking in the pan sharpened image with simulated pan & MS that have nodata in the
-    common bounds area.
+@pytest.mark.parametrize('vrt_profile', [None, dict(nodata=0), dict(add_alpha=True)])
+def test_mask(mask_pan_file: Path, mask_ms_file: Path, tmp_path: Path, vrt_profile: dict):
+    """Test masking in the pan sharpened image with pan & MS images that have internal,
+    nodata and alpha masks, that mask invalid pixels inside the common bounds.
     """
-    with rio.open(pan_file, 'r') as pan_im_, rio.open(ms_file, 'r') as ms_im_:
-        # set up pan & MS WarpedVRT profiles that add nodata buffers
-        pan_src_transform = rio.Affine(2, 0, 1000, 0, 2, 2000)
-        pan_transform = pan_src_transform * rio.Affine.translation(-100, -100)
-        pan_profile = dict(
-            crs='EPSG:3857',
-            src_transform=pan_src_transform,
-            transform=pan_transform,
-            width=pan_im_.width + 200,
-            height=pan_im_.height + 200,
-            dtype='float32',
-            nodata=float('nan'),
-        )
-        scale = np.array(pan_im_.shape) / ms_im_.shape
-        ms_src_transform = pan_src_transform * rio.Affine.scale(*scale[::-1])
-        ms_transform = ms_src_transform * rio.Affine.translation(-25, -25)
-        ms_profile = dict(
-            crs='EPSG:3857',
-            src_transform=ms_src_transform,
-            transform=ms_transform,
-            width=ms_im_.width + 50,
-            height=ms_im_.height + 50,
-            dtype='float32',
-            nodata=float('nan'),
-        )
+    with ExitStack() as exit_stack:
+        pan_im = exit_stack.enter_context(rio.open(mask_pan_file, 'r'))
+        ms_im = exit_stack.enter_context(rio.open(mask_ms_file, 'r'))
 
-        # simulate pan & MS with nodata buffers
-        with WarpedVRT(pan_im_, **pan_profile) as pan_im, WarpedVRT(ms_im_, **ms_profile) as ms_im:
-            # pan sharpen
-            pan_sharp = PanSharpen(pan_im, ms_im)
-            out_file = tmp_path.joinpath('pan_sharp.tif')
-            pan_sharp.process(out_file, weights=(1, 1, 1), compress='deflate')
+        if vrt_profile:
+            pan_im = exit_stack.enter_context(WarpedVRT(pan_im, **vrt_profile))
+            ms_im = exit_stack.enter_context(WarpedVRT(ms_im, **vrt_profile))
 
-            # read MS data to compare against
-            ms_mask = ms_im.dataset_mask().astype('bool', copy=False)
-            ms_array = ms_im.read()
+        pan_sharp = PanSharpen(pan_im, ms_im)
+        out_file = tmp_path.joinpath('pan_sharp.tif')
+        pan_sharp.process(out_file, weights=(1, 1, 1), compress='deflate')
+        assert out_file.exists()
 
-            assert out_file.exists()
-
-            # reproject output to MS grid & read
-            out_profile = dict(
-                transform=ms_transform,
-                width=ms_im.width,
-                height=ms_im.height,
-                resampling=Resampling.average,
-            )
-            with WarpedVRT(rio.open(out_file, 'r'), **out_profile) as out_im:
-                out_mask = out_im.dataset_mask().astype('bool', copy=False)
-                out_array = out_im.read()
-
-            # compare
-            assert np.all(out_mask == ms_mask)
-            abs_err = np.abs(out_array[:, out_mask] - ms_array[:, ms_mask])
-            assert abs_err.mean() < 1
-            assert abs_err.std() < 1
+        # reproject output to MS grid and compare
+        _test_pan_sharp_file(out_file, ms_im)
 
 
 def test_stats(pan_file: Path, ms_file: Path, monkeypatch: pytest.MonkeyPatch):

@@ -130,6 +130,9 @@ def create_profile(
         height=shape[1],
         count=shape[0],
         nodata=nodata,
+        blockxsize=256,
+        blockysize=256,
+        interleave='band',
         **kwargs,
     )
 
