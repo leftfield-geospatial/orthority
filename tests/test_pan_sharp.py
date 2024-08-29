@@ -128,7 +128,9 @@ def test_init_bounds_error(odm_dem_file: Path, ngi_dem_file: Path):
     assert 'bounds' in str(ex.value)
 
 
-def _test_pan_sharp_file(out_file: Path, ms_file: Path | rio.DatasetReader):
+def _test_pan_sharp_file(
+    out_file: Path, ms_file: Path | rio.DatasetReader, ms_indexes: tuple = None
+):
     """Test the pan sharpened ``out_file`` by reprojecting it to the grid of the given
     multispectral ``ms_file`` and comparing.
     """
@@ -162,7 +164,7 @@ def _test_pan_sharp_file(out_file: Path, ms_file: Path | rio.DatasetReader):
             out_array = out_im.read(window=ms_win, masked=True, out_dtype='float32')
 
         # read MS window corresponding to output bounds
-        ms_indexes = [
+        ms_indexes = ms_indexes or [
             bi + 1 for bi in range(ms_im.count) if ms_im.colorinterp[bi] != ColorInterp.alpha
         ]
         ms_array = ms_im.read(ms_indexes, window=ms_win, masked=True, out_dtype='float32')
@@ -413,19 +415,7 @@ def test_process_ms_indexes(
     pan_sharp.process(out_file, ms_indexes=ms_indexes, weights=weights, compress='deflate')
     assert out_file.exists()
 
-    # reproject output to MS grid for comparison
-    with WarpedVRT(
-        rio.open(out_file, 'r'), **pan_sharp._profiles['pan_to_ms'], resampling=Resampling.average
-    ) as out_im, rio.open(ms_file, 'r') as ms_im:
-        assert out_im.count == len(ms_indexes)
-        out_array = out_im.read()
-        # read MS in same order as output
-        ms_array = ms_im.read(indexes=ms_indexes)
-
-    # compare
-    abs_err = np.abs(out_array - ms_array)
-    assert abs_err.mean() < 1
-    assert abs_err.std() < 1
+    _test_pan_sharp_file(out_file, ms_file, ms_indexes=ms_indexes)
 
 
 def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
