@@ -269,7 +269,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
     # validate root dict
     try:
         common.validate_collection({str: dict}, yaml_dict)
-    except (TypeError, KeyError, ValueError):
+    except (TypeError, KeyError, ValueError) as ex:
         raise ParamError(f"Could not parse '{filename}': {str(ex)}") from ex
 
     # parse each set of interior parameters
