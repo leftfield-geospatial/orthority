@@ -1,0 +1,105 @@
+{
+    "type": "FeatureCollection",
+    "features": [
+        {
+            "type": "Feature",
+            "properties": {
+                "ji": [
+                    821.3001696660183,
+                    62.303697728645055
+                ],
+                "filename": "qb2_basic1b.tif",
+                "id": "concrete-plinth-70",
+                "info": "concrete-plinth-70"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.41948061951812,
+                    -33.65426900104435,
+                    214.75143153141929
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "ji": [
+                    1131.8539330138824,
+                    -36.369967092201115
+                ],
+                "filename": "qb2_basic1b.tif",
+                "id": "house-swcnr-90b",
+                "info": "house-swcnr-90b"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.441599511548393,
+                    -33.64904378292523,
+                    208.7682055586755
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "ji": [
+                    584.4155993184074,
+                    83.88094549123198
+                ],
+                "filename": "qb2_basic1b.tif",
+                "id": "smitskraal-rock-60",
+                "info": "smitskraal-rock-60"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.40250956368057,
+                    -33.65506020635177,
+                    261.4592308320109
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "ji": [
+                    90.19626682470553,
+                    221.42640030123295
+                ],
+                "filename": "qb2_basic1b.tif",
+                "id": "smitskraal-bridge-90",
+                "info": "smitskraal-bridge-90"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.36760811243019,
+                    -33.662347760346826,
+                    199.62875955623542
+                ]
+            }
+        },
+        {
+            "type": "Feature",
+            "properties": {
+                "ji": [
+                    -185.1812520714011,
+                    11.373365427739918
+                ],
+                "filename": "qb2_basic1b.tif",
+                "id": "grasnek-roadjunction1-50",
+                "info": "grasnek-roadjunction1-50"
+            },
+            "geometry": {
+                "type": "Point",
+                "coordinates": [
+                    24.34748084135443,
+                    -33.64923813027391,
+                    463.683506033488
+                ]
+            }
+        }
+    ]
+}
