@@ -379,11 +379,11 @@ def read_im_rpc_param(
             try:
                 rpc_param_dict.update(**future.result())
             except (FileNotFoundError, ParamError):
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False)
                 raise
             except Exception as ex:
                 filename = common.get_filename(file)
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False)
                 raise RuntimeError(f"Could not read RPC tags from '{filename}'.") from ex
 
     return rpc_param_dict
@@ -502,11 +502,11 @@ def read_im_gcps(
             try:
                 gcp_dict.update(**future.result())
             except (FileNotFoundError, ParamError):
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False)
                 raise
             except Exception as ex:
                 filename = common.get_filename(file)
-                executor.shutdown(wait=False, cancel_futures=True)
+                executor.shutdown(wait=False)
                 raise RuntimeError(f"Could not read GCPs from '{filename}'.") from ex
 
     return gcp_dict
@@ -1296,11 +1296,11 @@ class ExifReader(FrameReader):
                 try:
                     exif_obj = future.result()
                 except FileNotFoundError:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=False)
                     raise
                 except Exception as ex:
                     filename = common.get_filename(file)
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=False)
                     raise RuntimeError(f"Could not read EXIF tags from '{filename}'.") from ex
 
                 exif_dict[exif_obj.filename] = exif_obj

@@ -470,7 +470,7 @@ class Ortho:
                     try:
                         future.result()
                     except Exception as ex:
-                        executor.shutdown(wait=False, cancel_futures=True)
+                        executor.shutdown(wait=False)
                         raise RuntimeError('Could not remap tile.') from ex
                     progress.update()
                 progress.refresh()

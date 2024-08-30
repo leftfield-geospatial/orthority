@@ -266,7 +266,7 @@ def test_stats(pan_file: Path, ms_file: Path, monkeypatch: pytest.MonkeyPatch):
             pan_im_, **pan_sharp._profiles['pan_to_ms'], resampling=Resampling.average
         ) as pan_im:
             pan_array = pan_im.read()
-        pan_ms_array = np.concat(
+        pan_ms_array = np.concatenate(
             (pan_array.reshape(1, -1), ms_array.reshape(ms_array.shape[0], -1)), axis=0
         )
         ref_means = pan_ms_array.mean(axis=1)

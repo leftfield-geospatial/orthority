@@ -267,7 +267,7 @@ class PanSharpen:
             pan_mask = np.logical_not(common.nan_equals(pan_array, pan_im.nodata))
             ms_mask = np.logical_not(common.nan_equals(ms_array, ms_im.nodata)).all(axis=0)
             mask = pan_mask & ms_mask
-            pan_ms_array = np.concat(
+            pan_ms_array = np.concatenate(
                 (pan_array[mask].reshape(1, -1), ms_array[:, mask].reshape(len(indexes), -1)),
                 axis=0,
             )
@@ -302,7 +302,7 @@ class PanSharpen:
                 try:
                     tile_n, tile_mean, tile_prod = future.result()
                 except Exception as ex:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    executor.shutdown(wait=False)
                     raise RuntimeError('Could not get tile statistics.') from ex
 
                 if tile_n > 0:
@@ -652,7 +652,9 @@ class PanSharpen:
                 try:
                     future.result()
                 except Exception as ex:
-                    executor.shutdown(wait=False, cancel_futures=True)
+                    # TODO: add cancel_futures=True to all thread pool shutdowns when supported py
+                    #  versions are > 3.8
+                    executor.shutdown(wait=False)
                     raise RuntimeError('Could not process tile.') from ex
                 pbar.update()
             pbar.refresh()
