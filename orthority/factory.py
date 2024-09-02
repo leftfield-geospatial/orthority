@@ -316,7 +316,7 @@ class RpcCameras(Cameras):
             | dict[str, list[dict]]
         ),
         io_kwargs: dict = None,
-        ref_kwargs: dict = None,
+        fit_kwargs: dict = None,
     ):
         """
         Refine RPC models with GCPs.
@@ -324,10 +324,10 @@ class RpcCameras(Cameras):
         :param gcps:
             GCPs as one of:
 
-            - :doc:`Orthority GCP file <../file_formats/oty_gcp>` as a path or URI string,
+            - :doc:`Orthority GCP file <../file_formats/oty_gcps>` as a path or URI string,
               an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode
               (``'rt'``).
-            - :doc:`Image file(s) with GCP tags <../file_formats/im_gcp>` as a list of paths or
+            - :doc:`Image file(s) with GCP tags <../file_formats/image_gcps>` as a list of paths or
               URI strings, :class:`~fsspec.core.OpenFile` objects in binary mode (``'rb'``),
               or dataset readers.
             - GCP dictionary.
@@ -335,13 +335,13 @@ class RpcCameras(Cameras):
             Optional dictionary of keyword arguments for
             :class:`~orthority.param_io.read_im_gcps` if ``gcps`` is a list of image file(s).
             Should exclude ``files`` which is passed internally.
-        :param ref_kwargs:
+        :param fit_kwargs:
             Optional dictionary of keyword arguments for :meth:`~orthority.fit.refine_rpc`.
             Should exclude ``rpc`` and ``gcps``, which are passed internally.
         """
         if gcps and not isinstance(gcps, dict):
             # read GCPs
-            if isinstance(gcps, Sequence):
+            if isinstance(gcps, (list, tuple)):
                 self._gcp_dict = param_io.read_im_gcps(gcps, **(io_kwargs or {}))
             else:
                 self._gcp_dict = param_io.read_oty_gcps(gcps)
@@ -355,7 +355,7 @@ class RpcCameras(Cameras):
 
             if gcps:
                 self._cameras.pop(filename.name, None)  # force camera recreation
-                rpc_param['rpc'] = refine_rpc(rpc_param['rpc'], gcps, **(ref_kwargs or {}))
+                rpc_param['rpc'] = refine_rpc(rpc_param['rpc'], gcps, **(fit_kwargs or {}))
             else:
                 warnings.warn(
                     f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
