@@ -25,7 +25,7 @@ os.environ.update(PROJ_NETWORK='ON')
 import logging
 import pathlib
 
-from orthority.enums import Compress, Interp
+from orthority.enums import Compress, Interp, RpcRefine
 from orthority.factory import FrameCameras, RpcCameras
 from orthority.ortho import Ortho
 from orthority.pan_sharp import PanSharpen
