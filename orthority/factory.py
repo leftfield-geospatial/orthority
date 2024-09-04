@@ -379,8 +379,8 @@ class RpcCameras(Cameras):
         """
         Write camera parameters to Orthority format file(s).
 
-        If RPC models have been refined with GCPs, the refined models are written, as well as the
-        GCPs, in a separate file.
+        When the models have been refined, the refined models are written, together with the GCPs
+        used to refine them.
 
         :param out_dir:
             Directory to write into.  Can be a path, URI string, or an

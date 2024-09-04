@@ -1,4 +1,4 @@
-﻿Camera Models
+﻿Camera models
 =============
 
 .. automodule:: orthority.camera

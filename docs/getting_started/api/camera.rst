@@ -70,7 +70,7 @@ The ``cam_kwargs`` argument can be used in :class:`~orthority.factory.FrameCamer
 Model export
 ~~~~~~~~~~~~
 
-Camera model parameters can be exported to Orthority format :doc:`interior <../../file_formats/oty_int>` and :doc:`exterior <../../file_formats/oty_ext>` parameter files with :meth:`~orthority.factory.RpcCameras.write_param`:
+Camera model parameters can be exported to Orthority format :doc:`interior <../../file_formats/oty_int>` and :doc:`exterior <../../file_formats/oty_ext>` parameter files with :meth:`~orthority.factory.FrameCameras.write_param`:
 
 .. literalinclude:: ../../scripts/api_frame.py
     :language: python
@@ -100,7 +100,7 @@ Camera models can also be created from :doc:`image RPC tags / sidecar files <../
 Parameter IO
 ~~~~~~~~~~~~
 
-The ``io_kwargs`` argument can be used in :meth:`~orthority.factory.RpcCameras.from_images` to pass keyword arguments to :meth:`~orthority.param_io.read_im_rpc_param`.
+Internally, the :func:`~orthority.param_io.read_im_rpc_param` function is used to read image RPC tags / sidecar files.  The ``io_kwargs`` argument can be used in :meth:`~orthority.factory.RpcCameras.from_images` to pass keyword arguments to :func:`~orthority.param_io.read_im_rpc_param`.
 
 E.g. to display a progress bar while reading image RPC tags / sidecar files:
 
@@ -112,20 +112,57 @@ E.g. to display a progress bar while reading image RPC tags / sidecar files:
 Camera options
 ~~~~~~~~~~~~~~
 
-The ``cam_kwargs`` argument can be used in :class:`~orthority.factory.RpcCameras` or :meth:`~orthority.factory.RpcCameras.from_images` to pass keyword arguments to :class:`~orthority.camera.RpcCamera`.  E.g. to pass the world / ortho ``crs`` argument:
+The ``cam_kwargs`` argument can be used in :class:`~orthority.factory.RpcCameras` or :meth:`~orthority.factory.RpcCameras.from_images` to pass keyword arguments to :class:`~orthority.camera.RpcCamera`.  E.g. to specify a world / ortho ``crs``:
 
 .. literalinclude:: ../../scripts/api_rpc.py
     :language: python
     :start-after: [cam_kwargs]
     :end-before: [end cam_kwargs]
 
+Model refinement
+~~~~~~~~~~~~~~~~
+
+RPC models can be refined with GCPs using the :meth:`~orthority.factory.RpcCameras.refine` method.  GCPs can be read from an :doc:`Orthority GCPs file <../../file_formats/oty_gcps>`:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [refine]
+    :end-before: [end refine]
+
+Or GCPs can be read from :doc:`image tags <../../file_formats/image_gcps>`:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [refine tag]
+    :end-before: [end refine tag]
+
+The :func:`~orthority.param_io.read_im_gcps` function is used internally to read GCPs from image tags.  ``io_kwargs`` can be used in :meth:`~orthority.factory.RpcCameras.refine` to pass keyword arguments to :func:`~orthority.param_io.read_im_gcps` when GCPs are supplied in image tags:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [refine io_kwargs]
+    :end-before: [end refine io_kwargs]
+
+The :func:`~orthority.fit.refine_rpc` function is used internally to perform RPC refinement.  ``fit_kwargs`` can be used in :meth:`~orthority.factory.RpcCameras.refine` to pass keyword arguments to :func:`~orthority.fit.refine_rpc`:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [refine fit_kwargs]
+    :end-before: [end refine fit_kwargs]
+
 Model export
 ~~~~~~~~~~~~
 
-Camera model parameters can be exported to a :doc:`Orthority RPC parameter file <../../file_formats/oty_rpc>` with :meth:`~orthority.factory.RpcCameras.write_param`:
+Camera model parameters can be exported to an :doc:`Orthority RPC parameter file <../../file_formats/oty_rpc>` with :meth:`~orthority.factory.RpcCameras.write_param`:
 
 .. literalinclude:: ../../scripts/api_rpc.py
     :language: python
     :start-after: [export]
     :end-before: [end export]
 
+When the models have been refined, :meth:`~orthority.factory.RpcCameras.write_param` exports the refined models together with the GCPs used to refine them.  GCPs are written to an :doc:`Orthority GCPs file <../../file_formats/oty_gcps>`:
+
+.. literalinclude:: ../../scripts/api_rpc.py
+    :language: python
+    :start-after: [export gcps]
+    :end-before: [end export gcps]

@@ -36,10 +36,10 @@ def refine_rpc(
     """
     Refine an RPC model with GCPs.
 
-    Finds the least squares solution to the "shift" and "shift-and-drift" bias compensation
-    refinements described in https://doi.org/10.1016/j.isprsjprs.2005.11.001, for a single image,
-    and incorporate this into the provided RPC model.  The approach is suited to narrow field
-    of view satellite imagery.
+    Finds the least squares solution to the 'shift' or 'shift-and-drift' bias compensation
+    refinements described in https://doi.org/10.1016/j.isprsjprs.2005.11.001 for a single image.
+    Refinements are incorporated into the provided RPC model.  The approach is suited to narrow
+    field of view satellite imagery.
 
     :param rpc:
         RPC parameters as a :class:`~rasterio.rpc.RPC` object or dictionary.
