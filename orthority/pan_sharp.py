@@ -85,6 +85,8 @@ class PanSharpen:
         pan and MS grids are cropped versions of the source grids that define shared bounds.
         """
         with ExitStack() as exit_stack:
+            exit_stack.enter_context(common.suppress_no_georef())
+
             # open files
             pan_ds = exit_stack.enter_context(common.OpenRaster(pan_file))
             ms_ds = exit_stack.enter_context(common.OpenRaster(ms_file))
@@ -215,6 +217,7 @@ class PanSharpen:
                 bi + 1 for bi in range(ms_im.count) if ms_im.colorinterp[bi] != ColorInterp.alpha
             ]
 
+        # test ms_indexes (allows user ms_indexes that are duplicates and or alpha bands)
         ms_indexes_ = np.array(ms_indexes)
         if np.any(ms_indexes_ <= 0) or np.any(ms_indexes_ > ms_im.count):
             ms_name = common.get_filename(ms_im)
@@ -538,10 +541,10 @@ class PanSharpen:
         The pan-sharpened image is created on the panchromatic pixel grid.  Pan-sharpened image
         bounds are the intersection of the panchromatic and multispectral image bounds.
 
-        Pan-sharpening consists of two steps, both of which operate tile-by-tile::
+        Pan-sharpening consists of two steps, both of which operate tile-by-tile:
 
-        # Derive the Gram-Schmidt parameters from image statistics.
-        # Generate the pan-sharpened image.
+        1. Derive the Gram-Schmidt parameters from image statistics.
+        2. Generate the pan-sharpened image.
 
         :param out_file:
             Pan-sharpened image file to create.  Can be a path or URI string, or an
@@ -591,6 +594,8 @@ class PanSharpen:
         exit_stack = ExitStack()
         interp = Interp(interp).to_rio()
         with exit_stack:
+            exit_stack.enter_context(common.suppress_no_georef())
+
             # open pan & MS images
             exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
             pan_im = exit_stack.enter_context(common.OpenRaster(self._pan_file, 'r'))
