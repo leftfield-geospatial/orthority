@@ -906,22 +906,20 @@ def rpc(
 
     The :option:`--dem <oty-rpc --dem>` option is required, except when exporting camera
     parameters with :option:`--export-params <oty-rpc --export-params>`.  If :option:`--crs
-    <oty-rpc --crs>` is not supplied, a WGS84 geographic world / ortho CRS is used::
+    <oty-rpc --crs>` is not supplied, a 3D WGS84 geographic world / ortho CRS is used::
 
         oty rpc --dem dem.tif source*.tif
 
     Camera parameters can be refined with GCPs using :option:`--gcp-refine <oty-rpc
     --gcp-refine>`::
 
-        oty rpc --dem dem.tif --gcp-refine source*.tif
+        oty rpc --dem dem.tif --gcp-refine tags source*.tif
 
-    Camera parameters can be exported to an Orthority format file with :option:`--export-params
-    <oty-rpc --export-params>`::
+    Camera parameters can be exported to Orthority format file(s) with :option:`--export-params
+    <oty-rpc --export-params>`.  If it is supplied with :option:`--gcp-refine <oty-rpc
+    --gcp-refine>`, the refined parameters are exported as well as the GCPs::
 
-        oty rpc ---export-params --gcp-refine source*.tif
-
-    If :option:`--gcp-refine <oty-rpc --gcp-refine>` is supplied with :option:`--export-params
-    <oty-rpc --export-params>`, it is the refined parameters are exported, as well as the GCPs.
+        oty rpc ---export-params --gcp-refine tags source*.tif
 
     Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
@@ -954,16 +952,16 @@ def rpc(
 
     if gcp_refine is not None:
         # refine model(s) with GCPs
-        ref_kwargs = dict(method=refine_method)
+        fit_kwargs = dict(method=refine_method)
         try:
             if str(gcp_refine).lower() == 'tags':
                 # set up progress bar args
                 tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
                 cameras.refine(
-                    src_files, io_kwargs=dict(progress=tqdm_kwargs), ref_kwargs=ref_kwargs
+                    src_files, io_kwargs=dict(progress=tqdm_kwargs), fit_kwargs=fit_kwargs
                 )
             else:
-                cameras.refine(gcp_refine, ref_kwargs=ref_kwargs)
+                cameras.refine(gcp_refine, fit_kwargs=fit_kwargs)
         except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'")
 
@@ -1122,7 +1120,7 @@ def sharpen(
 
         ms_err_indexes = np.array(ms_indexes)
         ms_err_indexes = ms_err_indexes[(ms_err_indexes <= 0) | (ms_err_indexes > ms_im.count)]
-        if len(ms_indexes) > 0 and len(ms_err_indexes) > 0:
+        if len(ms_err_indexes) > 0:
             ms_name = common.get_filename(ms_im)
             raise click.BadParameter(
                 f"Multispectral indexes {tuple(ms_err_indexes.tolist())} are out of range for "
