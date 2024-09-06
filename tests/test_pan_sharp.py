@@ -491,22 +491,23 @@ def test_process_write_mask(pan_sharpen: PanSharpen, tmp_path: Path, write_mask:
 
 
 @pytest.mark.parametrize(
-    'pan_dtype, out_dtype',
+    'ms_dtype, out_dtype',
     [('uint8', None), ('float32', None), *[(None, dt) for dt in common._nodata_vals.keys()]],
 )
 def test_process_dtype(
-    pan_file: Path, ms_file: Path, tmp_path: Path, pan_dtype: str, out_dtype: str
+    pan_file: Path, ms_file: Path, tmp_path: Path, ms_dtype: str, out_dtype: str
 ):
     """Test the ``PanSharpen.process()`` ``dtype`` argument, and its effect on the ``compress``
     default value behaviour.
     """
-    with WarpedVRT(rio.open(pan_file, 'r'), dtype=pan_dtype) as pan_im:
-        pan_sharp = PanSharpen(pan_im, ms_file)
-        out_file = tmp_path.joinpath('pan_sharp.tif')
-        pan_sharp.process(out_file, write_mask=False, dtype=out_dtype, compress=None)
+    with rio.open(ms_file, 'r') as ms_im_:
+        profile = dict(width=ms_im_.width, height=ms_im_.height, dtype=ms_dtype)
+        with WarpedVRT(ms_im_, **profile) as ms_im:
+            pan_sharp = PanSharpen(pan_file, ms_im)
+            out_file = tmp_path.joinpath('pan_sharp.tif')
+            pan_sharp.process(out_file, write_mask=False, dtype=out_dtype, compress=None)
 
-        with rio.open(ms_file, 'r') as ms_im:
-            out_dtype = out_dtype or str(np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0]))
+        out_dtype = out_dtype or ms_im.dtypes[0]
     compress = Compress.jpeg if out_dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:

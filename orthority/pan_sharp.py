@@ -607,7 +607,7 @@ class PanSharpen:
             )
 
             # open output image
-            dtype = dtype or np.promote_types(pan_im.dtypes[0], ms_im.dtypes[0])
+            dtype = dtype or ms_im.dtypes[0]
             colorinterp = [ms_im.colorinterp[mi - 1] for mi in ms_indexes]
             out_profile, write_mask = common.create_profile(
                 dtype, compress=compress, write_mask=write_mask, colorinterp=colorinterp
