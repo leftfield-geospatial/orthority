@@ -15,6 +15,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 import pytest
 from rasterio.rpc import RPC
@@ -28,7 +30,8 @@ from orthority.enums import RpcRefine
 def test_refine_rpc(
     rpc: dict, im_size: tuple[int, int], shift: tuple[float, float], drift: tuple[float, float]
 ):
-    """Test refine_rpc() correctly refines an RPC model by testing it against refinement GCPs."""
+    """Test ``refine_rpc()`` correctly refines an RPC model by testing it against refinement GCPs.
+    """
     # create affine transform to realise shift & drift
     method = RpcRefine.shift if not drift else RpcRefine.shift_drift
     drift = (1.0, 1.0) if not drift else drift
@@ -60,7 +63,7 @@ def test_refine_rpc(
 
 
 def test_refine_rpc_type(rpc: dict):
-    """Test refine_rpc() works with an RPC dict or :class:`~rasterio.rpc.RPC` object."""
+    """Test ``refine_rpc()`` works with an RPC dict or :class:`~rasterio.rpc.RPC` object."""
     gcp = dict(
         ji=(rpc['samp_off'], rpc['line_off']),
         xyz=(rpc['long_off'], rpc['lat_off'], rpc['height_off']),
@@ -71,7 +74,7 @@ def test_refine_rpc_type(rpc: dict):
 
 @pytest.mark.parametrize('method, min_gcps', [(RpcRefine.shift, 1), (RpcRefine.shift_drift, 2)])
 def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine, min_gcps: int):
-    """Test refine_rpc() works with the minimum allowed GCPs and raises an error otherwise."""
+    """Test ``refine_rpc()`` works with the minimum allowed GCPs and raises an error otherwise."""
     camera = RpcCamera(im_size, rpc)
     gcps = []
     for i in range(min_gcps):
@@ -84,3 +87,14 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
     with pytest.raises(ValueError) as ex:
         fit.refine_rpc(rpc, gcps[:-1], method=method)
     assert 'At least' in str(ex.value)
+
+
+def test_refine_logs(rpc: dict, caplog: pytest.LogCaptureFixture):
+    """Test ``refine_rpc()`` debug logs."""
+    gcp = dict(
+        ji=(rpc['samp_off'], rpc['line_off']),
+        xyz=(rpc['long_off'], rpc['lat_off'], rpc['height_off']),
+    )
+    caplog.set_level(logging.DEBUG)
+    fit.refine_rpc(rpc, [gcp])
+    assert 'Refinement transform' in caplog.text
