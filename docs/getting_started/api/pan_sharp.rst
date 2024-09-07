@@ -5,7 +5,5 @@ The :class:`~orthority.pan_sharp.PanSharpen` class implements Gram-Schmidt pan s
 
 .. literalinclude:: ../../scripts/api_pan_sharp.py
     :language: python
-    :start-after: [pan_sharpen]
-    :end-before: [end pan_sharpen]
 
 See the :meth:`~orthority.pan_sharp.PanSharpen.process` documentation for details on other configuration options.
