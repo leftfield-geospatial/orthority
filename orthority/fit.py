@@ -45,7 +45,7 @@ def refine_rpc(
         RPC parameters as a :class:`~rasterio.rpc.RPC` object or dictionary.
     :param gcps:
         List of GCP dictionaries, e.g. an item value in a dictionary returned by
-        :meth:`~orthority.param_io.read_im_gpcs` or :meth:`~orthority.param_io.read_oty_gpcs`.
+        :func:`~orthority.param_io.read_im_gcps` or :func:`~orthority.param_io.read_oty_gcps`.
     :param method:
         Refinement method.
 

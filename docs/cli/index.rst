@@ -9,4 +9,5 @@ Command line reference
     exif
     odm
     rpc
+    sharpen
     simple_ortho

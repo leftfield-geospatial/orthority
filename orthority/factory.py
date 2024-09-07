@@ -325,7 +325,7 @@ class RpcCameras(Cameras):
             GCPs as one of:
 
             - :doc:`Orthority GCP file <../file_formats/oty_gcps>` as a path or URI string,
-              an :class:`~fsspec.core.OpenFile` object or a file object, opened in text mode
+              an :class:`~fsspec.core.OpenFile` object or file object, opened in text mode
               (``'rt'``).
             - :doc:`Image file(s) with GCP tags <../file_formats/image_gcps>` as a list of paths or
               URI strings, :class:`~fsspec.core.OpenFile` objects in binary mode (``'rb'``),
@@ -379,8 +379,7 @@ class RpcCameras(Cameras):
         """
         Write camera parameters to Orthority format file(s).
 
-        When the models have been refined, the refined models are written, together with the GCPs
-        used to refine them.
+        When the models have been refined, the refined models are written, together with the GCPs.
 
         :param out_dir:
             Directory to write into.  Can be a path, URI string, or an

@@ -916,8 +916,9 @@ def rpc(
         oty rpc --dem dem.tif --gcp-refine tags source*.tif
 
     Camera parameters can be exported to Orthority format file(s) with :option:`--export-params
-    <oty-rpc --export-params>`.  If it is supplied with :option:`--gcp-refine <oty-rpc
-    --gcp-refine>`, the refined parameters are exported as well as the GCPs::
+    <oty-rpc --export-params>`.  If :option:`--export-params <oty-rpc --export-params>` is
+    supplied with :option:`--gcp-refine <oty-rpc --gcp-refine>`, the refined parameters are
+    exported as well as the GCPs::
 
         oty rpc ---export-params --gcp-refine tags source*.tif
 
@@ -1076,7 +1077,7 @@ def sharpen(
 ) -> None:
     """
     Increases the resolution of a multispectral image to that of a panchromatic image using the
-    Gram-Schmidt method.
+    Gram-Schmidt pan sharpening method.
 
     Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
     or both of the images are not georeferenced, they are assumed to having matching bounds.

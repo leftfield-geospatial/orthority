@@ -448,7 +448,7 @@ def read_im_gcps(
     progress: bool | dict = False,
 ) -> dict[str, list[dict]]:
     """
-    Read GCPs from :doc:`tags in image file(s) <../file_formats/image_gcp>`.
+    Read GCPs from :doc:`tags in image file(s) <../file_formats/image_gcps>`.
 
     :param files:
         File(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
@@ -514,7 +514,7 @@ def read_im_gcps(
 
 def read_oty_gcps(file: str | PathLike | OpenFile | IO[str]) -> dict[str, list[dict]]:
     """
-    Read GCPs for one or more images from an :doc:`Orthority GCP file <../file_formats/oty_gcp>`.
+    Read GCPs for one or more images from an :doc:`Orthority GCP file <../file_formats/oty_gcps>`.
 
     :param file:
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or a
@@ -669,7 +669,7 @@ def write_gcps(
     overwrite: bool = False,
 ) -> None:
     """
-    Write GCPs to an :doc:`Orthority GCP file <../file_formats/oty_gcp>`.
+    Write GCPs to an :doc:`Orthority GCP file <../file_formats/oty_gcps>`.
 
     :param file:
         File to write.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object or

@@ -12,3 +12,6 @@
 
 .. |oty rpc| replace:: ``oty rpc``
 .. _oty rpc: ../../cli/rpc.html
+
+.. |oty sharpen| replace:: ``oty sharpen``
+.. _oty sharpen: ../../cli/sharpen.html

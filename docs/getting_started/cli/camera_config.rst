@@ -3,7 +3,7 @@
 Frame camera configuration
 ==========================
 
-Required camera model parameters are read from file.  Additional command line options allow configuration of camera model behaviour.  These options are common to the |oty frame|_, |oty exif|_ and |oty odm|_ sub-commands.
+Required camera model parameters are read from file.  Additional command line options allow configuration of frame camera model behaviour, via the |oty frame|_, |oty exif|_ or |oty odm|_ sub-commands.
 
 The ``--full-remap`` option configures a camera to remap the source to ortho image in one step.  This uses the full model including distortion, and is the default behaviour.  With ``--no-full-remap``, the source is first remapped to an undistorted image, then remapped to the ortho image using a pinhole model excluding distortion.  ``--no-full-remap`` is faster, but can use more memory and reduce ortho quality, as it remaps and interpolates twice.
 

@@ -1,7 +1,7 @@
 Orthority GCPs
 ==============
 
-The native Orthority GCP format is a standard GeoJSON ``FeatureCollection`` of ``Point`` features, that can be visualised in a GIS.  Each ``Feature`` is a GCP, where the geometry is its position in `3D WGS84 geographic coordinates <https://epsg.io/4979>`__.  ``Feature`` properties are as follows:
+The native Orthority GCP format is a standard GeoJSON ``FeatureCollection`` of ``Point`` features, that can be visualised in a GIS.  Each ``Feature`` is a GCP, where the geometry is its position in 3D WGS84 geographic coordinates.  ``Feature`` properties are as follows:
 
 .. list-table::
     :widths: auto

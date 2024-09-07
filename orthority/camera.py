@@ -410,7 +410,9 @@ class RpcCamera(Camera):
         world coordinate transform.
     :param crs:
         World / ortho CRS as an EPSG, proj4 or WKT string, or :class:`~rasterio.crs.CRS` object.
-        If set to ``None`` (the default), the WGS84 geographic 3D CRS is used.
+        If its vertical CRS is defined, it should be ellipsoidal height (m), otherwise
+        ellipsoidal height is assumed. If ``crs`` is set to ``None`` (the default), the 3D WGS84
+        geographic CRS is used.
     """
 
     def __init__(
@@ -431,6 +433,7 @@ class RpcCamera(Camera):
 
     @property
     def crs(self) -> CRS | None:
+        """World / ortho CRS."""
         return self._crs or self._rpc_crs
 
     def _validate_crs(self, crs: str | CRS) -> CRS:
@@ -439,9 +442,7 @@ class RpcCamera(Camera):
         for z in [0, 1]:
             xyz = warp(self._rpc_crs, crs, [self._rpc.long_off], [self._rpc.lat_off], [z])
             if not xyz[2][0] == z:
-                raise OrthorityError(
-                    "RPC camera requires a 'crs' with ellipsoidal height, or no vertical component."
-                )
+                raise OrthorityError("RPC camera requires a 'crs' with ellipsoidal height (m).")
         return crs
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:

@@ -22,9 +22,5 @@ and help on an ``oty`` sub-command with:
     :maxdepth: 1
 
     running_examples
-    basic_orthorectification
-    model_export
-    ortho_config
-    camera_config
-    algorithm_config
-
+    orthorectification
+    pan_sharpening
