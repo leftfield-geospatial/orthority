@@ -40,7 +40,7 @@ from rasterio.crs import CRS
 from rasterio.errors import CRSError as RioCrsError
 from rasterio.transform import RPC
 from rasterio.warp import transform
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 from orthority import common
 from orthority.enums import CameraType, CsvFormat

@@ -33,7 +33,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from rasterio.windows import intersect, Window
 from rasterio.windows import transform as window_transform
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 from orthority import common
 from orthority.enums import Compress, Interp

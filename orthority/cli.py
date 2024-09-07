@@ -30,7 +30,7 @@ import rasterio as rio
 import yaml
 from fsspec.core import OpenFile
 from tqdm.contrib.logging import logging_redirect_tqdm
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
 from orthority import root_path, common
 from orthority.camera import create_camera, FrameCamera

@@ -34,7 +34,7 @@ from rasterio.io import DatasetWriter
 from rasterio.transform import array_bounds
 from rasterio.warp import reproject, transform, transform_bounds
 from rasterio.windows import Window
-from tqdm.std import tqdm, tqdm as std_tqdm
+from tqdm.auto import tqdm
 
 from orthority import common
 from orthority.camera import Camera, FrameCamera
@@ -402,7 +402,7 @@ class Ortho:
         interp: Interp,
         per_band: bool,
         write_mask: bool,
-        progress: bool | std_tqdm,
+        progress: tqdm,
     ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
