@@ -18,14 +18,17 @@ import os
 
 # enable on-demand download and caching of proj transformation grids (NB must be done before
 # importing rasterio)
+# TODO: can this be called in CLI, then document and leave it up to the API user to call themselves?
+#  it needs to be done before importing rasterio though...
 os.environ.update(PROJ_NETWORK='ON')
 
 import logging
 import pathlib
 
-from orthority.enums import Compress, Interp
+from orthority.enums import Compress, Interp, RpcRefine
 from orthority.factory import FrameCameras, RpcCameras
 from orthority.ortho import Ortho
+from orthority.pan_sharp import PanSharpen
 
 
 # Add a NullHandler to the package logger to hide logs by default.  Applications can then add

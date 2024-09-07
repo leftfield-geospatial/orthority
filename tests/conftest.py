@@ -30,7 +30,13 @@ from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import array_bounds, transform, transform_bounds
 
 from orthority.camera import (
-    BrownCamera, Camera, FisheyeCamera, FrameCamera, OpenCVCamera, PinholeCamera, RpcCamera,
+    BrownCamera,
+    Camera,
+    FisheyeCamera,
+    FrameCamera,
+    OpenCVCamera,
+    PinholeCamera,
+    RpcCamera,
 )
 from orthority.enums import CameraType
 from orthority.ortho import Ortho
@@ -70,7 +76,7 @@ def sinusoid(shape: tuple[int, int]) -> np.ndarray:
     return array
 
 
-def ortho_bounds(camera: Camera, z: float = Ortho._egm_minmax[0]) -> tuple:
+def ortho_bounds(camera: Camera, z: float = Ortho._egm_minmax[0]) -> list[float]:
     """Return (left, bottom, right, top) ortho bounds for the given ``camera`` at ``z``."""
     w, h = np.array(camera.im_size) - 1
     ji = np.array(
@@ -79,11 +85,11 @@ def ortho_bounds(camera: Camera, z: float = Ortho._egm_minmax[0]) -> tuple:
     xyz = camera.pixel_to_world_z(ji, z)
     if isinstance(camera, FrameCamera) and camera.pos:
         xyz = np.column_stack((xyz, camera.pos))
-    return *xyz[:2].min(axis=1), *xyz[:2].max(axis=1)
+    return [*xyz[:2].min(axis=1), *xyz[:2].max(axis=1)]
 
 
 def create_zsurf(
-    bounds: tuple[float],
+    bounds: list[float],
     z_off: float = _dem_offset,
     z_gain: float = _dem_gain,
     resolution: tuple[float, float] = _dem_resolution,
@@ -109,12 +115,14 @@ def create_profile(
     transform: rio.Affine = None,
     crs: str | rio.CRS = None,
     nodata: int | float = None,
+    **kwargs,
 ) -> dict:
     """Return a Rasterio profile for the given parameters."""
     if array.ndim != 2 and array.ndim != 3:
         raise ValueError("'array' should be 2D or 3D.")
     shape = (1, *array.shape) if array.ndim == 2 else array.shape
     return dict(
+        drtiver='GTiff',
         crs=crs,
         transform=transform,
         dtype=array.dtype,
@@ -122,6 +130,10 @@ def create_profile(
         height=shape[1],
         count=shape[0],
         nodata=nodata,
+        blockxsize=256,
+        blockysize=256,
+        interleave='band',
+        **kwargs,
     )
 
 
@@ -661,9 +673,9 @@ def odm_dataset_dir() -> Path:
 
 
 @pytest.fixture(scope='session')
-def odm_image_files(odm_dataset_dir: Path) -> tuple[Path, ...]:
+def odm_image_files(odm_dataset_dir: Path) -> list[Path]:
     """ODM drone image files."""
-    return tuple([fn for fn in odm_dataset_dir.joinpath('images').glob('*.tif')])
+    return [fn for fn in odm_dataset_dir.joinpath('images').glob('*.tif')]
 
 
 @pytest.fixture(scope='session')
@@ -705,9 +717,9 @@ def odm_crs(odm_dem_file) -> str:
 
 
 @pytest.fixture(scope='session')
-def ngi_image_files() -> tuple[Path, ...]:
+def ngi_image_files() -> list[Path]:
     """NGI image files."""
-    return tuple([fn for fn in root_path.joinpath('tests/data/ngi').glob('*RGB.tif')])
+    return [fn for fn in root_path.joinpath('tests/data/ngi').glob('*RGB.tif')]
 
 
 @pytest.fixture(scope='session')
@@ -852,6 +864,24 @@ def rpc_image_file() -> Path:
 def rpc_param_file() -> Path:
     """Orthority RPC parameter file for the Quickbird2 image."""
     return root_path.joinpath('tests/data/rpc/rpc_param.yaml')
+
+
+@pytest.fixture(scope='session')
+def gcp_file() -> Path:
+    """Orthority GCP file for the Quickbird2 image."""
+    return root_path.joinpath('tests/data/rpc/gcps.geojson')
+
+
+@pytest.fixture(scope='session')
+def pan_file() -> Path:
+    """Panchromatic image without georeferencing."""
+    return root_path.joinpath('tests/data/pan_sharp/pan.tif')
+
+
+@pytest.fixture(scope='session')
+def ms_file() -> Path:
+    """Multispectral (RGB) image without georeferencing."""
+    return root_path.joinpath('tests/data/pan_sharp/ms.tif')
 
 
 @pytest.fixture(scope='session')

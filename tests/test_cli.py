@@ -50,6 +50,12 @@ def frame_legacy_ngi_cli_str(
     )
 
 
+@pytest.fixture(scope='session')
+def sharpen_cli_str(pan_file: Path, ms_file: Path) -> str:
+    """``oty sharpen`` CLI string to pan sharpen test images."""
+    return f'sharpen --pan {pan_file} --multispectral {ms_file}'
+
+
 def test_oty_verbosity(
     frame_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner
 ):
@@ -196,7 +202,25 @@ def test_frame_int_param_ext_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'not supported' in result.stdout.lower()
+    assert 'interior parameter' in result.stdout and 'not supported' in result.stdout
+
+
+def test_frame_int_param_invalid_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    rpc_param_file: Path,
+    ngi_oty_ext_param_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty frame`` with an invalid ``--int-param`` file raises an error."""
+    cli_str = (
+        f'frame --dem {ngi_dem_file} --int-param {rpc_param_file} '
+        f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Could not parse' in result.stdout and rpc_param_file.name in result.stdout
 
 
 def test_frame_ext_param_missing_error(
@@ -248,7 +272,25 @@ def test_frame_ext_param_ext_error(
     )
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'not supported' in result.stdout.lower()
+    assert 'exterior parameter' in result.stdout and 'not supported' in result.stdout
+
+
+def test_frame_ext_param_invalid_error(
+    ngi_image_file: Path,
+    ngi_dem_file: Path,
+    ngi_oty_int_param_file: Path,
+    gcp_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty frame`` with an invalid ``--ext-param`` file raises an error."""
+    cli_str = (
+        f'frame --dem {ngi_dem_file} --int-param {ngi_oty_int_param_file} '
+        f'--ext-param {gcp_file} --out-dir {tmp_path} {ngi_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Could not parse' in result.stdout and gcp_file.name in result.stdout
 
 
 def test_frame_crs_src(
@@ -810,7 +852,7 @@ def test_frame_compress(
 
 
 def test_frame_compress_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty frame --dtype`` with an invalid dtype raises an error."""
+    """Test ``oty frame --compress`` with an invalid compression raises an error."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress other'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
@@ -899,6 +941,9 @@ def test_frame_overwrite(
     assert len(ortho_files) == 1
     assert ortho_file == ortho_files[0]
 
+    with rio.open(ortho_files[0], 'r'):
+        pass
+
 
 def test_frame_overwrite_error(
     frame_legacy_ngi_cli_str: str, ngi_image_file: Path, tmp_path: Path, runner: CliRunner
@@ -939,7 +984,11 @@ def test_exif_source_error(
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code != 0, result.stdout
-    assert 'SOURCE' in result.stdout and 'tags' in result.stdout.lower()
+    assert (
+        'SOURCE' in result.stdout
+        and 'tags' in result.stdout
+        and ngi_image_file.name in result.stdout
+    )
 
 
 def test_exif_source_not_found_error(
@@ -1056,7 +1105,7 @@ def test_exif_lla_crs(
 
 
 def test_odm_dataset_dir(
-    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: list[Path], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm`` creates orthos in ``<--dataset-dir>/orthority`` sub-folder."""
     shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
@@ -1069,7 +1118,7 @@ def test_odm_dataset_dir(
 
 
 def test_odm_out_dir(
-    odm_dataset_dir: Path, odm_image_files: tuple[Path, ...], tmp_path: Path, runner: CliRunner
+    odm_dataset_dir: Path, odm_image_files: list[Path], tmp_path: Path, runner: CliRunner
 ):
     """Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder."""
     cli_str = f'odm --dataset-dir {odm_dataset_dir} --res 5 --out-dir {tmp_path}'
@@ -1193,7 +1242,7 @@ def test_rpc_param_file_invalid_error(
     assert result.exit_code != 0, result.stdout
     assert (
         '--rpc-param' in result.stdout
-        and 'valid' in result.stdout
+        and 'Could not parse' in result.stdout
         and ngi_oty_int_param_file.name in result.stdout
     )
 
@@ -1266,6 +1315,374 @@ def test_rpc_option(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
 
     with rio.open(ortho_files[0], 'r') as im:
         assert im.res == (res, res)
+
+
+def test_rpc_gcp_refine(
+    rpc_image_file: Path, ngi_dem_file: Path, gcp_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` with the ``--gcp-refine`` option by comparing orthos with and without
+    refinement.
+    """
+    # create source image with no GCPs (and same name as rpc_image_file)
+    no_gcp_file = tmp_path.joinpath(rpc_image_file.name)
+    with rio.open(rpc_image_file, 'r') as gcp_im:
+        profile = gcp_im.profile
+        profile.update(rpcs=gcp_im.rpcs)
+        profile.pop('gcps', None)  # make sure no GCPs
+        with rio.open(no_gcp_file, 'w', **profile) as no_gcp_im:
+            no_gcp_im.write(gcp_im.read())
+
+    ortho_bounds = []
+    for i, (gcp_refine_str, src_file) in enumerate(
+        zip(
+            ['', '--gcp-refine tags', f'--gcp-refine {gcp_file}'],
+            [rpc_image_file, rpc_image_file, no_gcp_file],
+        )
+    ):
+        # create ortho
+        out_dir = tmp_path.joinpath(str(i))
+        out_dir.mkdir()
+        cli_str = f"rpc --dem {ngi_dem_file} {gcp_refine_str} --out-dir {out_dir} -o {src_file}"
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
+
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
+
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=1e-4)
+    assert ortho_bounds[2] != pytest.approx(ortho_bounds[0], abs=1e-4)
+
+
+def test_rpc_gcp_refine_file_invalid_error(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    odm_reconstruction_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--gcp-refine`` raises an error with an invalid GCP file."""
+    cli_str = (
+        f'rpc --dem {ngi_dem_file} --gcp-refine {odm_reconstruction_file} --out-dir {tmp_path}'
+        f' {rpc_image_file}'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--gcp-refine' in result.stdout
+        and 'Could not parse' in result.stdout
+        and odm_reconstruction_file.name in result.stdout
+    )
+
+
+def test_rpc_gcp_refine_file_not_found_error(
+    rpc_image_file: Path,
+    ngi_dem_file: Path,
+    tmp_path: Path,
+    runner: CliRunner,
+):
+    """Test ``oty rpc`` with ``--gcp-refine`` raises an error with a non-existent GCP file."""
+    cli_str = f'rpc --dem {ngi_dem_file} --gcp-refine unknown --out-dir {tmp_path} {rpc_image_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--gcp-refine' in result.stdout
+        and 'No such file' in result.stdout
+        and 'unknown' in result.stdout
+    )
+
+
+def test_rpc_refine_method(
+    rpc_image_file: Path, ngi_dem_file: Path, gcp_file: Path, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty rpc`` with the ``--refine-method`` option by comparing orthos refined with
+    different methods.
+    """
+    ortho_bounds = []
+    for refine_method in ['shift', 'shift-drift']:
+        # create ortho
+        out_dir = tmp_path.joinpath(refine_method)
+        out_dir.mkdir()
+        cli_str = (
+            f"rpc --dem {ngi_dem_file} --gcp-refine tags --refine-method {refine_method} "
+            f"--out-dir {out_dir} -o {rpc_image_file}"
+        )
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        ortho_files = [*out_dir.glob('*_ORTHO.tif')]
+        assert len(ortho_files) == 1
+
+        # read ortho bounds
+        with rio.open(ortho_files[0], 'r') as im:
+            ortho_bounds.append(im.bounds)
+
+    # compare ortho bounds
+    assert ortho_bounds[1] != pytest.approx(ortho_bounds[0], abs=1e-6)
+
+
+def test_sharpen(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` generates an output image."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+    with rio.open(out_file, 'r'):
+        pass
+
+
+def test_sharpen_pan_missing_error(ms_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` without --pan raises an error."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = f'sharpen --multispectral {ms_file} --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--pan' in result.stdout and 'missing' in result.stdout.lower()
+
+
+def test_sharpen_pan_not_found_error(ms_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error with a non-existent --pan file."""
+    pan_file = 'unknown.tif'
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file} --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--pan' in result.stdout and 'No such file' in result.stdout and pan_file in result.stdout
+    )
+
+
+def test_sharpen_ms_missing_error(pan_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` without --multispectral raises an error."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = f'sharpen --pan {pan_file} --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--multispectral' in result.stdout and 'missing' in result.stdout.lower()
+
+
+def test_sharpen_ms_not_found_error(pan_file: Path, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error with a non-existent --multispectral file."""
+    ms_file = 'unknown.tif'
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file} --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert (
+        '--multispectral' in result.stdout
+        and 'No such file' in result.stdout
+        and ms_file in result.stdout
+    )
+
+
+def test_sharpen_out_file_missing_error(pan_file: Path, ms_file: Path, runner: CliRunner):
+    """Test ``oty sharpen`` without --out-file raises an error."""
+    cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--out-file' in result.stdout and 'missing' in result.stdout.lower()
+
+
+def test_sharpen_pan_index_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error when --pan-index is out of range."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --pan-index 2'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--pan-index' in result.stdout and 'out of range' in result.stdout
+
+
+def test_sharpen_ms_index(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --ms-index defines MS bands for pan-sharpening."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --ms-index 1 --ms-index 2'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.count == 2
+
+
+def test_sharpen_ms_index_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error when --ms-index is out of range."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --ms-index 1 --ms-index 0'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--ms-index' in result.stdout and 'out of range' in result.stdout
+
+
+def test_sharpen_weight(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --weight sets MS to pan weights by comparing output images sharpened
+    with different weights.
+    """
+    out_filenames = ['pan_sharp1.tif', 'pan_sharp2.tif']
+    weight_strs = [
+        '--ms-index 1 --ms-index 2 --weight 1 --weight 1',
+        '--ms-index 1 --ms-index 2 --weight 1 --weight 2',
+    ]
+    out_arrays = []
+    for out_filename, weight_str in zip(out_filenames, weight_strs):
+        out_file = tmp_path.joinpath(out_filename)
+        cli_str = sharpen_cli_str + f' --out-file {out_file} {weight_str}'
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        assert out_file.exists()
+
+        with rio.open(out_file, 'r') as im:
+            out_arrays.append(im.read())
+
+    assert np.any(out_arrays[0] != out_arrays[1])
+
+
+def test_sharpen_weight_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error when the --weight's are invalid."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight 1'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'weights' in result.stdout and 'same number' in result.stdout
+
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight -1'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'Weight values' in result.stdout
+
+
+def test_sharpen_interp(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --interp by comparing output files sharpened with ``nearest`` and
+    ``bilinear`` interpolation.
+    """
+    out_arrays = []
+    for interp in ['bilinear', 'nearest']:
+        out_file = tmp_path.joinpath(f'{interp}.tif')
+        cli_str = sharpen_cli_str + f' --out-file {out_file} --interp {interp}'
+        result = runner.invoke(cli, cli_str.split())
+        assert result.exit_code == 0, result.stdout
+        assert out_file.exists()
+
+        with rio.open(out_file, 'r') as im:
+            out_arrays.append(im.read())
+
+    assert np.any(out_arrays[0] != out_arrays[1])
+
+
+def test_sharpen_interp_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --interp raises an error with an invalid interpolation value."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --interp other'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--interp' in result.stdout and 'invalid' in result.stdout.lower()
+
+
+def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --write-mask writes an internal mask to the pan sharpened file with
+    deflate compression.
+    """
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --write-mask'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.profile['compress'] == 'deflate'
+        assert all([mf[0] == rio.enums.MaskFlags.per_dataset for mf in out_im.mask_flag_enums])
+
+
+def test_sharpen_dtype(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --dtype creates a pan sharpened file with the correct dtype."""
+    dtype = 'float32'
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --dtype {dtype}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.profile['dtype'] == dtype
+
+
+def test_sharpen_dtype_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --dtype with an invalid dtype raises an error."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --dtype int32'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
+
+
+@pytest.mark.parametrize('compress', ['jpeg', 'deflate'])
+def test_sharpen_compress(sharpen_cli_str: str, compress: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --compress creates a pan sharpened file with the correct compression."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --compress {compress}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.profile['compress'] == compress
+
+
+def test_sharpen_compress_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --compress with an invalid compression raises an error."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --compress other'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--compress' in result.stdout and 'invalid' in result.stdout.lower()
+
+
+def test_sharpen_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --build-ovw builds overviews."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --build-ovw'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert len(out_im.overviews(1)) > 0
+
+
+def test_sharpen_no_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --no-build-ovw does not build overviews."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --no-build-ovw'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert len(out_im.overviews(1)) == 0
+
+
+def test_sharpen_overwrite(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --overwrite overwrites an existing pan sharpened file."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    out_file.touch()
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --overwrite'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r'):
+        pass
+
+
+def test_sharpen_overwrite_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` raises an error when the pan sharpened file already exists."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    out_file.touch()
+    cli_str = sharpen_cli_str + f' --out-file {out_file}'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert 'exists' in result.stdout and out_file.name in result.stdout
 
 
 def test_simple_ortho(

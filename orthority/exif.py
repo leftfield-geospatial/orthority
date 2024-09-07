@@ -26,7 +26,7 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 
-from orthority import utils
+from orthority import common
 from orthority.errors import OrthorityWarning
 
 logger = logging.getLogger(__name__)
@@ -109,8 +109,8 @@ class Exif:
     """
 
     def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):
-        self._filename = utils.get_filename(file)
-        with utils.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), utils.OpenRaster(
+        self._filename = common.get_filename(file)
+        with common.suppress_no_georef(), rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(
             file, 'r'
         ) as ds:
             # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset
@@ -216,7 +216,7 @@ class Exif:
         return self._rpy
 
     @property
-    def dewarp(self) -> Sequence[float] | None:
+    def dewarp(self) -> list[float] | None:
         """Dewarp parameters."""
         return self._dewarp
 
@@ -350,12 +350,12 @@ class Exif:
         return None
 
     @staticmethod
-    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> Sequence[float] | None:
+    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> list[float] | None:
         """Return the camera dewarp parameters if they exist."""
         for schema_name, xmp_schema in _xmp_schemas.items():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
             if dewarp_str:
-                return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
+                return [float(ps) for ps in dewarp_str.split(';')[-1].split(',')]
         return None
 
     def to_dict(self) -> dict[str, object]:

@@ -24,13 +24,14 @@ import cv2
 import numpy as np
 import pytest
 import rasterio as rio
+from rasterio.transform import GroundControlPoint
 from rasterio.warp import transform
 
 from orthority import param_io
 from orthority.camera import FrameCamera
 from orthority.enums import CameraType, CsvFormat, Interp
 from orthority.errors import CrsError, CrsMissingError, ParamError
-from tests.conftest import oty_to_osfm_int_param
+from tests.conftest import oty_to_osfm_int_param, create_profile
 
 
 def _validate_int_param_dict(int_param_dict: dict):
@@ -92,7 +93,11 @@ def test_read_oty_int_param_missing_error(
     param_io.write_int_param(filename, dict(default=int_params))
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert missing_key in str(ex.value)
+    assert (
+        'Could not parse' in str(ex.value)
+        and missing_key in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -105,7 +110,11 @@ def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path
     param_io.write_int_param(filename, dict(default=int_params))
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert 'other' in str(ex.value)
+    assert (
+        'Could not parse' in str(ex.value)
+        and 'other' in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -118,7 +127,11 @@ def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_pat
     param_io.write_int_param(filename, dict(default=int_params))
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert 'camera type' in str(ex.value)
+    assert (
+        'Could not parse' in str(ex.value)
+        and 'camera type' in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 @pytest.mark.parametrize('filename', ['osfm_int_param_file', 'odm_int_param_file'])
@@ -146,39 +159,63 @@ def test_read_osfm_int_param(
 def test_read_osfm_int_param_missing_error(
     pinhole_int_param_dict: dict, missing_key: str, tmp_path: Path
 ):
-    """Test reading orthority format interior parameters raises an error when required keys are
+    """Test reading ODM / OpenSfM format interior parameters raises an error when required keys are
     missing.
     """
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params.pop(missing_key)
+    filename = tmp_path.joinpath('int_param.json')
+    with filename.open('wt') as f:
+        json.dump(osfm_dict, f)
+
     with pytest.raises(ParamError) as ex:
-        _ = param_io._read_osfm_int_param(osfm_dict)
-    assert missing_key in str(ex.value)
+        _ = param_io.read_osfm_int_param(filename)
+    assert (
+        'Could not parse' in str(ex.value)
+        and missing_key in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
-    """Test reading orthority format interior parameters raises an error when unknown keys are
+    """Test reading ODM / OpenSfM format interior parameters raises an error when unknown keys are
     present.
     """
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['other'] = 0.0
+    filename = tmp_path.joinpath('int_param.json')
+    with filename.open('wt') as f:
+        json.dump(osfm_dict, f)
+
     with pytest.raises(ParamError) as ex:
-        _ = param_io._read_osfm_int_param(osfm_dict)
-    assert 'other' in str(ex.value)
+        _ = param_io.read_osfm_int_param(filename)
+    assert (
+        'Could not parse' in str(ex.value)
+        and 'other' in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
-    """Test reading orthority format interior parameters raises an error when the projection type is
+    """Test reading ODM / OpenSfM format interior parameters raises an error when the projection type is
     unsupported.
     """
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
     int_params['projection_type'] = 'other'
+    filename = tmp_path.joinpath('int_param.json')
+    with filename.open('wt') as f:
+        json.dump(osfm_dict, f)
+
     with pytest.raises(ParamError) as ex:
-        _ = param_io._read_osfm_int_param(osfm_dict)
-    assert 'projection type' in str(ex.value)
+        _ = param_io.read_osfm_int_param(filename)
+    assert (
+        'Could not parse' in str(ex.value)
+        and 'projection type' in str(ex.value)
+        and filename.name in str(ex.value)
+    )
 
 
 def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_file: Path):
@@ -235,7 +272,7 @@ def test_read_exif_int_param_error(ngi_image_file: Path):
     """Test reading EXIF tag interior parameters from a non EXIF image raises an error."""
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_exif_int_param(ngi_image_file)
-    assert 'focal length' in str(ex.value)
+    assert 'focal length' in str(ex.value) and ngi_image_file.name in str(ex.value)
 
 
 def test_aa_to_opk(xyz: tuple, opk: tuple):
@@ -340,9 +377,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
         assert C_En.T.dot(R_opk).dot(C_bB.T) == pytest.approx(C_nb, abs=1e-6)
 
 
-def test_csv_reader_legacy(
-    ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: tuple[Path, ...]
-):
+def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from a legacy format CSV file."""
     reader = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs)
     assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
@@ -355,9 +390,7 @@ def test_csv_reader_legacy(
     _validate_ext_param_dict(ext_param_dict, cameras=[None])
 
 
-def test_csv_reader_xyz_opk(
-    ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: tuple[Path, ...]
-):
+def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from an XYZ-OPK format CSV file with a header."""
     reader = param_io.CsvReader(ngi_xyz_opk_csv_file, crs=ngi_crs)
     assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
@@ -402,7 +435,7 @@ def test_csv_reader_xyz_opk_radians(
 def test_csv_reader_lla_rpy(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_reconstruction_file: Path,
 ):
     """Test reading exterior parameters from an LLA-RPY format CSV file with a header."""
@@ -480,7 +513,7 @@ def test_csv_reader_crs_missing_error(ngi_legacy_csv_file: Path, fieldnames: lis
     """
     with pytest.raises(CrsMissingError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert 'crs' in str(ex.value).lower()
+    assert 'crs' in str(ex.value).lower() and ngi_legacy_csv_file.name in str(ex.value)
 
 
 def test_csv_reader_crs_error(ngi_legacy_csv_file: Path):
@@ -551,7 +584,7 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
     fieldnames.remove(missing_field)
     with pytest.raises(ParamError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
-    assert missing_field in str(ex.value)
+    assert missing_field in str(ex.value) and ngi_legacy_csv_file.name in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -619,7 +652,7 @@ def test_csv_reader_format(
 def test_csv_reader_dialect(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_reconstruction_file: Path,
     dialect: dict,
     tmp_path: Path,
@@ -674,10 +707,10 @@ def test_osfm_reader_validity_error(ngi_oty_ext_param_file: Path):
     """Test OsfmReader raises an error with an invalid file format."""
     with pytest.raises(ParamError) as ex:
         _ = param_io.OsfmReader(ngi_oty_ext_param_file, crs=None)
-    assert 'valid' in str(ex.value)
+    assert 'Could not parse' in str(ex.value) and ngi_oty_ext_param_file.name in str(ex.value)
 
 
-def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
+def test_exif_reader(odm_image_files: list[Path], odm_crs: str):
     """Test ExifReader reads interior and exterior parameters successfully."""
     reader = param_io.ExifReader(odm_image_files, crs=odm_crs)
     assert reader.crs == rio.CRS.from_string(odm_crs)
@@ -692,9 +725,7 @@ def test_exif_reader(odm_image_files: tuple[Path, ...], odm_crs: str):
     assert ext_cam_ids.issubset(int_cam_ids)
 
 
-def test_exif_reader_ext_values(
-    odm_image_files: tuple[Path, ...], odm_crs: str, odm_reconstruction_file
-):
+def test_exif_reader_ext_values(odm_image_files: list[Path], odm_crs: str, odm_reconstruction_file):
     """Test exterior parameter values from ExifReader against those from OsfmReader."""
     ref_reader = param_io.OsfmReader(odm_reconstruction_file, crs=odm_crs)
     ref_ext_param_dict = ref_reader.read_ext_param()
@@ -707,15 +738,13 @@ def test_exif_reader_ext_values(
         assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=0.1)
 
 
-def test_exif_reader_auto_crs(odm_image_files: tuple[Path, ...], odm_crs: str):
+def test_exif_reader_auto_crs(odm_image_files: list[Path], odm_crs: str):
     """Test ExifReader auto determines a UTM CRS correctly."""
     reader = param_io.ExifReader(odm_image_files, crs=None)
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
 
-def test_exif_reader_lla_crs(
-    odm_image_files: tuple[Path, ...], odm_crs: str, wgs84_egm2008_crs: str
-):
+def test_exif_reader_lla_crs(odm_image_files: list[Path], odm_crs: str, wgs84_egm2008_crs: str):
     """Test ExifReader exterior parameters are affected by lla_crs as expected."""
     ref_reader = param_io.ExifReader(odm_image_files, crs=odm_crs)
     test_reader = param_io.ExifReader(
@@ -741,7 +770,7 @@ def test_exif_reader_empty():
     assert reader.read_ext_param() == {}
 
 
-def test_exif_reader_progress(odm_image_files: tuple[Path, ...], capsys: pytest.CaptureFixture):
+def test_exif_reader_progress(odm_image_files: list[Path], capsys: pytest.CaptureFixture):
     """Test ExifReader progress bar display."""
     # default bar
     param_io.ExifReader(odm_image_files, progress=True)
@@ -776,7 +805,7 @@ def test_oty_reader_validity_error(odm_reconstruction_file: Path):
     """Test OtyReader raises an error with an invalid file format."""
     with pytest.raises(ParamError) as ex:
         _ = param_io.OtyReader(odm_reconstruction_file)
-    assert 'valid' in str(ex.value)
+    assert 'Could not parse' in str(ex.value) and odm_reconstruction_file.name in str(ex.value)
 
 
 def test_oty_reader_crs(ngi_oty_ext_param_file: Path, ngi_crs: str):
@@ -798,25 +827,18 @@ def test_read_oty_rpc_param_error(ngi_oty_int_param_file: Path):
     """Test reading RPC parameters raises an error with an invalid parameter file."""
     with pytest.raises(ParamError) as ex:
         param_io.read_oty_rpc_param(ngi_oty_int_param_file)
-    assert ngi_oty_int_param_file.name in str(ex.value) and 'valid' in str(ex.value)
+    assert 'Could not parse' in str(ex.value) and ngi_oty_int_param_file.name in str(ex.value)
 
 
 def test_read_im_rpc_param(rpc: dict, tmp_path: Path):
     """Test reading RPC parameters from GeoTIFFs."""
-    # create image files with known RPCs, and corresponding parameter dictionary
+    # create image files with known RPCs, and corresponding RPC parameter dictionary
     im_size = (1, 1)
     im_files = (tmp_path.joinpath('rpc1.tif'), tmp_path.joinpath('rpc2.tif'))
     rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc)
-    profile = dict(
-        driver='GTiff',
-        width=im_size[0],
-        height=im_size[1],
-        count=1,
-        dtype='uint8',
-        # NB: there is a rio/gdal bug if RPCs are passed as a dict to rio.open()
-        rpcs=rio.transform.RPC(**rpc),
-    )
     array = np.zeros((1, *im_size[::-1]), dtype='uint8')
+    # NB: there is a rio/gdal bug if RPCs are passed as a dict to rio.open()
+    profile = create_profile(array, rpcs=rio.transform.RPC(**rpc))
     ref_rpc_param_dict = {}
     for im_file in im_files:
         ref_rpc_param_dict[im_file.name] = rpc_param
@@ -840,7 +862,7 @@ def test_read_im_rpc_param_error(ngi_image_file: Path):
     """Test reading RPC parameters from a GeoTIFF without RPC coefficients raises an error."""
     with pytest.raises(ParamError) as ex:
         param_io.read_im_rpc_param((ngi_image_file,))
-    assert ngi_image_file.name in str(ex.value) and 'No RPC parameters' in str(ex.value)
+    assert 'No RPC parameters' in str(ex.value) and ngi_image_file.name in str(ex.value)
 
 
 def test_read_im_rpc_param_progress(rpc_image_file: Path, capsys: pytest.CaptureFixture):
@@ -859,5 +881,106 @@ def test_read_im_rpc_param_progress(rpc_image_file: Path, capsys: pytest.Capture
     # custom bar
     desc = 'custom'
     param_io.read_im_rpc_param(files, progress=dict(desc=desc))
+    cap = capsys.readouterr()
+    assert desc in cap.err
+
+
+def test_rw_oty_gcps(im_size: tuple[int, int], xyz: tuple[float, float, float], tmp_path: Path):
+    """Test writing and reading GCPs to/from an Orthority GCP file."""
+    gcp = dict(ji=im_size, xyz=xyz, id='id', info='info')
+    gcp_dict = dict(file1=[gcp, gcp], file2=[gcp])
+    gcp_file = tmp_path.joinpath('gcps.geojson')
+    param_io.write_gcps(gcp_file, gcp_dict)
+    assert param_io.read_oty_gcps(gcp_file) == gcp_dict
+
+
+def test_read_oty_gcps_error(ngi_oty_ext_param_file: Path):
+    """Test reading GCPs raises an error with an invalid parameter file."""
+    with pytest.raises(ParamError) as ex:
+        param_io.read_oty_gcps(ngi_oty_ext_param_file)
+    assert 'Could not parse' in str(ex.value) and ngi_oty_ext_param_file.name
+
+
+def test_read_im_gcps(tmp_path: Path):
+    """Test reading GCPs from GeoTIFFs."""
+    # create image files with GCPs and corresponding GCP dictionary (id and info items are
+    # omitted as rasterio doesn't write # these)
+    im_size = (1, 1)
+    im_files = (tmp_path.joinpath('gcp1.tif'), tmp_path.joinpath('gcp2.tif'))
+    gcps = [
+        dict(ji=(1.0, 2.0), xyz=(10.0, 20.0, 1000.0)),
+        dict(ji=(1.11, 2.22), xyz=(11.1, 22.2, 1111.1)),
+    ]
+    # convert oty GCPs to rasterio format
+    rio_gcps = [GroundControlPoint(*gcp['ji'][::-1], *gcp['xyz']) for gcp in gcps]
+    array = np.zeros((1, *im_size[::-1]), dtype='uint8')
+    profile = create_profile(array, crs='EPSG:4979', gcps=rio_gcps)
+    ref_gcp_dict = {}
+    for im_file in im_files:
+        ref_gcp_dict[im_file.name] = gcps
+        with rio.open(im_file, 'w', **profile) as im:
+            im.write(array)
+
+    # read image file GCPs and compare (ignoring id and info items)
+    def compare_objs(ref_obj, test_obj):
+        if isinstance(ref_obj, dict):
+            for k, v in ref_obj.items():
+                assert k in test_obj, k
+                compare_objs(v, test_obj[k])
+        elif isinstance(ref_obj, list):
+            assert len(ref_obj) == len(test_obj)
+            for i in range(len(ref_obj)):
+                compare_objs(ref_obj[i], test_obj[i])
+        else:
+            assert ref_obj == pytest.approx(test_obj, rel=1e-6), (ref_obj, test_obj)
+
+    test_gcp_dict = param_io.read_im_gcps(im_files)
+    compare_objs(ref_gcp_dict, test_gcp_dict)
+
+
+def test_read_im_gcp_crs(xyz: tuple[float, float, float], utm34n_egm2008_crs: str, tmp_path: Path):
+    """Test reading GCPs from GeoTIFF transforms the GCP CRS to EPSG:4979."""
+    # create an image file with a GCP in non EPSG:4979 CRS
+    im_size = (1, 1)
+    im_file = tmp_path.joinpath('gcp.tif')
+    gcps = [dict(ji=(1.0, 2.0), xyz=xyz)]
+    # convert oty GCPs to rasterio format
+    rio_gcps = [GroundControlPoint(*gcp['ji'][::-1], *gcp['xyz']) for gcp in gcps]
+    array = np.zeros((1, *im_size[::-1]), dtype='uint8')
+    profile = create_profile(array, crs=utm34n_egm2008_crs, gcps=rio_gcps)
+    with rio.open(im_file, 'w', **profile) as im:
+        im.write(array)
+
+    # test GCP coordinate transform
+    test_gcp_dict = param_io.read_im_gcps([im_file])
+    ref_xyz = transform(utm34n_egm2008_crs, 'EPSG:4979', *[[coord] for coord in xyz])
+    ref_xyz = tuple([coord[0] for coord in ref_xyz])
+    test_xyz = test_gcp_dict[im_file.name][0]['xyz']
+    assert test_xyz == pytest.approx(ref_xyz, abs=1e-6)
+
+
+def test_read_im_gcps_error(ngi_image_file: Path):
+    """Test reading GCPs from a GeoTIFF without GCPs raises an error."""
+    with pytest.raises(ParamError) as ex:
+        param_io.read_im_gcps((ngi_image_file,))
+    assert 'No GCPs' in str(ex.value) and ngi_image_file.name in str(ex.value)
+
+
+def test_read_im_gcps_progress(rpc_image_file: Path, capsys: pytest.CaptureFixture):
+    """Test the progress bar display when reading GCPs from GeoTIFFs."""
+    files = (rpc_image_file,)
+    # default bar
+    param_io.read_im_gcps(files, progress=True)
+    cap = capsys.readouterr()
+    assert 'files' in cap.err and '100%' in cap.err
+
+    # no bar
+    param_io.read_im_gcps(files, progress=False)
+    cap = capsys.readouterr()
+    assert 'files' not in cap.err and '100%' not in cap.err
+
+    # custom bar
+    desc = 'custom'
+    param_io.read_im_gcps(files, progress=dict(desc=desc))
     cap = capsys.readouterr()
     assert desc in cap.err

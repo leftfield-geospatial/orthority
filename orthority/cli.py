@@ -18,10 +18,9 @@ import argparse
 import csv
 import logging
 import re
-import shutil
 import warnings
+from functools import partial
 from pathlib import Path
-from typing import Sequence
 from urllib.parse import urlparse
 
 import click
@@ -31,20 +30,22 @@ import rasterio as rio
 import yaml
 from fsspec.core import OpenFile
 from tqdm.contrib.logging import logging_redirect_tqdm
-from tqdm.std import tqdm
+from tqdm.auto import tqdm
 
-from orthority import root_path, utils
+from orthority import root_path, common
 from orthority.camera import create_camera, FrameCamera
-from orthority.enums import CameraType, Compress, Interp
-from orthority.errors import CrsError, CrsMissingError, ParamError
+from orthority.enums import CameraType, Compress, Interp, RpcRefine
+from orthority.errors import CrsError, CrsMissingError, OrthorityError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
+from orthority.fit import _default_rpc_refine_method
 from orthority.ortho import Ortho
+from orthority.pan_sharp import PanSharpen
 from orthority.version import __version__
 
 logger = logging.getLogger(__name__)
 
 # TODO: use universal_pathlib if/when it matures for all filename options instead of OpenFile,
-#  and the utils.get_filename and utils.join_ofile work arounds.
+#  and the common.get_filename and common.join_ofile work arounds.
 
 
 class RstCommand(click.Command):
@@ -141,12 +142,12 @@ def _read_crs(crs: str):
     crs_path = Path(crs)
     if crs_path.suffix.lower() in ['.tif', '.tiff']:
         # read CRS from geotiff path / URL
-        with utils.suppress_no_georef(), utils.OpenRaster(crs, 'r') as im:
+        with common.suppress_no_georef(), common.OpenRaster(crs, 'r') as im:
             crs = im.crs
     else:
         if crs_path.exists() or urlparse(crs).scheme in fsspec.available_protocols():
             # read string from text file path / valid URI
-            with utils.Open(crs, 'rt') as f:
+            with common.Open(crs, 'rt') as f:
                 crs = f.read()
         # read CRS from string
         crs = rio.CRS.from_string(crs)
@@ -164,15 +165,15 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
 
 
 def _src_files_cb(
-    ctx: click.Context, param: click.Parameter, src_files: Sequence[str]
-) -> Sequence[OpenFile]:
+    ctx: click.Context, param: click.Parameter, src_files: list[str]
+) -> list[OpenFile]:
     """Click callback to form a list of source image OpenFile instances. ``src_files`` can be a
     list of file paths / URIs, or a list of path / URI glob patterns.
     """
     if not src_files or len(src_files) == 0:
-        return ()
+        return []
     try:
-        src_files = fsspec.open_files(list(src_files), 'rb')
+        src_files = fsspec.open_files(src_files, 'rb')
     except Exception as ex:
         raise click.BadParameter(str(ex), param=param)
     if len(src_files) == 0:
@@ -180,23 +181,14 @@ def _src_files_cb(
     return src_files
 
 
-def _raster_file_cb(ctx: click.Context, param: click.Parameter, path_uri: str) -> OpenFile:
-    """Click callback to convert a file path / URI to an OpenFile instance in binary read mode."""
+def _file_cb(
+    ctx: click.Context, param: click.Parameter, path_uri: str, mode: str = 'rb'
+) -> OpenFile:
+    """Click callback to convert a file path / URI to an OpenFile instance."""
     ofile = None
     if path_uri:
         try:
-            ofile = fsspec.open(path_uri, 'rb')
-        except Exception as ex:
-            raise click.BadParameter(str(ex), param=param)
-    return ofile
-
-
-def _text_file_cb(ctx: click.Context, param: click.Parameter, path_uri: str) -> OpenFile:
-    """Click callback to convert a file path / URI to an OpenFile instance in text read mode."""
-    ofile = None
-    if path_uri:
-        try:
-            ofile = fsspec.open(path_uri, 'rt')
+            ofile = fsspec.open(path_uri, mode)
         except Exception as ex:
             raise click.BadParameter(str(ex), param=param)
     return ofile
@@ -243,7 +235,7 @@ def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFi
 def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) -> OpenFile:
     """Click callback to create the default, or validate a user-supplied, ODM output directory."""
     if not out_dir:
-        ofile = utils.join_ofile(ctx.params['dataset_dir'], 'orthority')
+        ofile = common.join_ofile(ctx.params['dataset_dir'], 'orthority')
         try:
             # Note this does not raise an exception for (read-only) html protocol.  Not ideal, but
             # this code won't be reached for html as _dir_cb does raise an exception for
@@ -256,22 +248,27 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
     return ofile
 
 
-def _get_bar_format(units: str = 'files', desc_width: int = 0, units_width: int = None) -> str:
-    """Return a ``tqdm`` ``bar_format`` for the given arguments."""
-    # pad or truncate desc to desc_width
-    lbar = f"{{desc:<{desc_width}.{desc_width}}}:" + "{percentage:3.0f}%|"
-    rbar = '|{n_fmt}/{total_fmt} ' + units + ' [{elapsed}<{remaining}]'
-    # find a bar width that gives enough space for rhs stats with 3 digit n_fmt / total_fmt and
-    # elapsed / remaining as hh:mm:ss
-    if not units_width:
-        units_width = len(units)
-    bar_width = max(shutil.get_terminal_size()[0] - (desc_width + 6 + (10 + units_width + 20)), 10)
-    bar = f"{{bar:{bar_width}}}"
-    return lbar + bar + rbar
+def _gcp_refine_cb(
+    ctx: click.Context, param: click.Parameter, path_uri: str | bool
+) -> OpenFile | bool:
+    """Click callback to parse the ``--gcp-refine`` option."""
+    return (
+        _file_cb(ctx, param, path_uri, mode='rt') if str(path_uri).lower() != 'tags' else path_uri
+    )
+
+
+def _weights_cb(ctx: click.Context, param: click.Parameter, weights: list[float]):
+    """Click callback to validate the ``--weight`` option."""
+    if weights is not None:
+        if np.any(np.array(weights) < 0):
+            raise click.BadParameter(
+                'Weight values should greater than or equal to 0.', param=param
+            )
+    return weights
 
 
 def _ortho(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     dem_file: OpenFile,
     cameras: Cameras,
     crs: rio.CRS,
@@ -301,43 +298,32 @@ def _ortho(
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
 
-    # set up progress bar formats
-    src_name_lens = [len(Path(src_file.path).name) for src_file in src_files]
-    desc_width = min(max(src_name_lens), 40)
-    # units_width = max(len('files'), len('blocks'))
-    outer_bar_format = _get_bar_format(units='files', desc_width=desc_width, units_width=6)
-    inner_bar_format = _get_bar_format(units='blocks', desc_width=desc_width, units_width=6)
-
     # open & validate dem_file (open it once here so it is not opened repeatedly in
     # orthorectification below)
     try:
-        dem_ctx = utils.OpenRaster(dem_file, 'r')
+        dem_ctx = common.OpenRaster(dem_file, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(str(ex), param_hint="'-d' / '--dem'")
 
     with dem_ctx as dem_im:
         # validate dem_band
         if dem_band <= 0 or dem_band > dem_im.count:
-            dem_name = utils.get_filename(dem_im)
+            dem_name = common.get_filename(dem_im)
             raise click.BadParameter(
                 f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s).",
                 param_hint="'-db' / '--dem-band'",
             )
 
-        for src_file in tqdm(src_files, desc='Total', bar_format=outer_bar_format):
-            # set up progress bar args for the current src_file
-            src_file_path = Path(src_file.path)
-            tqdm_kwargs = dict(desc=src_file_path.name, leave=False, bar_format=inner_bar_format)
-
+        for src_file in tqdm(src_files, **common.get_tqdm_kwargs(desc='Total', unit='files')):
             # create camera for src_file
             try:
                 camera = cameras.get(src_file)
-            except ParamError as ex:
+            except OrthorityError as ex:
                 raise click.UsageError(str(ex))
 
             # open & validate src_file (open it once here so it is not opened repeatedly)
             try:
-                src_ctx = utils.OpenRaster(src_file, 'r')
+                src_ctx = common.OpenRaster(src_file, 'r')
             except FileNotFoundError as ex:
                 raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
@@ -348,13 +334,17 @@ def _ortho(
                     raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
 
                 # orthorectify
-                ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
-                ortho_ofile = utils.join_ofile(
+                src_file_path = Path(src_file.path)
+                tqdm_kwargs = common.get_tqdm_kwargs(
+                    desc=src_file_path.name, unit='blocks', leave=False
+                )
+                ortho_ofile = common.join_ofile(
                     out_dir, f'{src_file_path.stem}_ORTHO.tif', mode='wb'
                 )
                 try:
+                    ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
                     ortho.process(ortho_ofile, overwrite=overwrite, progress=tqdm_kwargs, **kwargs)
-                except FileExistsError as ex:
+                except (FileExistsError, OrthorityError) as ex:
                     raise click.UsageError(str(ex))
 
 
@@ -372,7 +362,7 @@ dem_file_option = click.option(
     'dem_file',
     type=click.Path(dir_okay=False),
     default=None,
-    callback=_raster_file_cb,
+    callback=partial(_file_cb, mode='rb'),
     help='Path / URI of a DEM file covering the source image(s).',
 )
 int_param_file_option = click.option(
@@ -382,7 +372,7 @@ int_param_file_option = click.option(
     type=click.Path(dir_okay=False),
     required=True,
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an interior parameter file.',
 )
 ext_param_file_option = click.option(
@@ -392,7 +382,7 @@ ext_param_file_option = click.option(
     type=click.Path(dir_okay=False),
     required=True,
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an exterior parameter file.',
 )
 crs_option = click.option(
@@ -440,7 +430,7 @@ dem_band_option = click.option(
     '--dem-band',
     type=click.INT,
     nargs=1,
-    default=Ortho._default_config['dem_band'],
+    default=Ortho._default_alg_config['dem_band'],
     show_default=True,
     help='Index of the DEM band to use (1 based).',
 )
@@ -448,7 +438,7 @@ interp_option = click.option(
     '-i',
     '--interp',
     type=click.Choice(Interp, case_sensitive=False),
-    default=Ortho._default_config['interp'],
+    default=Ortho._default_alg_config['interp'],
     show_default=True,
     help=f'Interpolation method for remapping source to ortho image.',
 )
@@ -456,7 +446,7 @@ dem_interp_option = click.option(
     '-di',
     '--dem-interp',
     type=click.Choice(Interp, case_sensitive=False),
-    default=Ortho._default_config['dem_interp'],
+    default=Ortho._default_alg_config['dem_interp'],
     show_default=True,
     help=f'Interpolation method for DEM reprojection.',
 )
@@ -464,7 +454,7 @@ per_band_option = click.option(
     '-pb/-npb',
     '--per-band/--no-per-band',
     type=click.BOOL,
-    default=Ortho._default_config['per_band'],
+    default=Ortho._default_alg_config['per_band'],
     show_default=True,
     help='Orthorectify band-by-band (``--per-band``) or all bands at once (``--no-per-band``). '
     '``--no-per-band`` is faster but uses more memory.',
@@ -494,7 +484,7 @@ write_mask_option = click.option(
     '-wm/-nwm',
     '--write-mask/--no-write-mask',
     type=click.BOOL,
-    default=Ortho._default_config['write_mask'],
+    default=common._default_out_config['write_mask'],
     show_default='true for jpeg compression.',
     help='Mask valid pixels with an internal mask (``--write-mask``), or with a nodata value '
     'based on ``--dtype`` (``--no-write-mask``). An internal mask helps remove nodata noise '
@@ -503,16 +493,16 @@ write_mask_option = click.option(
 dtype_option = click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(list(Ortho._nodata_vals.keys()), case_sensitive=False),
-    default=Ortho._default_config['dtype'],
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    default=common._default_out_config['dtype'],
     show_default='source image data type.',
     help=f'Ortho image data type.',
 )
 compress_option = click.option(
-    '-c',
+    '-cm',
     '--compress',
     type=click.Choice(Compress, case_sensitive=False),
-    default=Ortho._default_config['compress'],
+    default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
     help=f'Ortho image compression.',
 )
@@ -525,7 +515,7 @@ build_ovw_option = click.option(
     help='Build overviews for the ortho image(s).',
 )
 export_params_option = click.option(
-    '-ep',
+    '-e',
     '--export-params',
     is_flag=True,
     type=click.BOOL,
@@ -566,7 +556,7 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 
     # enter context managers for sub-command raster operations
     env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
-    ctx.with_resource(utils.suppress_no_georef())
+    ctx.with_resource(common.suppress_no_georef())
     ctx.with_resource(env)
 
     # redirect logs through tqdm.write, so they do not interfere with progress bars
@@ -628,12 +618,12 @@ def frame(
 
         oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-frame --export-params>`::
 
         oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
 
-    Ortho images and parameter files are placed in the current working directory by default. This
+    Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-frame --out-dir>`.
     """
     # create camera factory
@@ -644,12 +634,12 @@ def frame(
             io_kwargs=dict(crs=crs, lla_crs=lla_crs, radians=radians),
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
-    except (FileNotFoundError, ParamError) as ex:
-        raise click.UsageError(str(ex))
     except CrsMissingError:
         raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
     except CrsError as ex:
         raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+    except (FileNotFoundError, OrthorityError) as ex:
+        raise click.UsageError(str(ex))
 
     # get factory CRS if not set already
     crs = crs or cameras.crs
@@ -682,7 +672,7 @@ def frame(
 @out_dir_option
 @overwrite_option
 def exif(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     crs: rio.CRS,
     full_remap: bool,
     alpha: float,
@@ -706,18 +696,16 @@ def exif(
 
         oty exif --dem dem.tif source*.tif
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-exif --export-params>`::
 
         oty exif ---export-params source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by default.
-    This can be changed with :option:`--out-dir <oty-exif --out-dir>`.
+    Ortho images and exported files are placed in the current working directory by default. This
+    can be changed with :option:`--out-dir <oty-exif --out-dir>`.
     """
     # set up progress bar args
-    desc = 'Reading parameters'
-    bar_format = _get_bar_format(units='files', desc_width=len(desc))
-    tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+    tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading parameters', unit='files', leave=False)
 
     # create camera factory
     try:
@@ -726,10 +714,10 @@ def exif(
             io_kwargs=dict(crs=crs, lla_crs=lla_crs, progress=tqdm_kwargs),
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
-    except (FileNotFoundError, ParamError) as ex:
-        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
     except CrsError as ex:
         raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+    except (FileNotFoundError, OrthorityError) as ex:
+        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
     # get auto UTM CRS, if CRS not set already
     crs = crs or cameras.crs
@@ -792,17 +780,17 @@ def odm(
 
         oty odm --dataset-dir dataset
 
-    Camera parameters can be converted into Orthority format files with :option:`--export-params
+    Camera parameters can be exported to Orthority format files with :option:`--export-params
     <oty-odm --export-params>`::
 
         oty odm --dataset-dir dataset --export-params
 
-    Ortho images and parameter files are placed in the :file:`{dataset}/orthority` subdirectory
+    Ortho images and exported files are placed in the :file:`{dataset}/orthority` subdirectory
     by default.  This can be changed with :option:`--out-dir <oty-odm --out-dir>`.
     """
     # find source images
     src_exts = ['.jpg', '.jpeg', '.tif', '.tiff']
-    images_ofile = utils.join_ofile(dataset_dir, 'images/')
+    images_ofile = common.join_ofile(dataset_dir, 'images/')
     src_files = images_ofile.fs.find(images_ofile.path)  # use existing fs rather than open_files
     src_files = [sf for sf in src_files if sf[sf.rfind('.') :].lower() in src_exts]
     src_files = [OpenFile(images_ofile.fs, sf, 'rb') for sf in src_files]
@@ -812,9 +800,9 @@ def odm(
         )
 
     # read CRS from DSM
-    dem_ofile = utils.join_ofile(dataset_dir, 'odm_dem/dsm.tif', mode='rb')
+    dem_ofile = common.join_ofile(dataset_dir, 'odm_dem/dsm.tif', mode='rb')
     try:
-        dem_ctx = utils.OpenRaster(dem_ofile, 'r')
+        dem_ctx = common.OpenRaster(dem_ofile, 'r')
     except FileNotFoundError as ex:
         raise click.BadParameter(
             f"No DSM found in '<dataset-dir>/odm_dem/'. {str(ex)}",
@@ -824,7 +812,7 @@ def odm(
         crs = crs or dem_im.crs
 
     # create camera factory
-    rec_ofile = utils.join_ofile(dataset_dir, 'opensfm/reconstruction.json', mode='rt')
+    rec_ofile = common.join_ofile(dataset_dir, 'opensfm/reconstruction.json', mode='rt')
     try:
         cameras = FrameCameras(
             int_param=rec_ofile,
@@ -837,12 +825,12 @@ def odm(
             f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {str(ex)}",
             param_hint="'-dd' / '--dataset-dir'",
         )
-    except ParamError as ex:
+    except OrthorityError as ex:
         raise click.UsageError(str(ex))
 
     # orthorectify
     _ortho(
-        src_files=tuple(src_files),
+        src_files=src_files,
         dem_file=dem_ofile,
         cameras=cameras,
         crs=crs,
@@ -867,8 +855,25 @@ def odm(
     'rpc_param_file',
     type=click.Path(dir_okay=False),
     default=None,
-    callback=_text_file_cb,
+    callback=partial(_file_cb, mode='rt'),
     help='Path / URI of an Orthority RPC parameter file.',
+)
+@click.option(
+    '-gr',
+    '--gcp-refine',
+    type=click.Path(dir_okay=False),
+    default=None,
+    callback=_gcp_refine_cb,
+    help="Refine camera model(s) with GCP(s).  Can be supplied with the path / URI value of an "
+    "Orthority format GCP file, or with 'tags' to read GCPs from source image tags.",
+)
+@click.option(
+    '-rm',
+    '--refine-method',
+    type=click.Choice(RpcRefine, case_sensitive=False),
+    default=_default_rpc_refine_method,
+    show_default=True,
+    help='Refinement method to use with ``--gcp-refine``.',
 )
 @crs_option
 @resolution_option
@@ -884,8 +889,10 @@ def odm(
 @out_dir_option
 @overwrite_option
 def rpc(
-    src_files: Sequence[OpenFile],
+    src_files: list[OpenFile],
     rpc_param_file: OpenFile,
+    gcp_refine: OpenFile | bool,
+    refine_method: RpcRefine,
     crs: rio.CRS,
     **kwargs,
 ) -> None:
@@ -899,17 +906,24 @@ def rpc(
 
     The :option:`--dem <oty-rpc --dem>` option is required, except when exporting camera
     parameters with :option:`--export-params <oty-rpc --export-params>`.  If :option:`--crs
-    <oty-rpc --crs>` is not supplied, a WGS84 geographic world / ortho CRS is used::
+    <oty-rpc --crs>` is not supplied, a 3D WGS84 geographic world / ortho CRS is used::
 
         oty rpc --dem dem.tif source*.tif
 
-    Camera parameters can be converted to an Orthority format file with :option:`--export-params
-    <oty-rpc --export-params>`::
+    Camera parameters can be refined with GCPs using :option:`--gcp-refine <oty-rpc
+    --gcp-refine>`::
 
-        oty rpc ---export-params source*.tif
+        oty rpc --dem dem.tif --gcp-refine tags source*.tif
 
-    Ortho images and parameter files are placed in the current working directory by default.
-    This can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
+    Camera parameters can be exported to Orthority format file(s) with :option:`--export-params
+    <oty-rpc --export-params>`.  If :option:`--export-params <oty-rpc --export-params>` is
+    supplied with :option:`--gcp-refine <oty-rpc --gcp-refine>`, the refined parameters are
+    exported as well as the GCPs::
+
+        oty rpc ---export-params --gcp-refine tags source*.tif
+
+    Ortho images and exported files are placed in the current working directory by default. This
+    can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
     """
     # set CRS to the RPC camera default (WGS84) if no CRS supplied, otherwise pass user CRS in
     # cam_kwargs
@@ -923,29 +937,206 @@ def rpc(
         # create camera factory from parameter file
         try:
             cameras = RpcCameras(rpc_param_file, cam_kwargs=cam_kwargs)
-        except (FileNotFoundError, ParamError) as ex:
+        except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
     else:
         # set up progress bar args
-        desc = 'Reading parameters'
-        bar_format = _get_bar_format(units='files', desc_width=len(desc))
-        tqdm_kwargs = dict(desc=desc, bar_format=bar_format, leave=False)
+        tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading parameters', unit='files', leave=False)
 
         # create camera factory from image tags / sidecar file(s)
         try:
             cameras = RpcCameras.from_images(
                 src_files, io_kwargs=dict(progress=tqdm_kwargs), cam_kwargs=cam_kwargs
             )
-        except (FileNotFoundError, ParamError) as ex:
+        except (FileNotFoundError, OrthorityError) as ex:
             raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
 
+    if gcp_refine is not None:
+        # refine model(s) with GCPs
+        fit_kwargs = dict(method=refine_method)
+        try:
+            if str(gcp_refine).lower() == 'tags':
+                # set up progress bar args
+                tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading GCPs', unit='files', leave=False)
+                cameras.refine(
+                    src_files, io_kwargs=dict(progress=tqdm_kwargs), fit_kwargs=fit_kwargs
+                )
+            else:
+                cameras.refine(gcp_refine, fit_kwargs=fit_kwargs)
+        except (FileNotFoundError, OrthorityError) as ex:
+            raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'")
+
     # orthorectify
-    _ortho(
-        src_files=src_files,
-        cameras=cameras,
-        crs=crs,
-        **kwargs,
-    )
+    _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
+
+
+@cli.command(
+    cls=RstCommand,
+    short_help='Pan-sharpen.',
+    epilog='See https://orthority.readthedocs.io/ for more detail.',
+)
+@click.option(
+    '-p',
+    '--pan',
+    'pan_file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='rb'),
+    help='Path / URI of the panchromatic image.',
+)
+@click.option(
+    '-ms',
+    '--multispectral',
+    'ms_file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='rb'),
+    help='Path / URI of the multispectral image.',
+)
+@click.option(
+    '-of',
+    '--out-file',
+    type=click.Path(dir_okay=False),
+    required=True,
+    default=None,
+    callback=partial(_file_cb, mode='wb'),
+    help='Path / URI of the pan-sharpened image.',
+)
+@click.option(
+    '-pi',
+    '--pan-index',
+    type=click.INT,
+    default=PanSharpen._default_alg_config['pan_index'],
+    show_default=True,
+    help='Index of the panchromatic band to use (1 based).',
+)
+@click.option(
+    '-mi',
+    '--ms-index',
+    'ms_indexes',
+    type=click.INT,
+    multiple=True,
+    default=PanSharpen._default_alg_config['ms_indexes'],
+    show_default='all non-alpha bands',
+    help='Indexes of the multispectral bands to use (1 based).',
+)
+@click.option(
+    '-w',
+    '--weight',
+    'weights',
+    type=click.FLOAT,
+    multiple=True,
+    default=PanSharpen._default_alg_config['weights'],
+    show_default='auto',
+    callback=_weights_cb,
+    help='Multispectral to panchromatic weights (≥0).',
+)
+@click.option(
+    '-i',
+    '--interp',
+    type=click.Choice(Interp, case_sensitive=False),
+    default=PanSharpen._default_alg_config['interp'],
+    show_default=True,
+    help=f'Interpolation method for upsampling the multispectral image.',
+)
+@write_mask_option
+@click.option(
+    '-dt',
+    '--dtype',
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    default=common._default_out_config['dtype'],
+    show_default='source image data type.',
+    help=f'Pan-sharpened image data type.',
+)
+@click.option(
+    '-cm',
+    '--compress',
+    type=click.Choice(Compress, case_sensitive=False),
+    default=common._default_out_config['compress'],
+    show_default="jpeg for uint8 --dtype, deflate otherwise",
+    help=f'Pan-sharpened image compression.',
+)
+@click.option(
+    '-bo/-nbo',
+    '--build-ovw/--no-build-ovw',
+    type=click.BOOL,
+    default=True,
+    show_default=True,
+    help='Build overviews for the pan-sharpened image.',
+)
+@overwrite_option
+def sharpen(
+    pan_file: OpenFile,
+    ms_file: OpenFile,
+    pan_index: int,
+    ms_indexes: list[int],
+    weights: list[float],
+    **kwargs,
+) -> None:
+    """
+    Increases the resolution of a multispectral image to that of a panchromatic image using the
+    Gram-Schmidt pan sharpening method.
+
+    Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
+    or both of the images are not georeferenced, they are assumed to having matching bounds.
+
+    Panchromatic and multispectral images are specified with :option:`--pan <oty-sharpen --pan>`
+    and :option:`--multispectral <oty-sharpen --multispectral>`, and the pan-sharpened output
+    with :option:`--out-file <oty-sharpen --out-file>`::
+
+        oty sharpen --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+
+    A subset of multispectral bands for sharpening can be specified with :option:`--ms-index
+    <oty-sharpen --ms-index>`::
+
+        oty sharpen -mi 3 -mi 2 -mi 1 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+
+    Multispectral to panchromatic weights are estimated from the images by default.  User values
+    can be provided with :option:`--weight <oty-sharpen --weight>`.  There should be as many
+    weights as multispectral bands::
+
+        oty sharpen -mi 3 -mi 2 -mi 1 -w 0.4 -w 0.5 -w 0.3 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+    """
+    # open pan & ms files
+    try:
+        pan_ctx = common.OpenRaster(pan_file, 'r')
+    except FileNotFoundError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-p' / '--pan'")
+
+    try:
+        ms_ctx = common.OpenRaster(ms_file, 'r')
+    except FileNotFoundError as ex:
+        raise click.BadParameter(str(ex), param_hint="'-ms' / '--multispectral'")
+
+    with pan_ctx as pan_im, ms_ctx as ms_im:
+        # validate indexes
+        if pan_index <= 0 or pan_index > pan_im.count:
+            pan_name = common.get_filename(pan_im)
+            raise click.BadParameter(
+                f"Pan index {pan_index} out of range for '{pan_name}' with {pan_im.count} band(s).",
+                param_hint="'-pi' / '--pan-index'",
+            )
+
+        ms_err_indexes = np.array(ms_indexes)
+        ms_err_indexes = ms_err_indexes[(ms_err_indexes <= 0) | (ms_err_indexes > ms_im.count)]
+        if len(ms_err_indexes) > 0:
+            ms_name = common.get_filename(ms_im)
+            raise click.BadParameter(
+                f"Multispectral indexes {tuple(ms_err_indexes.tolist())} are out of range for "
+                f"'{ms_name}' with {ms_im.count} band(s).",
+                param_hint="'-mi' / '--ms-index'",
+            )
+
+        # pan sharpen
+        try:
+            pan_sharp = PanSharpen(pan_im, ms_im)
+            pan_sharp.process(
+                pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
+            )
+        except (FileExistsError, OrthorityError) as ex:
+            raise click.UsageError(str(ex))
 
 
 def _simple_ortho(
@@ -1032,7 +1223,7 @@ def _simple_ortho(
         # prepare ortho config
         ortho_config = config.get('ortho', {})
         crs = ortho_config.pop('crs', None)
-        dem_band = ortho_config.pop('dem_band', Ortho._default_config['dem_band'])
+        dem_band = ortho_config.pop('dem_band', Ortho._default_alg_config['dem_band'])
         for key in ['driver', 'tile_size', 'nodata', 'interleave', 'photometric']:
             if key in ortho_config:
                 ortho_config.pop(key)
@@ -1081,7 +1272,7 @@ def _simple_ortho(
                 ortho_filename = Path(ortho_dir).joinpath(src_filename.stem + '_ORTHO.tif')
 
                 # Get src size
-                with utils.suppress_no_georef(), rio.open(src_filename) as src_im:
+                with common.suppress_no_georef(), rio.open(src_filename) as src_im:
                     im_size = np.float64([src_im.width, src_im.height])
 
                 if not camera:

@@ -1,160 +1,134 @@
 """Functions to create NGI & ODM test data sets."""
 
+from __future__ import annotations
+
 import csv
 import json
-import multiprocessing
-import re
+import os
 from pathlib import Path
 
 import numpy as np
 import rasterio as rio
-import rasterio.windows
 from rasterio.enums import Resampling
-from rasterio.transform import GCPTransformer
-from rasterio.warp import reproject, transform_bounds
+from rasterio.transform import GCPTransformer, GroundControlPoint
+from rasterio.vrt import WarpedVRT
+from rasterio.warp import transform_bounds
+from rasterio.windows import Window
 
+from orthority import common
 from orthority import param_io
+from orthority.enums import Compress
 from orthority.exif import Exif
-from orthority.utils import expand_window_to_grid
+from orthority.factory import RpcCameras
 
 ngi_src_root = Path('V:/Data/SimpleOrthoEgs/NGI_3324C_2015_Baviaans/')
-ngi_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/ngi')
+ngi_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/ngi')
 
 odm_src_root = Path('V:/Data/SimpleOrthoEgs/20190411_Miaoli_Toufeng_Tuniu-River')
-odm_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/odm')
+odm_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/odm')
 
-io_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/io')
+rpc_src_root = Path('V:/Data/SimpleOrthoEgs/QB2_Nov_2003_MpSite')
+rpc_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/rpc')
 
-rpc_src_root = Path(
-    'D:/Data/Development/Projects/PhD GeoInformatics/Data/Digital Globe/056844553010_01'
-    '/056844553010_01_P001_PAN/'
-)
+pan_sharp_test_root = Path('C:/Data/Development/Projects/orthority/tests/data/pan_sharp')
 
-rpc_test_root = Path('C:/Data/Development/Projects/simple-ortho/tests/data/rpc')
-# TODO: save images as COGs to optimise URL tests and doc egs
+io_root = Path('C:/Data/Development/Projects/orthority/tests/data/io')
 
 
-def downsample_rgb(
+def downsample_image(
     src_file: Path,
     dst_file: Path,
-    ds_fact: int = 4,
-    scale_clip: float = None,
-    strip_dewarp: bool = False,
+    src_indexes: int | list[int] = None,
+    src_win: Window = None,
+    ds_fact: float = 4.0,
+    crs: str | rio.CRS = None,
+    dtype: str | np.dtype = None,
+    compress: str | Compress = None,
+    scale: float = None,
+    copy_tags: bool = False,
+    **kwargs,  # destination creation options
 ):
-    """Downsample `src_file` by `ds_fact`, scale & clip to `scale_clip` and write to uint8 jpeg
-    geotiff `dst_file`.
-    """
+    """Read and reproject / downsample ``src_file``, and write to ``dst_file``."""
+    dst_file = Path(dst_file)
     with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False), rio.open(
         src_file, 'r'
     ) as src_im:
-        # raise error if aspect ratio will not be maintained
-        if not np.all(np.mod(src_im.shape, ds_fact) == 0):
-            raise ValueError(f'Source dimensions {src_im.shape} are not a multiple of {ds_fact}.')
-
-        # create destination profile (note: copying xmp metadata requires driver='GTiff' (
-        # possible rasterio bug ?))
-        dst_shape = tuple((np.array(src_im.shape) / ds_fact).astype('int'))
-        dst_profile = src_im.profile.copy()
-        if dst_profile.get('crs', None):
-            dst_profile['transform'] *= rio.Affine.scale(
-                (src_im.width / dst_shape[1]), (src_im.height / dst_shape[0])
-            )
-        dst_profile.update(
-            width=dst_shape[1],
-            height=dst_shape[0],
-            count=3,
-            compress='jpeg',
-            interleave='pixel',
-            photometric='ycbcr',
-            tiled=True,
-            blockxsize=256,
-            blockysize=256,
-            dtype='uint8',
-            driver='GTiff',
+        # set up WarpedVRT params
+        src_indexes = src_indexes or src_im.indexes
+        src_win = src_win or Window(0, 0, src_im.width, src_im.height)
+        crs = crs or src_im.crs
+        dtype = dtype or src_im.dtypes[0]
+        transform = (
+            src_im.transform
+            * rio.Affine.translation(src_win.col_off, src_win.row_off)
+            * rio.Affine.scale(ds_fact)
         )
 
-        with rio.open(dst_file, 'w', **dst_profile) as dst_im:
-            # copy metadata
-            dst_im.update_tags(**src_im.tags())
-            for namespace in src_im.tag_namespaces():
-                # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namspace/ tag
-                # name, where 'xml:XMP=' gets prefixed to the value
-                ns_dict = src_im.tags(ns=namespace)
-                if strip_dewarp and namespace == 'xml:XMP':
-                    ns_dict[namespace] = re.sub(
-                        r'[ ]*?drone-dji:DewarpData(.*?)"\n', '', ns_dict[namespace]
-                    )
-                dst_im.update_tags(ns=namespace, **ns_dict)
+        # create initial destination profile (to get nodata value)
+        colorinterp = [src_im.colorinterp[ci - 1] for ci in src_indexes]
+        profile, _ = common.create_profile(
+            dtype, compress=compress, write_mask=False, colorinterp=colorinterp
+        )
+        if src_im.nodata is None:
+            profile.update(nodata=None)
+        if profile['compress'] == 'deflate':
+            profile.update(predictor=2, zlevel=9)
 
-            for index in dst_im.indexes:
-                dst_im.update_tags(index, **src_im.tags(index))
-            # copy image data, scaling and clipping if required
-            array = src_im.read(
-                indexes=dst_im.indexes, out_shape=dst_shape, resampling=rio.enums.Resampling.cubic
-            )
-            if scale_clip:
-                array = np.clip(array * scale_clip, 0, 255)
+        # read, crop and reproject source (use WarpedVRT, rather than
+        # DatasetReader.read(out_shape=) which uses overviews possibly resampled with a different
+        # method and/or on a different grid)
+        with WarpedVRT(
+            src_im,
+            crs=crs,
+            transform=transform,
+            width=int(np.ceil(src_win.width / ds_fact)),
+            height=int(np.ceil(src_win.height / ds_fact)),
+            nodata=profile['nodata'],
+            dtype='float64',
+            resampling=Resampling.average,
+            num_threads=os.cpu_count(),
+        ) as src_im_:
+            array = src_im_.read(indexes=src_indexes)
+
+        # update profile with spatial / dimensional items
+        profile.update(
+            crs=crs,
+            transform=transform if not src_im.transform.is_identity else None,
+            count=array.shape[0],
+            width=array.shape[2],
+            height=array.shape[1],
+            blockxsize=256,  # use original tile config
+            blockysize=256,
+        )
+
+        # scale and clip the image array
+        if scale:
+            array *= scale
+        if np.issubdtype(dtype, np.integer):
+            array = array.round()
+            info = np.iinfo(dtype)
+            array = array.clip(info.min, info.max)
+        array = array.astype(dtype, copy=False)
+
+        # write destination file
+        dst_file.unlink(missing_ok=True)
+        dst_file.with_suffix(dst_file.suffix + '.aux.xml').unlink(missing_ok=True)
+        with common.OpenRaster(dst_file, 'w', **profile, **kwargs) as dst_im:
+            if copy_tags:
+                # copy metadata
+                dst_im.update_tags(**src_im.tags())
+                for namespace in src_im.tag_namespaces():
+                    # note there is an apparent rio/gdal bug with ':' in the 'xml:XMP' namespace/ tag
+                    # name, where 'xml:XMP=' gets prefixed to the value
+                    ns_dict = src_im.tags(ns=namespace)
+                    dst_im.update_tags(ns=namespace, **ns_dict)
+                for index in dst_im.indexes:
+                    dst_im.update_tags(index, **src_im.tags(index))
+
             dst_im.write(array)
 
 
-def downsample_dem(
-    src_file: Path, dst_file: Path, ds_fact: int = 8, bounds: tuple = None, dst_crs: rio.CRS = None
-):
-    """
-    Downsample `src_file` by `ds_fact`, cropping to `bounds` if specified.
-
-    Write to float32 deflate geotiff `dst_file`.
-    """
-    nodata = float('nan')
-    with rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False), rio.open(
-        src_file, 'r'
-    ) as src_im:
-        if bounds:
-            src_win = expand_window_to_grid(src_im.window(*bounds))
-            src_transform = src_im.window_transform(src_win)
-        else:
-            src_win = rio.windows.Window(0, 0, *src_im.shape[::-1])
-            src_transform = src_im.transform
-
-        src_array = src_im.read(window=src_win)
-
-        # reproject rather than read(out_shape=...) to ensure square pixels
-        dst_crs = dst_crs or src_im.crs
-        dst_array, dst_transform = reproject(
-            src_array,
-            src_crs=src_im.crs,
-            src_transform=src_transform,
-            src_nodata=src_im.nodata,
-            dst_crs=dst_crs,
-            dst_nodata=nodata,
-            dst_resolution=(round(np.abs(src_transform.a) * ds_fact, 2),) * 2,
-            resampling=Resampling.cubic,
-            init_dest_nodata=True,
-            num_threads=multiprocessing.cpu_count(),
-        )
-        dst_profile = src_im.profile.copy()
-        dst_profile.update(
-            crs=dst_crs,
-            width=dst_array.shape[-1],
-            height=dst_array.shape[-2],
-            transform=dst_transform,
-            compress='deflate',
-            interleave='band',
-            tiled=True,
-            blockxsize=256,
-            blockysize=256,
-            dtype='float32',
-            driver='GTiff',
-            predictor=2,
-            zlevel=9,
-            nodata=nodata,
-        )
-        with rio.open(dst_file, 'w', **dst_profile) as dst_im:
-            dst_im.write(dst_array)
-
-
 def create_ngi_test_data():
-    # TODO: abbreviate and capitalise source file names (+ in exterior param files)
     src_rgb_files = [
         '3324c_2015_1004_05_0182_RGBN_CMP.tif',
         '3324c_2015_1004_05_0184_RGBN_CMP.tif',
@@ -167,25 +141,34 @@ def create_ngi_test_data():
     # downsample rgb images
     ngi_test_root.mkdir(exist_ok=True, parents=True)
     for src_rgb_file in src_rgb_files:
-        dst_rgb_file = ngi_test_root.joinpath(src_rgb_file[:-9]).with_suffix('.tif')
-        src_rgb_file = ngi_src_root.joinpath(src_rgb_file)
-        if dst_rgb_file.exists():
-            dst_rgb_file.unlink()
-            dst_rgb_file.with_suffix(dst_rgb_file.suffix + '.aux.xml').unlink(missing_ok=True)
-        downsample_rgb(src_rgb_file, dst_rgb_file, ds_fact=ds_fact, scale_clip=(255 / 3000))
+        src_rgb_file = ngi_src_root.joinpath('Source', src_rgb_file)
+        dst_rgb_file = ngi_test_root.joinpath(src_rgb_file.name[:-9]).with_suffix('.tif')
+        downsample_image(
+            src_rgb_file,
+            dst_rgb_file,
+            src_indexes=[1, 2, 3],
+            ds_fact=ds_fact,
+            dtype='uint8',
+            scale=255 / 3000,
+        )
 
     # downsample dem
-    with rio.open(ngi_src_root.joinpath(src_rgb_files[0]), 'r') as src_im:
-        dst_crs = src_im.crs
-    src_dem_file = ngi_src_root.joinpath(dem_file)
+    with rio.open(ngi_src_root.joinpath('Source', src_rgb_files[0]), 'r') as src_im:
+        # DEM heights (and NGI external params) are EGM2008 but lack a vertical CRS. This adds a
+        # vertical component to the 2D CRS, which is used for converting to ellipsoidal heights
+        # when this DEM is used for RPC orthorectification.
+        dst_wkt = (
+            f'COMPD_CS["Lo25 WGS84 + EGM2008 height", {src_im.crs.to_wkt()}, VERT_CS['
+            f'"EGM2008 height", VERT_DATUM["EGM2008 geoid",2005], UNIT["metre",1]]]'
+        )
+        dst_crs = rio.CRS.from_wkt(dst_wkt)
+
+    src_dem_file = ngi_src_root.joinpath('DEM', dem_file)
     dst_dem_file = ngi_test_root.joinpath('dem.tif')
-    if dst_dem_file.exists():
-        dst_dem_file.unlink()
-        dst_dem_file.with_suffix(dst_dem_file.suffix + '.aux.xml').unlink(missing_ok=True)
-    downsample_dem(src_dem_file, dst_dem_file, bounds=None, ds_fact=ds_fact, dst_crs=dst_crs)
+    downsample_image(src_dem_file, dst_dem_file, ds_fact=ds_fact, crs=dst_crs, dtype='float32')
 
     # copy & convert csv exterior params
-    src_ext_file = ngi_src_root.joinpath('camera_pos_ori.txt')
+    src_ext_file = ngi_src_root.joinpath('Parameters/camera_pos_ori.txt')
     dst_ext_file = ngi_test_root.joinpath('camera_pos_ori.txt')
     if dst_ext_file.exists():
         dst_ext_file.unlink()
@@ -225,10 +208,7 @@ def create_odm_test_data():
     for src_rgb_file in src_rgb_files:
         dst_rgb_file = odm_test_root.joinpath('images', src_rgb_file).with_suffix('.tif')
         src_rgb_file = odm_src_root.joinpath('images', src_rgb_file)
-        if dst_rgb_file.exists():
-            dst_rgb_file.unlink()
-            dst_rgb_file.with_suffix(dst_rgb_file.suffix + '.aux.xml').unlink(missing_ok=True)
-        downsample_rgb(src_rgb_file, dst_rgb_file, ds_fact=4)
+        downsample_image(src_rgb_file, dst_rgb_file, ds_fact=4, dtype='uint8', copy_tags=True)
 
     # get bounds covering orthos of src files
     def bounds_union(bounds1, bounds2):
@@ -244,12 +224,11 @@ def create_odm_test_data():
     # crop and downsample dem
     odm_test_root.joinpath('odm_dem').mkdir(exist_ok=True, parents=True)
     dst_dem_file = odm_test_root.joinpath('odm_dem', 'dsm.tif')
-    if dst_dem_file.exists():
-        dst_dem_file.unlink()
-        dst_dem_file.with_suffix(dst_dem_file.suffix + '.aux.xml').unlink(missing_ok=True)
-    downsample_dem(
-        odm_src_root.joinpath('odm_dem', 'dsm.tif'), dst_dem_file, bounds=bounds, ds_fact=16
-    )
+    src_dem_file = odm_src_root.joinpath('odm_dem', 'dsm.tif')
+    with rio.open(src_dem_file, 'r') as dem_im:
+        win = dem_im.window(*bounds)
+    win = common.expand_window_to_grid(win)
+    downsample_image(src_dem_file, dst_dem_file, src_win=win, ds_fact=16, dtype='float32')
 
     # copy relevant parts of opensfm reconstruction file with image size conversion
     src_rec_file = odm_src_root.joinpath('opensfm/reconstruction.json')
@@ -275,64 +254,119 @@ def create_odm_test_data():
 
 def create_rpc_test_data():
     src_file = '03NOV18082012-P1BS-056844553010_01_P001.TIF'
+    gcp_file = 'pan_gcps.geojson'
     rpc_test_root.mkdir(exist_ok=True)
     dem_file = ngi_test_root.joinpath('dem.tif')
+    test_file = 'qb2_basic1b.tif'
 
     # read ngi dem bounds & crs
     with rio.open(dem_file, 'r') as dem_im:
         dem_bounds = dem_im.bounds
         dem_crs = dem_im.crs
 
-    # read cropped & downsampled portion of source image lying inside dem bounds
+    # find window corresponding to dem bounds (with an inner buffer)
     ds_fact = 10.0
-    rpc_src_file = rpc_src_root.joinpath(src_file)
+    rpc_src_file = rpc_src_root.joinpath('Source', src_file)
     with rio.open(rpc_src_file, 'r') as src_im:
         rpcs = src_im.rpcs
-        gcps = src_im.gcps
+        bounds = np.array(transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds))
+        buf_bounds = (*(bounds[:2] + 0.012), *(bounds[2:] - 0.012))
+        with GCPTransformer(src_im.gcps[0]) as tform:
+            ul = np.round(tform.rowcol(buf_bounds[0], buf_bounds[3])[::-1], -2)
+            br = np.round(tform.rowcol(buf_bounds[2], buf_bounds[1])[::-1], -2)
+        win = Window(*ul, *(br - ul))
+        win = win.intersection(Window(0, 0, src_im.width, src_im.height))
+        win = common.expand_window_to_grid(win)
 
-        # find window corresponding to dem bounds (inner buffer of 1000)
-        bounds = transform_bounds(dem_crs, src_im.gcps[1], *dem_bounds)
-        with GCPTransformer(gcps[0]) as tform:
-            ul = np.round(tform.rowcol(bounds[0], bounds[3])[::-1], -2) + 1000
-            br = np.round(tform.rowcol(bounds[2], bounds[1])[::-1], -2) - 1000
-        win = rio.windows.Window(*ul, *(br - ul))
+    # read field GCPs (center pixel coord convention)
+    gcps = param_io.read_oty_gcps(rpc_src_root.joinpath('GCP', gcp_file))
+    gcps = next(iter(gcps.values()))
 
-        # read window & downsample
-        shape = np.round((1, win.height / ds_fact, win.width / ds_fact)).astype('int')
-        array = src_im.read(window=win, resampling=rio.enums.Resampling.average, out_shape=shape)
+    # choose GCP inliers (to improve refinement and prevent weird QGIS renderings)
+    cameras = RpcCameras.from_images((rpc_src_file,))
+    camera = cameras.get(rpc_src_file)
+    xyz = np.array([gcp_dict['xyz'] for gcp_dict in gcps]).T
+    ji_rpc = camera.world_to_pixel(xyz)
+    ji_gcp = np.array([gcp_dict['ji'] for gcp_dict in gcps]).T
+    off = ji_gcp - ji_rpc
+    off_med = np.median(off, axis=1)
+    off_dist = np.sum((off - off_med.reshape(-1, 1)) ** 2, axis=0)
+    inlier_idx = np.argsort(off_dist)[:5]
+    gcps = [gcps[i] for i in inlier_idx]
 
-    # adjust rpcs for crop and downsample
-    rpcs.line_off = (rpcs.line_off - win.row_off) / ds_fact
-    rpcs.samp_off = (rpcs.samp_off - win.col_off) / ds_fact
+    # adjust GCPs for crop and downsample
+    for gcp in gcps:
+        # +0.5 converts center to UL pixel coords so that they can be scaled.  then -0.5
+        # converts back from UL to center pixel coords as expected by param_io.write_gcps()
+        gcp['ji'] = (gcp['ji'] - np.array((win.col_off, win.row_off)) + 0.5) / ds_fact - 0.5
+
+    # convert GCPs to rasterio format for storing in image metadata (leave in center pixel
+    # coordinate convention)
+    rio_gcps = []
+    for gcp in gcps:
+        rio_gcps.append(GroundControlPoint(*gcp['ji'][::-1], *gcp['xyz'], gcp['id'], gcp['info']))
+
+    # adjust existing metadata GCPs for crop and downsample
+    # rio_gcps = src_im.gcps[0]
+    # for gcp in rio_gcps:
+    #     gcp.col = (gcp.col - win.col_off) / ds_fact
+    #     gcp.row = (gcp.row - win.row_off) / ds_fact
+
+    # adjust RPCs for crop and downsample (see GCP comments for +-0.5 notes)
+    rpcs.line_off = (rpcs.line_off - win.row_off + 0.5) / ds_fact - 0.5
+    rpcs.samp_off = (rpcs.samp_off - win.col_off + 0.5) / ds_fact - 0.5
     rpcs.line_scale /= ds_fact
     rpcs.samp_scale /= ds_fact
 
-    # adjust gcps for crop and downsample
-    for gcp in gcps[0]:
-        gcp.row = (gcp.row - win.row_off) / ds_fact
-        gcp.col = (gcp.col - win.col_off) / ds_fact
-
-    # setup test image profile
-    rpc_test_file = rpc_test_root.joinpath('qb2_basic1b.tif')
-    profile = dict(
-        width=array.shape[2],
-        height=array.shape[1],
-        count=array.shape[0],
-        compress='jpeg',
-        tiled=True,
-        blockxsize=256,
-        blockysize=256,
+    # crop and downsample image, and write to test_file with RPC and GPC metadata
+    rpc_test_file = rpc_test_root.joinpath(test_file)
+    downsample_image(
+        rpc_src_file,
+        rpc_test_file,
+        src_win=win,
+        ds_fact=ds_fact,
+        crs='EPSG:4979',
         dtype='uint8',
-        driver='GTiff',
-        crs=gcps[1],
-        gcps=gcps[0],
-        rpcs=rpcs,  # NB: there is a rio/GDAL bug if RPCs are passed as a dict to rio.open()
+        compress='jpeg',
+        scale=255 / 700,
+        rpcs=rpcs,
+        gcps=rio_gcps,
     )
 
-    # scale 10-255 & write
-    array = 10.0 + (255.0 - 10.0) * (array - array.min()) / (array.max() - array.min())
-    with rio.open(rpc_test_file, 'w', **profile) as dst_im:
-        dst_im.write(array.astype('uint8'))
+    # create oty format GCP file for test image
+    param_io.write_gcps(
+        rpc_test_root.joinpath('gcps.geojson'), {rpc_test_file.name: gcps}, overwrite=True
+    )
+
+    # create oty format rpc param file for test image
+    rpc_param_dict = param_io.read_im_rpc_param([rpc_test_file])
+    param_io.write_rpc_param(
+        rpc_test_root.joinpath('rpc_param.yaml'), rpc_param_dict, overwrite=True
+    )
+
+
+def create_pan_sharp_data():
+    pan_sharp_test_root.mkdir(exist_ok=True)
+    src_file = odm_src_root.joinpath('images/100_0005_0140.jpg')
+
+    # dowsample the source image to temporary pan res RGB
+    temp_file = pan_sharp_test_root.joinpath('temp.tif')
+    downsample_image(src_file, temp_file, ds_fact=4, compress='deflate')
+
+    # convert pan res RGB to pan
+    pan_test_file = pan_sharp_test_root.joinpath('pan.tif')
+    with rio.open(temp_file, 'r') as temp_im:
+        profile = temp_im.profile
+        profile.update(count=1, photometric=None, interleave='pixel', compress='jpeg')
+        temp_array = temp_im.read()
+        pan_array = temp_array.mean(axis=0).round().astype('uint8')
+        with rio.open(pan_test_file, 'w', **profile) as pan_im:
+            pan_im.write(pan_array, indexes=1)
+
+    # downsample the source image to ms res (deflate compression gives more accurate ms to pan
+    # weights)
+    ms_test_file = pan_sharp_test_root.joinpath('ms.tif')
+    downsample_image(src_file, ms_test_file, ds_fact=16, compress='deflate')
 
 
 def create_io_test_data():
@@ -414,4 +448,5 @@ if __name__ == '__main__':
     create_odm_test_data()
     create_ngi_test_data()
     create_rpc_test_data()
+    create_pan_sharp_data()
     create_io_test_data()

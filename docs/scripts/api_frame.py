@@ -17,19 +17,19 @@ camera = cameras.get(src_file)
 # [create exif]
 src_file = url_root + 'odm/images/100_0005_0140.tif'  # drone image with EXIF / XMP tags
 
-cameras = oty.FrameCameras.from_images((src_file,))
+cameras = oty.FrameCameras.from_images([src_file])
 camera = cameras.get(src_file)
 # [end create exif]
 
 # [crs]
-cameras = oty.FrameCameras.from_images((src_file,))
+cameras = oty.FrameCameras.from_images([src_file])
 print(cameras.crs)
 # EPSG:32651
 # [end crs]
 
 # [io_kwargs]
 io_kwargs = dict(crs='EPSG:32751')
-cameras = oty.FrameCameras.from_images((src_file,), io_kwargs=io_kwargs)
+cameras = oty.FrameCameras.from_images([src_file], io_kwargs=io_kwargs)
 
 print(cameras.crs)
 # EPSG:32751
@@ -37,7 +37,7 @@ print(cameras.crs)
 
 # [cam_kwargs]
 cam_kwargs = dict(distort=False, alpha=0.0)
-cameras = oty.FrameCameras.from_images((src_file,), cam_kwargs=cam_kwargs)
+cameras = oty.FrameCameras.from_images([src_file], cam_kwargs=cam_kwargs)
 camera = cameras.get(src_file)
 
 print(camera.distort)
@@ -47,6 +47,6 @@ print(camera.alpha)
 # [end cam_kwargs]
 
 # [export]
-cameras = oty.FrameCameras.from_images((src_file,))
+cameras = oty.FrameCameras.from_images([src_file])
 cameras.write_param('.')
 # [end export]

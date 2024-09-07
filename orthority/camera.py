@@ -31,9 +31,9 @@ from rasterio.rpc import RPC
 from rasterio.transform import GCPTransformer, GroundControlPoint, RPCTransformer
 from rasterio.warp import transform as warp
 
-from orthority import utils
+from orthority import common
 from orthority.enums import CameraType, Interp
-from orthority.errors import CameraInitError, OrthorityWarning
+from orthority.errors import CameraInitError, OrthorityWarning, OrthorityError
 from orthority.param_io import _opk_to_rotation
 
 logger = logging.getLogger(__name__)
@@ -82,11 +82,6 @@ class Camera(ABC):
             raise ValueError(
                 f"'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
             )
-
-    @staticmethod
-    def _get_dtype_nodata(dtype: str) -> float | int:
-        """Return a sensible nodata value for the given ``dtype``."""
-        return np.nan if np.issubdtype(dtype, np.floating) else np.iinfo(dtype).min
 
     def _validate_image(self, im_array: np.ndarray) -> None:
         """Utility function to validate an image dtype and dimensions for remapping."""
@@ -315,7 +310,7 @@ class Camera(ABC):
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
 
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
-        with utils.suppress_no_georef(), env, utils.OpenRaster(im_file) as im:
+        with common.suppress_no_georef(), env, common.OpenRaster(im_file) as im:
             dtype = dtype or im.dtypes[0]
             return im.read(indexes, out_dtype=dtype)
 
@@ -366,7 +361,7 @@ class Camera(ABC):
         if not np.issubdtype(z.dtype, np.floating):
             raise ValueError("'z' should have 'float64' or 'float32' data type.")
         if nodata is None:
-            nodata = self._get_dtype_nodata(im_array.dtype)
+            nodata = common._nodata_vals[im_array.dtype]
 
         # find (j, i) image pixel coords corresponding to (x, y, z) world coords
         ji = self.world_to_pixel(np.array((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
@@ -398,7 +393,7 @@ class Camera(ABC):
             )
 
         # find nodata mask
-        remap_mask = np.all(utils.nan_equals(remap_array, nodata), axis=0)
+        remap_mask = np.all(common.nan_equals(remap_array, nodata), axis=0)
         return remap_array, remap_mask
 
 
@@ -415,7 +410,9 @@ class RpcCamera(Camera):
         world coordinate transform.
     :param crs:
         World / ortho CRS as an EPSG, proj4 or WKT string, or :class:`~rasterio.crs.CRS` object.
-        If set to ``None`` (the default), the WGS84 geographic 3D CRS is used.
+        If its vertical CRS is defined, it should be ellipsoidal height (m), otherwise
+        ellipsoidal height is assumed. If ``crs`` is set to ``None`` (the default), the 3D WGS84
+        geographic CRS is used.
     """
 
     def __init__(
@@ -428,12 +425,15 @@ class RpcCamera(Camera):
         super().__init__()
         self._im_size = im_size
         self._rpc_crs = CRS.from_epsg(4979)
+        # convert dict rpc to RPC object to avoid issue where RPCTransformer.__init__() raises no
+        # error with rpc as a dict, but generates invalid results
         self._rpc = rpc if isinstance(rpc, RPC) else RPC(**rpc)
         self._rpc_options = rpc_options or {}
         self._crs = self._validate_crs(crs) if crs else None
 
     @property
     def crs(self) -> CRS | None:
+        """World / ortho CRS."""
         return self._crs or self._rpc_crs
 
     def _validate_crs(self, crs: str | CRS) -> CRS:
@@ -442,9 +442,7 @@ class RpcCamera(Camera):
         for z in [0, 1]:
             xyz = warp(self._rpc_crs, crs, [self._rpc.long_off], [self._rpc.lat_off], [z])
             if not xyz[2][0] == z:
-                raise ValueError(
-                    "RPC camera requires a 'crs' with ellipsoidal height, or no vertical CRS."
-                )
+                raise OrthorityError("RPC camera requires a 'crs' with ellipsoidal height (m).")
         return crs
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
@@ -921,7 +919,7 @@ class FrameCamera(Camera):
         # does not support 3D images with >4 bands, and is slower on a re-ordered 3D image than
         # in a loop over bands)
         if nodata is None:
-            nodata = self._get_dtype_nodata(im_array.dtype)
+            nodata = common._nodata_vals[im_array.dtype]
         und_array = np.full(im_array.shape, dtype=im_array.dtype, fill_value=nodata)
 
         for bi in range(im_array.shape[0]):
@@ -988,7 +986,9 @@ class FrameCamera(Camera):
         """
         self._test_init()
         if self._horizon_fov():
-            raise ValueError("Camera has a field of view that includes, or is above, the horizon.")
+            raise OrthorityError(
+                "Camera has a field of view that includes, or is above, the horizon."
+            )
 
         ji = self.pixel_boundary(num_pts=num_pts)
         if np.isscalar(z):
@@ -1048,7 +1048,7 @@ class FrameCamera(Camera):
 
         if not self._distort:
             if nodata is None:
-                nodata = self._get_dtype_nodata(image.dtype)
+                nodata = common._nodata_vals[image.dtype]
             image = self._undistort_im(image, nodata=nodata, interp=interp)
         return image
 
@@ -1106,7 +1106,7 @@ class FrameCamera(Camera):
             mask = cv2.dilate(mask.view(np.uint8), kernel).view(bool)
 
             if nodata is None:
-                nodata = self._get_dtype_nodata(image.dtype)
+                nodata = common._nodata_vals[image.dtype]
             remap[:, mask] = nodata
 
         return remap, mask

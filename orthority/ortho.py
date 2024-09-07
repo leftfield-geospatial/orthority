@@ -32,14 +32,14 @@ from fsspec.core import OpenFile
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
 from rasterio.transform import array_bounds
-from rasterio.warp import reproject, Resampling, transform, transform_bounds
+from rasterio.warp import reproject, transform, transform_bounds
 from rasterio.windows import Window
-from tqdm.std import tqdm, tqdm as std_tqdm
+from tqdm.auto import tqdm
 
-from orthority import utils
+from orthority import common
 from orthority.camera import Camera, FrameCamera
 from orthority.enums import Compress, Interp
-from orthority.errors import CrsMissingError, OrthorityWarning
+from orthority.errors import CrsMissingError, OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
 
@@ -69,22 +69,10 @@ class Ortho:
         Index of the DEM band to use (1-based).
     """
 
-    # default configuration values for Ortho.process()
-    _default_config = dict(
-        dem_band=1,
-        resolution=None,
-        interp=Interp.cubic,
-        dem_interp=Interp.cubic,
-        per_band=False,
-        write_mask=None,
-        dtype=None,
-        compress=None,
-        build_ovw=True,
-        overwrite=False,
+    # default algorithm configuration values for Ortho.process()
+    _default_alg_config = dict(
+        dem_band=1, resolution=None, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False
     )
-
-    # default ortho (x, y) block size
-    _default_blocksize = (512, 512)
 
     # EGM96/EGM2008 geoid altitude range i.e. minimum and maximum possible vertical difference with
     # the WGS84 ellipsoid (meters)
@@ -92,22 +80,6 @@ class Ortho:
 
     # Maximum possible ellipsoidal height i.e. approx. that of Everest (meters)
     _z_max = 8850.0
-
-    # nodata values for supported ortho data types
-    _nodata_vals = dict(
-        uint8=0,
-        uint16=0,
-        int16=np.iinfo('int16').min,
-        float32=float('nan'),
-        float64=float('nan'),
-    )
-
-    # default progress bar kwargs
-    _default_tqdm_kwargs = dict(
-        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} blocks [{elapsed}<{remaining}]',
-        dynamic_ncols=True,
-        leave=True,
-    )
 
     def __init__(
         self,
@@ -123,7 +95,7 @@ class Ortho:
             raise TypeError("'camera' is not a Camera instance.")
 
         self._src_file = src_file
-        self._src_name = utils.get_filename(src_file)
+        self._src_name = common.get_filename(src_file)
         self._camera = camera
         self._write_lock = threading.Lock()
 
@@ -136,25 +108,12 @@ class Ortho:
         """Source image camera model."""
         return self._camera
 
-    @staticmethod
-    def _build_overviews(
-        im: DatasetWriter,
-        max_num_levels: int = 8,
-        min_level_pixels: int = 256,
-    ) -> None:
-        """Build internal overviews for a given rasterio dataset."""
-        max_ovw_levels = int(np.min(np.log2(im.shape)))
-        min_level_shape_pow2 = int(np.log2(min_level_pixels))
-        num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
-        ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-        im.build_overviews(ovw_levels, Resampling.average)
-
     def _parse_crs(self, crs: str | CRS) -> CRS:
         """Derive a world / ortho CRS from the ``crs`` parameter and source image."""
         if crs:
             crs = CRS.from_string(crs) if isinstance(crs, str) else crs
         else:
-            with utils.suppress_no_georef(), utils.OpenRaster(self._src_file, 'r') as src_im:
+            with common.suppress_no_georef(), common.OpenRaster(self._src_file, 'r') as src_im:
                 if src_im.crs:
                     crs = src_im.crs
                 else:
@@ -170,10 +129,10 @@ class Ortho:
         """Return an initial DEM array in its own CRS and resolution.  Includes the corresponding
         DEM transform, CRS, and flag indicating ortho and DEM CRS equality in return values.
         """
-        with rio.Env(GDAL_NUM_THREADS='ALL_CPUs'), utils.OpenRaster(dem_file, 'r') as dem_im:
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(dem_file, 'r') as dem_im:
             if dem_band <= 0 or dem_band > dem_im.count:
-                dem_name = utils.get_filename(dem_file)
-                raise ValueError(
+                dem_name = common.get_filename(dem_file)
+                raise OrthorityError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
             # crs comparison is time-consuming - perform it once here
@@ -204,10 +163,8 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise ValueError(
-                        f"Ortho for '{self._src_name}' lies outside, or underneath the DEM."
-                    )
-                return utils.expand_window_to_grid(dem_win)
+                    raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the DEM.")
+                return common.expand_window_to_grid(dem_win)
 
             # get a dem window containing the ortho bounds at min & max possible altitude, read the
             # window from the dem
@@ -289,7 +246,9 @@ class Ortho:
         ortho_bounds = np.array(transform_bounds(self._dem_crs, self._crs, *init_bounds))
         ortho_size = ortho_bounds[2:] - ortho_bounds[:2]
         if np.any(resolution > ortho_size):
-            raise ValueError(f"'resolution' is larger than the ortho size.")
+            raise OrthorityError(
+                f"Ortho resolution for '{self._src_name}' is larger than the ortho bounds."
+            )
 
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
@@ -304,6 +263,9 @@ class Ortho:
         # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie just inside
         #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
         #  bounds so am leaving as is for now.
+        # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
+        # TODO: if possible, read (,mask) and reproject the dem from dataset in blocks as the ortho
+        #  is written.  or read the dem and src image in parallel, avoiding masked reads
 
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
@@ -352,15 +314,13 @@ class Ortho:
         dem_mask_sum = dem_mask.sum()
 
         if dem_mask_sum == 0:
-            raise ValueError(
-                f"Ortho boundary for '{self._src_name}' lies outside the valid DEM area."
-            )
+            raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the valid DEM area.")
         elif poly_mask.sum() > dem_mask_sum or (
             np.any(np.min(poly_ji, axis=1) < (0, 0))
             or np.any(np.max(poly_ji, axis=1) + 1 > dem_array.shape[::-1])
         ):
             warnings.warn(
-                f"Ortho boundary for '{self._src_name}' is not fully covered by the DEM.",
+                f"Ortho for '{self._src_name}' is not fully covered by the DEM.",
                 category=OrthorityWarning,
             )
 
@@ -378,77 +338,6 @@ class Ortho:
 
         return dem_array, dem_transform
 
-    def _create_ortho_profile(
-        self,
-        src_im: rio.DatasetReader,
-        shape: Sequence[int],
-        transform: rio.Affine,
-        dtype: str,
-        compress: str | Compress | None,
-        write_mask: bool | None,
-    ) -> tuple[dict, bool]:
-        """Return a rasterio profile for the ortho image."""
-        # Determine dtype, check dtype support
-        # (OpenCV remap doesn't support int8 or uint32, and only supports int32, uint64, int64 with
-        # nearest interp so these dtypes are excluded).
-        ortho_profile = {}
-        dtype = dtype or src_im.profile.get('dtype', None)
-        if dtype not in Ortho._nodata_vals:
-            raise ValueError(f"Data type '{dtype}' is not supported.")
-
-        # setup compression, data interleaving and photometric interpretation
-        if compress is None:
-            compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
-        else:
-            compress = Compress(compress)
-            if compress == Compress.jpeg:
-                if dtype == 'uint16':
-                    warnings.warn(
-                        'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
-                        'dependent.',
-                        category=OrthorityWarning,
-                    )
-                    ortho_profile.update(nbits=12)
-                elif dtype != 'uint8':
-                    raise ValueError(
-                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
-                    )
-
-        if compress == Compress.jpeg:
-            interleave, photometric = (
-                ('pixel', 'ycbcr') if src_im.count == 3 else ('band', 'minisblack')
-            )
-        else:
-            interleave, photometric = ('band', 'minisblack')
-
-        # resolve auto write_mask (=None) to write masks for jpeg compression
-        if write_mask is None:
-            write_mask = True if compress == Compress.jpeg else False
-
-        # set nodata to None when writing internal masks to force external tools to use mask,
-        # otherwise set by dtype
-        nodata = None if write_mask else Ortho._nodata_vals[dtype]
-
-        # create ortho profile
-        ortho_profile.update(
-            driver='GTiff',
-            dtype=dtype,
-            crs=self._crs,
-            transform=transform,
-            width=shape[1],
-            height=shape[0],
-            count=src_im.count,
-            tiled=True,
-            blockxsize=Ortho._default_blocksize[0],
-            blockysize=Ortho._default_blocksize[1],
-            nodata=nodata,
-            compress=compress.value,
-            interleave=interleave,
-            photometric=photometric,
-        )
-
-        return ortho_profile, write_mask
-
     def _remap_tile(
         self,
         ortho_im: DatasetWriter,
@@ -464,7 +353,7 @@ class Ortho:
         """Thread safe method to map the source image to an ortho tile.  Returns the tile array
         and mask.
         """
-        dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
+        dtype_nodata = common._nodata_vals[ortho_im.profile['dtype']]
 
         # offset init grids to tile_win
         tile_transform = rio.windows.transform(tile_win, ortho_im.profile['transform'])
@@ -513,7 +402,7 @@ class Ortho:
         interp: Interp,
         per_band: bool,
         write_mask: bool,
-        progress: bool | std_tqdm,
+        progress: tqdm,
     ) -> None:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
@@ -526,8 +415,8 @@ class Ortho:
         # integer pixel coords refer to pixel centers, so the (x, y) coords are offset by half a
         # pixel to account for this.
 
-        j_range = np.arange(0, Ortho._default_blocksize[0])
-        i_range = np.arange(0, Ortho._default_blocksize[1])
+        j_range = np.arange(0, ortho_im.profile.get('blockysize', 512))
+        i_range = np.arange(0, ortho_im.profile.get('blockxsize', 512))
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
         init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
@@ -543,12 +432,14 @@ class Ortho:
         tile_wins = [tile_win for _, tile_win in ortho_im.block_windows(1)]
         progress.total = len(tile_wins) * len(index_list)
 
+        # TODO: Memory increases ~linearly with number of threads, but does processing speed?
+        #  Make number of threads configurable and place a limit on the default value
         with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
             # read, process and write bands, one row of indexes at a time
             for indexes in index_list:
                 # read source, and optionally undistort, image band(s) (ortho dtype is
                 # required for cv2.remap() to set invalid ortho areas to ortho nodata value)
-                dtype_nodata = self._nodata_vals[ortho_im.profile['dtype']]
+                dtype_nodata = common._nodata_vals[ortho_im.profile['dtype']]
                 src_array = self._camera.read(
                     src_im,
                     indexes=indexes,
@@ -576,22 +467,26 @@ class Ortho:
                     for tile_win in tile_wins
                 ]
                 for future in as_completed(futures):
-                    future.result()
+                    try:
+                        future.result()
+                    except Exception as ex:
+                        executor.shutdown(wait=False)
+                        raise RuntimeError('Could not remap tile.') from ex
                     progress.update()
                 progress.refresh()
 
     def process(
         self,
         ortho_file: str | PathLike | OpenFile,
-        resolution: tuple[float, float] = _default_config['resolution'],
-        interp: str | Interp = _default_config['interp'],
-        dem_interp: str | Interp = _default_config['dem_interp'],
-        per_band: bool = _default_config['per_band'],
-        write_mask: bool | None = _default_config['write_mask'],
-        dtype: str = _default_config['dtype'],
-        compress: str | Compress | None = _default_config['compress'],
-        build_ovw: bool = _default_config['build_ovw'],
-        overwrite: bool = _default_config['overwrite'],
+        resolution: tuple[float, float] = _default_alg_config['resolution'],
+        interp: str | Interp = _default_alg_config['interp'],
+        dem_interp: str | Interp = _default_alg_config['dem_interp'],
+        per_band: bool = _default_alg_config['per_band'],
+        write_mask: bool | None = common._default_out_config['write_mask'],
+        dtype: str = common._default_out_config['dtype'],
+        compress: str | Compress | None = common._default_out_config['compress'],
+        build_ovw: bool = common._default_out_config['build_ovw'],
+        overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | dict = False,
     ) -> None:
         """
@@ -626,8 +521,8 @@ class Ortho:
             lossy compression. If set to ``None`` (the default), the mask will be written when
             JPEG compression is used.
         :param dtype:
-            Ortho image data type (``uint8``, ``uint16``, ``float32`` or ``float64``).  If set to
-            ``None`` (the default), the source image data type is used.
+            Ortho image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or ``float64``).
+            If set to ``None`` (the default), the source image data type is used.
         :param compress:
             Ortho image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
             any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
@@ -647,13 +542,11 @@ class Ortho:
         with exit_stack:
             # create the progress bar
             if progress is True:
-                progress = tqdm(**Ortho._default_tqdm_kwargs)
+                progress = common.get_tqdm_kwargs(unit='blocks')
             elif progress is False:
-                progress = tqdm(disable=True, leave=False)
-            else:
-                progress = tqdm(**progress)
-            progress = exit_stack.enter_context(progress)
-            # exit_stack.enter_context(utils.profiler())  # run utils.profiler in DEBUG log level
+                progress = dict(disable=True, leave=False)
+            progress = exit_stack.enter_context(tqdm(**progress))
+            # exit_stack.enter_context(common.profiler())  # run common.profiler in DEBUG log level
 
             # use the GSD for auto resolution if resolution not provided
             if not resolution:
@@ -666,8 +559,8 @@ class Ortho:
                 GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True
             )
             exit_stack.enter_context(env)
-            exit_stack.enter_context(utils.suppress_no_georef())
-            src_im = exit_stack.enter_context(utils.OpenRaster(self._src_file, 'r'))
+            exit_stack.enter_context(common.suppress_no_georef())
+            src_im = exit_stack.enter_context(common.OpenRaster(self._src_file, 'r'))
 
             # warn if source dimensions don't match camera
             if src_im.shape[::-1] != self._camera.im_size:
@@ -686,16 +579,19 @@ class Ortho:
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & set write_mask
-            ortho_profile, write_mask = self._create_ortho_profile(
-                src_im,
-                dem_array.shape,
-                dem_transform,
-                dtype=dtype,
-                compress=compress,
-                write_mask=write_mask,
+            dtype = dtype or src_im.dtypes[0]
+            ortho_profile, write_mask = common.create_profile(
+                dtype, compress=compress, write_mask=write_mask, colorinterp=src_im.colorinterp
+            )
+            ortho_profile.update(
+                crs=self._crs,
+                transform=dem_transform,
+                width=dem_array.shape[1],
+                height=dem_array.shape[0],
+                count=src_im.count,
             )
             ortho_im = exit_stack.enter_context(
-                utils.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
+                common.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
             )
 
             # orthorectify
@@ -711,7 +607,7 @@ class Ortho:
 
             if build_ovw:
                 # TODO: is it possible to convert to COG here?
-                self._build_overviews(ortho_im)
+                common.build_overviews(ortho_im)
 
 
 ##

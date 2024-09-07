@@ -1,7 +1,7 @@
 File formats
 ============
 
-Camera model file formats supported by Orthority:
+Camera model and related file formats supported by Orthority:
 
 .. toctree::
     :maxdepth: 1
@@ -14,6 +14,8 @@ Camera model file formats supported by Orthority:
     image_rpc
     oty_rpc
     legacy
+    image_gcps
+    oty_gcps
 
 .. note::
 

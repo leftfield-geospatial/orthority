@@ -15,7 +15,7 @@
 
 
 class OrthorityError(Exception):
-    """Base exception class."""
+    """Base exception class - raised when user data or arguments are invalid."""
 
 
 class ParamError(OrthorityError):
@@ -30,7 +30,7 @@ class CrsMissingError(OrthorityError):
     """Raised when a required CRS was not specified."""
 
 
-class CameraInitError(OrthorityError):
+class CameraInitError(Exception):
     """Raised when a camera's parameters have not been initialised."""
 
 

@@ -15,6 +15,8 @@ Or, with conda_:
 
     conda install -c conda-forge requests aiohttp
 
+
+
 .. note::
 
     If you're using the Orthority and Rasterio_ packages together, Orthority should be imported first to configure the PROJ setting for :doc:`vertical CRS transformations <../../background/vertical_crs>`.
@@ -24,3 +26,4 @@ Or, with conda_:
 
     camera
     ortho
+    pan_sharp

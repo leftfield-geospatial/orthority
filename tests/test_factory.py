@@ -15,13 +15,16 @@
 
 from __future__ import annotations
 
+import copy
+import warnings
 from pathlib import Path
 
 import pytest
 import rasterio as rio
 
-from orthority.camera import BrownCamera, FrameCamera, RpcCamera
-from orthority.enums import CameraType
+from orthority import param_io
+from orthority.camera import BrownCamera, FrameCamera
+from orthority.enums import CameraType, RpcRefine
 from orthority.errors import CrsMissingError, ParamError
 from orthority.factory import FrameCameras, RpcCameras
 
@@ -90,7 +93,7 @@ def test_frame_cameras_init_error(ngi_oty_int_param_file: Path, ngi_oty_ext_para
     assert 'not supported' in str(ex.value)
 
 
-def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
+def test_frame_cameras_from_images(odm_image_files: list[Path]):
     """Test creating a frame camera factory from images."""
     cameras = FrameCameras.from_images(odm_image_files)
     assert cameras.crs is not None
@@ -99,7 +102,7 @@ def test_frame_cameras_from_images(odm_image_files: tuple[Path, ...]):
     assert len(cameras._ext_param_dict) > 0
 
 
-def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi_crs: str):
+def test_frame_cameras_from_images_kwargs(odm_image_files: list[Path], ngi_crs: str):
     """Test creating a frame camera factory from images passes ``io_kwargs`` and ``cam_kwargs``
     through.
     """
@@ -113,7 +116,7 @@ def test_frame_cameras_from_images_kwargs(odm_image_files: tuple[Path, ...], ngi
     assert camera.alpha == cam_kwargs['alpha']
 
 
-def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: tuple[Path, ...]):
+def test_frame_cameras_get(odm_reconstruction_file: Path, odm_image_files: list[Path]):
     """Test ``FrameCameras.get()`` for known filenames."""
     cameras = FrameCameras(odm_reconstruction_file, odm_reconstruction_file)
     assert cameras.filenames == {Path(fn).stem for fn in odm_image_files}
@@ -280,17 +283,6 @@ def test_rpc_cameras_from_images_kwargs(
     assert camera.crs == cam_kwargs['crs']
 
 
-def test_rpc_cameras_get(rpc_param_file: Path, rpc_image_file: Path):
-    """Test ``RpcCameras.get()`` for a known filename."""
-    cameras = RpcCameras(rpc_param_file)
-    camera = cameras.get(rpc_image_file.name)
-
-    assert isinstance(camera, RpcCamera)
-    rpc_param = cameras._rpc_param_dict[rpc_image_file.name]
-    assert camera.im_size == rpc_param['im_size']
-    assert camera._rpc == rio.transform.RPC(**rpc_param['rpc'])
-
-
 def test_rpc_cameras_get_filename_not_found_error(rpc_param_file: Path):
     """Test ``RpcCameras.get()`` raises an error with an invalid filename."""
     cameras = RpcCameras(rpc_param_file)
@@ -298,3 +290,57 @@ def test_rpc_cameras_get_filename_not_found_error(rpc_param_file: Path):
     with pytest.raises(ParamError) as ex:
         cameras.get(filename)
     assert filename in str(ex.value) and 'could not find' in str(ex.value).lower()
+
+
+def test_rpc_cameras_refine(rpc_param_file: Path, rpc_image_file: Path, gcp_file: Path):
+    """Test refining a RPC camera factory with various sources of GCPs."""
+
+    def test_refine(gcp_arg):
+        """Test refining with GCPs in ``gcp_arg`` changes the RPC params."""
+        cameras = RpcCameras(rpc_param_file)
+        ref_rpc_param = copy.deepcopy(cameras._rpc_param_dict[rpc_image_file.name]['rpc'])
+        with warnings.catch_warnings():
+            warnings.simplefilter('error')  # fail on warning that no GCPs found
+            cameras.refine(gcp_arg)
+        assert cameras._rpc_param_dict.keys() == cameras._gcp_dict.keys()
+        assert cameras._rpc_param_dict != ref_rpc_param
+
+    test_refine([rpc_image_file])
+    test_refine(gcp_file)
+    test_refine(param_io.read_oty_gcps(gcp_file))
+
+
+def test_rpc_cameras_refine_io_kwargs(
+    rpc_param_file: Path, rpc_image_file: Path, capsys: pytest.CaptureFixture
+):
+    """Test refining a RPC camera factory passes through ``io_kwargs`` when the GCPs are read
+    from image tags.
+    """
+    desc = 'custom'
+    cameras = RpcCameras(rpc_param_file)
+    cameras.refine([rpc_image_file], io_kwargs=dict(progress=dict(desc=desc)))
+    cap = capsys.readouterr()
+    assert desc in cap.err
+
+
+def test_rpc_cameras_refine_ref_kwargs(rpc_param_file: Path, rpc_image_file: Path):
+    """Test refining a RPC camera factory passes through ``fit_kwargs`` to ``fit.refine_rpc()``."""
+    cameras = RpcCameras(rpc_param_file)
+    cameras.refine([rpc_image_file], fit_kwargs=dict(method=RpcRefine.shift))
+    shift_rpc_param = copy.deepcopy(cameras._rpc_param_dict[rpc_image_file.name]['rpc'])
+
+    cameras = RpcCameras(rpc_param_file)
+    cameras.refine([rpc_image_file], fit_kwargs=dict(method=RpcRefine.shift_drift))
+    shift_drift_rpc_param = cameras._rpc_param_dict[rpc_image_file.name]['rpc']
+
+    assert shift_drift_rpc_param != shift_rpc_param
+
+
+def test_rpc_cameras_refine_get(rpc_param_file: Path, rpc_image_file: Path):
+    """Test ``RpcCameras.get()`` returns a different camera after refinement."""
+    cameras = RpcCameras(rpc_param_file)
+    camera = cameras.get(rpc_image_file.name)
+    cameras.refine([rpc_image_file])
+    refined_camera = cameras.get(rpc_image_file.name)
+
+    assert camera != refined_camera and camera._rpc != refined_camera._rpc

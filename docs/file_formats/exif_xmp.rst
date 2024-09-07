@@ -1,5 +1,5 @@
-EXIF / XMP tags
-===============
+Image EXIF / XMP tags
+=====================
 
 :ref:`Frame camera <background/camera_models:frame cameras>` interior and exterior parameters can be read from image EXIF / XMP tags.  The tables below list required tag sets.  If more than one set is present, the first complete set is used.
 

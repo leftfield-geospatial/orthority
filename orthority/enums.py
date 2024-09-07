@@ -142,3 +142,18 @@ class CsvFormat(Enum):
     def is_opk(self) -> bool:
         """Whether the format has (omega, phi, kappa) orientation."""
         return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
+
+
+class RpcRefine(str, Enum):
+    """RPC refinement method."""
+
+    shift = 'shift'
+    """Pixel coordinate translation."""
+    shift_drift = 'shift-drift'
+    """Pixel coordinate scale and translation."""
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_

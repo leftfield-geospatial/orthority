@@ -16,17 +16,19 @@
 """Factories for creating camera models from parameter files and dictionaries."""
 from __future__ import annotations
 
+import warnings
 from abc import ABC, abstractmethod
 from os import PathLike
 from pathlib import Path
 from typing import IO, Sequence
 
 import rasterio as rio
+from fsspec.core import OpenFile
 
-from orthority import param_io
+from orthority import param_io, common
 from orthority.camera import Camera, create_camera, FrameCamera, RpcCamera
-from orthority.errors import CrsMissingError, ParamError
-from orthority.utils import get_filename, join_ofile, OpenFile
+from orthority.errors import CrsMissingError, OrthorityWarning, ParamError
+from orthority.fit import refine_rpc
 
 
 class Cameras(ABC):
@@ -118,7 +120,7 @@ class FrameCameras(Cameras):
         <../file_formats/exif_xmp>`.
 
         :param files:
-            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            Image file(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of keyword arguments for the
@@ -155,7 +157,7 @@ class FrameCameras(Cameras):
         crs = None
         if not isinstance(int_param, dict):
             # read interior params
-            int_param_suffix = Path(get_filename(int_param)).suffix.lower()
+            int_param_suffix = Path(common.get_filename(int_param)).suffix.lower()
             int_param_dict = None
             if int_param_suffix in ['.yaml', '.yml']:
                 int_param_dict = param_io.read_oty_int_param(int_param)
@@ -175,7 +177,7 @@ class FrameCameras(Cameras):
 
         if not isinstance(ext_param, dict):
             # read exterior params and CRS
-            ext_param_suffix = Path(get_filename(ext_param)).suffix.lower()
+            ext_param_suffix = Path(common.get_filename(ext_param)).suffix.lower()
             if ext_param_suffix in ['.csv', '.txt']:
                 reader = param_io.CsvReader(ext_param, **kwargs)
             elif ext_param_suffix == '.json':
@@ -184,7 +186,7 @@ class FrameCameras(Cameras):
                 reader = param_io.OtyReader(ext_param)
             else:
                 raise ParamError(
-                    f"'{ext_param_suffix}' exterior paramater file type not supported."
+                    f"'{ext_param_suffix}' exterior parameter file type not supported."
                 )
             ext_param_dict = reader.read_ext_param()
             crs = reader.crs
@@ -202,7 +204,7 @@ class FrameCameras(Cameras):
 
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> FrameCamera:
         # get exterior params for filename
-        filename = Path(get_filename(filename))
+        filename = Path(common.get_filename(filename))
         ext_param = self._ext_param_dict.get(
             filename.name, self._ext_param_dict.get(filename.stem, None)
         )
@@ -233,14 +235,14 @@ class FrameCameras(Cameras):
 
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
         # write interior params
-        int_param_file = join_ofile(out_dir, 'int_param.yaml', mode='wt')
+        int_param_file = common.join_ofile(out_dir, 'int_param.yaml', mode='wt')
         param_io.write_int_param(int_param_file, self._int_param_dict, overwrite=overwrite)
 
         if not self.crs:
             raise CrsMissingError("A world 'crs' is required to write exterior parameters.")
 
         # write exterior params
-        ext_param_file = join_ofile(out_dir, 'ext_param.geojson', mode='wt')
+        ext_param_file = common.join_ofile(out_dir, 'ext_param.geojson', mode='wt')
         param_io.write_ext_param(
             ext_param_file, self._ext_param_dict, overwrite=overwrite, crs=self.crs
         )
@@ -268,8 +270,10 @@ class RpcCameras(Cameras):
             self._rpc_param_dict = param_io.read_oty_rpc_param(rpc_param)
         else:
             self._rpc_param_dict = rpc_param
+
         self._cam_kwargs = cam_kwargs or {}
         self._cameras = {}
+        self._gcp_dict = None
 
     @classmethod
     def from_images(
@@ -283,7 +287,7 @@ class RpcCameras(Cameras):
         <../file_formats/image_rpc>`.
 
         :param files:
-            Image file(s) to read as a tuple of paths or URI strings, :class:`~fsspec.core.OpenFile`
+            Image file(s) to read as a list of paths or URI strings, :class:`~fsspec.core.OpenFile`
             objects in binary mode (``'rb'``), or dataset readers.
         :param io_kwargs:
             Optional dictionary of additional arguments for
@@ -301,9 +305,65 @@ class RpcCameras(Cameras):
     def filenames(self) -> set[str]:
         return set(self._rpc_param_dict.keys())
 
+    def refine(
+        self,
+        gcps: (
+            str
+            | PathLike
+            | OpenFile
+            | IO[str]
+            | Sequence[str | PathLike | OpenFile | rio.DatasetReader]
+            | dict[str, list[dict]]
+        ),
+        io_kwargs: dict = None,
+        fit_kwargs: dict = None,
+    ):
+        """
+        Refine RPC models with GCPs.
+
+        :param gcps:
+            GCPs as one of:
+
+            - :doc:`Orthority GCP file <../file_formats/oty_gcps>` as a path or URI string,
+              an :class:`~fsspec.core.OpenFile` object or file object, opened in text mode
+              (``'rt'``).
+            - :doc:`Image file(s) with GCP tags <../file_formats/image_gcps>` as a list of paths or
+              URI strings, :class:`~fsspec.core.OpenFile` objects in binary mode (``'rb'``),
+              or dataset readers.
+            - GCP dictionary.
+        :param io_kwargs:
+            Optional dictionary of keyword arguments for
+            :class:`~orthority.param_io.read_im_gcps` if ``gcps`` is a list of image file(s).
+            Should exclude ``files`` which is passed internally.
+        :param fit_kwargs:
+            Optional dictionary of keyword arguments for :meth:`~orthority.fit.refine_rpc`.
+            Should exclude ``rpc`` and ``gcps``, which are passed internally.
+        """
+        if gcps and not isinstance(gcps, dict):
+            # read GCPs
+            if isinstance(gcps, (list, tuple)):
+                self._gcp_dict = param_io.read_im_gcps(gcps, **(io_kwargs or {}))
+            else:
+                self._gcp_dict = param_io.read_oty_gcps(gcps)
+        else:
+            self._gcp_dict = gcps
+
+        # refine RPC parameters with GCPs
+        for filename, rpc_param in self._rpc_param_dict.items():
+            filename = Path(filename)
+            gcps = self._gcp_dict.get(filename.name, self._gcp_dict.get(filename.stem, None))
+
+            if gcps:
+                self._cameras.pop(filename.name, None)  # force camera recreation
+                rpc_param['rpc'] = refine_rpc(rpc_param['rpc'], gcps, **(fit_kwargs or {}))
+            else:
+                warnings.warn(
+                    f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
+                )
+
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:
-        # get rpc params for filename
-        filename = Path(get_filename(filename))
+        # get RPC params for filename
+        filename = Path(common.get_filename(filename))
         rpc_param = self._rpc_param_dict.get(
             filename.name, self._rpc_param_dict.get(filename.stem, None)
         )
@@ -316,5 +376,19 @@ class RpcCameras(Cameras):
         return self._cameras[filename.name]
 
     def write_param(self, out_dir: str | PathLike | OpenFile, overwrite: bool = False):
-        rpc_file = join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
+        """
+        Write camera parameters to Orthority format file(s).
+
+        When the models have been refined, the refined models are written, together with the GCPs.
+
+        :param out_dir:
+            Directory to write into.  Can be a path, URI string, or an
+            :class:`~fsspec.core.OpenFile` object.
+        :param overwrite:
+            Whether to overwrite file(s) if they exist.
+        """
+        rpc_file = common.join_ofile(out_dir, 'rpc_param.yaml', mode='wt')
         param_io.write_rpc_param(rpc_file, self._rpc_param_dict, overwrite=overwrite)
+        if self._gcp_dict:
+            gcp_file = common.join_ofile(out_dir, 'gcps.geojson', mode='wt')
+            param_io.write_gcps(gcp_file, self._gcp_dict, overwrite=overwrite)

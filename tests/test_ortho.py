@@ -30,11 +30,12 @@ from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
+from orthority import common
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
 from orthority.enums import CameraType, Compress, Interp
+from orthority.errors import OrthorityError
 from orthority.ortho import Ortho
-from orthority.utils import nan_equals
 from tests.conftest import _dem_resolution
 
 logger = logging.getLogger(__name__)
@@ -132,7 +133,7 @@ def test_init_dem_band_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, pinhole_camera: Camera, utm34n_crs: str
 ):
     """Test Ortho initialisation with incorrect ``dem_band`` raises an error."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         Ortho(rgb_byte_src_file, float_utm34n_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=3)
     assert 'DEM band' in str(ex.value)
 
@@ -154,7 +155,7 @@ def test_init_dem_coverage_error(
     camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (0, 0, 0))
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'DEM' in str(ex.value)
 
@@ -167,7 +168,7 @@ def test_init_horizon_fov_error(
     camera = PinholeCamera(**frame_args)
     camera.update((0, 0, 0), (np.pi / 2, 0, 0))
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'horizon' in str(ex.value)
 
@@ -183,7 +184,7 @@ def test_dem_above_camera_error(
     camera.update(_xyz, frame_args['opk'])
 
     # init & reproject
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
     assert 'DEM' in str(ex.value)
 
@@ -338,7 +339,7 @@ def test_reproject_dem_crs_equal(
     array, transform = ortho._reproject_dem(Interp.cubic, resolution)
 
     assert transform == ortho._dem_transform
-    assert np.all(nan_equals(array, ortho._dem_array))
+    assert np.all(common.nan_equals(array, ortho._dem_array))
 
 
 @pytest.mark.parametrize(
@@ -450,7 +451,7 @@ def test_reproject_dem_vert_crs_scale(
 
 def test_reproject_resolution_error(rgb_pinhole_utm34n_ortho: Ortho):
     """Test DEM reprojection raises an error when the resolution exceeds the ortho bounds."""
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         _, _ = rgb_pinhole_utm34n_ortho._reproject_dem(Interp.cubic, (1000, 1000))
     assert 'resolution' in str(ex.value)
 
@@ -633,29 +634,9 @@ def test_mask_dem_coverage_error(
     camera.update((0.0, 0.0, 1000.0), (0.0, 0.0, 0.0))
 
     # test
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         ortho._mask_dem(dem_array, dem_transform, Interp.cubic)
-    assert 'boundary' in str(ex.value)
-
-
-def test_create_ortho_profile_12bit_jpeg(rgb_pinhole_utm34n_ortho: Ortho):
-    """Test _create_ortho_profile correctly configures a 12bit jpeg ortho profile."""
-    # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
-    # jpeg compression.  This test just checks the ortho profile is correct.
-    with rio.open(rgb_pinhole_utm34n_ortho._src_file, 'r') as src_im:
-        ortho_profile, write_mask = rgb_pinhole_utm34n_ortho._create_ortho_profile(
-            src_im,
-            (1, 1),
-            rio.Affine.identity(),
-            dtype='uint16',
-            compress=Compress.jpeg,
-            write_mask=None,
-        )
-
-    assert write_mask
-    assert ortho_profile['dtype'] == 'uint16'
-    assert ortho_profile['compress'] == 'jpeg'
-    assert 'nbits' in ortho_profile and ortho_profile['nbits'] == 12
+    assert 'lies outside' in str(ex.value)
 
 
 @pytest.mark.parametrize('resolution', [(30.0, 30.0), (60.0, 60.0), (60.0, 30.0)])
@@ -777,7 +758,7 @@ def test_process_per_band(
         test_array = test_im.read()
 
         assert test_array.shape == ref_array.shape
-        assert np.all(nan_equals(test_array, ref_array))
+        assert np.all(common.nan_equals(test_array, ref_array))
 
 
 @pytest.mark.parametrize(
@@ -1010,7 +991,7 @@ def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_pa
     """Test unsupported dtypes raise an error."""
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype)
     assert dtype in str(ex.value)
 
@@ -1029,8 +1010,10 @@ def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: P
 
     assert ortho_file.exists()
     with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['dtype'] in Ortho._nodata_vals
-        assert nan_equals(ortho_im.profile['nodata'], Ortho._nodata_vals[ortho_im.profile['dtype']])
+        assert ortho_im.profile['dtype'] in common._nodata_vals
+        assert common.nan_equals(
+            ortho_im.profile['nodata'], common._nodata_vals[ortho_im.profile['dtype']]
+        )
 
 
 @pytest.mark.parametrize(
@@ -1086,7 +1069,7 @@ def test_process_compress_jpeg_error(
     ortho = Ortho(float_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
 
-    with pytest.raises(ValueError) as ex:
+    with pytest.raises(OrthorityError) as ex:
         ortho.process(ortho_file, (5, 5), compress=Compress.jpeg)
     assert 'uint8' in str(ex.value)
 
@@ -1168,7 +1151,7 @@ def test_process_progress(
 
 
 def test_process_ngi(
-    ngi_image_files: tuple[Path, ...],
+    ngi_image_files: list[Path],
     ngi_dem_file: Path,
     ngi_legacy_config_file: Path,
     ngi_legacy_csv_file: Path,
@@ -1191,11 +1174,11 @@ def test_process_ngi(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(tuple(ortho_files))
+    _validate_ortho_files(ortho_files)
 
 
 def test_process_odm(
-    odm_image_files: tuple[Path, ...],
+    odm_image_files: list[Path],
     odm_dem_file: Path,
     odm_reconstruction_file: Path,
     odm_crs: str,
@@ -1218,4 +1201,4 @@ def test_process_odm(
         assert ortho_file.exists()
         ortho_files.append(ortho_file)
 
-    _validate_ortho_files(tuple(ortho_files), num_ovl_thresh=5)
+    _validate_ortho_files(ortho_files, num_ovl_thresh=5)

@@ -27,13 +27,14 @@ from contextlib import contextmanager, ExitStack
 from io import IOBase
 from os import PathLike
 from pathlib import Path
-from typing import IO, Iterable
+from typing import IO, Sequence
 
 import cv2
 import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from rasterio.enums import Resampling
 
 try:
     from fsspec.implementations.http import HTTPFileSystem
@@ -45,15 +46,32 @@ from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
+from rasterio.enums import ColorInterp
 
-from orthority.enums import Interp
+from orthority.enums import Interp, Compress
+from orthority.errors import OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
+
+_nodata_vals = dict(
+    uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan')
+)
+"""Nodata values for supported dtypes.  OpenCV remap doesn't support int8 or uint32, 
+and only supports int32, uint64, int64 with nearest interpolation, so these dtypes are excluded.
+"""
+
+_default_out_config = dict(
+    write_mask=None, dtype=None, compress=None, build_ovw=True, overwrite=False
+)
+"""Default configuration values for output images."""
 
 
 @contextmanager
 def suppress_no_georef():
     """Context manager to suppress rasterio's NotGeoreferencedWarning."""
+    # TODO: warnings.catch_warnings is not thread-safe and warnings.simplefilter should rather be
+    #  called once in cli.  consider what this does to API doc examples though - perhaps it can
+    #  go in __init__.py.
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=NotGeoreferencedWarning)
         yield
@@ -65,9 +83,7 @@ def expand_window_to_grid(win: Window, expand_pixels: tuple[int, int] = (0, 0)) 
     row_off, row_frac = np.divmod(win.row_off - expand_pixels[0], 1)
     width = np.ceil(win.width + 2 * expand_pixels[1] + col_frac)
     height = np.ceil(win.height + 2 * expand_pixels[0] + row_frac)
-    exp_win = Window(
-        col_off.astype('int'), row_off.astype('int'), width.astype('int'), height.astype('int')
-    )
+    exp_win = Window(int(col_off), int(row_off), int(width), int(height))
     return exp_win
 
 
@@ -143,38 +159,63 @@ def utm_crs_from_latlon(lat: float, lon: float) -> CRS:
     return CRS.from_epsg(epsg)
 
 
-def validate_collection(template: Iterable, coll: Iterable):
+def validate_collection(schema: dict | list, coll: dict | list):
     """
-    Validate a nested dict / list of values (``coll``) against a nested dict / list of types, tuples
-    of types, and values (``template``).
+    Validate a nested dict / list of values (``coll``) against a nested dict / list of types,
+    tuples of types, and values (``schema``).
 
-    All items in a ``coll`` list are validated against the first item in the corresponding
-    ``template`` list.
+    - All items in a ``coll`` dict are validated against the first item in the corresponding
+    ``schema`` dict, if it has one item with a type key.  Otherwise, ``coll`` items are validated
+    against the same key ``schema`` item.
+    - All items in a ``coll`` list are validated against the first item in the corresponding
+    ``schema`` list, if it has one item.  Otherwise ``coll`` items are validated against
+    corresponding ``schema`` items.
+    - ``coll`` values are not validated against corresponding None values in ``schema``.
     """
-    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or-schema-of-dictionary-in-python
-    if isinstance(template, dict) and isinstance(coll, dict):
-        # struct is a dict of types or other dicts
-        for k in template:
-            if k in coll:
-                validate_collection(template[k], coll[k])
-            else:
-                raise KeyError(f"No key: '{k}'.")
-    elif isinstance(template, list) and isinstance(coll, list) and len(template) and len(coll):
-        # struct is list in the form [type or dict]
-        for item in coll:
-            validate_collection(template[0], item)
-    elif isinstance(template, type):
-        # struct is the type of conf
-        if not isinstance(coll, template):
-            raise TypeError(f"'{coll}' is not an instance of {template}.")
-    elif isinstance(template, tuple) and all([isinstance(item, type) for item in template]):
-        # struct is a tuple of types
-        if not isinstance(coll, template):
-            raise TypeError(f"'{coll}' is not an instance of any of {template}.")
-    elif isinstance(template, object) and template is not None:
-        # struct is the value of conf
-        if not coll == template:
-            raise ValueError(f"'{coll}' does not equal '{template}'.")
+    # adapted from https://stackoverflow.com/questions/45812387/how-to-validate-structure-or
+    #  -schema-of-dictionary-in-python
+    if isinstance(schema, dict) and isinstance(coll, dict):
+        # schema is a dict
+        first_key = [*schema][0]
+        if len(schema) == 1 and isinstance(first_key, type):
+            for k in coll:
+                if not isinstance(k, first_key):
+                    raise TypeError(f"'{k}' is not an instance of {first_key}.")
+                validate_collection(schema[first_key], coll[k])
+        else:
+            for k in schema:
+                if k in coll:
+                    validate_collection(schema[k], coll[k])
+                else:
+                    raise KeyError(f"No key: '{k}'.")
+    elif isinstance(schema, list) and isinstance(coll, list) and len(schema) and len(coll):
+        # schema is a list
+        if len(schema) == 1:
+            for item in coll:
+                validate_collection(schema[0], item)
+        else:
+            if len(coll) != len(schema):
+                raise ValueError(f'{coll} should have {len(schema)} items.')
+            for template_item, coll_item in zip(schema, coll):
+                validate_collection(template_item, coll_item)
+    elif isinstance(schema, type):
+        # schema is a type
+        if not isinstance(coll, schema):
+            raise TypeError(f"'{coll}' is not an instance of {schema}.")
+    elif isinstance(schema, tuple) and all([isinstance(item, type) for item in schema]):
+        # schema is a tuple of types
+        if not isinstance(coll, schema):
+            raise TypeError(f"'{coll}' is not an instance of any of {schema}.")
+    elif isinstance(schema, (str, int, float)):
+        # schema is a value of a basic type
+        if not coll == schema:
+            raise ValueError(f"'{coll}' does not equal '{schema}'.")
+    elif schema is None:
+        # don't test
+        pass
+    else:
+        # something else is wrong
+        raise ValueError("Invalid collection.")
 
 
 def get_filename(file: str | PathLike | OpenFile | DatasetReaderBase | IO) -> str:
@@ -356,3 +397,139 @@ class Open:
 
     def close(self):
         self._exit_stack.close()
+
+
+def create_profile(
+    dtype: str | np.dtype,
+    compress: str | Compress | None = None,
+    write_mask: bool | None = None,
+    colorinterp: Sequence[ColorInterp] | None = None,
+) -> tuple[dict, bool]:
+    """Return a partial rasterio profile and ``write_mask`` value for an output image given its
+    configuration.  If ``write_mask`` is None, a value is determined automatically.  Spatial and
+    dimension profile items are not set i.e. ``crs``, ``transform``, ``width``, ``height`` &
+    ``count``.
+    """
+    # TODO: add support for LZW and if possible WEBP compression and COG driver
+    colorinterp = colorinterp or []
+    profile = {}
+
+    # check dtype support
+    dtype = str(dtype)
+    if dtype not in _nodata_vals:
+        raise OrthorityError(f"Data type '{dtype}' is not supported.")
+
+    # configure compression
+    if compress is None:
+        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+    else:
+        compress = Compress(compress)
+        if compress == Compress.jpeg:
+            if dtype == 'uint16':
+                warnings.warn(
+                    'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
+                    'dependent.',
+                    category=OrthorityWarning,
+                )
+                profile.update(nbits=12)
+            elif dtype != 'uint8':
+                raise OrthorityError(
+                    f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
+                )
+
+    # configure interleaving and color interpretation
+    if compress == Compress.jpeg and len(colorinterp) == 3:
+        interleave, photometric = ('pixel', 'ycbcr')
+    elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
+        interleave, photometric = ('band', 'rgb')
+    elif len(colorinterp) == 1:
+        interleave, photometric = ('pixel', None)
+    else:
+        interleave, photometric = ('band', None)
+
+    # resolve auto write_mask (=None) to write masks for jpeg compression
+    if write_mask is None:
+        write_mask = True if compress == Compress.jpeg else False
+
+    # set nodata to None when writing internal masks to force external tools to use mask,
+    # otherwise set by dtype
+    nodata = None if write_mask else _nodata_vals[dtype]
+
+    # create profile
+    profile.update(
+        driver='GTiff',
+        dtype=dtype,
+        tiled=True,
+        blockxsize=512,
+        blockysize=512,
+        nodata=nodata,
+        compress=compress.value,
+        interleave=interleave,
+        photometric=photometric,
+        bigtiff='if_safer',
+    )
+    return profile, write_mask
+
+
+def convert_array_dtype(array: np.ndarray, dtype: str) -> np.array:
+    """Return the ``array`` converted to ``dtype``, rounding and clipping in-place when ``dtype``
+    is integer.  Adapted from :meth:`homonim.raster_array.RasterArray._convert_array_dtype`.
+    """
+    unsafe_cast = not np.can_cast(array.dtype, dtype, casting='safe')
+
+    # round if converting from float to integer dtype
+    if unsafe_cast and np.issubdtype(array.dtype, np.floating) and np.issubdtype(dtype, np.integer):
+        np.round(array, out=array)
+
+    # clip if converting to integer dtype with smaller range than array dtype
+    if unsafe_cast and np.issubdtype(dtype, np.integer):
+        src_info = (
+            np.iinfo(array.dtype)
+            if np.issubdtype(array.dtype, np.integer)
+            else np.finfo(array.dtype)
+        )
+        dst_info = np.iinfo(dtype)
+        if src_info.min < dst_info.min or src_info.max > dst_info.max:
+            # promote array dtype to be able to represent destination dtype exactly (if
+            # possible) to clip correctly
+            array = array.astype(np.promote_types(array.dtype, dtype))
+            np.clip(array, dst_info.min, dst_info.max, out=array)
+
+    # convert dtype (ignoring numpy warnings for float overflow or cast of nan to integer)
+    with np.errstate(invalid='ignore', over='ignore'):
+        array = array.astype(dtype, copy=False, casting='unsafe')
+
+    return array
+
+
+def build_overviews(
+    im: DatasetWriter,
+    max_num_levels: int = 8,
+    min_level_pixels: int = 256,
+) -> None:
+    """
+    Build internal overviews for an open rasterio dataset.  Each overview level is decimated by a
+    factor of 2.  The number of overview levels is determined by whichever of the
+    ``max_num_levels`` or ``min_level_pixels`` limits is reached first.
+
+    :param im:
+        Rasterio dataset opened in 'r+' or 'w' mode.
+    :param max_num_levels:
+        Maximum number of overview levels.
+    :param min_level_pixels:
+        Minimum overview width / height in pixels.
+    """
+    max_ovw_levels = int(np.min(np.log2(im.shape)))
+    min_level_shape_pow2 = int(np.log2(min_level_pixels))
+    num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
+    ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
+    im.build_overviews(ovw_levels, Resampling.average)
+
+
+def get_tqdm_kwargs(**kwargs) -> dict:
+    """Return a dictionary of ``tqdm`` progress bar kwargs with a standard ``bar_format``."""
+    return dict(
+        bar_format='{l_bar}{bar}|{n_fmt}/{total_fmt} {unit} [{elapsed}<{remaining}]',
+        dynamic_ncols=True,
+        **kwargs,
+    )
