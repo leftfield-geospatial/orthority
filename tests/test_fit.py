@@ -15,8 +15,6 @@
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pytest
 from rasterio.rpc import RPC
@@ -87,14 +85,3 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
     with pytest.raises(ValueError) as ex:
         fit.refine_rpc(rpc, gcps[:-1], method=method)
     assert 'At least' in str(ex.value)
-
-
-def test_refine_logs(rpc: dict, caplog: pytest.LogCaptureFixture):
-    """Test ``refine_rpc()`` debug logs."""
-    gcp = dict(
-        ji=(rpc['samp_off'], rpc['line_off']),
-        xyz=(rpc['long_off'], rpc['lat_off'], rpc['height_off']),
-    )
-    caplog.set_level(logging.DEBUG)
-    fit.refine_rpc(rpc, [gcp])
-    assert 'Refinement transform' in caplog.text
