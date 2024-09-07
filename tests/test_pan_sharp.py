@@ -30,7 +30,7 @@ from rasterio.windows import Window
 
 from orthority import common
 from orthority.enums import Interp, Compress
-from orthority.errors import OrthorityError
+from orthority.errors import OrthorityError, OrthorityWarning
 from orthority.pan_sharp import PanSharpen
 from tests.conftest import create_profile
 
@@ -76,7 +76,7 @@ def mask_ms_file(ms_file: Path, webmerc_crs: str, tmp_path_factory: pytest.TempP
     """Multispectral image with georeferencing and an internal mask defining a buffer of invalid
     pixels.
     """
-    # read pan_file
+    # read ms_file
     with rio.open(ms_file, 'r') as src_im:
         src_array = src_im.read()
 
@@ -95,6 +95,26 @@ def mask_ms_file(ms_file: Path, webmerc_crs: str, tmp_path_factory: pytest.TempP
     with rio.open(out_file, 'w', **out_profile) as out_im:
         out_im.write(out_array)
         out_im.write_mask((out_array != pval).all(axis=0))
+    return out_file
+
+
+@pytest.fixture(scope='session')
+def ms_neg_band_file(ms_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Multispectral image that is ``ms_file`` with a fourth band added that is the inverse of the
+    first band.
+    """
+    # read ms_file
+    with rio.open(ms_file, 'r') as src_im:
+        src_array = src_im.read(out_dtype='int16')
+
+    # create 4 band array with 4th band as inverse of first band
+    out_array = np.concatenate((src_array, [src_array[0] * -1]), axis=0)
+
+    # write to output file
+    out_profile = create_profile(out_array)
+    out_file = tmp_path_factory.mktemp('data').joinpath('ms_neg_band.tif')
+    with rio.open(out_file, 'w', **out_profile) as out_im:
+        out_im.write(out_array)
     return out_file
 
 
@@ -310,6 +330,28 @@ def test_weights_user(pan_file: Path, ms_file: Path, weights: tuple | None):
 
     weights = np.array(weights) / np.sum(weights)
     assert np.all(params['weights'] == weights)
+
+
+def test_weights_negative(pan_file: Path, ms_neg_band_file: Path):
+    """Test behaviour of ``PanSharpen._get_params()`` MS to pan weights estimation when estimated
+    weights contain negative values.
+    """
+    pan_sharp = PanSharpen(pan_file, ms_neg_band_file)
+    with rio.open(ms_neg_band_file, 'r') as ms_im, rio.open(pan_file, 'r') as pan_im:
+        means, cov = pan_sharp._get_stats(pan_im, ms_im, 1, ms_im.indexes, {})
+
+    # get weights, testing a warning is raised
+    with pytest.warns(OrthorityWarning) as record:
+        params = pan_sharp._get_params(means, cov, None)
+    assert len(record) == 1
+    assert 'Weights contain negative value(s)' in record[0].message.args[0]
+
+    # test weight of negative band has been clipped to 0
+    assert params['weights'][-1] == 0
+
+    # test remaining weights have been re-estimated and normalised
+    assert params['weights'][:-1] == pytest.approx(1 / 3, abs=0.01)
+    assert np.sum(params['weights']) == pytest.approx(1, abs=1e-6)
 
 
 @pytest.mark.parametrize('weights', [(1, 1, 1), (1, 2, 3)])
