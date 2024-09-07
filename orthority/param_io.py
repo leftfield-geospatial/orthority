@@ -382,8 +382,8 @@ def read_im_rpc_param(
                 executor.shutdown(wait=False)
                 raise
             except Exception as ex:
-                filename = common.get_filename(file)
                 executor.shutdown(wait=False)
+                filename = common.get_filename(file)
                 raise RuntimeError(f"Could not read RPC tags from '{filename}'.") from ex
 
     return rpc_param_dict
@@ -505,8 +505,8 @@ def read_im_gcps(
                 executor.shutdown(wait=False)
                 raise
             except Exception as ex:
-                filename = common.get_filename(file)
                 executor.shutdown(wait=False)
+                filename = common.get_filename(file)
                 raise RuntimeError(f"Could not read GCPs from '{filename}'.") from ex
 
     return gcp_dict
@@ -1299,8 +1299,8 @@ class ExifReader(FrameReader):
                     executor.shutdown(wait=False)
                     raise
                 except Exception as ex:
-                    filename = common.get_filename(file)
                     executor.shutdown(wait=False)
+                    filename = common.get_filename(file)
                     raise RuntimeError(f"Could not read EXIF tags from '{filename}'.") from ex
 
                 exif_dict[exif_obj.filename] = exif_obj
