@@ -49,6 +49,7 @@ Orthority command line functionality is accessed with the ``oty`` command, and i
 -  ``exif``: Orthorectify images with frame camera model(s) defined by image EXIF / XMP tags.
 -  ``odm``: Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 -  ``rpc``: Orthorectify images with RPC camera models defined by image tags / sidecar files or parameter files.
+-  ``sharpen``: Pan sharpen an image using the Gram-Schmidt method.
 
 Get help on ``oty`` with:
 
