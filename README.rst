@@ -8,7 +8,7 @@ Orthority
 
 .. description_start
 
-Orthority provides a command line interface and Python API for orthorectifying drone, aerial and satellite imagery, given a camera model and DEM. It supports common frame, and RPC camera models. Camera parameters can be read from various file formats, or image tags.
+Orthority provides a command line toolkit and Python API for orthorectifying drone, aerial and satellite imagery, given a camera model and DEM. It supports common frame, and RPC camera models. Camera parameters can be read from various file formats, or image tags.  Related algorithms including RPC refinement and pan-sharpening, are also provided.
 
 .. description_end
 
@@ -103,6 +103,19 @@ Orthorectify ``source.tif`` with the DEM in ``dem.tif``, and RPC camera model de
 
    oty rpc --dem dem.tif source.tif
 
+As above, but refine the RPC camera model with GCPs in ``source.tif`` tags:
+
+.. code-block:: bash
+
+   oty rpc --dem dem.tif --gcp-refine tags source.tif
+
+Pan sharpen the multispectral image ``ms.tif`` with the panchromatic image ``pan.tif``:
+
+.. code-block:: bash
+
+   oty sharpen  --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+
+
 API
 ~~~
 
@@ -115,9 +128,7 @@ Orthorectify an image using interior and exterior parameter files to generate th
     import orthority as oty
 
     # URLs of required files
-    url_root = (
-        'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
-    )
+    url_root = 'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
     src_file = url_root + 'ngi/3324c_2015_1004_05_0182_RGB.tif'  # aerial image
     dem_file = url_root + 'ngi/dem.tif'  # DEM covering imaged area
     int_param_file = url_root + 'io/ngi_int_param.yaml'  # interior parameters
@@ -131,6 +142,23 @@ Orthorectify an image using interior and exterior parameter files to generate th
     ortho = oty.Ortho(src_file, dem_file, camera=camera, crs=cameras.crs)
     ortho.process('ortho.tif')
 
+
+Pan sharpen a multispectral image with the matching panchromatic image:
+
+.. below copied from docs/scripts/api_pan_sharp.py
+
+.. code-block:: python
+
+    import orthority as oty
+
+    # URLs of required files
+    url_root = 'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/tests/data/'
+    pan_file = url_root + 'pan_sharp/pan.tif'  # panchromatic drone image
+    ms_file = url_root + 'pan_sharp/ms.tif'  # multispectral (RGB) drone image
+
+    # create PanSharpen object and pan sharpen
+    pan_sharp = oty.PanSharpen(pan_file, ms_file)
+    pan_sharp.process('pan_sharp.tif')
 
 Documentation
 -------------
