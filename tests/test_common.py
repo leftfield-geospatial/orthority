@@ -27,6 +27,7 @@ from rasterio.enums import ColorInterp
 
 from orthority import common
 from orthority.enums import Compress
+from orthority.errors import OrthorityError
 from tests.conftest import checkerboard, create_profile
 
 
@@ -329,6 +330,7 @@ def test_create_profile_non_config_items():
         # compress is copied through as is when provided
         ('uint8', 'deflate', 'deflate'),
         ('uint16', 'jpeg', 'jpeg'),
+        ('int16', 'lzw', 'lzw'),
     ],
 )
 def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
@@ -357,9 +359,20 @@ def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
             [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined],
             ('band', 'rgb'),
         ),
-        # any other configuration should give 'band' / None
+        ('lzw', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        (
+            'lzw',
+            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined],
+            ('band', 'rgb'),
+        ),
+        # any single band configuration should give 'pixel' / None
+        ('jpeg', [ColorInterp.undefined], ('pixel', None)),
+        ('deflate', [ColorInterp.undefined], ('pixel', None)),
+        ('lzw', [ColorInterp.undefined], ('pixel', None)),
+        # any other > 1 band configuration should give 'band' / None
         ('jpeg', [ColorInterp.undefined] * 4, ('band', None)),
         ('deflate', [ColorInterp.undefined] * 3, ('band', None)),
+        ('lzw', [ColorInterp.undefined] * 3, ('band', None)),
     ],
 )
 def test_create_profile_interleave_photometric(
@@ -416,6 +429,24 @@ def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, e
         assert profile['nodata'] is None and exp_values[1] is None
     else:
         assert common.nan_equals(profile['nodata'], exp_values[1])
+
+
+def test_create_profile_dtype_error():
+    """Test create_profile() raises an error when ``dtype`` is not supported."""
+    with pytest.raises(OrthorityError) as ex:
+        common.create_profile(dtype='uint32', compress=Compress.jpeg)
+
+    assert 'uint32' in str(ex.value)
+
+
+def test_create_profile_compress_error():
+    """Test create_profile() raises an error when ``compress`` is JPEG and ``dtype`` is not uint8
+    or uint16.
+    """
+    with pytest.raises(OrthorityError) as ex:
+        common.create_profile(dtype='float32', compress=Compress.jpeg)
+
+    assert 'uint8' in str(ex.value)
 
 
 @pytest.mark.parametrize(
