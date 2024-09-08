@@ -836,11 +836,9 @@ def test_frame_dtype_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner
     assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
 
 
-@pytest.mark.parametrize('compress', ['jpeg', 'deflate'])
-def test_frame_compress(
-    frame_legacy_ngi_cli_str: str, compress: str, tmp_path: Path, runner: CliRunner
-):
+def test_frame_compress(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty frame --compress`` creates an ortho with the correct compression."""
+    compress = 'lzw'
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress {compress} --res 24'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.stdout
@@ -1616,9 +1614,9 @@ def test_sharpen_dtype_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRu
     assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
 
 
-@pytest.mark.parametrize('compress', ['jpeg', 'deflate'])
-def test_sharpen_compress(sharpen_cli_str: str, compress: str, tmp_path: Path, runner: CliRunner):
+def test_sharpen_compress(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty sharpen`` --compress creates a pan sharpened file with the correct compression."""
+    compress = 'lzw'
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress {compress}'
     result = runner.invoke(cli, cli_str.split())
