@@ -524,11 +524,11 @@ class Ortho:
             Ortho image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or ``float64``).
             If set to ``None`` (the default), the source image data type is used.
         :param compress:
-            Ortho image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
-            any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
-            builds, ``jpeg`` can also be used with uint16, in which case the ortho is 12 bit JPEG
-            compressed. If ``compress`` is set to ``None`` (the default), ``jpeg`` is used for the
-            uint8 ``dtype``, and ``deflate`` otherwise.
+            Ortho image compression type (``jpeg``, ``deflate`` or ``lzw``).  ``deflate`` and
+            ``lzw`` can be used with any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With
+            supporting Rasterio builds, ``jpeg`` can also be used with uint16, in which case the
+            ortho is 12 bit JPEG compressed. If ``compress`` is set to ``None`` (the default),
+            ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param overwrite:

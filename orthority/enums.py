@@ -113,6 +113,8 @@ class Compress(str, Enum):
     """JPEG compression."""
     deflate = 'deflate'
     """Deflate compression."""
+    lzw = 'lzw'
+    """LZW compression."""
 
     def __repr__(self):
         return self._name_
