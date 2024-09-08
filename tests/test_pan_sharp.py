@@ -516,14 +516,24 @@ def test_process_interp(pan_sharpen: PanSharpen, tmp_path: Path, interp: Interp)
     assert abs_diff.std() < 5
 
 
-@pytest.mark.parametrize('write_mask', [False, True])
-def test_process_write_mask(pan_sharpen: PanSharpen, tmp_path: Path, write_mask: bool):
-    """Test the ``PanSharpen.process()`` ``write_mask`` argument."""
+@pytest.mark.parametrize(
+    'write_mask, compress',
+    [(None, Compress.jpeg), (None, Compress.deflate), (False, None), (True, None)],
+)
+def test_process_write_mask(
+    pan_sharpen: PanSharpen, tmp_path: Path, write_mask: bool, compress: Compress
+):
+    """Test the ``PanSharpen.process()`` ``write_mask`` argument and its default value interaction
+    with compression.
+    """
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    pan_sharpen.process(out_file, write_mask=write_mask)
+    pan_sharpen.process(out_file, compress=compress, write_mask=write_mask)
+
+    if write_mask is None:
+        write_mask = True if compress is Compress.jpeg else False
+    mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
 
     with rio.open(out_file, 'r') as out_im:
-        mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
         assert all([mf[0] == mask_flag for mf in out_im.mask_flag_enums])
         assert (
             (out_im.nodata is None)
@@ -539,36 +549,36 @@ def test_process_write_mask(pan_sharpen: PanSharpen, tmp_path: Path, write_mask:
 def test_process_dtype(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_dtype: str, out_dtype: str
 ):
-    """Test the ``PanSharpen.process()`` ``dtype`` argument, and its effect on the ``compress``
-    default value behaviour.
+    """Test the ``PanSharpen.process()`` ``dtype`` argument and its default value interaction with
+    the multispectral image dtype.
     """
     with rio.open(ms_file, 'r') as ms_im_:
         profile = dict(width=ms_im_.width, height=ms_im_.height, dtype=ms_dtype)
         with WarpedVRT(ms_im_, **profile) as ms_im:
             pan_sharp = PanSharpen(pan_file, ms_im)
             out_file = tmp_path.joinpath('pan_sharp.tif')
-            pan_sharp.process(out_file, write_mask=False, dtype=out_dtype, compress=None)
+            pan_sharp.process(out_file, dtype=out_dtype)
 
         out_dtype = out_dtype or ms_im.dtypes[0]
-    compress = Compress.jpeg if out_dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:
         assert out_im.profile['dtype'] == out_dtype
-        assert out_im.profile['compress'] == compress
-        assert common.nan_equals(out_im.nodata, common._nodata_vals[out_dtype])
 
 
-@pytest.mark.parametrize('compress', Compress)
-def test_process_compress(pan_sharpen: PanSharpen, tmp_path: Path, compress: Compress):
-    """Test the ``PanSharpen.process()`` ``compress`` argument, and its effect on the ``write_mask``
-    default value behaviour.
+@pytest.mark.parametrize(
+    'compress, dtype', [(None, 'uint8'), (None, 'float32'), *[(c, None) for c in Compress]]
+)
+def test_process_compress(pan_sharpen: PanSharpen, tmp_path: Path, compress: Compress, dtype: str):
+    """Test the ``PanSharpen.process()`` ``compress`` argument and its default value interaction
+    with ``dtype``.
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    pan_sharpen.process(out_file, compress=compress)
+    pan_sharpen.process(out_file, dtype=dtype, compress=compress)
+
+    if compress is None:
+        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:
-        mask_flag = MaskFlags.per_dataset if compress is Compress.jpeg else MaskFlags.nodata
-        assert all([mf[0] == mask_flag for mf in out_im.mask_flag_enums])
         assert out_im.profile['compress'] == compress
 
 
