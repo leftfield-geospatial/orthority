@@ -737,7 +737,7 @@ def test_frame_world_boundary_zsurf_clip(pinhole_camera: FrameCamera):
     """Test ``FrameCamera.world_boundary()`` at z surface clips z values to the camera height."""
     # create z surface (steps from above to below camera) and corresponding transform
     min_z, max_z = pinhole_camera.pos[2] * 0.5, pinhole_camera.pos[2] * 1.5
-    z = np.row_stack((max_z * np.ones((5, 20)), min_z * np.ones((15, 20))))
+    z = np.vstack((max_z * np.ones((5, 20)), min_z * np.ones((15, 20))))
     bounds = ortho_bounds(pinhole_camera, z=min_z)
     transform = from_bounds(*bounds, *z.shape[::-1])
 

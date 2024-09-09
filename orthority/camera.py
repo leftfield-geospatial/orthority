@@ -217,7 +217,7 @@ class Camera(ABC):
             perim = 2 * br.sum()
             cnr_ji = np.array([[0, 0], [br[0], 0], br, [0, br[1]], [0, 0]])
             dist = np.sum(np.abs(np.diff(cnr_ji, axis=0)), axis=1)
-            return np.row_stack(
+            return np.vstack(
                 [
                     np.linspace(
                         cnr_ji[i],
@@ -754,7 +754,7 @@ class FrameCamera(Camera):
             n = 9
             scale_j, scale_i = np.meshgrid(range(0, n), range(0, n))
             scale_j, scale_i = scale_j.ravel(), scale_i.ravel()
-            ji = np.row_stack([scale_j * w / (n - 1), scale_i * h / (n - 1)])
+            ji = np.vstack([scale_j * w / (n - 1), scale_i * h / (n - 1)])
             xy = self._pixel_to_camera(ji)[:2]
             outer = xy.min(axis=1), xy.max(axis=1) - xy.min(axis=1)
             inner_ul = np.array((xy[0][scale_j == 0].max(), xy[1][scale_i == 0].max()))
@@ -791,7 +791,7 @@ class FrameCamera(Camera):
 
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         """Transform 2D pixel to homogenous 3D camera coordinates."""
-        ji_ = np.row_stack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
+        ji_ = np.vstack([ji.astype('float64', copy=False), np.ones((1, ji.shape[1]))])
         xyz_ = self._K_undistort_inv.dot(ji_)
         return xyz_
 
@@ -1237,7 +1237,7 @@ class OpenCVCamera(FrameCamera):
         # equivalent to the above, but using Camera methods (works out slower):
         # j = np.arange(0, self.im_size[0], dtype='int32')
         # i = np.zeros(self.im_size[0], dtype='int32')
-        # ji = np.row_stack((j, i))
+        # ji = np.vstack((j, i))
         # undistort_maps = (
         #     np.zeros(self.im_size[::-1], dtype='float32'),
         #     np.zeros(self.im_size[::-1], dtype='float32'),
@@ -1258,7 +1258,7 @@ class OpenCVCamera(FrameCamera):
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         ji_cv = ji.T.astype('float64', copy=False)
         xyz_ = cv2.undistortPoints(ji_cv, self._K, self._dist_param)
-        xyz_ = np.row_stack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
+        xyz_ = np.vstack([xyz_[:, 0, :].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
 
@@ -1480,7 +1480,7 @@ class FisheyeCamera(FrameCamera):
     def _pixel_to_camera(self, ji: np.ndarray) -> np.ndarray:
         ji_cv = ji.T[None, :].astype('float64', copy=False)
         xyz_ = cv2.fisheye.undistortPoints(ji_cv, self._K, self._dist_param, None, None)
-        xyz_ = np.row_stack([xyz_[0].T, np.ones((1, ji.shape[1]))])
+        xyz_ = np.vstack([xyz_[0].T, np.ones((1, ji.shape[1]))])
         return xyz_
 
 
