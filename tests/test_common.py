@@ -193,7 +193,12 @@ def test_open_raster_overwrite(tmp_path: Path):
 
 @pytest.mark.parametrize(
     'raster_file',
-    ['unknown/unknown.tif', 'https://un.known/unknown.tif', 'https://github.com/unknown.tif'],
+    [
+        'unknown/unknown.tif',
+        # TODO: add in URL tests when rio.open(opener=...) is working
+        # 'https://un.known/unknown.tif',
+        # 'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/unknown.tif',
+    ],
 )
 def test_open_raster_not_found_error(raster_file: str):
     """Test OpenRaster raises a FileNotFoundError error with non-existing file path / URIs."""
@@ -345,38 +350,38 @@ def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
     'compress, colorinterp, exp_values',
     [
         # jpeg compression with any 3 band colorinterp should give 'pixel' / 'ycbcr'
-        ('jpeg', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('pixel', 'ycbcr')),
-        ('jpeg', [ColorInterp.undefined] * 3, ('pixel', 'ycbcr')),
+        ('jpeg', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('pixel', 'ycbcr')),
+        ('jpeg', (ColorInterp.undefined,) * 3, ('pixel', 'ycbcr')),
         # any compression with rgb or rgb* colorinterp should give 'band' / 'rgb'
         (
             'jpeg',
-            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha],
+            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha),
             ('band', 'rgb'),
         ),
-        ('deflate', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        ('deflate', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('band', 'rgb')),
         (
             'deflate',
-            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined],
+            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined),
             ('band', 'rgb'),
         ),
-        ('lzw', [ColorInterp.red, ColorInterp.green, ColorInterp.blue], ('band', 'rgb')),
+        ('lzw', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('band', 'rgb')),
         (
             'lzw',
-            [ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined],
+            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined),
             ('band', 'rgb'),
         ),
         # any single band configuration should give 'pixel' / None
-        ('jpeg', [ColorInterp.undefined], ('pixel', None)),
-        ('deflate', [ColorInterp.undefined], ('pixel', None)),
-        ('lzw', [ColorInterp.undefined], ('pixel', None)),
+        ('jpeg', (ColorInterp.undefined,), ('pixel', None)),
+        ('deflate', (ColorInterp.undefined,), ('pixel', None)),
+        ('lzw', (ColorInterp.undefined,), ('pixel', None)),
         # any other > 1 band configuration should give 'band' / None
-        ('jpeg', [ColorInterp.undefined] * 4, ('band', None)),
-        ('deflate', [ColorInterp.undefined] * 3, ('band', None)),
-        ('lzw', [ColorInterp.undefined] * 3, ('band', None)),
+        ('jpeg', (ColorInterp.undefined,) * 4, ('band', None)),
+        ('deflate', (ColorInterp.undefined,) * 3, ('band', None)),
+        ('lzw', (ColorInterp.undefined,) * 3, ('band', None)),
     ],
 )
 def test_create_profile_interleave_photometric(
-    compress: str, colorinterp: list[ColorInterp], exp_values: tuple
+    compress: str, colorinterp: tuple[ColorInterp], exp_values: tuple
 ):
     """Test create_profile() ``interleave`` / ``photometric`` configuration."""
     profile, write_mask = common.create_profile(

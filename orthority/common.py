@@ -309,7 +309,11 @@ class OpenRaster:
                         rio.open(ofile.path, mode, **kwargs)
                     )
                 except RasterioIOError as ex:
-                    raise FileNotFoundError(str(ex))
+                    ex_str = str(ex)
+                    if 'no such file or directory' in ex_str.lower():
+                        raise FileNotFoundError(ex_str)
+                    else:
+                        raise
             else:
                 # use fsspec file object
                 file_obj = self._exit_stack.enter_context(ofile)
@@ -440,7 +444,7 @@ def create_profile(
     # configure interleaving and color interpretation
     if compress == Compress.jpeg and len(colorinterp) == 3:
         interleave, photometric = ('pixel', 'ycbcr')
-    elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
+    elif tuple(colorinterp[:3]) == (ColorInterp.red, ColorInterp.green, ColorInterp.blue):
         interleave, photometric = ('band', 'rgb')
     elif len(colorinterp) == 1:
         interleave, photometric = ('pixel', None)
