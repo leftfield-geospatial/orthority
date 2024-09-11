@@ -52,7 +52,7 @@ def frame_legacy_ngi_cli_str(
 
 @pytest.fixture(scope='session')
 def sharpen_cli_str(pan_file: Path, ms_file: Path) -> str:
-    """``oty sharpen`` CLI string to pan sharpen test images."""
+    """``oty sharpen`` CLI string to pan-sharpen test images."""
     return f'sharpen --pan {pan_file} --multispectral {ms_file}'
 
 
@@ -1578,7 +1578,7 @@ def test_sharpen_interp_error(sharpen_cli_str: str, tmp_path: Path, runner: CliR
 
 
 def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` --write-mask writes an internal mask to the pan sharpened file with
+    """Test ``oty sharpen`` --write-mask writes an internal mask to the pan-sharpened file with
     deflate compression.
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
@@ -1593,7 +1593,7 @@ def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRun
 
 
 def test_sharpen_dtype(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` --dtype creates a pan sharpened file with the correct dtype."""
+    """Test ``oty sharpen`` --dtype creates a pan-sharpened file with the correct dtype."""
     dtype = 'float32'
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --dtype {dtype}'
@@ -1615,7 +1615,7 @@ def test_sharpen_dtype_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRu
 
 
 def test_sharpen_compress(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` --compress creates a pan sharpened file with the correct compression."""
+    """Test ``oty sharpen`` --compress creates a pan-sharpened file with the correct compression."""
     compress = 'lzw'
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress {compress}'
@@ -1661,7 +1661,7 @@ def test_sharpen_no_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliR
 
 
 def test_sharpen_overwrite(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` --overwrite overwrites an existing pan sharpened file."""
+    """Test ``oty sharpen`` --overwrite overwrites an existing pan-sharpened file."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
     out_file.touch()
     cli_str = sharpen_cli_str + f' --out-file {out_file} --overwrite'
@@ -1674,7 +1674,7 @@ def test_sharpen_overwrite(sharpen_cli_str: str, tmp_path: Path, runner: CliRunn
 
 
 def test_sharpen_overwrite_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty sharpen`` raises an error when the pan sharpened file already exists."""
+    """Test ``oty sharpen`` raises an error when the pan-sharpened file already exists."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
     out_file.touch()
     cli_str = sharpen_cli_str + f' --out-file {out_file}'

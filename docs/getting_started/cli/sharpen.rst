@@ -3,7 +3,7 @@
 ``oty sharpen``
 ===============
 
-|oty sharpen|_ implements the Gram-Schmidt pan sharpening method.  This example pan sharpens a multispectral (RGB) drone image with its matching panchromatic image:
+|oty sharpen|_ implements the Gram-Schmidt pan-sharpening method.  This example pan-sharpens a multispectral (RGB) drone image with its matching panchromatic image:
 
 .. code-block:: bash
 

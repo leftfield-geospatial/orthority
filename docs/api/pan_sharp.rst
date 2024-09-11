@@ -1,4 +1,4 @@
-Pan sharpening
+Pan-sharpening
 ===============
 
 .. automodule:: orthority.pan_sharp

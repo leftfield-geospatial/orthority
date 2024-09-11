@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope='session')
 def pan_sharpen(pan_file: Path, ms_file: Path) -> PanSharpen:
-    """A pan sharpener."""
+    """A pan-sharpener."""
     return PanSharpen(pan_file, ms_file)
 
 
@@ -151,7 +151,7 @@ def test_init_bounds_error(odm_dem_file: Path, ngi_dem_file: Path):
 def _test_pan_sharp_file(
     out_file: Path, ms_file: Path | rio.DatasetReader, ms_indexes: tuple = None
 ):
-    """Test the pan sharpened ``out_file`` by reprojecting it to the grid of the given
+    """Test the pan-sharpened ``out_file`` by reprojecting it to the grid of the given
     multispectral ``ms_file`` and comparing.
     """
     with common.OpenRaster(ms_file, 'r') as ms_im, common.OpenRaster(out_file, 'r') as out_im_:
@@ -232,7 +232,7 @@ def _test_pan_sharp_file(
     ],
 )
 def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: dict, tmp_path: Path):
-    """Test pan sharpening using WarpedVRT to simulate different combinations of pan & MS
+    """Test pan-sharpening using WarpedVRT to simulate different combinations of pan & MS
     georeferencing and bounds (all without masks).
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
@@ -243,7 +243,7 @@ def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: di
         ms_profile['width'] = ms_profile.get('width', ms_im_.width)
         ms_profile['height'] = ms_profile.get('height', ms_im_.height)
 
-        # simulate pan & MS georeferencing, and pan sharpen
+        # simulate pan & MS georeferencing, and pan-sharpen
         with WarpedVRT(pan_im_, **pan_profile) as pan_im, WarpedVRT(ms_im_, **ms_profile) as ms_im:
             pan_sharp = PanSharpen(pan_im, ms_im)
             pan_sharp.process(out_file, weights=(1, 1, 1), compress='deflate')
@@ -255,7 +255,7 @@ def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: di
 
 @pytest.mark.parametrize('vrt_profile', [None, dict(nodata=0), dict(add_alpha=True)])
 def test_mask(mask_pan_file: Path, mask_ms_file: Path, tmp_path: Path, vrt_profile: dict):
-    """Test masking in the pan sharpened image with pan & MS images that have internal,
+    """Test masking in the pan-sharpened image with pan & MS images that have internal,
     nodata and alpha masks, that mask invalid pixels inside the common bounds.
     """
     with ExitStack() as exit_stack:
@@ -445,7 +445,7 @@ def test_process_pan_index_error(pan_sharpen: PanSharpen, tmp_path: Path):
 def test_process_ms_indexes(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_indexes: tuple, weights: tuple
 ):
-    """Test pan sharpened bands are correctly defined by the ``PanSharpen.process()``
+    """Test pan-sharpened bands are correctly defined by the ``PanSharpen.process()``
     ``ms_indexes`` argument.
     """
     # note that for this test to pass, ms_indexes and weights must give a weighted sum of indexed
@@ -468,7 +468,7 @@ def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
 
 
 def test_process_weights(pan_file: Path, ms_file: Path, tmp_path: Path):
-    """Test the ``PanSharpen.process()`` ``weights`` argument by comparing pan sharpened images
+    """Test the ``PanSharpen.process()`` ``weights`` argument by comparing pan-sharpened images
     with different weightings.
     """
     out_arrays = []
