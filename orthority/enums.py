@@ -159,3 +159,18 @@ class RpcRefine(str, Enum):
 
     def __str__(self):
         return self._name_
+
+
+class Driver(str, Enum):
+    """Raster format drivers."""
+
+    gtiff = 'gtiff'
+    """GeoTIFF."""
+    cog = 'cog'
+    """Cloud Optimised GeoTIFF."""
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_

@@ -23,10 +23,10 @@ import fsspec
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio.enums import ColorInterp
+from rasterio.enums import PhotometricInterp, MaskFlags
 
 from orthority import common
-from orthority.enums import Compress
+from orthority.enums import Compress, Driver
 from orthority.errors import OrthorityError
 from tests.conftest import checkerboard, create_profile
 
@@ -311,17 +311,39 @@ def test_open_not_found_error(file: str):
             pass
 
 
-def test_create_profile_non_config_items():
-    """Test create_profile() non-configurable items."""
-    profile, write_mask = common.create_profile(dtype='uint8')
+@pytest.mark.parametrize('driver', Driver)
+def test_create_profile_driver(driver: Driver):
+    """Test ``create_profile()`` sets ``driver``."""
+    profile, write_mask = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
+    assert profile['driver'] == driver
 
-    exp_profile = {
-        'driver': 'GTiff',
-        'tiled': True,
-        'blockxsize': 512,
-        'blockysize': 512,
-        'bigtiff': 'if_safer',
-    }
+
+def test_create_profile_shape():
+    """Test ``create_profile()`` sets ``shape`` related items."""
+    shape = (3, 2, 1)
+    profile, write_mask = common.create_profile(driver=Driver.gtiff, shape=shape, dtype='uint8')
+    assert profile['count'] == shape[0]
+    assert profile['height'] == shape[1]
+    assert profile['width'] == shape[2]
+
+
+def test_create_profile_dtype():
+    """Test ``create_profile()`` sets ``dtype``."""
+    dtype = 'uint16'
+    profile, write_mask = common.create_profile(driver=Driver.gtiff, shape=(1, 1, 1), dtype=dtype)
+    assert profile['dtype'] == dtype
+
+
+@pytest.mark.parametrize(
+    'driver, exp_profile',
+    [
+        (Driver.gtiff, dict(tiled=True, blockxsize=512, blockysize=512, bigtiff='if_safer')),
+        (Driver.cog, dict(blocksize=512, bigtiff='if_safer')),
+    ],
+)
+def test_create_profile_non_config_items(driver: Driver, exp_profile: dict):
+    """Test ``create_profile()`` non-configurable items."""
+    profile, write_mask = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
     for k, v in exp_profile.items():
         assert profile[k] == v
 
@@ -339,66 +361,43 @@ def test_create_profile_non_config_items():
     ],
 )
 def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
-    """Test create_profile() ``compress`` configuration."""
-    profile, write_mask = common.create_profile(dtype=dtype, compress=compress)
+    """Test ``create_profile()`` ``compress`` configuration."""
+    for driver in Driver:
+        profile, write_mask = common.create_profile(
+            driver=driver, shape=(1, 1, 1), dtype=dtype, compress=compress
+        )
 
-    assert profile['dtype'] == dtype
-    assert profile['compress'] == exp_value
+        assert profile['compress'] == exp_value
 
 
 @pytest.mark.parametrize(
-    'compress, colorinterp, exp_values',
+    'compress, shape, exp_value',
     [
-        # jpeg compression with any 3 band colorinterp should give 'pixel' / 'ycbcr'
-        ('jpeg', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('pixel', 'ycbcr')),
-        ('jpeg', (ColorInterp.undefined,) * 3, ('pixel', 'ycbcr')),
-        # any compression with rgb or rgb* colorinterp should give 'band' / 'rgb'
-        (
-            'jpeg',
-            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.alpha),
-            ('band', 'rgb'),
-        ),
-        ('deflate', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('band', 'rgb')),
-        (
-            'deflate',
-            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined),
-            ('band', 'rgb'),
-        ),
-        ('lzw', (ColorInterp.red, ColorInterp.green, ColorInterp.blue), ('band', 'rgb')),
-        (
-            'lzw',
-            (ColorInterp.red, ColorInterp.green, ColorInterp.blue, ColorInterp.undefined),
-            ('band', 'rgb'),
-        ),
-        # any single band configuration should give 'pixel' / None
-        ('jpeg', (ColorInterp.undefined,), ('pixel', None)),
-        ('deflate', (ColorInterp.undefined,), ('pixel', None)),
-        ('lzw', (ColorInterp.undefined,), ('pixel', None)),
-        # any other > 1 band configuration should give 'band' / None
-        ('jpeg', (ColorInterp.undefined,) * 4, ('band', None)),
-        ('deflate', (ColorInterp.undefined,) * 3, ('band', None)),
-        ('lzw', (ColorInterp.undefined,) * 3, ('band', None)),
+        # jpeg compression with 3 bands should give ''ycbcr'
+        ('jpeg', (3, 1, 1), 'ycbcr'),
+        # any other configuration should give None
+        ('deflate', (3, 1, 1), None),
     ],
 )
-def test_create_profile_interleave_photometric(
-    compress: str, colorinterp: tuple[ColorInterp], exp_values: tuple
-):
-    """Test create_profile() ``interleave`` / ``photometric`` configuration."""
+def test_create_profile_photometric(compress: str, shape: tuple, exp_value: str | None):
+    """Test ``create_profile()`` ``photometric`` configuration with ``driver='gtiff'``."""
     profile, write_mask = common.create_profile(
-        dtype='uint8', compress=compress, colorinterp=colorinterp
+        driver=Driver.gtiff, shape=shape, dtype='uint8', compress=compress
     )
 
     assert profile['dtype'] == 'uint8'
     assert profile['compress'] == compress
-    assert profile['interleave'] == exp_values[0]
-    assert profile['photometric'] == exp_values[1]
+    assert profile.get('photometric', None) == exp_value
 
 
-def test_create_profile_12bit_jpeg():
-    """Test create_profile() correctly configures a 12bit jpeg profile."""
+@pytest.mark.parametrize('driver', Driver)
+def test_create_profile_12bit_jpeg(driver: Driver):
+    """Test ``create_profile()`` correctly configures a 12bit jpeg profile."""
     # Note: depending on how rasterio is built, it may or may not support reading/writing 12 bit
     # jpeg compression.  This test just checks the profile is correct.
-    profile, write_mask = common.create_profile(dtype='uint16', compress=Compress.jpeg)
+    profile, write_mask = common.create_profile(
+        driver=driver, shape=(1, 1, 1), dtype='uint16', compress=Compress.jpeg
+    )
 
     assert write_mask
     assert profile['dtype'] == 'uint16'
@@ -426,32 +425,134 @@ def test_create_profile_12bit_jpeg():
     ],
 )
 def test_create_profile_write_mask_nodata(dtype: str, write_mask: bool | None, exp_values: tuple):
-    """Test create_profile() correctly sets ``write_mask`` and ``nodata``."""
-    profile, write_mask = common.create_profile(dtype=dtype, write_mask=write_mask)
+    """Test ``create_profile()`` correctly sets ``write_mask`` and ``nodata``."""
+    for driver in Driver:
+        profile, write_mask = common.create_profile(
+            driver=driver, shape=(1, 1, 1), dtype=dtype, write_mask=write_mask
+        )
 
-    assert write_mask is exp_values[0]
-    if profile['nodata'] is None or exp_values[1] is None:
-        assert profile['nodata'] is None and exp_values[1] is None
-    else:
-        assert common.nan_equals(profile['nodata'], exp_values[1])
+        assert write_mask is exp_values[0]
+        if profile['nodata'] is None or exp_values[1] is None:
+            assert profile['nodata'] is None and exp_values[1] is None
+        else:
+            assert common.nan_equals(profile['nodata'], exp_values[1])
+
+
+def test_create_profile_driver_error():
+    """Test ``create_profile()`` raises an error when ``driver`` is not supported."""
+    with pytest.raises(ValueError) as ex:
+        common.create_profile(driver='other', shape=(1, 1, 1), dtype='uint8')
+
+    assert 'other' in str(ex.value)
 
 
 def test_create_profile_dtype_error():
-    """Test create_profile() raises an error when ``dtype`` is not supported."""
+    """Test ``create_profile()`` raises an error when ``dtype`` is not supported."""
     with pytest.raises(OrthorityError) as ex:
-        common.create_profile(dtype='uint32', compress=Compress.jpeg)
+        common.create_profile(
+            driver=Driver.gtiff, shape=(1, 1, 1), dtype='uint32', compress=Compress.jpeg
+        )
 
     assert 'uint32' in str(ex.value)
 
 
-def test_create_profile_compress_error():
-    """Test create_profile() raises an error when ``compress`` is JPEG and ``dtype`` is not uint8
-    or uint16.
+@pytest.mark.parametrize('driver', Driver)
+def test_create_profile_compress_error(driver: Driver):
+    """Test ``create_profile()`` raises an error when ``compress`` is JPEG and ``dtype`` is not
+    uint8 or uint16.
     """
     with pytest.raises(OrthorityError) as ex:
-        common.create_profile(dtype='float32', compress=Compress.jpeg)
+        common.create_profile(
+            driver=driver, shape=(1, 1, 1), dtype='float32', compress=Compress.jpeg
+        )
 
     assert 'uint8' in str(ex.value)
+
+
+def test_create_profile_creation_options():
+    """Test ``create_profile()`` populates the profile with ``creation_options`` creation options
+    only.
+    """
+    driver = Driver.gtiff
+    dtype = 'uint16'
+    shape = (3, 2, 1)
+    creation_options = dict(item1=123, item2='abc')
+    profile, write_mask = common.create_profile(
+        driver=driver, shape=shape, dtype=dtype, creation_options=creation_options
+    )
+
+    exp_profile = dict(
+        driver=driver.value,
+        dtype=dtype,
+        width=shape[2],
+        height=shape[1],
+        count=shape[0],
+        bigtiff='if_safer',
+        nodata=0,
+        **creation_options,
+    )
+    assert write_mask == False
+    assert profile == exp_profile
+
+
+@pytest.mark.parametrize(
+    'driver, shape, dtype, compress, write_mask',
+    [
+        (Driver.gtiff, (1, 1, 1), 'uint8', Compress.jpeg, False),
+        (Driver.gtiff, (1, 1, 1), 'uint16', Compress.deflate, True),
+        (Driver.gtiff, (3, 1, 1), 'float32', Compress.lzw, False),
+        (Driver.gtiff, (3, 1, 1), 'uint8', Compress.jpeg, True),
+        (Driver.cog, (1, 1, 1), 'uint8', Compress.jpeg, False),
+        (Driver.cog, (1, 1, 1), 'uint16', Compress.deflate, True),
+        (Driver.cog, (3, 1, 1), 'float32', Compress.lzw, False),
+        (Driver.cog, (3, 1, 1), 'uint8', Compress.jpeg, True),
+    ],
+)
+def test_create_profile_image(
+    driver: Driver, shape: tuple, dtype: str, compress: Compress, write_mask: bool, tmp_path: Path
+):
+    """Test the ``create_profile()`` profile generates an image with the correct configuration."""
+    profile, write_mask = common.create_profile(
+        driver=driver, shape=shape, dtype=dtype, compress=compress, write_mask=write_mask
+    )
+    array = 100 * np.ones(shape, dtype=dtype)
+    test_file = tmp_path.joinpath('test.tif')
+    with rio.open(test_file, 'w', **profile) as im:
+        im.write(array)
+        if write_mask:
+            im.write_mask(array > 0)
+
+    with rio.open(test_file, 'r') as im:
+        # driver
+        assert im.driver.lower() == 'gtiff'
+        im_struct = im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
+
+        # tiling
+        assert im.profile['tiled'] == True
+        assert im.profile['blockxsize'] == im.profile['blockysize'] == 512
+
+        # dtype and compression
+        assert im.dtypes[0] == dtype
+        assert im.compression.value.lower() == compress
+
+        # photometric
+        if shape[0] == 3 and compress is Compress.jpeg:
+            assert im.photometric is PhotometricInterp.ycbcr
+        else:
+            assert im.photometric is None
+
+        # write_mask and nodata
+        mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
+        assert all([mf[0] == mask_flag for mf in im.mask_flag_enums])
+        assert (
+            (im.nodata is None)
+            if write_mask
+            else common.nan_equals(im.nodata, common._nodata_vals[dtype])
+        )
 
 
 @pytest.mark.parametrize(
@@ -514,7 +615,16 @@ def test_build_overviews():
     with rio.open(buf, 'w', driver='GTiff', **profile) as im:
         im.write(array)
         # build overviews
-        common.build_overviews(im)
+        common.build_overviews(im, min_level_pixels=256)
 
     with rio.open(buf, 'r') as im:
         assert len(im.overviews(1)) > 0
+
+
+def test_block_windows(ms_float_src_file):
+    """Test ``block_windows()`` against the corresponding Rasterio method."""
+    with rio.open(ms_float_src_file, 'r') as im:
+        test_block_wins = [*common.block_windows(im)]
+        ref_block_wins = [win for _, win in im.block_windows(1)]
+
+    assert test_block_wins == ref_block_wins

@@ -300,6 +300,8 @@ class OpenRaster:
 
             # TODO: delete sidecar files if overwriting (note that DatasetReader has a files
             #  attribute that lists associated files)
+            # TODO: if a file is partially written (e.g. because of an error), rasterio fails when
+            #  overwriting it
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
                 raise FileExistsError(f"File exists: '{ofile.path}'")
 
@@ -558,9 +560,9 @@ def block_windows(
     im: DatasetReaderBase | DatasetWriter, block_shape: tuple[int, int] = None
 ) -> Generator[Window]:
     """Block window generator for the given image, and optional block shape."""
-    driver = Driver(im.driver.lower())
+    driver = im.driver.lower()
     block_shape = block_shape or (
-        (im.profile.get('blocksize', 512),) * 2 if driver is Driver.cog else im.block_shapes[0]
+        (im.profile.get('blocksize', 512),) * 2 if driver == 'cog' else im.block_shapes[0]
     )
 
     xrange = range(0, im.width, block_shape[1])

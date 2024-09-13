@@ -714,6 +714,7 @@ def test_frame_lla_crs(
     """Test ``oty frame --lla-crs`` by comparing orthos created with different ``--lla-crs``
     values.
     """
+    # TODO: this doesn't work with PyPI rasterio <1.3.9
     ortho_bounds = []
     res = 5
     for i, lla_crs in enumerate(['EPSG:4326+4326', 'EPSG:4326+3855']):
@@ -793,6 +794,27 @@ def test_frame_radians(
 
     # compare ortho similarity
     assert ortho_arrays[1] == pytest.approx(ortho_arrays[0], abs=1)
+
+
+def test_frame_driver(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty frame --driver`` creates an ortho with the correct driver."""
+    cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --driver cog'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.driver.lower() == 'gtiff'
+        assert im.tags(ns='IMAGE_STRUCTURE')['LAYOUT'].lower() == 'cog'
+
+
+def test_frame_driver_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty frame --diver`` with an invalid driver raises an error."""
+    cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --driver other'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--driver' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 def test_frame_write_mask(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -879,6 +901,32 @@ def test_frame_no_build_ovw(frame_legacy_ngi_cli_str: str, tmp_path: Path, runne
 
     with rio.open(ortho_files[0], 'r') as im:
         assert len(im.overviews(1)) == 0
+
+
+def test_frame_creation_option(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty frame --creation-option`` creates an ortho with the correct creation options."""
+    cli_str = frame_legacy_ngi_cli_str + (
+        f' --out-dir {tmp_path} -co tiled=yes -co compress=jpeg -co jpeg_quality=50'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.profile['tiled'] == True
+        assert im.profile['compress'].lower() == 'jpeg'
+        assert im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
+
+
+def test_frame_creation_option_error(
+    frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner
+):
+    """Test ``oty frame --creation-option`` raises an error with invalid syntax."""
+    cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} -co compress jpeg'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--creation-option' in result.stdout and 'invalid' in result.stdout.lower()
 
 
 @pytest.mark.parametrize(
@@ -1577,6 +1625,28 @@ def test_sharpen_interp_error(sharpen_cli_str: str, tmp_path: Path, runner: CliR
     assert '--interp' in result.stdout and 'invalid' in result.stdout.lower()
 
 
+def test_sharpen_driver(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --driver creates a pan-sharpened file with the correct driver."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --driver cog'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.driver.lower() == 'gtiff'
+        assert out_im.tags(ns='IMAGE_STRUCTURE')['LAYOUT'].lower() == 'cog'
+
+
+def test_sharpen_driver_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --driver with an invalid diver raises an error."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + f' --out-file {out_file} --driver other'
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code != 0, result.stdout
+    assert '--driver' in result.stdout and 'invalid' in result.stdout.lower()
+
+
 def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty sharpen`` --write-mask writes an internal mask to the pan-sharpened file with
     deflate compression.
@@ -1658,6 +1728,24 @@ def test_sharpen_no_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliR
 
     with rio.open(out_file, 'r') as out_im:
         assert len(out_im.overviews(1)) == 0
+
+
+def test_sharpen_creation_option(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty sharpen`` --creation-option creates a pan-sharpened file with the correct
+    creation options.
+    """
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    cli_str = sharpen_cli_str + (
+        f' --out-file {out_file} -co tiled=yes -co compress=jpeg -co jpeg_quality=50'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.stdout
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.profile['tiled'] == True
+        assert out_im.profile['compress'].lower() == 'jpeg'
+        assert out_im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
 
 def test_sharpen_overwrite(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):

@@ -29,12 +29,12 @@ import numpy as np
 import rasterio as rio
 import yaml
 from fsspec.core import OpenFile
-from tqdm.contrib.logging import logging_redirect_tqdm
 from tqdm.auto import tqdm
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 from orthority import root_path, common
 from orthority.camera import create_camera, FrameCamera
-from orthority.enums import CameraType, Compress, Interp, RpcRefine
+from orthority.enums import CameraType, Compress, Interp, RpcRefine, Driver
 from orthority.errors import CrsError, CrsMissingError, OrthorityError
 from orthority.factory import Cameras, FrameCameras, RpcCameras
 from orthority.fit import _default_rpc_refine_method
@@ -82,10 +82,10 @@ class RstCommand(click.Command):
             ':file:`(.*?)`': r"'\g<1>'",
             # strip '----...'
             # '-{4,}': r'',
-            # # convert from RST cross-ref '`<name> <link>`__' to 'name'
-            # r'`(.*?)(\s+<.*?>)?`_+': r'\g<1>',
-            # convert from RST cross-ref '`<name> <link>`__' to 'link'
-            r'`(.*?)<(.*?)>`_+': r'\g<2>',
+            # convert from RST cross-ref '`<name> <link>`__' to 'name'
+            r'`(.*?)(\s+<.*?>)?`_+': r'\g<1>',
+            # # convert from RST cross-ref '`<name> <link>`__' to 'link'
+            # r'`(.*?)<(.*?)>`_+': r'\g<2>',
         }
 
         def reformat_text(text, width, **kwargs):
@@ -230,6 +230,26 @@ def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFi
             f"'{uri_path}' is not a directory or cannot be accessed.", param=param
         )
     return ofile
+
+
+def _creation_option_cb(ctx: click.Context, param: click.Option, value):
+    """click callback to validate and parse creation options (e.g. ``-co KEY1=VAL1 -co
+    KEY2=VAL2``). Note: ``==VAL`` breaks this as ``str.split('=', 1)`` is used.
+    """
+    # adapted from rasterio https://github.com/rasterio/rasterio
+    if not value:
+        return {}
+    else:
+        out = {}
+        for pair in value:
+            if '=' not in pair:
+                raise click.BadParameter(f'Invalid syntax for KEY=VAL: {pair}')
+            else:
+                k, v = pair.split('=', 1)
+                k = k.lower().strip()
+                v = v.lower().strip()
+                out[k] = None if v in ['none', 'null', 'nil'] else yaml.safe_load(v)
+        return out
 
 
 def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) -> OpenFile:
@@ -480,6 +500,14 @@ alpha_option = click.option(
     'source image portion that allows all undistorted pixels to be valid.  ``1`` includes all '
     'source pixels in the undistorted image.',
 )
+driver_option = click.option(
+    '-dv',
+    '--driver',
+    type=click.Choice(Driver, case_sensitive=False),
+    default=common._default_out_config['driver'],
+    show_default=True,
+    help=f'Ortho image driver.',
+)
 write_mask_option = click.option(
     '-wm/-nwm',
     '--write-mask/--no-write-mask',
@@ -513,6 +541,19 @@ build_ovw_option = click.option(
     default=True,
     show_default=True,
     help='Build overviews for the ortho image(s).',
+)
+creation_option = click.option(
+    '-co',
+    '--creation-option',
+    'creation_options',
+    metavar='NAME=VALUE',
+    multiple=True,
+    default=(),
+    show_default='auto',
+    callback=_creation_option_cb,
+    help='Creation option(s) for the ortho image(s).  If supplied, ``--compress`` is '
+    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`_  '
+    'for details.',
 )
 export_params_option = click.option(
     '-e',
@@ -582,10 +623,12 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 @alpha_option
 @lla_crs_option
 @radians_option
+@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
+@creation_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -664,10 +707,12 @@ def frame(
 @full_remap_option
 @alpha_option
 @lla_crs_option
+@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
+@creation_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -747,10 +792,12 @@ def exif(
 @per_band_option
 @full_remap_option
 @alpha_option
+@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
+@creation_option
 @export_params_option
 @click.option(
     '-od',
@@ -881,10 +928,12 @@ def odm(
 @interp_option
 @dem_interp_option
 @per_band_option
+@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
+@creation_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -1041,6 +1090,14 @@ def rpc(
     show_default=True,
     help=f'Interpolation method for upsampling the multispectral image.',
 )
+@click.option(
+    '-dv',
+    '--driver',
+    type=click.Choice(Driver, case_sensitive=False),
+    default=common._default_out_config['driver'],
+    show_default=True,
+    help=f'Pan-sharpened image driver.',
+)
 @write_mask_option
 @click.option(
     '-dt',
@@ -1066,6 +1123,19 @@ def rpc(
     show_default=True,
     help='Build overviews for the pan-sharpened image.',
 )
+@click.option(
+    '-co',
+    '--creation-option',
+    'creation_options',
+    metavar='NAME=VALUE',
+    multiple=True,
+    default=(),
+    show_default='auto',
+    callback=_creation_option_cb,
+    help='Creation option(s) for the pan-sharpened image.  If supplied, ``--compress`` is '
+    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`_  '
+    'for details.',
+)
 @overwrite_option
 def sharpen(
     pan_file: OpenFile,
@@ -1077,7 +1147,7 @@ def sharpen(
 ) -> None:
     """
     Increases the resolution of a multispectral image to that of a panchromatic image using the
-    Gram-Schmidt pan sharpening method.
+    Gram-Schmidt pan-sharpening method.
 
     Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
     or both of the images are not georeferenced, they are assumed to having matching bounds.
@@ -1129,7 +1199,7 @@ def sharpen(
                 param_hint="'-mi' / '--ms-index'",
             )
 
-        # pan sharpen
+        # pan-sharpen
         try:
             pan_sharp = PanSharpen(pan_im, ms_im)
             pan_sharp.process(
