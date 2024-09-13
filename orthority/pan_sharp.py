@@ -12,7 +12,7 @@
 #
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
-"""Pan sharpening."""
+"""Pan-sharpening."""
 from __future__ import annotations
 
 import logging
@@ -20,10 +20,9 @@ import os
 import warnings
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
-from itertools import product
 from os import PathLike
 from threading import Lock
-from typing import Generator, Sequence
+from typing import Sequence
 
 import numpy as np
 import rasterio as rio
@@ -36,7 +35,7 @@ from rasterio.windows import transform as window_transform
 from tqdm.auto import tqdm
 
 from orthority import common
-from orthority.enums import Compress, Interp
+from orthority.enums import Compress, Interp, Driver
 from orthority.errors import OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
@@ -44,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 class PanSharpen:
     """
-    Pan sharpener.
+    Pan-sharpener.
 
     Increases the resolution of a multispectral image to that of a panchromatic image using the
     Gram-Schmidt method (https://doi.org/10.5194/isprsarchives-XL-1-W1-239-2013).
@@ -184,18 +183,6 @@ class PanSharpen:
                 )
         return profiles
 
-    @staticmethod
-    def _block_windows(
-        im_shape: tuple[int, int], block_shape: tuple[int, int] = (1024, 1024)
-    ) -> Generator[Window]:
-        """Block window generator for the given image, and optional block shape."""
-        xrange = range(0, im_shape[1], block_shape[1])
-        yrange = range(0, im_shape[0], block_shape[0])
-        for xstart, ystart in product(xrange, yrange):
-            xstop = min(xstart + block_shape[1], im_shape[1])
-            ystop = min(ystart + block_shape[0], im_shape[0])
-            yield Window(xstart, ystart, xstop - xstart, ystop - ystart)
-
     def _validate_pan_ms_params(
         self,
         pan_im: rio.DatasetReader,
@@ -298,7 +285,7 @@ class PanSharpen:
             executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
             futures = [
                 executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                for tile_win in self._block_windows(ms_im.shape)
+                for tile_win in common.block_windows(ms_im, block_shape=(1024, 1024))
             ]
 
             for future in tqdm(as_completed(futures), **progress, total=len(futures)):
@@ -340,13 +327,19 @@ class PanSharpen:
 
                 # redo the LS without negatively weighted bands if there are any
                 if np.any(weights < 0):
+                    warnings.warn(
+                        f'Weights contain negative value(s): {tuple(weights.round(4).tolist())}, '
+                        f're-estimating positive weights.',
+                        category=OrthorityWarning,
+                    )
                     ms_indexes_ = np.where(weights > 0)[0] + 1
                     ms_cov = cov[ms_indexes_, :][:, ms_indexes_]
                     pan_ms_cov = cov[0, ms_indexes_].reshape(-1, 1)
                     weights_ = np.linalg.lstsq(ms_cov, pan_ms_cov, rcond=None)[0].squeeze()
 
-                    # use the updated weights if they are positive
+                    # use the updated weights if they are positive, and set negative weights to 0
                     if np.all(weights_ >= 0):
+                        weights = weights.clip(0, None)
                         weights[ms_indexes_ - 1] = weights_
             else:
                 weights = np.array(weights)
@@ -355,8 +348,8 @@ class PanSharpen:
             weights = weights.flatten()
             if np.any(weights < 0):
                 warnings.warn(
-                    f'Weights contain negative value(s), setting to zero and normalising: '
-                    f'{tuple(weights.round(4).tolist())}.',
+                    f'Weights contain negative value(s): {tuple(weights.round(4).tolist())}, '
+                    f'setting to zero and normalising.',
                     category=OrthorityWarning,
                 )
                 weights = weights.clip(0, None)
@@ -509,13 +502,13 @@ class PanSharpen:
         pan_array_ = pan_array[mask].reshape(1, -1)
         ms_array_ = ms_array[:, mask].reshape(len(ms_indexes), -1)
 
-        # pan sharpen masked data and write into output mask area
+        # pan-sharpen masked data and write into output mask area
         out_array_ = self._process_tile_array(pan_array_, ms_array_, **params)
         out_array_ = common.convert_array_dtype(out_array_, out_im.dtypes[0])
         out_array = np.full(ms_array.shape, fill_value=out_im.nodata or 0, dtype=out_im.dtypes[0])
         out_array[:, mask] = out_array_
 
-        # write pan sharpened tile
+        # write pan-sharpened tile
         with self._out_lock:
             out_im.write(out_array, window=tile_win)
             if write_mask:
@@ -528,9 +521,11 @@ class PanSharpen:
         ms_indexes: Sequence[int] = _default_alg_config['ms_indexes'],
         weights: bool | Sequence[float] = _default_alg_config['weights'],
         interp: str | Interp = _default_alg_config['interp'],
+        driver: str | Driver = common._default_out_config['driver'],
         write_mask: bool | None = common._default_out_config['write_mask'],
         dtype: str = common._default_out_config['dtype'],
         compress: str | Compress | None = common._default_out_config['compress'],
+        creation_options: dict | None = None,
         build_ovw: bool = common._default_out_config['build_ovw'],
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | Sequence[dict] = False,
@@ -559,6 +554,8 @@ class PanSharpen:
             weights are estimated from the images.
         :param interp:
             Interpolation method for upsampling the multispectral image.
+        :param driver:
+            Output image driver (``gtiff`` or ``cog``).
         :param write_mask:
             Mask valid output pixels with an internal mask (``True``), or with a nodata value
             based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
@@ -575,6 +572,10 @@ class PanSharpen:
             ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
         :param build_ovw:
             Whether to build overviews for the output image.
+        :param creation_options:
+            Output image creation options as dictionary of ``name: value`` pairs.  If supplied,
+            ``compress`` is ignored.  See the `GDAL docs
+            <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
         :param overwrite:
             Whether to overwrite the output image if it exists.
         :param progress:
@@ -606,25 +607,26 @@ class PanSharpen:
                 pan_im, ms_im, pan_index, ms_indexes, weights
             )
 
-            # open output image
+            # open output image & resolve write_mask
             dtype = dtype or ms_im.dtypes[0]
-            colorinterp = [ms_im.colorinterp[mi - 1] for mi in ms_indexes]
-            out_profile, write_mask = common.create_profile(
-                dtype, compress=compress, write_mask=write_mask, colorinterp=colorinterp
-            )
             pan_profile = self._profiles['pan_to_pan']
-            out_profile.update(
-                crs=pan_profile['crs'],
-                transform=pan_profile['transform'],
-                width=pan_profile['width'],
-                height=pan_profile['height'],
-                count=len(ms_indexes),
+            out_profile, write_mask = common.create_profile(
+                driver=driver,
+                shape=(len(ms_indexes), pan_profile['height'], pan_profile['width']),
+                dtype=dtype,
+                compress=compress,
+                write_mask=write_mask,
+                creation_options=creation_options,
             )
+            out_profile.update(crs=pan_profile['crs'], transform=pan_profile['transform'])
             out_im = exit_stack.enter_context(
                 common.OpenRaster(out_file, 'w', overwrite=overwrite, **out_profile)
             )
 
-            # find pan sharpening parameters from image stats
+            # copy colorinterp from MS to output
+            out_im.colorinterp = [ms_im.colorinterp[mi - 1] for mi in ms_indexes]
+
+            # find pan-sharpening parameters from image stats
             means, cov = self._get_stats(pan_im, ms_im, pan_index, ms_indexes, progress[0])
             params = self._get_params(means, cov, weights)
 
@@ -635,7 +637,7 @@ class PanSharpen:
                 WarpedVRT(ms_im, **self._profiles['ms_to_pan'], resampling=interp),
             )
 
-            # pan sharpen tiles in a thread pool
+            # pan-sharpen tiles in a thread pool
             executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
             futures = [
                 executor.submit(
@@ -649,7 +651,7 @@ class PanSharpen:
                     write_mask,
                     **params,
                 )
-                for tile_win in self._block_windows(out_im.shape)
+                for tile_win in common.block_windows(out_im)
             ]
 
             pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))
