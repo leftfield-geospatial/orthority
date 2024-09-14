@@ -556,6 +556,65 @@ def test_create_profile_image(
 
 
 @pytest.mark.parametrize(
+    'driver, creation_options',
+    [
+        (
+            Driver.gtiff,
+            dict(
+                tiled=True,
+                blockxsize=256,
+                blockysize=256,
+                compress='jpeg',
+                photometric='ycbcr',
+                jpeg_quality=90,
+            ),
+        ),
+        (Driver.cog, dict(blocksize=256, compress='jpeg', quality=90)),
+    ],
+)
+def test_create_profile_image_creation_options(
+    tmp_path: Path, driver: Driver, creation_options: dict
+):
+    """Test the ``create_profile()`` profile with ``creation_options`` generates an image with the
+    correct configuration.
+    """
+    shape = (3, 1, 1)
+    dtype = 'uint8'
+    write_mask = True
+    profile, write_mask = common.create_profile(
+        driver=driver,
+        shape=shape,
+        dtype=dtype,
+        write_mask=write_mask,
+        creation_options=creation_options,
+    )
+    array = 100 * np.ones(shape, dtype=dtype)
+    test_file = tmp_path.joinpath('test.tif')
+    with rio.open(test_file, 'w', **profile) as im:
+        im.write(array)
+        if write_mask:
+            im.write_mask(array > 0)
+
+    with rio.open(test_file, 'r') as im:
+        # driver
+        assert im.driver.lower() == 'gtiff'
+        im_struct = im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
+
+        # tiling
+        assert im.profile['tiled'] == True
+        assert im.profile['blockxsize'] == im.profile['blockysize'] == 256
+
+        # compression
+        assert im.compression.value.lower() == 'jpeg'
+        assert im.photometric is PhotometricInterp.ycbcr
+        assert im_struct['JPEG_QUALITY'] == '90'
+
+
+@pytest.mark.parametrize(
     'src_dtype, dst_dtype',
     [
         ('uint16', 'uint8'),
