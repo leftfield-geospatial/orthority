@@ -623,12 +623,12 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 @alpha_option
 @lla_crs_option
 @radians_option
-@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
 @creation_option
+@driver_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -707,12 +707,12 @@ def frame(
 @full_remap_option
 @alpha_option
 @lla_crs_option
-@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
 @creation_option
+@driver_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -792,12 +792,12 @@ def exif(
 @per_band_option
 @full_remap_option
 @alpha_option
-@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
 @creation_option
+@driver_option
 @export_params_option
 @click.option(
     '-od',
@@ -928,12 +928,12 @@ def odm(
 @interp_option
 @dem_interp_option
 @per_band_option
-@driver_option
 @write_mask_option
 @dtype_option
 @compress_option
 @build_ovw_option
 @creation_option
+@driver_option
 @export_params_option
 @out_dir_option
 @overwrite_option
@@ -1090,14 +1090,6 @@ def rpc(
     show_default=True,
     help=f'Interpolation method for upsampling the multispectral image.',
 )
-@click.option(
-    '-dv',
-    '--driver',
-    type=click.Choice(Driver, case_sensitive=False),
-    default=common._default_out_config['driver'],
-    show_default=True,
-    help=f'Pan-sharpened image driver.',
-)
 @write_mask_option
 @click.option(
     '-dt',
@@ -1135,6 +1127,14 @@ def rpc(
     help='Creation option(s) for the pan-sharpened image.  If supplied, ``--compress`` is '
     'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`_  '
     'for details.',
+)
+@click.option(
+    '-dv',
+    '--driver',
+    type=click.Choice(Driver, case_sensitive=False),
+    default=common._default_out_config['driver'],
+    show_default=True,
+    help=f'Pan-sharpened image driver.',
 )
 @overwrite_option
 def sharpen(

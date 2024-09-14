@@ -285,7 +285,7 @@ class PanSharpen:
             executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
             futures = [
                 executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                for tile_win in common.block_windows(ms_im, block_shape=(1024, 1024))
+                for tile_win in common.block_windows(ms_im)
             ]
 
             for future in tqdm(as_completed(futures), **progress, total=len(futures)):
@@ -521,12 +521,12 @@ class PanSharpen:
         ms_indexes: Sequence[int] = _default_alg_config['ms_indexes'],
         weights: bool | Sequence[float] = _default_alg_config['weights'],
         interp: str | Interp = _default_alg_config['interp'],
-        driver: str | Driver = common._default_out_config['driver'],
         write_mask: bool | None = common._default_out_config['write_mask'],
         dtype: str = common._default_out_config['dtype'],
         compress: str | Compress | None = common._default_out_config['compress'],
-        creation_options: dict | None = None,
         build_ovw: bool = common._default_out_config['build_ovw'],
+        creation_options: dict | None = None,
+        driver: str | Driver = common._default_out_config['driver'],
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | Sequence[dict] = False,
     ):
@@ -554,30 +554,30 @@ class PanSharpen:
             weights are estimated from the images.
         :param interp:
             Interpolation method for upsampling the multispectral image.
-        :param driver:
-            Output image driver (``gtiff`` or ``cog``).
         :param write_mask:
-            Mask valid output pixels with an internal mask (``True``), or with a nodata value
-            based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
-            lossy compression. If set to ``None`` (the default), the mask will be written when
-            JPEG compression is used.
+            Mask valid pan-sharpened pixels with an internal mask (``True``), or with a nodata
+            value based on ``dtype`` (``False``). An internal mask helps remove nodata noise
+            caused by lossy compression. If set to ``None`` (the default), the mask will be
+            written when JPEG compression is used.
         :param dtype:
-            Output image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or
+            Pan-sharpened image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or
             ``float64``).  If set to ``None`` (the default), the source image data type is used.
         :param compress:
-            Output image compression type (``jpeg``, ``deflate`` or ``lzw``).  ``deflate`` and
-            ``lzw`` can be used with any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With
-            supporting Rasterio builds, ``jpeg`` can also be used with uint16, in which case the
-            ortho is 12 bit JPEG compressed.  If ``compress`` is set to ``None`` (the default),
-            ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
+            Pan-sharpened image compression type (``jpeg``, ``deflate`` or ``lzw``).  ``deflate``
+            and ``lzw`` can be used with any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.
+            With supporting Rasterio builds, ``jpeg`` can also be used with uint16, in which case
+            the ortho is 12 bit JPEG compressed.  If ``compress`` is set to ``None`` (the
+            default), ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
         :param build_ovw:
-            Whether to build overviews for the output image.
+            Whether to build overviews for the pan-sharpened image.
         :param creation_options:
-            Output image creation options as dictionary of ``name: value`` pairs.  If supplied,
-            ``compress`` is ignored.  See the `GDAL docs
+            Pan-sharpened image creation options as dictionary of ``name: value`` pairs.  If
+            supplied, ``compress`` is ignored.  See the `GDAL docs
             <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
+        :param driver:
+            Pan-sharpened image driver (``gtiff`` or ``cog``).
         :param overwrite:
-            Whether to overwrite the output image if it exists.
+            Whether to overwrite the pan-sharpened image if it exists.
         :param progress:
             Whether to display a progress bar monitoring the portion of tiles processed in each
             step. Can be set to a sequence of two argument dictionaries that define a custom
@@ -651,7 +651,7 @@ class PanSharpen:
                     write_mask,
                     **params,
                 )
-                for tile_win in common.block_windows(out_im)
+                for tile_win in common.block_windows(pan_im)
             ]
 
             pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))

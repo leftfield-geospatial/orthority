@@ -482,12 +482,12 @@ class Ortho:
         interp: str | Interp = _default_alg_config['interp'],
         dem_interp: str | Interp = _default_alg_config['dem_interp'],
         per_band: bool = _default_alg_config['per_band'],
-        driver: str | Driver = common._default_out_config['driver'],
         write_mask: bool | None = common._default_out_config['write_mask'],
         dtype: str = common._default_out_config['dtype'],
         compress: str | Compress | None = common._default_out_config['compress'],
-        creation_options: dict | None = None,
         build_ovw: bool = common._default_out_config['build_ovw'],
+        creation_options: dict | None = None,
+        driver: str | Driver = common._default_out_config['driver'],
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | dict = False,
     ) -> None:
@@ -517,8 +517,6 @@ class Ortho:
         :param per_band:
             Remap the source to ortho image all bands at once (``False``), or band-by-band
             (``True``). ``False`` is faster but requires more memory.
-        :param driver:
-            Output image driver (``gtiff`` or ``cog``).
         :param write_mask:
             Mask valid ortho pixels with an internal mask (``True``), or with a nodata value
             based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
@@ -539,6 +537,8 @@ class Ortho:
             Ortho image creation options as dictionary of ``name: value`` pairs.  If supplied,
             ``compress`` is ignored.  See the `GDAL docs
             <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
+        :param driver:
+            Output image driver (``gtiff`` or ``cog``).
         :param overwrite:
             Whether to overwrite the ortho image if it exists.
         :param progress:
