@@ -538,7 +538,7 @@ class Ortho:
             ``compress`` is ignored.  See the `GDAL docs
             <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
         :param driver:
-            Output image driver (``gtiff`` or ``cog``).
+            Ortho image driver (``gtiff`` or ``cog``).
         :param overwrite:
             Whether to overwrite the ortho image if it exists.
         :param progress:

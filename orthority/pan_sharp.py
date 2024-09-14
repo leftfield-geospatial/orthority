@@ -285,7 +285,7 @@ class PanSharpen:
             executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
             futures = [
                 executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                for tile_win in common.block_windows(ms_im)
+                for tile_win in common.block_windows(ms_im, block_shape=(1024, 1024))
             ]
 
             for future in tqdm(as_completed(futures), **progress, total=len(futures)):
@@ -651,7 +651,7 @@ class PanSharpen:
                     write_mask,
                     **params,
                 )
-                for tile_win in common.block_windows(pan_im)
+                for tile_win in common.block_windows(out_im)
             ]
 
             pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))

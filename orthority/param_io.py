@@ -382,6 +382,7 @@ def read_im_rpc_param(
                 executor.shutdown(wait=False)
                 raise
             except Exception as ex:
+                # TODO: always include text of originating exception in all raise... from ex?
                 executor.shutdown(wait=False)
                 filename = common.get_filename(file)
                 raise RuntimeError(f"Could not read RPC tags from '{filename}'.") from ex
