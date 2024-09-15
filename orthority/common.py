@@ -25,9 +25,10 @@ import tracemalloc
 import warnings
 from contextlib import contextmanager, ExitStack
 from io import IOBase
+from itertools import product
 from os import PathLike
 from pathlib import Path
-from typing import IO, Sequence
+from typing import IO, Sequence, Generator
 
 import cv2
 import fsspec
@@ -46,9 +47,8 @@ from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
-from rasterio.enums import ColorInterp
 
-from orthority.enums import Interp, Compress
+from orthority.enums import Interp, Compress, Driver
 from orthority.errors import OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,7 @@ and only supports int32, uint64, int64 with nearest interpolation, so these dtyp
 """
 
 _default_out_config = dict(
-    write_mask=None, dtype=None, compress=None, build_ovw=True, overwrite=False
+    driver=Driver.gtiff, write_mask=None, dtype=None, compress=None, build_ovw=True, overwrite=False
 )
 """Default configuration values for output images."""
 
@@ -298,7 +298,10 @@ class OpenRaster:
             else:
                 ofile = fsspec.open(os.fspath(file), mode + 'b')
 
-            # TODO: delete sidecar files if overwriting
+            # TODO: delete sidecar files if overwriting (note that DatasetReader has a files
+            #  attribute that lists associated files)
+            # TODO: if a file is partially written (e.g. because of an error), rasterio fails when
+            #  overwriting it
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
                 raise FileExistsError(f"File exists: '{ofile.path}'")
 
@@ -309,7 +312,11 @@ class OpenRaster:
                         rio.open(ofile.path, mode, **kwargs)
                     )
                 except RasterioIOError as ex:
-                    raise FileNotFoundError(str(ex))
+                    ex_str = str(ex)
+                    if 'no such file or directory' in ex_str.lower():
+                        raise FileNotFoundError(ex_str)
+                    else:
+                        raise
             else:
                 # use fsspec file object
                 file_obj = self._exit_stack.enter_context(ofile)
@@ -400,52 +407,75 @@ class Open:
 
 
 def create_profile(
+    driver: str | Driver,
+    shape: Sequence[int],
     dtype: str | np.dtype,
     compress: str | Compress | None = None,
     write_mask: bool | None = None,
-    colorinterp: Sequence[ColorInterp] | None = None,
+    creation_options: dict | None = None,
 ) -> tuple[dict, bool]:
-    """Return a partial rasterio profile and ``write_mask`` value for an output image given its
-    configuration.  If ``write_mask`` is None, a value is determined automatically.  Spatial and
-    dimension profile items are not set i.e. ``crs``, ``transform``, ``width``, ``height`` &
-    ``count``.
     """
-    # TODO: add support for LZW and if possible WEBP compression and COG driver
-    colorinterp = colorinterp or []
-    profile = {}
+    Return a partial Rasterio image profile and ``write_mask`` value for an output image given its
+    configuration.
+
+    If ``compress`` is ``None`` (the default), JPEG compression is used with the 'uint8'
+    ``dtype`` and DEFLATE otherwise.  If ``write_mask`` is ``None`` (the default), it is returned
+    as ``True`` when JPEG compression is used, and ``False`` otherwise.  If ``creation_options``
+    are supplied, no other creation options are set.
+    """
+    creation_options = creation_options or {}
 
     # check dtype support
     dtype = str(dtype)
     if dtype not in _nodata_vals:
         raise OrthorityError(f"Data type '{dtype}' is not supported.")
 
-    # configure compression
-    if compress is None:
-        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
-    else:
-        compress = Compress(compress)
-        if compress == Compress.jpeg:
-            if dtype == 'uint16':
-                warnings.warn(
-                    'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
-                    'dependent.',
-                    category=OrthorityWarning,
-                )
-                profile.update(nbits=12)
-            elif dtype != 'uint8':
-                raise OrthorityError(
-                    f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
-                )
+    # create initial profile
+    driver = Driver(driver)
+    profile = dict(
+        driver=driver.value,
+        dtype=dtype,
+        width=shape[2],
+        height=shape[1],
+        count=shape[0],
+        bigtiff='if_safer',
+    )
 
-    # configure interleaving and color interpretation
-    if compress == Compress.jpeg and len(colorinterp) == 3:
-        interleave, photometric = ('pixel', 'ycbcr')
-    elif colorinterp[:3] == [ColorInterp.red, ColorInterp.green, ColorInterp.blue]:
-        interleave, photometric = ('band', 'rgb')
-    elif len(colorinterp) == 1:
-        interleave, photometric = ('pixel', None)
+    # set creation options
+    if len(creation_options) == 0:
+        # configure compression
+        if compress is None:
+            compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+        else:
+            compress = Compress(compress)
+            if compress is Compress.jpeg:
+                if dtype == 'uint16':
+                    warnings.warn(
+                        'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
+                        'dependent.',
+                        category=OrthorityWarning,
+                    )
+                    profile.update(nbits=12)
+                elif dtype != 'uint8':
+                    raise OrthorityError(
+                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
+                    )
+
+        profile.update(compress=compress.value)
+
+        if driver is Driver.gtiff:
+            # configure photometric interpretation and tiling
+            if compress == Compress.jpeg and shape[0] == 3:
+                profile.update(photometric='ycbcr')
+            profile.update(tiled=True, blockxsize=512, blockysize=512)
+        else:
+            # Configure tiling & overviews. Overviews are not created automatically, but copied
+            # from any overviews built with DatasetWriter.build_overviews().  GDAL sets
+            # photometric internally.
+            profile.update(blocksize=512, overviews='force_use_existing')
+
     else:
-        interleave, photometric = ('band', None)
+        profile.update(**creation_options)
 
     # resolve auto write_mask (=None) to write masks for jpeg compression
     if write_mask is None:
@@ -454,20 +484,8 @@ def create_profile(
     # set nodata to None when writing internal masks to force external tools to use mask,
     # otherwise set by dtype
     nodata = None if write_mask else _nodata_vals[dtype]
+    profile.update(nodata=nodata)
 
-    # create profile
-    profile.update(
-        driver='GTiff',
-        dtype=dtype,
-        tiled=True,
-        blockxsize=512,
-        blockysize=512,
-        nodata=nodata,
-        compress=compress.value,
-        interleave=interleave,
-        photometric=photometric,
-        bigtiff='if_safer',
-    )
     return profile, write_mask
 
 
@@ -506,6 +524,7 @@ def build_overviews(
     im: DatasetWriter,
     max_num_levels: int = 8,
     min_level_pixels: int = 256,
+    resampling=Resampling.average,
 ) -> None:
     """
     Build internal overviews for an open rasterio dataset.  Each overview level is decimated by a
@@ -518,12 +537,14 @@ def build_overviews(
         Maximum number of overview levels.
     :param min_level_pixels:
         Minimum overview width / height in pixels.
+    :param resampling:
+        Overview resampling method.
     """
     max_ovw_levels = int(np.min(np.log2(im.shape)))
     min_level_shape_pow2 = int(np.log2(min_level_pixels))
     num_ovw_levels = np.min([max_num_levels, max_ovw_levels - min_level_shape_pow2])
     ovw_levels = [2**m for m in range(1, num_ovw_levels + 1)]
-    im.build_overviews(ovw_levels, Resampling.average)
+    im.build_overviews(ovw_levels, resampling=resampling)
 
 
 def get_tqdm_kwargs(**kwargs) -> dict:
@@ -533,3 +554,20 @@ def get_tqdm_kwargs(**kwargs) -> dict:
         dynamic_ncols=True,
         **kwargs,
     )
+
+
+def block_windows(
+    im: DatasetReaderBase | DatasetWriter, block_shape: tuple[int, int] = None
+) -> Generator[Window]:
+    """Block window generator for the given image, and optional block shape."""
+    driver = im.driver.lower()
+    block_shape = block_shape or (
+        (im.profile.get('blocksize', 512),) * 2 if driver == 'cog' else im.block_shapes[0]
+    )
+
+    xrange = range(0, im.width, block_shape[1])
+    yrange = range(0, im.height, block_shape[0])
+    for xstart, ystart in product(xrange, yrange):
+        xstop = min(xstart + block_shape[1], im.width)
+        ystop = min(ystart + block_shape[0], im.height)
+        yield Window(xstart, ystart, xstop - xstart, ystop - ystart)

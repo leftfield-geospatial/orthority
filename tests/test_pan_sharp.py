@@ -19,6 +19,7 @@ import logging
 import os
 from contextlib import ExitStack
 from functools import partial
+from itertools import product
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,7 @@ from rasterio.vrt import WarpedVRT
 from rasterio.windows import Window
 
 from orthority import common
-from orthority.enums import Interp, Compress
+from orthority.enums import Interp, Compress, Driver
 from orthority.errors import OrthorityError, OrthorityWarning
 from orthority.pan_sharp import PanSharpen
 from tests.conftest import create_profile
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 @pytest.fixture(scope='session')
 def pan_sharpen(pan_file: Path, ms_file: Path) -> PanSharpen:
-    """A pan sharpener."""
+    """A pan-sharpener."""
     return PanSharpen(pan_file, ms_file)
 
 
@@ -101,7 +102,7 @@ def mask_ms_file(ms_file: Path, webmerc_crs: str, tmp_path_factory: pytest.TempP
 @pytest.fixture(scope='session')
 def ms_neg_band_file(ms_file: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Multispectral image that is ``ms_file`` with a fourth band added that is the inverse of the
-    first band.
+    first band.  Also adds a non-standard ``colorinterp``.
     """
     # read ms_file
     with rio.open(ms_file, 'r') as src_im:
@@ -114,6 +115,12 @@ def ms_neg_band_file(ms_file: Path, tmp_path_factory: pytest.TempPathFactory) ->
     out_profile = create_profile(out_array)
     out_file = tmp_path_factory.mktemp('data').joinpath('ms_neg_band.tif')
     with rio.open(out_file, 'w', **out_profile) as out_im:
+        out_im.colorinterp = [
+            ColorInterp.blue,
+            ColorInterp.green,
+            ColorInterp.red,
+            ColorInterp.undefined,
+        ]
         out_im.write(out_array)
     return out_file
 
@@ -151,7 +158,7 @@ def test_init_bounds_error(odm_dem_file: Path, ngi_dem_file: Path):
 def _test_pan_sharp_file(
     out_file: Path, ms_file: Path | rio.DatasetReader, ms_indexes: tuple = None
 ):
-    """Test the pan sharpened ``out_file`` by reprojecting it to the grid of the given
+    """Test the pan-sharpened ``out_file`` by reprojecting it to the grid of the given
     multispectral ``ms_file`` and comparing.
     """
     with common.OpenRaster(ms_file, 'r') as ms_im, common.OpenRaster(out_file, 'r') as out_im_:
@@ -232,7 +239,7 @@ def _test_pan_sharp_file(
     ],
 )
 def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: dict, tmp_path: Path):
-    """Test pan sharpening using WarpedVRT to simulate different combinations of pan & MS
+    """Test pan-sharpening using WarpedVRT to simulate different combinations of pan & MS
     georeferencing and bounds (all without masks).
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
@@ -243,7 +250,7 @@ def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: di
         ms_profile['width'] = ms_profile.get('width', ms_im_.width)
         ms_profile['height'] = ms_profile.get('height', ms_im_.height)
 
-        # simulate pan & MS georeferencing, and pan sharpen
+        # simulate pan & MS georeferencing, and pan-sharpen
         with WarpedVRT(pan_im_, **pan_profile) as pan_im, WarpedVRT(ms_im_, **ms_profile) as ms_im:
             pan_sharp = PanSharpen(pan_im, ms_im)
             pan_sharp.process(out_file, weights=(1, 1, 1), compress='deflate')
@@ -255,7 +262,7 @@ def test_georef(pan_file: Path, ms_file: Path, pan_profile: dict, ms_profile: di
 
 @pytest.mark.parametrize('vrt_profile', [None, dict(nodata=0), dict(add_alpha=True)])
 def test_mask(mask_pan_file: Path, mask_ms_file: Path, tmp_path: Path, vrt_profile: dict):
-    """Test masking in the pan sharpened image with pan & MS images that have internal,
+    """Test masking in the pan-sharpened image with pan & MS images that have internal,
     nodata and alpha masks, that mask invalid pixels inside the common bounds.
     """
     with ExitStack() as exit_stack:
@@ -294,9 +301,9 @@ def test_stats(pan_file: Path, ms_file: Path, monkeypatch: pytest.MonkeyPatch):
 
         # find test block-by-block stats
         pan_sharp = PanSharpen(pan_file, ms_file)
-        # patch _block_windows to use smaller block size (forces >> 1 block)
+        # patch common.block_windows to use smaller block size (forces >> 1 block)
         monkeypatch.setattr(
-            PanSharpen, '_block_windows', partial(PanSharpen._block_windows, block_shape=(64, 64))
+            common, 'block_windows', partial(common.block_windows, block_shape=(64, 64))
         )
         test_means, test_cov = pan_sharp._get_stats(pan_im_, ms_im, 1, ms_im.indexes, {})
 
@@ -318,9 +325,9 @@ def test_weights_auto(pan_file: Path, ms_file: Path):
     assert np.sum(params['weights']) == pytest.approx(1, abs=1e-6)
 
 
-@pytest.mark.parametrize('weights', [(1, 1, 1), (1, 2, 3)])
+@pytest.mark.parametrize('weights', [(1, 1, 1), (1, 2, 3), (-1, 0, 1)])
 def test_weights_user(pan_file: Path, ms_file: Path, weights: tuple | None):
-    """Test user provided MS to pan weights are normalised and passed through
+    """Test user provided MS to pan weights are clipped, normalised and passed through
     ``PanSharpen._get_params()``.
     """
     pan_sharp = PanSharpen(pan_file, ms_file)
@@ -328,7 +335,8 @@ def test_weights_user(pan_file: Path, ms_file: Path, weights: tuple | None):
         means, cov = pan_sharp._get_stats(pan_im, ms_im, 1, ms_im.indexes, {})
     params = pan_sharp._get_params(means, cov, weights)
 
-    weights = np.array(weights) / np.sum(weights)
+    weights = np.array(weights).clip(0, None)
+    weights = weights / weights.sum()
     assert np.all(params['weights'] == weights)
 
 
@@ -445,7 +453,7 @@ def test_process_pan_index_error(pan_sharpen: PanSharpen, tmp_path: Path):
 def test_process_ms_indexes(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_indexes: tuple, weights: tuple
 ):
-    """Test pan sharpened bands are correctly defined by the ``PanSharpen.process()``
+    """Test pan-sharpened bands are correctly defined by the ``PanSharpen.process()``
     ``ms_indexes`` argument.
     """
     # note that for this test to pass, ms_indexes and weights must give a weighted sum of indexed
@@ -468,7 +476,7 @@ def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
 
 
 def test_process_weights(pan_file: Path, ms_file: Path, tmp_path: Path):
-    """Test the ``PanSharpen.process()`` ``weights`` argument by comparing pan sharpened images
+    """Test the ``PanSharpen.process()`` ``weights`` argument by comparing pan-sharpened images
     with different weightings.
     """
     out_arrays = []
@@ -516,14 +524,40 @@ def test_process_interp(pan_sharpen: PanSharpen, tmp_path: Path, interp: Interp)
     assert abs_diff.std() < 5
 
 
-@pytest.mark.parametrize('write_mask', [False, True])
-def test_process_write_mask(pan_sharpen: PanSharpen, tmp_path: Path, write_mask: bool):
-    """Test the ``PanSharpen.process()`` ``write_mask`` argument."""
+@pytest.mark.parametrize('driver', Driver)
+def test_process_driver(pan_sharpen: PanSharpen, tmp_path: Path, driver: Driver):
+    """Test the ``PanSharpen.process()`` ``driver`` argument."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    pan_sharpen.process(out_file, write_mask=write_mask)
+    pan_sharpen.process(out_file, driver=driver)
+    assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
-        mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
+        assert out_im.driver.lower() == 'gtiff'
+        im_struct = out_im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
+
+
+@pytest.mark.parametrize(
+    'write_mask, compress',
+    [(None, Compress.jpeg), (None, Compress.deflate), (False, None), (True, None)],
+)
+def test_process_write_mask(
+    pan_sharpen: PanSharpen, tmp_path: Path, write_mask: bool, compress: Compress
+):
+    """Test the ``PanSharpen.process()`` ``write_mask`` argument and its default value interaction
+    with compression.
+    """
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    pan_sharpen.process(out_file, compress=compress, write_mask=write_mask)
+
+    if write_mask is None:
+        write_mask = True if compress is Compress.jpeg else False
+    mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
+
+    with rio.open(out_file, 'r') as out_im:
         assert all([mf[0] == mask_flag for mf in out_im.mask_flag_enums])
         assert (
             (out_im.nodata is None)
@@ -539,49 +573,77 @@ def test_process_write_mask(pan_sharpen: PanSharpen, tmp_path: Path, write_mask:
 def test_process_dtype(
     pan_file: Path, ms_file: Path, tmp_path: Path, ms_dtype: str, out_dtype: str
 ):
-    """Test the ``PanSharpen.process()`` ``dtype`` argument, and its effect on the ``compress``
-    default value behaviour.
+    """Test the ``PanSharpen.process()`` ``dtype`` argument and its default value interaction with
+    the multispectral image dtype.
     """
     with rio.open(ms_file, 'r') as ms_im_:
         profile = dict(width=ms_im_.width, height=ms_im_.height, dtype=ms_dtype)
         with WarpedVRT(ms_im_, **profile) as ms_im:
             pan_sharp = PanSharpen(pan_file, ms_im)
             out_file = tmp_path.joinpath('pan_sharp.tif')
-            pan_sharp.process(out_file, write_mask=False, dtype=out_dtype, compress=None)
+            pan_sharp.process(out_file, dtype=out_dtype)
 
         out_dtype = out_dtype or ms_im.dtypes[0]
-    compress = Compress.jpeg if out_dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:
         assert out_im.profile['dtype'] == out_dtype
-        assert out_im.profile['compress'] == compress
-        assert common.nan_equals(out_im.nodata, common._nodata_vals[out_dtype])
 
 
-@pytest.mark.parametrize('compress', Compress)
-def test_process_compress(pan_sharpen: PanSharpen, tmp_path: Path, compress: Compress):
-    """Test the ``PanSharpen.process()`` ``compress`` argument, and its effect on the ``write_mask``
-    default value behaviour.
+@pytest.mark.parametrize(
+    'compress, dtype', [(None, 'uint8'), (None, 'float32'), *[(c, None) for c in Compress]]
+)
+def test_process_compress(pan_sharpen: PanSharpen, tmp_path: Path, compress: Compress, dtype: str):
+    """Test the ``PanSharpen.process()`` ``compress`` argument and its default value interaction
+    with ``dtype``.
     """
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    pan_sharpen.process(out_file, compress=compress)
+    pan_sharpen.process(out_file, dtype=dtype, compress=compress)
+
+    if compress is None:
+        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:
-        mask_flag = MaskFlags.per_dataset if compress is Compress.jpeg else MaskFlags.nodata
-        assert all([mf[0] == mask_flag for mf in out_im.mask_flag_enums])
         assert out_im.profile['compress'] == compress
 
 
-@pytest.mark.parametrize('build_ovw', [True, False])
-def test_process_overview(pan_sharpen: PanSharpen, tmp_path: Path, build_ovw: bool):
+@pytest.mark.parametrize('build_ovw, driver', [*product([True, False], Driver)])
+def test_process_overview(pan_sharpen: PanSharpen, tmp_path: Path, build_ovw: bool, driver: Driver):
     """Test ``PanSharpen.process()`` creates overview(s) according to the ``build_ovw`` value."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
-    pan_sharpen.process(out_file, build_ovw=build_ovw)
+    pan_sharpen.process(out_file, driver=driver, build_ovw=build_ovw)
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
         assert min(out_im.shape) >= 512
         assert len(out_im.overviews(1)) > 0 if build_ovw else len(out_im.overviews(1)) == 0
+
+
+@pytest.mark.parametrize('driver', Driver)
+def test_process_colorinterp(
+    pan_file: Path, ms_neg_band_file: Path, tmp_path: Path, driver: Driver
+):
+    """Test ``PanSharpen.process()`` copies ``colorinterp`` from source to pan-sharpened image."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    pan_sharp = PanSharpen(pan_file, ms_neg_band_file)
+    pan_sharp.process(out_file)
+    assert out_file.exists()
+
+    with rio.open(ms_neg_band_file, 'r') as ms_im, rio.open(out_file, 'r') as out_im:
+        assert out_im.colorinterp == ms_im.colorinterp
+
+
+def test_process_creation_options(pan_sharpen: PanSharpen, tmp_path: Path):
+    """Test ``PanSharpen.process()`` configures the pan-sharpened image with ``creation_options``."""
+    out_file = tmp_path.joinpath('pan_sharp.tif')
+    pan_sharpen.process(
+        out_file, creation_options=dict(tiled=True, compress='jpeg', jpeg_quality=50)
+    )
+    assert out_file.exists()
+
+    with rio.open(out_file, 'r') as out_im:
+        assert out_im.profile['tiled'] == True
+        assert out_im.profile['compress'].lower() == 'jpeg'
+        assert out_im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
 
 def test_process_progress(pan_sharpen: PanSharpen, tmp_path: Path, capsys: pytest.CaptureFixture):

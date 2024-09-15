@@ -1,7 +1,7 @@
 .. include:: ../../shared.txt
 .. include:: shared.txt
 
-Pan sharpening
+Pan-sharpening
 ==============
 
 .. toctree::

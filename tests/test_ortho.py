@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import tracemalloc
+from itertools import product
 from math import factorial
 from pathlib import Path
 from typing import Sequence
@@ -33,7 +34,7 @@ from rasterio.windows import from_bounds
 from orthority import common
 from orthority import errors, param_io
 from orthority.camera import Camera, create_camera, PinholeCamera
-from orthority.enums import CameraType, Compress, Interp
+from orthority.enums import CameraType, Compress, Interp, Driver
 from orthority.errors import OrthorityError
 from orthority.ortho import Ortho
 from tests.conftest import _dem_resolution
@@ -899,6 +900,22 @@ def test_process_alpha(
         assert cc[0, 1] > 0.95
 
 
+@pytest.mark.parametrize('driver', Driver)
+def test_process_driver(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, driver: Driver):
+    """Test the ``Ortho.process()`` ``driver`` argument."""
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, driver=driver)
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.driver.lower() == 'gtiff'
+        im_struct = ortho_im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
+
+
 @pytest.mark.parametrize(
     'src_file, write_mask, per_band',
     [
@@ -934,22 +951,33 @@ def test_process_write_mask_per_band(
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
 
 
-@pytest.mark.parametrize('compress', [None, *Compress])
-def test_process_write_mask_compress(
-    rgb_pinhole_utm34n_ortho: Ortho, compress: Compress, tmp_path: Path
+@pytest.mark.parametrize(
+    'write_mask, compress',
+    [(None, Compress.jpeg), (None, Compress.deflate), (False, None), (True, None)],
+)
+def test_process_write_mask(
+    rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, write_mask: bool, compress: Compress
 ):
-    """Test ``write_mask=None`` writes an internal ortho mask when jpeg compression is used."""
+    """Test the ``Ortho.process()`` ``write_mask`` argument and its default value interaction with
+    compression.
+    """
     ortho_file = tmp_path.joinpath('test_ortho.tif')
     rgb_pinhole_utm34n_ortho.process(
-        ortho_file, _dem_resolution, write_mask=None, compress=compress
+        ortho_file, _dem_resolution, compress=compress, write_mask=write_mask
     )
     assert ortho_file.exists()
 
+    if write_mask is None:
+        write_mask = True if compress is Compress.jpeg else False
+    mask_flag = MaskFlags.per_dataset if write_mask else MaskFlags.nodata
+
     with rio.open(ortho_file, 'r') as ortho_im:
-        mask_flag = (
-            MaskFlags.per_dataset if ortho_im.profile['compress'] == 'jpeg' else MaskFlags.nodata
-        )
         assert all([mf[0] == mask_flag for mf in ortho_im.mask_flag_enums])
+        assert (
+            (ortho_im.nodata is None)
+            if write_mask
+            else common.nan_equals(ortho_im.nodata, common._nodata_vals[ortho_im.dtypes[0]])
+        )
 
 
 @pytest.mark.parametrize(
@@ -957,24 +985,21 @@ def test_process_write_mask_compress(
     [
         ('rgb_byte_src_file', None),
         ('float_src_file', None),
-        # all opencv supported dtypes
-        ('rgb_byte_src_file', 'uint8'),
-        ('rgb_byte_src_file', 'uint16'),
-        ('rgb_byte_src_file', 'int16'),
-        ('rgb_byte_src_file', 'float32'),
-        ('rgb_byte_src_file', 'float64'),
+        *[('rgb_byte_src_file', dt) for dt in common._nodata_vals.keys()],
     ],
 )
 def test_process_dtype(
-    src_file: str,
     float_utm34n_dem_file: Path,
     pinhole_camera: Camera,
     utm34n_crs: str,
-    dtype: str,
     tmp_path: Path,
     request: pytest.FixtureRequest,
+    src_file: str,
+    dtype: str,
 ):
-    """Test the ortho ``dtype`` is set correctly."""
+    """Test the ``Ortho.process()`` ``dtype`` argument and its default value interaction with
+    the source image dtype.
+    """
     src_file: Path = request.getfixturevalue(src_file)
     ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
@@ -982,103 +1007,36 @@ def test_process_dtype(
 
     assert ortho_file.exists()
     with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
-        dtype = src_im.profile['dtype'] if dtype is None else dtype
+        dtype = dtype or src_im.profile['dtype']
         assert ortho_im.profile['dtype'] == dtype
 
 
-@pytest.mark.parametrize('dtype', ['int8', 'uint32', 'int32', 'uint64', 'int64'])
-def test_process_dtype_error(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
-    """Test unsupported dtypes raise an error."""
-    ortho_file = tmp_path.joinpath('test_ortho.tif')
-
-    with pytest.raises(OrthorityError) as ex:
-        rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype)
-    assert dtype in str(ex.value)
-
-
 @pytest.mark.parametrize(
-    # all opencv supported dtypes
-    'dtype',
-    ['uint8', 'uint16', 'int16', 'float32', 'float64'],
-)
-def test_process_nodata(rgb_pinhole_utm34n_ortho: Ortho, dtype: str, tmp_path: Path):
-    """Test the ortho ``nodata`` is set correctly."""
-    ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(
-        ortho_file, _dem_resolution, dtype=dtype, compress=Compress.deflate
-    )
-
-    assert ortho_file.exists()
-    with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['dtype'] in common._nodata_vals
-        assert common.nan_equals(
-            ortho_im.profile['nodata'], common._nodata_vals[ortho_im.profile['dtype']]
-        )
-
-
-@pytest.mark.parametrize(
-    'src_file, compress',
-    [
-        ('rgb_byte_src_file', None),
-        ('rgb_byte_src_file', Compress.jpeg),
-        ('rgb_byte_src_file', Compress.deflate),
-        ('float_src_file', None),
-        ('float_src_file', Compress.deflate),
-    ],
+    'compress, dtype', [(None, 'uint8'), (None, 'float32'), *[(c, None) for c in Compress]]
 )
 def test_process_compress(
-    src_file: str,
-    float_utm34n_dem_file: Path,
-    pinhole_camera: Camera,
-    utm34n_crs: str,
-    compress: Compress,
-    tmp_path: Path,
-    request: pytest.FixtureRequest,
+    rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, compress: Compress, dtype: str
 ):
-    """Test the ortho compression, interleaving and photometric interpretation are set correctly."""
-    src_file: Path = request.getfixturevalue(src_file)
-    ortho = Ortho(src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
-    ortho_file = tmp_path.joinpath('test_ortho.tif')
-    ortho.process(ortho_file, _dem_resolution, compress=compress)
-
-    assert ortho_file.exists()
-    with rio.open(src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
-        if compress is None:
-            compress = Compress.jpeg if src_im.dtypes[0] == 'uint8' else Compress.deflate
-        interleave, photometric = (
-            ('pixel', 'ycbcr')
-            if compress == Compress.jpeg and src_im.count == 3
-            else ('band', 'minisblack')
-        )
-        assert ortho_im.profile['compress'] == compress.name
-        assert ortho_im.profile['interleave'] == interleave
-        if 'photometric' in ortho_im.profile:
-            assert ortho_im.profile['photometric'] == photometric
-
-
-def test_process_compress_jpeg_error(
-    float_src_file: Path,
-    float_utm34n_dem_file: Path,
-    pinhole_camera: Camera,
-    utm34n_crs: str,
-    tmp_path: Path,
-):
-    """Test that jpeg compression raises an error when the source image dtype is not uint8 or
-    uint16.
+    """Test the ``Ortho.process()`` ``compress`` argument and its default value interaction with
+    ``dtype``.
     """
-    ortho = Ortho(float_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
     ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, dtype=dtype, compress=compress)
 
-    with pytest.raises(OrthorityError) as ex:
-        ortho.process(ortho_file, (5, 5), compress=Compress.jpeg)
-    assert 'uint8' in str(ex.value)
+    if compress is None:
+        compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.profile['compress'] == compress
 
 
-@pytest.mark.parametrize('build_ovw', [True, False])
-def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
+@pytest.mark.parametrize('build_ovw, driver', [*product([True, False], Driver)])
+def test_process_overview(
+    rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, build_ovw: bool, driver: Driver
+):
     """Test overview(s) are created according to the ``build_ovw`` value."""
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.25, 0.25), build_ovw=build_ovw)
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.25, 0.25), driver=driver, build_ovw=build_ovw)
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
@@ -1087,6 +1045,41 @@ def test_process_overview(build_ovw, rgb_pinhole_utm34n_ortho: Ortho, tmp_path: 
             assert len(ortho_im.overviews(1)) > 0
         else:
             assert len(ortho_im.overviews(1)) == 0
+
+
+@pytest.mark.parametrize('driver', Driver)
+def test_process_colorinterp(
+    ms_float_src_file: Path,
+    float_utm34n_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_crs: str,
+    tmp_path: Path,
+    driver: Driver,
+):
+    """Test ``Ortho.process()`` copies ``colorinterp`` from source to ortho."""
+    ortho = Ortho(ms_float_src_file, float_utm34n_dem_file, pinhole_camera, utm34n_crs, dem_band=1)
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    ortho.process(ortho_file, _dem_resolution, driver=driver, compress=Compress.deflate)
+
+    assert ortho_file.exists()
+    with rio.open(ms_float_src_file, 'r') as src_im, rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.colorinterp == src_im.colorinterp
+
+
+def test_process_creation_options(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path):
+    """Test ``Ortho.process()`` configures the ortho with ``creation_options``."""
+    ortho_file = tmp_path.joinpath('test_ortho.tif')
+    rgb_pinhole_utm34n_ortho.process(
+        ortho_file,
+        _dem_resolution,
+        creation_options=dict(tiled=True, compress='jpeg', jpeg_quality=50),
+    )
+    assert ortho_file.exists()
+
+    with rio.open(ortho_file, 'r') as ortho_im:
+        assert ortho_im.profile['tiled'] == True
+        assert ortho_im.profile['compress'].lower() == 'jpeg'
+        assert ortho_im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
 
 @pytest.mark.parametrize(

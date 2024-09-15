@@ -49,7 +49,7 @@ Orthority command line functionality is accessed with the ``oty`` command, and i
 -  ``exif``: Orthorectify images with frame camera model(s) defined by image EXIF / XMP tags.
 -  ``odm``: Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 -  ``rpc``: Orthorectify images with RPC camera models defined by image tags / sidecar files or parameter files.
--  ``sharpen``: Pan sharpen an image using the Gram-Schmidt method.
+-  ``sharpen``: Pan-sharpen an image using the Gram-Schmidt method.
 
 Get help on ``oty`` with:
 
@@ -110,7 +110,7 @@ As above, but refine the RPC camera model with GCPs in ``source.tif`` tags:
 
    oty rpc --dem dem.tif --gcp-refine tags source.tif
 
-Pan sharpen the multispectral image ``ms.tif`` with the panchromatic image ``pan.tif``:
+Pan-sharpen the multispectral image ``ms.tif`` with the panchromatic image ``pan.tif``:
 
 .. code-block:: bash
 
@@ -144,7 +144,7 @@ Orthorectify an image using interior and exterior parameter files to generate th
     ortho.process('ortho.tif')
 
 
-Pan sharpen a multispectral image with the matching panchromatic image:
+Pan-sharpen a multispectral image with the matching panchromatic image:
 
 .. below copied from docs/scripts/api_pan_sharp.py
 
@@ -157,7 +157,7 @@ Pan sharpen a multispectral image with the matching panchromatic image:
     pan_file = url_root + 'pan_sharp/pan.tif'  # panchromatic drone image
     ms_file = url_root + 'pan_sharp/ms.tif'  # multispectral (RGB) drone image
 
-    # create PanSharpen object and pan sharpen
+    # create PanSharpen object and pan-sharpen
     pan_sharp = oty.PanSharpen(pan_file, ms_file)
     pan_sharp.process('pan_sharp.tif')
 

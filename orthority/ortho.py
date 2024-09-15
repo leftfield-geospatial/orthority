@@ -20,7 +20,7 @@ import logging
 import os
 import threading
 import warnings
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from os import PathLike
 from typing import Sequence
@@ -38,7 +38,7 @@ from tqdm.auto import tqdm
 
 from orthority import common
 from orthority.camera import Camera, FrameCamera
-from orthority.enums import Compress, Interp
+from orthority.enums import Compress, Interp, Driver
 from orthority.errors import CrsMissingError, OrthorityWarning, OrthorityError
 
 logger = logging.getLogger(__name__)
@@ -414,9 +414,9 @@ class Ortho:
         # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc.
         # integer pixel coords refer to pixel centers, so the (x, y) coords are offset by half a
         # pixel to account for this.
-
-        j_range = np.arange(0, ortho_im.profile.get('blockysize', 512))
-        i_range = np.arange(0, ortho_im.profile.get('blockxsize', 512))
+        block_win = next(common.block_windows(ortho_im))
+        j_range = np.arange(0, block_win.width)
+        i_range = np.arange(0, block_win.height)
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
         init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
@@ -429,7 +429,7 @@ class Ortho:
             index_list = [[*range(1, src_im.count + 1)]]
 
         # create a list of ortho tile windows (assumes all bands configured to same tile shape)
-        tile_wins = [tile_win for _, tile_win in ortho_im.block_windows(1)]
+        tile_wins = [*common.block_windows(ortho_im)]
         progress.total = len(tile_wins) * len(index_list)
 
         # TODO: Memory increases ~linearly with number of threads, but does processing speed?
@@ -466,7 +466,7 @@ class Ortho:
                     )
                     for tile_win in tile_wins
                 ]
-                for future in as_completed(futures):
+                for future in futures:
                     try:
                         future.result()
                     except Exception as ex:
@@ -486,6 +486,8 @@ class Ortho:
         dtype: str = common._default_out_config['dtype'],
         compress: str | Compress | None = common._default_out_config['compress'],
         build_ovw: bool = common._default_out_config['build_ovw'],
+        creation_options: dict | None = None,
+        driver: str | Driver = common._default_out_config['driver'],
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | dict = False,
     ) -> None:
@@ -524,13 +526,19 @@ class Ortho:
             Ortho image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or ``float64``).
             If set to ``None`` (the default), the source image data type is used.
         :param compress:
-            Ortho image compression type (``jpeg`` or ``deflate``).  ``deflate`` can be used with
-            any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With supporting Rasterio
-            builds, ``jpeg`` can also be used with uint16, in which case the ortho is 12 bit JPEG
-            compressed. If ``compress`` is set to ``None`` (the default), ``jpeg`` is used for the
-            uint8 ``dtype``, and ``deflate`` otherwise.
+            Ortho image compression type (``jpeg``, ``deflate`` or ``lzw``).  ``deflate`` and
+            ``lzw`` can be used with any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With
+            supporting Rasterio builds, ``jpeg`` can also be used with uint16, in which case the
+            ortho is 12 bit JPEG compressed. If ``compress`` is set to ``None`` (the default),
+            ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
+        :param creation_options:
+            Ortho image creation options as dictionary of ``name: value`` pairs.  If supplied,
+            ``compress`` is ignored.  See the `GDAL docs
+            <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
+        :param driver:
+            Ortho image driver (``gtiff`` or ``cog``).
         :param overwrite:
             Whether to overwrite the ortho image if it exists.
         :param progress:
@@ -578,21 +586,23 @@ class Ortho:
             #  image edges, which applies to any camera.
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
-            # open the ortho image & set write_mask
+            # open the ortho image & resolve write_mask
             dtype = dtype or src_im.dtypes[0]
             ortho_profile, write_mask = common.create_profile(
-                dtype, compress=compress, write_mask=write_mask, colorinterp=src_im.colorinterp
+                driver=driver,
+                shape=(src_im.count, *dem_array.shape),
+                dtype=dtype,
+                compress=compress,
+                write_mask=write_mask,
+                creation_options=creation_options,
             )
-            ortho_profile.update(
-                crs=self._crs,
-                transform=dem_transform,
-                width=dem_array.shape[1],
-                height=dem_array.shape[0],
-                count=src_im.count,
-            )
+            ortho_profile.update(crs=self._crs, transform=dem_transform)
             ortho_im = exit_stack.enter_context(
                 common.OpenRaster(ortho_file, 'w', overwrite=overwrite, **ortho_profile)
             )
+
+            # copy colorinterp from source to ortho
+            ortho_im.colorinterp = src_im.colorinterp
 
             # orthorectify
             self._remap(
@@ -606,7 +616,6 @@ class Ortho:
             )
 
             if build_ovw:
-                # TODO: is it possible to convert to COG here?
                 common.build_overviews(ortho_im)
 
 

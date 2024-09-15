@@ -113,6 +113,8 @@ class Compress(str, Enum):
     """JPEG compression."""
     deflate = 'deflate'
     """Deflate compression."""
+    lzw = 'lzw'
+    """LZW compression."""
 
     def __repr__(self):
         return self._name_
@@ -151,6 +153,21 @@ class RpcRefine(str, Enum):
     """Pixel coordinate translation."""
     shift_drift = 'shift-drift'
     """Pixel coordinate scale and translation."""
+
+    def __repr__(self):
+        return self._name_
+
+    def __str__(self):
+        return self._name_
+
+
+class Driver(str, Enum):
+    """Raster format drivers."""
+
+    gtiff = 'gtiff'
+    """GeoTIFF."""
+    cog = 'cog'
+    """Cloud Optimised GeoTIFF."""
 
     def __repr__(self):
         return self._name_

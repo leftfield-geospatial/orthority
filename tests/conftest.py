@@ -26,6 +26,7 @@ import numpy as np
 import pytest
 import rasterio as rio
 from click.testing import CliRunner
+from rasterio.enums import ColorInterp
 from rasterio.transform import from_bounds, from_origin
 from rasterio.warp import array_bounds, transform, transform_bounds
 
@@ -459,12 +460,20 @@ def rgb_byte_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) 
 
 @pytest.fixture(scope='session')
 def ms_float_src_file(tmp_path_factory: pytest.TempPathFactory, im_size: tuple) -> Path:
-    """An 4 band higher res float32 checkerboard image with no CRS."""
+    """An 4 band higher res float32 checkerboard image with non-standard ``colorinterp`` and no
+    CRS.
+    """
     array = checkerboard((1024, 768)).astype('float32')
     array = np.stack((array,) * 4, axis=0)
     profile = create_profile(array)
     src_filename = tmp_path_factory.mktemp('data').joinpath('ms_float32_src.tif')
     with rio.open(src_filename, 'w', **profile) as im:
+        im.colorinterp = [
+            ColorInterp.blue,
+            ColorInterp.green,
+            ColorInterp.red,
+            ColorInterp.undefined,
+        ]
         im.write(array)
     return src_filename
 
@@ -662,7 +671,6 @@ def rgb_pinhole_utm34n_ortho(
 @pytest.fixture(scope='session')
 def github_root_url() -> str:
     """URL of github repository root."""
-    # TODO: change to /main
     return r'https://raw.githubusercontent.com/leftfield-geospatial/orthority/main/'
 
 
