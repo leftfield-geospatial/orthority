@@ -65,7 +65,7 @@ and help on an ``oty`` sub-command with:
 
 .. cli_end
 
-Options for the output files and orthorectification algorithm are common to all orthorectification sub-commands.
+Options for configuring output images are common to all sub-commands.
 
 .. note::
 
