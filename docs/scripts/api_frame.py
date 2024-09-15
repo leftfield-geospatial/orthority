@@ -1,4 +1,3 @@
-# TODO: change URL to main branch
 # code for getting started->api->camera models->frame cameras
 # [create camera]
 import orthority as oty
