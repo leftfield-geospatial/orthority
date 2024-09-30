@@ -676,6 +676,7 @@ def test_build_overviews():
         # build overviews
         common.build_overviews(im, min_level_pixels=256)
 
+    buf.seek(0)
     with rio.open(buf, 'r') as im:
         assert len(im.overviews(1)) > 0
 
