@@ -457,7 +457,7 @@ dem_band_option = click.option(
 interp_option = click.option(
     '-i',
     '--interp',
-    type=click.Choice(Interp, case_sensitive=False),
+    type=click.Choice(Interp, case_sensitive=True),
     default=Ortho._default_alg_config['interp'],
     show_default=True,
     help=f'Interpolation method for remapping source to ortho image.',
@@ -465,7 +465,7 @@ interp_option = click.option(
 dem_interp_option = click.option(
     '-di',
     '--dem-interp',
-    type=click.Choice(Interp, case_sensitive=False),
+    type=click.Choice(Interp, case_sensitive=True),
     default=Ortho._default_alg_config['dem_interp'],
     show_default=True,
     help=f'Interpolation method for DEM reprojection.',
@@ -503,7 +503,7 @@ alpha_option = click.option(
 driver_option = click.option(
     '-dv',
     '--driver',
-    type=click.Choice(Driver, case_sensitive=False),
+    type=click.Choice(Driver, case_sensitive=True),
     default=common._default_out_config['driver'],
     show_default=True,
     help=f'Ortho image driver.',
@@ -521,7 +521,7 @@ write_mask_option = click.option(
 dtype_option = click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
     show_default='source image data type.',
     help=f'Ortho image data type.',
@@ -529,7 +529,7 @@ dtype_option = click.option(
 compress_option = click.option(
     '-cm',
     '--compress',
-    type=click.Choice(Compress, case_sensitive=False),
+    type=click.Choice(Compress, case_sensitive=True),
     default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
     help=f'Ortho image compression.',
@@ -917,7 +917,7 @@ def odm(
 @click.option(
     '-rm',
     '--refine-method',
-    type=click.Choice(RpcRefine, case_sensitive=False),
+    type=click.Choice(RpcRefine, case_sensitive=True),
     default=_default_rpc_refine_method,
     show_default=True,
     help='Refinement method to use with ``--gcp-refine``.',
@@ -1085,7 +1085,7 @@ def rpc(
 @click.option(
     '-i',
     '--interp',
-    type=click.Choice(Interp, case_sensitive=False),
+    type=click.Choice(Interp, case_sensitive=True),
     default=PanSharpen._default_alg_config['interp'],
     show_default=True,
     help=f'Interpolation method for upsampling the multispectral image.',
@@ -1094,7 +1094,7 @@ def rpc(
 @click.option(
     '-dt',
     '--dtype',
-    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=False),
+    type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
     show_default='source image data type.',
     help=f'Pan-sharpened image data type.',
@@ -1102,7 +1102,7 @@ def rpc(
 @click.option(
     '-cm',
     '--compress',
-    type=click.Choice(Compress, case_sensitive=False),
+    type=click.Choice(Compress, case_sensitive=True),
     default=common._default_out_config['compress'],
     show_default="jpeg for uint8 --dtype, deflate otherwise",
     help=f'Pan-sharpened image compression.',
@@ -1131,7 +1131,7 @@ def rpc(
 @click.option(
     '-dv',
     '--driver',
-    type=click.Choice(Driver, case_sensitive=False),
+    type=click.Choice(Driver, case_sensitive=True),
     default=common._default_out_config['driver'],
     show_default=True,
     help=f'Pan-sharpened image driver.',
