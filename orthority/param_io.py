@@ -256,7 +256,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         warnings.warn(
             "Support for the 'config.yaml' format is deprecated and will be removed in future. "
             "Please switch to the Orthority interior parameter format.",
-            category=DeprecationWarning,
+            category=FutureWarning,
         )
         yaml_dict = yaml_dict['camera']
 
