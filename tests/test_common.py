@@ -537,7 +537,7 @@ def test_create_profile_image(
 
         # dtype and compression
         assert im.dtypes[0] == dtype
-        assert im.compression.value.lower() == compress
+        assert compress.value in im.profile['compress'].lower()
 
         # photometric
         if shape[0] == 3 and compress is Compress.jpeg:
@@ -609,7 +609,7 @@ def test_create_profile_image_creation_options(
         assert im.profile['blockxsize'] == im.profile['blockysize'] == 256
 
         # compression
-        assert im.compression.value.lower() == 'jpeg'
+        assert 'jpeg' in im.profile['compress'].lower()
         assert im.photometric is PhotometricInterp.ycbcr
         assert im_struct['JPEG_QUALITY'] == '90'
 

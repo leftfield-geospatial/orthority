@@ -603,7 +603,7 @@ def test_process_compress(pan_sharpen: PanSharpen, tmp_path: Path, compress: Com
         compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
     with rio.open(out_file, 'r') as out_im:
-        assert out_im.profile['compress'] == compress
+        assert compress.value in out_im.profile['compress'].lower()
 
 
 @pytest.mark.parametrize('build_ovw, driver', [*product([True, False], Driver)])

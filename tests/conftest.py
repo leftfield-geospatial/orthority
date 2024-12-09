@@ -978,6 +978,9 @@ def exif_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFacto
     dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
     with rio.open(odm_image_file, 'r') as src_im:
         dst_profile = src_im.profile.copy()
+        # work around GDAL / rasterio issue that reads YCbCr JPEG compression as 'YCbCr JPEG' in
+        # profile['compress'], but does not allow it to be written that way
+        dst_profile['compress'] = 'jpeg'
         with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
             dst_tags = src_im.tags()
             dst_tags.update(
@@ -998,6 +1001,9 @@ def exif_no_focal_image_file(
     dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
     with rio.open(exif_image_file, 'r') as src_im:
         dst_profile = src_im.profile.copy()
+        # work around GDAL / rasterio issue that reads YCbCr JPEG compression as 'YCbCr JPEG' in
+        # profile['compress'], but does not allow it to be written that way
+        dst_profile['compress'] = 'jpeg'
         with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
             dst_tags = src_im.tags()
             dst_tags.pop('EXIF_FocalLength')
@@ -1014,6 +1020,9 @@ def xmp_no_dewarp_image_file(
     dst_filename = tmp_path_factory.mktemp('data').joinpath('exif.tif')
     with rio.open(odm_image_file, 'r') as src_im:
         dst_profile = src_im.profile.copy()
+        # work around GDAL / rasterio issue that reads YCbCr JPEG compression as 'YCbCr JPEG' in
+        # profile['compress'], but does not allow it to be written that way
+        dst_profile['compress'] = 'jpeg'
         with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
             dst_im.update_tags(**src_im.tags())
             for namespace in src_im.tag_namespaces():

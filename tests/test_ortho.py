@@ -1027,7 +1027,7 @@ def test_process_compress(
         compress = Compress.jpeg if dtype == 'uint8' else Compress.deflate
 
     with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['compress'] == compress
+        assert compress.value in ortho_im.profile['compress'].lower()
 
 
 @pytest.mark.parametrize('build_ovw, driver', [*product([True, False], Driver)])
