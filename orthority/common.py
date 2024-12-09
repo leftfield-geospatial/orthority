@@ -460,7 +460,9 @@ def create_profile(
                     raise OrthorityError(
                         f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
                     )
-
+        # TODO: pixel interleaving with deflate compression can be much bigger than band
+        #  interleaving - does it depend on data being written band-by=band? (see e.g.
+        #  geedim/scripts/xee_rioxarray_exp.py)
         profile.update(compress=compress.value)
 
         if driver is Driver.gtiff:

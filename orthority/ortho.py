@@ -470,6 +470,8 @@ class Ortho:
                     try:
                         future.result()
                     except Exception as ex:
+                        # TODO: add cancel_futures=True here and in all executors when min
+                        #  supported python >= 3.9
                         executor.shutdown(wait=False)
                         raise RuntimeError('Could not remap tile.') from ex
                     progress.update()
