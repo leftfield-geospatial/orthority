@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Orthorectification using DEM and camera model input."""
+
 from __future__ import annotations
 
 import logging
@@ -38,8 +39,8 @@ from tqdm.auto import tqdm
 
 from orthority import common
 from orthority.camera import Camera, FrameCamera
-from orthority.enums import Compress, Interp, Driver
-from orthority.errors import CrsMissingError, OrthorityWarning, OrthorityError
+from orthority.enums import Compress, Driver, Interp
+from orthority.errors import CrsMissingError, OrthorityError, OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -138,13 +139,16 @@ class Ortho:
             # crs comparison is time-consuming - perform it once here
             crs_equal = self._crs == dem_im.crs
 
-            # find the scale from meters to ortho crs z units
+            # find the scale from meters to ortho crs z units (projects from a valid (x,y) in ortho
+            # crs so that we stay inside projection domains (#18))
             zs = []
             ref_crs = rio.CRS.from_epsg(4979)
+            ji = np.array(self.camera.im_size).reshape(-1, 1) / 2
+            world_xyz = self.camera.pixel_to_world_z(ji, 0)
             for z in [0, 1]:
-                world_xyz = transform(ref_crs, self._crs, [0], [0], [z])
-                zs.append(world_xyz[2][0])
-            z_scale = zs[1] - zs[0]
+                ref_xyz = transform(self._crs, ref_crs, world_xyz[0], world_xyz[1], [z])
+                zs.append(ref_xyz[2][0])
+            z_scale = 1 / (zs[1] - zs[0])
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
 
             def get_win_at_zs(zs: Sequence[float]) -> Window:
@@ -166,10 +170,10 @@ class Ortho:
                     raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the DEM.")
                 return common.expand_window_to_grid(dem_win)
 
-            # get a dem window containing the ortho bounds at min & max possible altitude, read the
-            # window from the dem
+            # get a dem window containing the ortho bounds at min & max possible altitude
             zs = np.array([self._egm_minmax[0], self._z_max + self._egm_minmax[1]]) * z_scale
             dem_win = get_win_at_zs(zs)
+            # read the window from the dem
             dem_array = dem_im.read(dem_band, window=dem_win, masked=True)
             dem_array_win = dem_win
 
