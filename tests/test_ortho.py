@@ -31,10 +31,9 @@ from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
 
-from orthority import common
-from orthority import errors, param_io
-from orthority.camera import Camera, create_camera, PinholeCamera
-from orthority.enums import CameraType, Compress, Interp, Driver
+from orthority import common, errors, param_io
+from orthority.camera import Camera, PinholeCamera, create_camera
+from orthority.enums import CameraType, Compress, Driver, Interp
 from orthority.errors import OrthorityError
 from orthority.ortho import Ortho
 from tests.conftest import _dem_resolution
@@ -222,6 +221,26 @@ def test_get_init_dem(
 
     assert test_bounds[:2] <= ref_bounds[:2]
     assert test_bounds[2:] >= ref_bounds[2:]
+
+
+def test_get_init_dem_vert_scale(
+    rgb_byte_src_file: Path,
+    float_utm34n_egm2008_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_egm2008_crs: str,
+    rgb_pinhole_utm34n_ortho: Ortho,
+):
+    """Test that initial DEM bounds account for vertical scale / CRS by comparing bounds where the
+    DEM and camera have the same relative geometry, but different vertical CRS.
+    """
+    ortho_egm2008 = Ortho(
+        rgb_byte_src_file, float_utm34n_egm2008_dem_file, pinhole_camera, crs=utm34n_egm2008_crs
+    )
+    dem_bounds_egm2008 = array_bounds(*ortho_egm2008._dem_array.shape, ortho_egm2008._dem_transform)
+    dem_bounds_novertcrs = array_bounds(
+        *rgb_pinhole_utm34n_ortho._dem_array.shape, rgb_pinhole_utm34n_ortho._dem_transform
+    )
+    assert dem_bounds_egm2008 == pytest.approx(dem_bounds_novertcrs, abs=1e-1)
 
 
 @pytest.mark.parametrize(
