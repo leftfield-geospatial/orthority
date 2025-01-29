@@ -21,7 +21,17 @@ import cv2
 from rasterio.enums import Resampling
 
 
-class CameraType(str, Enum):
+class _StrChoiceEnum(str, Enum):
+    """String value enumeration class that can be used with a ``click.Choice()`` parameter type."""
+
+    def __repr__(self):
+        return self._value_
+
+    def __str__(self):
+        return self._value_
+
+
+class CameraType(_StrChoiceEnum):
     """Camera model types."""
 
     pinhole = 'pinhole'
@@ -31,18 +41,18 @@ class CameraType(str, Enum):
     """
     Brown-Conrady frame camera model.
 
-    Compatible with `OpenDroneMap / OpenSfM 
-    <https://opensfm.org/docs/geometry.html#camera-models>`__ ``perspective``, ``simple_radial``, 
-    ``radial`` and ``brown`` model parameters, and the 4- and 5-coefficient versions of the 
+    Compatible with `OpenDroneMap / OpenSfM
+    <https://opensfm.org/docs/geometry.html#camera-models>`__ ``perspective``, ``simple_radial``,
+    ``radial`` and ``brown`` model parameters, and the 4- and 5-coefficient versions of the
     `OpenCV general model <https://docs.opencv.org/4.x/d9/d0c/group__calib3d.html>`__."""
 
     fisheye = 'fisheye'
     """
     Fisheye frame camera model.
 
-    Compatible with `OpenDroneMap / OpenSfM 
-    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__ ``fisheye``, and `OpenCV 
-    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model 
+    Compatible with `OpenDroneMap / OpenSfM
+    <https://opensfm.org/docs/geometry.html#fisheye-camera>`__ ``fisheye``, and `OpenCV
+    <https://docs.opencv.org/4.x/db/d58/group__calib3d__fisheye.html>`__  fisheye model
     parameters."""
 
     opencv = 'opencv'
@@ -52,12 +62,6 @@ class CameraType(str, Enum):
 
     rpc = 'rpc'
     """RPC camera model."""
-
-    def __repr__(self):
-        return self._name_
-
-    def __str__(self):
-        return self._name_
 
     @classmethod
     def from_odm(cls, cam_type: str):
@@ -70,7 +74,7 @@ class CameraType(str, Enum):
         return cls(cam_type)
 
 
-class Interp(str, Enum):
+class Interp(_StrChoiceEnum):
     """Interpolation types."""
 
     nearest = 'nearest'
@@ -83,12 +87,6 @@ class Interp(str, Enum):
     """Bicubic interpolation."""
     lanczos = 'lanczos'
     """Lanczos windowed sinc interpolation."""
-
-    def __repr__(self):
-        return self._name_
-
-    def __str__(self):
-        return self._name_
 
     def to_cv(self) -> int:
         """Convert to OpenCV interpolation type."""
@@ -106,7 +104,7 @@ class Interp(str, Enum):
         return Resampling[self._name_]
 
 
-class Compress(str, Enum):
+class Compress(_StrChoiceEnum):
     """Compression types."""
 
     jpeg = 'jpeg'
@@ -115,12 +113,6 @@ class Compress(str, Enum):
     """Deflate compression."""
     lzw = 'lzw'
     """LZW compression."""
-
-    def __repr__(self):
-        return self._name_
-
-    def __str__(self):
-        return self._name_
 
 
 class CsvFormat(Enum):
@@ -146,7 +138,7 @@ class CsvFormat(Enum):
         return self is CsvFormat.xyz_opk or self is CsvFormat.lla_opk
 
 
-class RpcRefine(str, Enum):
+class RpcRefine(_StrChoiceEnum):
     """RPC refinement method."""
 
     shift = 'shift'
@@ -154,23 +146,11 @@ class RpcRefine(str, Enum):
     shift_drift = 'shift-drift'
     """Pixel coordinate scale and translation."""
 
-    def __repr__(self):
-        return self._name_
 
-    def __str__(self):
-        return self._name_
-
-
-class Driver(str, Enum):
+class Driver(_StrChoiceEnum):
     """Raster format drivers."""
 
     gtiff = 'gtiff'
     """GeoTIFF."""
     cog = 'cog'
     """Cloud Optimised GeoTIFF."""
-
-    def __repr__(self):
-        return self._name_
-
-    def __str__(self):
-        return self._name_
