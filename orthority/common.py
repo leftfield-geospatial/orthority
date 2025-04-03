@@ -14,6 +14,7 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Utility functions for internal use."""
+
 from __future__ import annotations
 
 import cProfile
@@ -23,12 +24,13 @@ import posixpath
 import pstats
 import tracemalloc
 import warnings
-from contextlib import contextmanager, ExitStack
+from collections.abc import Generator, Sequence
+from contextlib import ExitStack, contextmanager
 from io import IOBase
 from itertools import product
 from os import PathLike
 from pathlib import Path
-from typing import IO, Sequence, Generator
+from typing import IO
 
 import cv2
 import fsspec
@@ -48,8 +50,8 @@ from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
 
-from orthority.enums import Interp, Compress, Driver
-from orthority.errors import OrthorityWarning, OrthorityError
+from orthority.enums import Compress, Driver, Interp
+from orthority.errors import OrthorityError, OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -140,12 +142,12 @@ def profiler():
         # tottime is the total time spent in the function alone. cumtime is the total time spent
         # in the function plus all functions that this function called
         proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
-        logger.debug(f'Processing times:')
+        logger.debug('Processing times:')
         proc_stats.print_stats(20)
         current, peak = tracemalloc.get_traced_memory()
         tracemalloc.stop()
         logger.debug(
-            f"Memory usage: current: {current / 10 ** 6:.1f} MB, peak: {peak / 10 ** 6:.1f} MB"
+            f"Memory usage: current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB"
         )
     else:
         yield
@@ -275,9 +277,9 @@ class OpenRaster:
 
         if isinstance(file, DatasetReaderBase):
             if file.closed:
-                raise IOError('Dataset is closed.')
+                raise OSError('Dataset is closed.')
             if mode not in file.mode:
-                raise IOError(
+                raise OSError(
                     f"Dataset mode: '{file.mode}' not compatible with the mode argument: '{mode}'."
                 )
             self._dataset = file
@@ -288,9 +290,14 @@ class OpenRaster:
             #  allow sidecar files to read / written (test that it does).  also test that files
             #  are not buffered in memory with this option, and currently problematic fsspec
             #  protocols (e.g. github) no longer cause a seg fault.
+            # TODO: following on the above, the opener arg cannot be used when writing to remote
+            #  fsspec files as they don't support random seek.  so use the geedim approach of
+            #  writing to MemoryFile cache locally, then to fsspec file object, for writing
+            #  remote files.  the opener= arg can be used with an fsspec file for reading
+            #  remote files as these do support random seek.
             if isinstance(file, OpenFile):
                 if mode + 'b' != file.mode:
-                    raise IOError(
+                    raise OSError(
                         f"OpenFile object mode: '{file.mode}' should be a binary mode matching the "
                         f"mode argument: '{mode}'."
                     )
@@ -330,7 +337,7 @@ class OpenRaster:
 
     def __enter__(self) -> rio.DatasetReader | DatasetWriter:
         if self._dataset.closed:
-            raise IOError('Dataset is closed.')
+            raise OSError('Dataset is closed.')
         return self._dataset
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -368,16 +375,16 @@ class Open:
         self._exit_stack = ExitStack()
         if isinstance(file, IOBase):
             if file.closed:
-                raise IOError('File object is closed.')
+                raise OSError('File object is closed.')
             if getattr(file, 'mode', mode) != mode:
                 # note: fsspec text mode file objects do not have a mode property
-                raise IOError(f"File object mode should match the mode argument: '{mode}'.")
+                raise OSError(f"File object mode should match the mode argument: '{mode}'.")
             self._file_obj = file
 
         elif isinstance(file, (OpenFile, str, PathLike)):
             if isinstance(file, OpenFile):
                 if mode != file.mode:
-                    raise IOError(
+                    raise OSError(
                         f"OpenFile object mode: '{file.mode}', should match the mode argument:"
                         f" '{mode}'."
                     )
@@ -458,7 +465,7 @@ def create_profile(
                     profile.update(nbits=12)
                 elif dtype != 'uint8':
                     raise OrthorityError(
-                        f"JPEG compression is supported for 'uint8' and 'uint16' data types only."
+                        "JPEG compression is supported for 'uint8' and 'uint16' data types only."
                     )
         # TODO: pixel interleaving with deflate compression can be much bigger than band
         #  interleaving - does it depend on data being written band-by=band? (see e.g.

@@ -21,10 +21,10 @@ import logging
 import os
 import threading
 import warnings
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack
 from os import PathLike
-from typing import Sequence
 
 import cv2
 import numpy as np
@@ -552,6 +552,7 @@ class Ortho:
             be set to a dictionary of arguments for a custom `tqdm
             <https://tqdm.github.io/docs/tqdm/>`_ bar.
         """
+        # TODO: clarify creation_options docstring - see issue #23
         exit_stack = ExitStack()
         with exit_stack:
             # create the progress bar
