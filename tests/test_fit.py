@@ -15,21 +15,38 @@
 
 from __future__ import annotations
 
+from math import ceil
+
+import cv2
 import numpy as np
 import pytest
 from rasterio.rpc import RPC
+from rasterio.warp import transform
 
 from orthority import fit
-from orthority.camera import RpcCamera
-from orthority.enums import RpcRefine
+from orthority.camera import FrameCamera, RpcCamera, create_camera
+from orthority.enums import CameraType, RpcRefine
+from orthority.errors import OrthorityWarning
+from tests.test_param_io import _validate_ext_param_dict, _validate_int_param_dict
+
+
+@pytest.fixture(scope='session')
+def grid_ji(im_size: tuple[int, int]) -> np.ndarray:
+    """A 2-by-N array of pixel coordinates lying on a grid inside ``im_size``."""
+    step = 10
+    j, i = (
+        np.arange(step, im_size[0] - step + 1, step),
+        np.arange(step, im_size[1] - step + 1, step),
+    )
+    jgrid, igrid = np.meshgrid(j, i, indexing='xy')
+    return np.array((jgrid.reshape(-1), igrid.reshape(-1)))
 
 
 @pytest.mark.parametrize('shift, drift', [((5.0, 10.0), None), ((5.0, 10.0), (1.2, 0.8))])
 def test_refine_rpc(
     rpc: dict, im_size: tuple[int, int], shift: tuple[float, float], drift: tuple[float, float]
 ):
-    """Test ``refine_rpc()`` correctly refines an RPC model by testing it against refinement GCPs.
-    """
+    """Test ``refine_rpc()`` correctly refines an RPC model by testing it against refinement GCPs."""
     # create affine transform to realise shift & drift
     method = RpcRefine.shift if not drift else RpcRefine.shift_drift
     drift = (1.0, 1.0) if not drift else drift
@@ -85,3 +102,193 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
     with pytest.raises(ValueError) as ex:
         fit.refine_rpc(rpc, gcps[:-1], method=method)
     assert 'At least' in str(ex.value)
+
+
+@pytest.mark.parametrize(
+    'cam_type, camera',
+    [
+        (CameraType.pinhole, 'pinhole_camera'),
+        (CameraType.brown, 'brown_camera'),
+        (CameraType.opencv, 'opencv_camera'),
+        (CameraType.fisheye, 'fisheye_camera'),
+    ],
+)
+def test_fit_frame_dictionaries(
+    cam_type: CameraType, camera: str, grid_ji: np.ndarray, request: pytest.FixtureRequest
+):
+    """Test fit_frame() returns valid parameter dictionaries."""
+    cam: FrameCamera = request.getfixturevalue(camera)
+
+    # create a mock GCP dictionary with multiple images
+    gcp_dict = {}
+    ji = grid_ji
+    xyz = cam.pixel_to_world_z(ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+    gcp_dict = {'file1.ext': gcps, 'file2.ext': gcps}
+
+    # fit parameters
+    int_param_dict, ext_param_dict = fit.fit_frame(cam_type, cam.im_size, gcp_dict)
+
+    # test parameter dictionary validity
+    assert len(int_param_dict) == 1
+    assert ext_param_dict.keys() == gcp_dict.keys()
+    _validate_int_param_dict(int_param_dict)
+    int_param = next(iter(int_param_dict.values()))
+    assert set(int_param.keys()).issuperset(fit._frame_dist_params[cam_type])
+    _validate_ext_param_dict(ext_param_dict)
+
+
+def test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_crs: str):
+    """Test fit_frame() crs parameter."""
+    # create mock GCP dictionary with coordinates transformed from the reference camera's world
+    # CRS (utm34n_crs) to WGS84 geographic
+    xyz = pinhole_camera.pixel_to_world_z(grid_ji, z=0)
+    lla = np.array(transform(utm34n_crs, 'EPSG:4979', *xyz))
+    gcp_dict = {
+        'file.ext': [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
+    }
+
+    # fit camera params with crs=
+    int_param_dict, ext_param_dict = fit.fit_frame(
+        CameraType.pinhole, pinhole_camera.im_size, gcp_dict, crs=utm34n_crs
+    )
+
+    # create a camera with the fitted parameters and test its world coordinates match those of
+    # the reference camera
+    int_param = next(iter(int_param_dict.values()))
+    ext_param = next(iter(ext_param_dict.values()))
+    test_cam = create_camera(**int_param, xyz=ext_param['xyz'], opk=ext_param['opk'])
+    test_xyz = test_cam.pixel_to_world_z(grid_ji, z=0)
+    assert test_xyz == pytest.approx(xyz, abs=1)
+
+
+@pytest.mark.parametrize(
+    'cam_type, camera',
+    [
+        (CameraType.pinhole, 'pinhole_camera'),
+        (CameraType.brown, 'brown_camera'),
+        (CameraType.opencv, 'opencv_camera'),
+        (CameraType.fisheye, 'fisheye_camera'),
+    ],
+)
+def test_fit_frame_min_gcps(
+    cam_type: CameraType, camera: str, grid_ji: np.ndarray, request: pytest.FixtureRequest
+):
+    """Test fit_frame() with the minimum allowed number of GCPs."""
+    gcp_cam: FrameCamera = request.getfixturevalue(camera)
+    num_params = fit._frame_num_params[cam_type]
+    min_gcps = ceil((num_params + 1) / 2)
+
+    # create a grid of at least min_gcps GCPs that approx. covers the image (with a buffer inside
+    # the boundary)
+    gcps_per_side = ceil(np.sqrt(min_gcps))
+    steps = np.array(gcp_cam.im_size) / (gcps_per_side + 1)
+    j, i = (
+        np.arange(steps[0], gcp_cam.im_size[0], steps[0]),
+        np.arange(steps[1], gcp_cam.im_size[1], steps[1]),
+    )
+    jgrid, igrid = np.meshgrid(j, i, indexing='xy')
+    ji = np.array((jgrid.reshape(-1), igrid.reshape(-1)))
+
+    # create a mock GCP dictionary with min_gcps GCPs
+    ji = ji[:, :min_gcps]
+    xyz = gcp_cam.pixel_to_world_z(ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(ji.T, xyz.T)]
+    gcp_dict = {'file.ext': gcps}
+
+    # fit camera params
+    int_param_dict, ext_param_dict = fit.fit_frame(cam_type, gcp_cam.im_size, gcp_dict)
+    assert len(int_param_dict) == len(ext_param_dict) == 1
+
+    # create a camera with the fitted parameters and test its accuracy
+    int_param = next(iter(int_param_dict.values()))
+    ext_param = next(iter(ext_param_dict.values()))
+    test_cam = create_camera(**int_param, xyz=ext_param['xyz'], opk=ext_param['opk'])
+
+    test_ji = test_cam.world_to_pixel(xyz)
+    assert test_ji == pytest.approx(ji, abs=0.5)
+    test_xyz = test_cam.pixel_to_world_z(ji, z=0)
+    assert test_xyz == pytest.approx(xyz, abs=5)
+
+
+@pytest.mark.parametrize(
+    'cam_type, dist_param',
+    [
+        (CameraType.pinhole, None),
+        (CameraType.brown, 'brown_dist_param'),
+        (CameraType.opencv, 'opencv_dist_param'),
+        (CameraType.fisheye, 'fisheye_dist_param'),
+    ],
+)
+def test_fit_frame_multiple_images(
+    cam_type: CameraType,
+    dist_param: str,
+    frame_args: dict,
+    grid_ji: np.ndarray,
+    request: pytest.FixtureRequest,
+):
+    """Test fit_frame() with multiple image GCPs."""
+    dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
+
+    # create a mock GCP dictionary with multiple images at different camera orientations
+    gcp_dict = {}
+    xyz_dict = {}
+    gcp_cam = create_camera(cam_type, **frame_args, **dist_param)
+    for i, opk_offset in enumerate([(0, 0, 0), (-15, 10, 0), (-30, 20, 0)]):
+        opk_ = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
+        gcp_cam.update(xyz=frame_args['xyz'], opk=opk_)
+        xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
+        key = f'file{i}.ext'
+        xyz_dict[key] = xyz
+        gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+        gcp_dict[key] = gcps
+
+    # fit camera params
+    int_param_dict, ext_param_dict = fit.fit_frame(cam_type, gcp_cam.im_size, gcp_dict)
+
+    # configure cameras with the fitted parameters and test accuracy
+    int_param = next(iter(int_param_dict.values()))
+    test_cam = create_camera(**int_param)
+    for filename, ext_param in ext_param_dict.items():
+        test_cam.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
+
+        test_ji = test_cam.world_to_pixel(xyz_dict[filename])
+        assert test_ji == pytest.approx(grid_ji, abs=0.1)
+        test_xyz = test_cam.pixel_to_world_z(grid_ji, z=0)
+        assert test_xyz == pytest.approx(xyz_dict[filename], abs=1)
+
+
+def test_fit_frame_errors(brown_camera: FrameCamera, grid_ji: np.ndarray):
+    """Test fit_frame() errors and warnings."""
+    cam_type = CameraType.brown
+    # create mock GCPs
+    xyz = brown_camera.pixel_to_world_z(grid_ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+
+    # test an error is raised with < 4 GCPs in an image
+    gcp_dict = {'file1.ext': gcps[:3], 'file2.ext': gcps}
+    with pytest.raises(ValueError, match='At least four'):
+        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+
+    # test an error is raised with less than min number of GCPs (in total) required to fit cam_type
+    min_gcps = ceil((1 + fit._frame_num_params[cam_type]) / 2)
+    gcp_dict = {'file1.ext': gcps[: min_gcps - 1]}
+    with pytest.raises(ValueError, match='A total of at least'):
+        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+
+    # test a warning is issued with less than the number of GCPs required to globally optimise
+    # all cam_type parameters
+    gcp_dict = {'file1.ext': gcps[:min_gcps]}
+    with pytest.warns(OrthorityWarning, match='will not be globally optimised'):
+        try:
+            _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+        except cv2.error:
+            # suppress conditioning error
+            pass
+
+    # test an error is raised with non-planar GCPs
+    xyz[2] = np.random.randn(1, xyz.shape[1])
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+    gcp_dict = {'file1.ext': gcps}
+    with pytest.raises(ValueError, match='should be co-planar'):
+        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
