@@ -121,8 +121,7 @@ def test_fit_frame_dictionaries(
 
     # create a mock GCP dictionary with multiple images
     gcp_dict = {}
-    ji = grid_ji
-    xyz = cam.pixel_to_world_z(ji, z=0)
+    xyz = cam.pixel_to_world_z(grid_ji, z=0)
     gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
     gcp_dict = {'file1.ext': gcps, 'file2.ext': gcps}
 
@@ -230,17 +229,23 @@ def test_fit_frame_multiple_images(
     """Test fit_frame() with multiple image GCPs."""
     dist_param: dict = request.getfixturevalue(dist_param) if dist_param else {}
 
-    # create a mock GCP dictionary with multiple images at different camera orientations
+    # create a mock GCP dictionary with multiple images at different camera positions / orientations
     gcp_dict = {}
     xyz_dict = {}
     gcp_cam = create_camera(cam_type, **frame_args, **dist_param)
-    for i, opk_offset in enumerate([(0, 0, 0), (-15, 10, 0), (-30, 20, 0)]):
-        opk_ = tuple(np.array(frame_args['opk']) + np.radians(opk_offset))
-        gcp_cam.update(xyz=frame_args['xyz'], opk=opk_)
+    for i, (ext_xyz, ext_opk) in enumerate(
+        zip(
+            [(2e4, 3e4, 1e3), (3e4, 3e4, 1e3), (3e4, 3e4, 2e3)],
+            [(-3.0, 2.0, 10.0), (-15.0, 2.0, 10.0), (-30.0, 20.0, 10.0)],
+        )
+    ):
+        ext_opk = tuple(np.radians(ext_opk))
+        gcp_cam.update(xyz=ext_xyz, opk=ext_opk)
         xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
+        gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+
         key = f'file{i}.ext'
         xyz_dict[key] = xyz
-        gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
         gcp_dict[key] = gcps
 
     # fit camera params
@@ -292,3 +297,120 @@ def test_fit_frame_errors(brown_camera: FrameCamera, grid_ji: np.ndarray):
     gcp_dict = {'file1.ext': gcps}
     with pytest.raises(ValueError, match='should be co-planar'):
         _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+
+
+def test_fit_frame_exterior_dictionary(
+    pinhole_int_param_dict: dict,
+    exterior_args: dict,
+    grid_ji: np.ndarray,
+):
+    """Test fit_frame_exterior() returns a valid exterior parameter dictionary."""
+    int_param = next(iter(pinhole_int_param_dict.values()))
+
+    # create a mock GCP dictionary
+    gcp_dict = {}
+    gcp_cam = create_camera(**int_param, **exterior_args)
+    xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+    gcp_dict = {'file1.ext': gcps, 'file2.ext': gcps}
+
+    # fit exterior params
+    ext_param_dict = fit.fit_frame_exterior(pinhole_int_param_dict, gcp_dict)
+
+    # test dictionary validity
+    assert ext_param_dict.keys() == gcp_dict.keys()
+    _validate_ext_param_dict(ext_param_dict)
+
+
+def test_fit_frame_exterior_crs(
+    pinhole_int_param_dict: dict, exterior_args: dict, grid_ji: np.ndarray, utm34n_crs: str
+):
+    """Test fit_frame() crs parameter."""
+    # create mock GCP dictionary with coordinates transformed from the reference camera's world
+    # CRS (utm34n_crs) to WGS84 geographic
+    int_param = next(iter(pinhole_int_param_dict.values()))
+    gcp_cam = create_camera(**int_param, **exterior_args)
+    xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
+    lla = np.array(transform(utm34n_crs, 'EPSG:4979', *xyz))
+    gcp_dict = {
+        'file.ext': [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
+    }
+
+    # fit exterior params with crs=
+    ext_param_dict = fit.fit_frame_exterior(pinhole_int_param_dict, gcp_dict, crs=utm34n_crs)
+
+    # test the camera position against the reference
+    ext_param = next(iter(ext_param_dict.values()))
+    assert ext_param['xyz'] == pytest.approx(exterior_args['xyz'], abs=1e-3)
+
+
+@pytest.mark.parametrize(
+    'int_param_dict',
+    [
+        'pinhole_int_param_dict',
+        'brown_int_param_dict',
+        'opencv_int_param_dict',
+        'fisheye_int_param_dict',
+    ],
+)
+def test_fit_frame_exterior_multiple_images(
+    int_param_dict: str,
+    exterior_args: dict,
+    grid_ji: np.ndarray,
+    request: pytest.FixtureRequest,
+):
+    """Test fit_frame_exterior() with multiple images."""
+    int_param_dict: dict = request.getfixturevalue(int_param_dict)
+    int_param = next(iter(int_param_dict.values()))
+
+    # create a mock GCP dictionary with multiple images at different camera positions / orientations
+    gcp_dict = {}
+    ref_ext_param_dict = {}
+    gcp_cam = create_camera(**int_param, **exterior_args)
+    for i, (ext_xyz, ext_opk) in enumerate(
+        zip(
+            [(2e4, 3e4, 1e3), (3e4, 3e4, 1e3), (3e4, 3e4, 2e3)],
+            [(-3.0, 2.0, 10.0), (-15.0, 2.0, 10.0), (-30.0, 20.0, 10.0)],
+        )
+    ):
+        ext_opk = tuple(np.radians(ext_opk))
+        gcp_cam.update(xyz=ext_xyz, opk=ext_opk)
+        xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
+        gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+
+        key = f'file{i}.ext'
+        ref_ext_param_dict[key] = dict(xyz=ext_xyz, opk=ext_opk)
+        gcp_dict[key] = gcps
+
+    # fit exterior params
+    test_ext_param_dict = fit.fit_frame_exterior(int_param_dict, gcp_dict)
+
+    # test parameter accuracy
+    assert test_ext_param_dict.keys() == ref_ext_param_dict.keys()
+    for test_ext_param, ref_ext_param in zip(
+        test_ext_param_dict.values(), ref_ext_param_dict.values()
+    ):
+        assert test_ext_param['xyz'] == pytest.approx(ref_ext_param['xyz'], abs=1e-3)
+        assert test_ext_param['opk'] == pytest.approx(ref_ext_param['opk'], abs=1e-5)
+
+
+def test_fit_frame_exterior_errors(
+    pinhole_int_param_dict: dict, exterior_args: dict, grid_ji: np.ndarray
+):
+    """Test fit_frame_exterior() errors and warnings."""
+    # create mock GCPs
+    int_param = next(iter(pinhole_int_param_dict.values()))
+    cam = create_camera(**int_param, **exterior_args)
+    xyz = cam.pixel_to_world_z(grid_ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+
+    # test an error is raised with < 3 GCPs in an image
+    gcp_dict = {'file1.ext': gcps[:2], 'file2.ext': gcps}
+    with pytest.raises(ValueError, match='At least three'):
+        _ = fit.fit_frame_exterior(pinhole_int_param_dict, gcp_dict)
+
+    # test a warning is issued with >1 camera in the interior parameter dictionary
+    int_param_dict = {'cam1': int_param, 'cam2': int_param}
+    gcp_dict = {'file.ext': gcps}
+    with pytest.warns(OrthorityWarning, match='Refining the first'):
+        _ = fit.fit_frame_exterior(int_param_dict, gcp_dict)
