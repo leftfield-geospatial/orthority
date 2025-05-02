@@ -30,7 +30,7 @@ from rasterio.rpc import RPC
 from rasterio.warp import transform
 
 from orthority import param_io
-from orthority.camera import RpcCamera
+from orthority.camera import FrameCamera, RpcCamera
 from orthority.enums import CameraType, RpcRefine
 from orthority.errors import OrthorityWarning
 
@@ -294,3 +294,67 @@ def fit_frame(
         ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)
 
     return int_param_dict, ext_param_dict
+
+
+def fit_frame_exterior(
+    int_param_dict: dict[str, dict[str, Any]],
+    gcp_dict: dict[str, Sequence[dict]],
+    crs: str | CRS | None = None,
+):
+    """
+    Fit frame camera exterior parameters to GCPs, given the camera's interior parameters.
+
+    :param int_param_dict:
+        Interior parameter dictionary.
+    :param gcp_dict:
+        GCP dictionary e.g. as returned by :func:`~orthority.param_io.read_im_gcps` or
+        :func:`~orthority.param_io.read_oty_gcps`.
+    :param crs:
+        CRS of the camera world coordinate system as an EPSG, proj4 or WKT string,
+        or :class:`~rasterio.crs.CRS` object.  If set to ``None`` (the default), GCPs are assumed
+        to be in the world coordinate CRS, and are not transformed.  Otherwise, GCPs are
+        transformed from geographic WGS84 coordinates to this CRS if it is supplied.
+
+    :return:
+        Exterior parameter dictionary.
+    """
+    if len(int_param_dict) > 1:
+        warnings.warn(
+            f"Refining the first of {len(int_param_dict)} cameras defined in the interior "
+            f"parameter dictionary.",
+            category=OrthorityWarning,
+            stacklevel=2,
+        )
+    cam_id = next(iter(int_param_dict.keys()))
+    int_param = next(iter(int_param_dict.values()))
+
+    # check there are at least 3 GCPs per image
+    min_gcps = min(len(gcps) for gcps in gcp_dict.values())
+    if min_gcps < 3:
+        raise ValueError('At least three GCPs are needed per image.')
+
+    # get initial intrinsic matrix
+    K = FrameCamera._get_intrinsic(
+        int_param['im_size'],
+        int_param['focal_len'],
+        int_param.get('sensor_size'),
+        int_param.get('cx', 0.0),
+        int_param.get('cy', 0.0),
+    )
+
+    # get initial distortion coefficients
+    dist_names = _frame_dist_params[int_param['cam_type']]
+    dist_param = [int_param.get(dn, 0.0) for dn in dist_names]
+    dist_param = np.array(dist_param) if dist_param else None
+
+    # convert GCPs to OpenCV compatible lists of arrays
+    jis, xyzs, ref_xyz = _gcps_to_cv_coords(gcp_dict, crs=crs)
+
+    # fit exterior parameters (SOLVEPNP_SQPNP is globally optimal so does not need further refining)
+    ext_param_dict = {}
+    for filename, xyz, ji in zip(gcp_dict.keys(), xyzs, jis):
+        _, r, t = cv2.solvePnP(xyz, ji, K, dist_param, flags=cv2.SOLVEPNP_SQPNP)
+        xyz_, opk = param_io._cv_ext_to_oty_ext(t, r, ref_xyz=ref_xyz)
+        ext_param_dict[filename] = dict(xyz=xyz_, opk=opk, camera=cam_id)
+
+    return ext_param_dict
