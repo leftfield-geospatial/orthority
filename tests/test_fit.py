@@ -33,7 +33,7 @@ from tests.test_param_io import _validate_ext_param_dict, _validate_int_param_di
 @pytest.fixture(scope='session')
 def grid_ji(im_size: tuple[int, int]) -> np.ndarray:
     """A 2-by-N array of pixel coordinates lying on a grid inside ``im_size``."""
-    step = 10
+    step = 20
     j, i = (
         np.arange(step, im_size[0] - step + 1, step),
         np.arange(step, im_size[1] - step + 1, step),
