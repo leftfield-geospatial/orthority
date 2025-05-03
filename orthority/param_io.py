@@ -838,17 +838,20 @@ def _rpy_to_opk(
 def _cv_ext_to_oty_ext(
     t: Sequence[float] | np.ndarray,
     r: Sequence[float] | np.ndarray,
-    ref_xyz: Sequence[float] | np.ndarray | None = None,
+    scale_xyz: Sequence[float] | np.ndarray | None = None,
+    off_xyz: Sequence[float] | np.ndarray | None = None,
 ) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
     """Convert OpenCV / OpenSfM rotation and translation vectors to Orthority format and
     convention camera (x, y, z) position and (omega, phi, kappa) angles.  Camera positions are
-    offset by ``ref_xyz`` if it is supplied.
+    scaled and offset by ``scale_xyz`` and ``off_xyz`` when supplied.
     """
     # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
     R = cv2.Rodrigues(np.array(r))[0].T
     xyz = (-R.dot(t)).squeeze()
-    if ref_xyz is not None:
-        xyz += ref_xyz
+    if scale_xyz is not None:
+        xyz *= scale_xyz
+    if off_xyz is not None:
+        xyz += off_xyz
     xyz = tuple(xyz.tolist())
     # rotate camera coords from OpenSfM / OpenCV to PATB convention
     R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
@@ -1254,7 +1257,7 @@ class OsfmReader(FrameReader):
         for filename, shot_dict in self._json_dict['shots'].items():
             # convert reconstruction 'translation' and 'rotation' to oty exterior params
             xyz, opk = _cv_ext_to_oty_ext(
-                shot_dict['translation'], shot_dict['rotation'], ref_xyz=ref_xyz
+                shot_dict['translation'], shot_dict['rotation'], off_xyz=ref_xyz
             )
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id

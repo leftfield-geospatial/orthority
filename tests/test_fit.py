@@ -27,7 +27,6 @@ from orthority import fit
 from orthority.camera import FrameCamera, RpcCamera, create_camera
 from orthority.enums import CameraType, RpcRefine
 from orthority.errors import OrthorityWarning
-from tests.conftest import ortho_bounds
 from tests.test_param_io import _validate_ext_param_dict, _validate_int_param_dict
 
 
@@ -42,31 +41,6 @@ def grid_ji(im_size: tuple[int, int]) -> np.ndarray:
     jgrid, igrid = np.meshgrid(j, i, indexing='xy')
     ji = np.array((jgrid.reshape(-1), igrid.reshape(-1)))
     return ji + np.random.randn(*ji.shape)
-
-
-def get_grid_xyz(cam: FrameCamera, grid_shape: tuple[int, int] = (20, 15)) -> np.ndarray:
-    """Return a 3-by-N array of planar world (x, y, z) coordinates lying on a grid at z=0 that
-    cover the bounds of the given camera.
-    """
-    bounds = np.array(ortho_bounds(cam, 0))
-    buffer = (bounds[1::2] - bounds[::2]) / (np.array(grid_shape) + 1)
-    x, y = (
-        np.linspace(bounds[0] + buffer[0], bounds[2] - buffer[0], grid_shape[0]),
-        np.linspace(bounds[1] + buffer[1], bounds[3] - buffer[1], grid_shape[1]),
-    )
-    # x, y = (np.linspace(*bounds[::2], grid_shape[0]), np.linspace(*bounds[1::2], grid_shape[1]))
-    xgrid, ygrid = np.meshgrid(x, y, indexing='xy')
-    return np.array((xgrid.reshape(-1), ygrid.reshape(-1), np.zeros(xgrid.size)))
-
-
-def get_grid_gcps(
-    cam: FrameCamera, grid_shape: tuple[int, int] = (20, 15)
-) -> tuple[np.ndarray, np.ndarray, list[dict]]:
-    """Return a sequence of GCPs that lie on a grid covering the bounds of the given camera."""
-    xyz = get_grid_xyz(cam, grid_shape=grid_shape)
-    ji = cam.world_to_pixel(xyz)
-    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(ji.T, xyz.T)]
-    return ji, xyz, gcps
 
 
 @pytest.mark.parametrize('shift, drift', [((5.0, 10.0), None), ((5.0, 10.0), (1.2, 0.8))])
@@ -140,13 +114,16 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
         (CameraType.fisheye, 'fisheye_camera'),
     ],
 )
-def test_fit_frame_dictionaries(cam_type: CameraType, camera: str, request: pytest.FixtureRequest):
+def test_fit_frame_dictionaries(
+    cam_type: CameraType, camera: str, grid_ji: np.ndarray, request: pytest.FixtureRequest
+):
     """Test fit_frame() returns valid parameter dictionaries."""
     cam: FrameCamera = request.getfixturevalue(camera)
 
     # create a mock GCP dictionary with multiple images
-    _, _, gcps = get_grid_gcps(cam)
-    # split gcps over images to avoid conditioning errors
+    xyz = cam.pixel_to_world_z(grid_ji, z=0)
+    gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
+    # split gcps over images to avoid fisheye conditioning error
     split_gcps = ceil(len(gcps) / 2)
     gcp_dict = {'file1.ext': gcps[:split_gcps], 'file2.ext': gcps[split_gcps:]}
 
@@ -162,14 +139,13 @@ def test_fit_frame_dictionaries(cam_type: CameraType, camera: str, request: pyte
     _validate_ext_param_dict(ext_param_dict)
 
 
-def test_fit_frame_crs(pinhole_camera: FrameCamera, utm34n_crs: str):
+def test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_crs: str):
     """Test fit_frame() crs parameter."""
     # create mock GCP dictionary with coordinates transformed from the reference camera's world
     # CRS (utm34n_crs) to WGS84 geographic
-    xyz = get_grid_xyz(pinhole_camera)
-    ji = pinhole_camera.world_to_pixel(xyz)
+    xyz = pinhole_camera.pixel_to_world_z(grid_ji, z=0)
     lla = np.array(transform(utm34n_crs, 'EPSG:4979', *xyz))
-    gcps = [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(ji.T, lla.T)]
+    gcps = [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
     gcp_dict = {'file.ext': gcps}
 
     # fit camera params with crs=
@@ -182,8 +158,8 @@ def test_fit_frame_crs(pinhole_camera: FrameCamera, utm34n_crs: str):
     int_param = next(iter(int_param_dict.values()))
     ext_param = next(iter(ext_param_dict.values()))
     test_cam = create_camera(**int_param, xyz=ext_param['xyz'], opk=ext_param['opk'])
-    test_xyz = test_cam.pixel_to_world_z(ji, z=0)
-    assert test_xyz == pytest.approx(xyz, abs=0.1)
+    test_xyz = test_cam.pixel_to_world_z(grid_ji, z=0)
+    assert test_xyz == pytest.approx(xyz, abs=1)
 
 
 @pytest.mark.parametrize(

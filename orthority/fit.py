@@ -132,7 +132,7 @@ def refine_rpc(
 
 def _gcps_to_cv_coords(
     gcp_dict: dict[str, Sequence[dict]], crs: str | CRS | None = None
-) -> tuple[list[np.ndarray], list[np.ndarray], float]:
+) -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray, np.ndarray]:
     """Convert a GCP dictionary to list of pixel coordinate arrays, a list of world coordinate
     arrays and a reference world coordinate position which world coordinate arrays have been
     offset relative to.
@@ -150,9 +150,10 @@ def _gcps_to_cv_coords(
         xyzs.append(xyz)
 
     # offset world coordinates and convert to float32
-    ref_xyz = np.vstack(xyzs).mean(axis=0)
-    xyzs = [(xyz - ref_xyz).astype('float32') for xyz in xyzs]
-    return jis, xyzs, ref_xyz
+    all_xyz = np.vstack(xyzs)
+    scale_xyz, off_xyz = all_xyz.std(), all_xyz.mean(axis=0)
+    xyzs = [((xyz - off_xyz) / scale_xyz).astype('float32') for xyz in xyzs]
+    return jis, xyzs, scale_xyz, off_xyz
 
 
 def fit_frame(
@@ -197,7 +198,7 @@ def fit_frame(
         )
 
     # convert GCPs to OpenCV compatible lists of arrays
-    jis, xyzs, ref_xyz = _gcps_to_cv_coords(gcp_dict, crs=crs)
+    jis, xyzs, scale_xyz, off_xyz = _gcps_to_cv_coords(gcp_dict, crs=crs)
 
     # check if GCPs are co-planar (replicates OpenCV's test)
     zs = np.vstack([xyz[:, 2] for xyz in xyzs])
@@ -289,7 +290,7 @@ def fit_frame(
 
     ext_param_dict = {}
     for filename, t, r in zip(gcp_dict.keys(), ts, rs):
-        xyz, opk = param_io._cv_ext_to_oty_ext(t, r, ref_xyz=ref_xyz)
+        xyz, opk = param_io._cv_ext_to_oty_ext(t, r, off_xyz=off_xyz, scale_xyz=scale_xyz)
         ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)
 
     return int_param_dict, ext_param_dict
@@ -347,13 +348,13 @@ def fit_frame_exterior(
     dist_param = np.array(dist_param) if dist_param else None
 
     # convert GCPs to OpenCV compatible lists of arrays
-    jis, xyzs, ref_xyz = _gcps_to_cv_coords(gcp_dict, crs=crs)
+    jis, xyzs, scale_xyz, off_xyz = _gcps_to_cv_coords(gcp_dict, crs=crs)
 
     # fit exterior parameters (SOLVEPNP_SQPNP is globally optimal so does not need further refining)
     ext_param_dict = {}
     for filename, xyz, ji in zip(gcp_dict.keys(), xyzs, jis):
         _, r, t = cv2.solvePnP(xyz, ji, K, dist_param, flags=cv2.SOLVEPNP_SQPNP)
-        xyz_, opk = param_io._cv_ext_to_oty_ext(t, r, ref_xyz=ref_xyz)
+        xyz_, opk = param_io._cv_ext_to_oty_ext(t, r, scale_xyz=scale_xyz, off_xyz=off_xyz)
         ext_param_dict[filename] = dict(xyz=xyz_, opk=opk, camera=cam_id)
 
     return ext_param_dict
