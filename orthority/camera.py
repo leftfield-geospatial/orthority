@@ -209,6 +209,7 @@ class Camera(ABC):
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
             first dimension.
         """
+        # TODO: this does not always return the correct number of pts e.g. num_pts=7 / 11
 
         def rect_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
             """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
@@ -858,6 +859,8 @@ class FrameCamera(Camera):
         """
         # TODO: consider only returning (x, y).  the z dimension is redundant, and it is used this
         #  way in most (all?) places.
+        # TODO: i have noticed that the results with e.g. z=0 sometimes have z close to but not
+        #  equal 0.  is there a way of re-organising this so that doesn't happen?
         self._test_init()
         self._validate_pixel_coords(ji)
         self._validate_z(z, ji)

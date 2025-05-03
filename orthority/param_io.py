@@ -365,7 +365,7 @@ def read_im_rpc_param(
         rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
         # TODO: can filename be made to conform to actual case of the filename on the file
         #  system? otherwise, in windows the user can pass a different case filename here which
-        #  won't macth with GCPs when refining.
+        #  won't match with GCPs when refining.
         return {filename: rpc_param}
 
     # read RPC params in a thread pool, populating rpc_param_dict in same order as files
@@ -488,8 +488,8 @@ def read_im_gcps(
         # https://gdal.org/user/raster_data_model.html#gcps.  This assumes image GCPs are in
         # center of pixel coordinate convention.
         oty_gcps = []
-        for gcp, xyz in zip(gcps, xyz.T):
-            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz.tolist()), id=gcp.id, info=gcp.info)
+        for gcp, xyz_ in zip(gcps, xyz.T):
+            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz_.tolist()), id=gcp.id, info=gcp.info)
             oty_gcps.append(gcp)
 
         return {filename: oty_gcps}
@@ -729,9 +729,9 @@ def _opk_to_rotation(opk: tuple[float, float, float]) -> np.ndarray:
 def _rotation_to_opk(R: np.ndarray) -> tuple[float, float, float]:
     """Convert the given rotation matrix to the (omega, phi, kappa) angles in radians."""
     # see https://s3.amazonaws.com/mics.pix4d.com/KB/documents/Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf
-    omega = np.arctan2(-R[1, 2], R[2, 2])
-    phi = np.arcsin(R[0, 2])
-    kappa = np.arctan2(-R[0, 1], R[0, 0])
+    omega = float(np.arctan2(-R[1, 2], R[2, 2]))
+    phi = float(np.arcsin(R[0, 2]))
+    kappa = float(np.arctan2(-R[0, 1], R[0, 0]))
     return omega, phi, kappa
 
 
@@ -833,6 +833,27 @@ def _rpy_to_opk(
     # return OPK angles extracted from C_EB
     omega, phi, kappa = _rotation_to_opk(C_EB)
     return omega, phi, kappa
+
+
+def _cv_ext_to_oty_ext(
+    t: Sequence[float] | np.ndarray,
+    r: Sequence[float] | np.ndarray,
+    ref_xyz: Sequence[float] | np.ndarray | None = None,
+) -> tuple[tuple[float, float, float], tuple[float, float, float]]:
+    """Convert OpenCV / OpenSfM rotation and translation vectors to Orthority format and
+    convention camera (x, y, z) position and (omega, phi, kappa) angles.  Camera positions are
+    offset by ``ref_xyz`` if it is supplied.
+    """
+    # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
+    R = cv2.Rodrigues(np.array(r))[0].T
+    xyz = (-R.dot(t)).squeeze()
+    if ref_xyz is not None:
+        xyz += ref_xyz
+    xyz = tuple(xyz.tolist())
+    # rotate camera coords from OpenSfM / OpenCV to PATB convention
+    R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
+    opk = _rotation_to_opk(R_)
+    return xyz, opk
 
 
 class FrameReader(ABC):
@@ -1231,14 +1252,10 @@ class OsfmReader(FrameReader):
 
         ext_param_dict = {}
         for filename, shot_dict in self._json_dict['shots'].items():
-            # convert  reconstruction 'translation' and 'rotation' to oty exterior params,
-            # adapted from ODM: https://github.com/OpenDroneMap/ODM/blob/master/opendm/shots.py
-            R = cv2.Rodrigues(np.array(shot_dict['rotation']))[0].T
-            delta_xyz = -R.dot(shot_dict['translation'])
-            xyz = tuple((ref_xyz + delta_xyz).tolist())
-            # rotate camera coords from OpenSfM / OpenCV to PATB convention
-            R_ = R.dot(np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]]))
-            opk = _rotation_to_opk(R_)
+            # convert reconstruction 'translation' and 'rotation' to oty exterior params
+            xyz, opk = _cv_ext_to_oty_ext(
+                shot_dict['translation'], shot_dict['rotation'], ref_xyz=ref_xyz
+            )
             cam_id = shot_dict['camera']
             cam_id = cam_id[3:] if cam_id.startswith('v2 ') else cam_id
             ext_param_dict[filename] = dict(xyz=xyz, opk=opk, camera=cam_id)
