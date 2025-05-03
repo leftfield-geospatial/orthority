@@ -488,8 +488,8 @@ def read_im_gcps(
         # https://gdal.org/user/raster_data_model.html#gcps.  This assumes image GCPs are in
         # center of pixel coordinate convention.
         oty_gcps = []
-        for gcp, xyz in zip(gcps, xyz.T):
-            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz.tolist()), id=gcp.id, info=gcp.info)
+        for gcp, xyz_ in zip(gcps, xyz.T):
+            gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz_.tolist()), id=gcp.id, info=gcp.info)
             oty_gcps.append(gcp)
 
         return {filename: oty_gcps}
