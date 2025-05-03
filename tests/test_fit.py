@@ -120,10 +120,11 @@ def test_fit_frame_dictionaries(
     cam: FrameCamera = request.getfixturevalue(camera)
 
     # create a mock GCP dictionary with multiple images
-    gcp_dict = {}
     xyz = cam.pixel_to_world_z(grid_ji, z=0)
     gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
-    gcp_dict = {'file1.ext': gcps, 'file2.ext': gcps}
+    # split gcps over images to avoid fisheye conditioning error
+    split_gcps = ceil(len(gcps) / 2)
+    gcp_dict = {'file1.ext': gcps[:split_gcps], 'file2.ext': gcps[split_gcps:]}
 
     # fit parameters
     int_param_dict, ext_param_dict = fit.fit_frame(cam_type, cam.im_size, gcp_dict)
@@ -143,9 +144,8 @@ def test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_
     # CRS (utm34n_crs) to WGS84 geographic
     xyz = pinhole_camera.pixel_to_world_z(grid_ji, z=0)
     lla = np.array(transform(utm34n_crs, 'EPSG:4979', *xyz))
-    gcp_dict = {
-        'file.ext': [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
-    }
+    gcps = [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
+    gcp_dict = {'file.ext': gcps}
 
     # fit camera params with crs=
     int_param_dict, ext_param_dict = fit.fit_frame(
@@ -263,30 +263,30 @@ def test_fit_frame_multiple_images(
         assert test_xyz == pytest.approx(xyz_dict[filename], abs=1)
 
 
-def test_fit_frame_errors(brown_camera: FrameCamera, grid_ji: np.ndarray):
+def test_fit_frame_errors(opencv_camera: FrameCamera, grid_ji: np.ndarray):
     """Test fit_frame() errors and warnings."""
-    cam_type = CameraType.brown
+    cam_type = CameraType.opencv
     # create mock GCPs
-    xyz = brown_camera.pixel_to_world_z(grid_ji, z=0)
+    xyz = opencv_camera.pixel_to_world_z(grid_ji, z=0)
     gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
 
     # test an error is raised with < 4 GCPs in an image
-    gcp_dict = {'file1.ext': gcps[:3], 'file2.ext': gcps}
+    gcp_dict = {'file1.ext': gcps[:3], 'file2.ext': gcps[3:]}
     with pytest.raises(ValueError, match='At least four'):
-        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+        _, _ = fit.fit_frame(cam_type, opencv_camera.im_size, gcp_dict)
 
     # test an error is raised with less than min number of GCPs (in total) required to fit cam_type
     min_gcps = ceil((1 + fit._frame_num_params[cam_type]) / 2)
-    gcp_dict = {'file1.ext': gcps[: min_gcps - 1]}
+    gcp_dict = {'file1.ext': gcps[:4], 'file2.ext': gcps[: min_gcps - 4 - 1]}
     with pytest.raises(ValueError, match='A total of at least'):
-        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+        _, _ = fit.fit_frame(cam_type, opencv_camera.im_size, gcp_dict)
 
     # test a warning is issued with less than the number of GCPs required to globally optimise
     # all cam_type parameters
     gcp_dict = {'file1.ext': gcps[:min_gcps]}
     with pytest.warns(OrthorityWarning, match='will not be globally optimised'):
         try:
-            _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+            _, _ = fit.fit_frame(cam_type, opencv_camera.im_size, gcp_dict)
         except cv2.error:
             # suppress conditioning error
             pass
@@ -296,7 +296,7 @@ def test_fit_frame_errors(brown_camera: FrameCamera, grid_ji: np.ndarray):
     gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
     gcp_dict = {'file1.ext': gcps}
     with pytest.raises(ValueError, match='should be co-planar'):
-        _, _ = fit.fit_frame(cam_type, brown_camera.im_size, gcp_dict)
+        _, _ = fit.fit_frame(cam_type, opencv_camera.im_size, gcp_dict)
 
 
 def test_fit_frame_exterior_dictionary(
@@ -307,7 +307,7 @@ def test_fit_frame_exterior_dictionary(
     """Test fit_frame_exterior() returns a valid exterior parameter dictionary."""
     int_param = next(iter(pinhole_int_param_dict.values()))
 
-    # create a mock GCP dictionary
+    # create a mock GCP dictionary with multiple images
     gcp_dict = {}
     gcp_cam = create_camera(**int_param, **exterior_args)
     xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
@@ -332,9 +332,8 @@ def test_fit_frame_exterior_crs(
     gcp_cam = create_camera(**int_param, **exterior_args)
     xyz = gcp_cam.pixel_to_world_z(grid_ji, z=0)
     lla = np.array(transform(utm34n_crs, 'EPSG:4979', *xyz))
-    gcp_dict = {
-        'file.ext': [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
-    }
+    gcps = [dict(ji=ji_gcp, xyz=lla_gcp) for ji_gcp, lla_gcp in zip(grid_ji.T, lla.T)]
+    gcp_dict = {'file.ext': gcps}
 
     # fit exterior params with crs=
     ext_param_dict = fit.fit_frame_exterior(pinhole_int_param_dict, gcp_dict, crs=utm34n_crs)
@@ -405,7 +404,7 @@ def test_fit_frame_exterior_errors(
     gcps = [dict(ji=ji_gcp, xyz=xyz_gcp) for ji_gcp, xyz_gcp in zip(grid_ji.T, xyz.T)]
 
     # test an error is raised with < 3 GCPs in an image
-    gcp_dict = {'file1.ext': gcps[:2], 'file2.ext': gcps}
+    gcp_dict = {'file1.ext': gcps[:2], 'file2.ext': gcps[2:]}
     with pytest.raises(ValueError, match='At least three'):
         _ = fit.fit_frame_exterior(pinhole_int_param_dict, gcp_dict)
 
