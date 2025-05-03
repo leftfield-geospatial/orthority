@@ -40,7 +40,8 @@ def grid_ji(im_size: tuple[int, int]) -> np.ndarray:
         np.arange(step, im_size[1] - step + 1, step),
     )
     jgrid, igrid = np.meshgrid(j, i, indexing='xy')
-    return np.array((jgrid.reshape(-1), igrid.reshape(-1)))
+    ji = np.array((jgrid.reshape(-1), igrid.reshape(-1)))
+    return ji + np.random.randn(*ji.shape)
 
 
 def get_grid_xyz(cam: FrameCamera, grid_shape: tuple[int, int] = (20, 15)) -> np.ndarray:
