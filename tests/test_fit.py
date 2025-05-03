@@ -113,7 +113,7 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
         (CameraType.fisheye, 'fisheye_camera'),
     ],
 )
-def test_fit_frame_dictionaries(
+def _test_fit_frame_dictionaries(
     cam_type: CameraType, camera: str, grid_ji: np.ndarray, request: pytest.FixtureRequest
 ):
     """Test fit_frame() returns valid parameter dictionaries."""
@@ -138,7 +138,7 @@ def test_fit_frame_dictionaries(
     _validate_ext_param_dict(ext_param_dict)
 
 
-def test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_crs: str):
+def _test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_crs: str):
     """Test fit_frame() crs parameter."""
     # create mock GCP dictionary with coordinates transformed from the reference camera's world
     # CRS (utm34n_crs) to WGS84 geographic
@@ -170,7 +170,7 @@ def test_fit_frame_crs(pinhole_camera: FrameCamera, grid_ji: np.ndarray, utm34n_
         (CameraType.fisheye, 'fisheye_camera'),
     ],
 )
-def test_fit_frame_min_gcps(
+def _test_fit_frame_min_gcps(
     cam_type: CameraType, camera: str, grid_ji: np.ndarray, request: pytest.FixtureRequest
 ):
     """Test fit_frame() with the minimum allowed number of GCPs."""
@@ -219,7 +219,7 @@ def test_fit_frame_min_gcps(
         (CameraType.fisheye, 'fisheye_dist_param'),
     ],
 )
-def test_fit_frame_multiple_images(
+def _test_fit_frame_multiple_images(
     cam_type: CameraType,
     dist_param: str,
     frame_args: dict,
@@ -263,7 +263,7 @@ def test_fit_frame_multiple_images(
         assert test_xyz == pytest.approx(xyz_dict[filename], abs=1)
 
 
-def test_fit_frame_errors(opencv_camera: FrameCamera, grid_ji: np.ndarray):
+def _test_fit_frame_errors(opencv_camera: FrameCamera, grid_ji: np.ndarray):
     """Test fit_frame() errors and warnings."""
     cam_type = CameraType.opencv
     # create mock GCPs

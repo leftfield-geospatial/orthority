@@ -132,7 +132,7 @@ def refine_rpc(
 
 def _gcps_to_cv_coords(
     gcp_dict: dict[str, Sequence[dict]], crs: str | CRS | None = None
-) -> tuple[list[np.ndarray], list[np.ndarray], float]:
+) -> tuple[list[np.ndarray], list[np.ndarray], np.ndarray]:
     """Convert a GCP dictionary to list of pixel coordinate arrays, a list of world coordinate
     arrays and a reference world coordinate position which world coordinate arrays have been
     offset relative to.
@@ -155,7 +155,7 @@ def _gcps_to_cv_coords(
     return jis, xyzs, ref_xyz
 
 
-def fit_frame(
+def _fit_frame(
     cam_type: CameraType,
     im_size: tuple[int, int],
     gcp_dict: dict[str, Sequence[dict]],
@@ -247,6 +247,9 @@ def fit_frame(
         # for 2 focal lengths (you can't fix fisheye aspect ratio) and 2 principal points).
         # (Note that cv2.fisheye.calibrate() behaves differently to cv2.fisheye.calibrate(): it
         # still runs with ttl_gcps < req_gcps, apparently fixing K and distortion coefficients.)
+        # TODO: cv2.fisheye.calibrate() seems to require a min of 5 GCPs.  confirm & change the
+        #  above check for that, and consider removing the flag changes below which seem to be
+        #  handled internally by cv2.fisheye.calibrate()
         req_gcps = ceil((_frame_num_params[cam_type] + 4 + 1) / 2)
         if ttl_gcps < req_gcps:
             warnings.warn(
