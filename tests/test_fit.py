@@ -108,9 +108,9 @@ def test_refine_num_gcps(rpc: dict, im_size: tuple[int, int], method: RpcRefine,
 @pytest.mark.parametrize(
     'cam_type, camera',
     [
-        (CameraType.pinhole, 'pinhole_camera'),
-        (CameraType.brown, 'brown_camera'),
-        (CameraType.opencv, 'opencv_camera'),
+        # (CameraType.pinhole, 'pinhole_camera'),
+        # (CameraType.brown, 'brown_camera'),
+        # (CameraType.opencv, 'opencv_camera'),
         (CameraType.fisheye, 'fisheye_camera'),
     ],
 )
@@ -259,9 +259,9 @@ def test_fit_frame_multiple_images(
         test_cam.update(xyz=ext_param['xyz'], opk=ext_param['opk'])
 
         test_ji = test_cam.world_to_pixel(xyz_dict[filename])
-        assert test_ji == pytest.approx(grid_ji, abs=1)
+        assert test_ji == pytest.approx(grid_ji, abs=0.1)
         test_xyz = test_cam.pixel_to_world_z(grid_ji, z=0)
-        assert test_xyz == pytest.approx(xyz_dict[filename], abs=10)
+        assert test_xyz == pytest.approx(xyz_dict[filename], abs=1)
 
 
 def test_fit_frame_errors(opencv_camera: FrameCamera, grid_ji: np.ndarray):

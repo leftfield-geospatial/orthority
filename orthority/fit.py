@@ -212,11 +212,15 @@ def fit_frame(
         "are {2}.  The initial intrinsic matrix will not be globally optimised."
     )
 
+    # initial interior params
+    K = cv2.initCameraMatrix2D(xyzs, jis, im_size)
+    dist_param = np.zeros(len(_frame_dist_params[cam_type]), dtype='float32')
+
     # setup calibration flags & params based on cam_type and number of GCPs
     if cam_type is not CameraType.fisheye:
         calib_func = cv2.calibrateCamera
         # force square pixels always
-        flags = cv2.CALIB_FIX_ASPECT_RATIO
+        flags = cv2.CALIB_FIX_ASPECT_RATIO | cv2.CALIB_USE_INTRINSIC_GUESS
 
         # fix initial intrinsic matrix if there are not enough GCPs to estimate all params (+3 is
         # for 1 focal length and 2 principal points)
@@ -227,7 +231,7 @@ def fit_frame(
                 category=OrthorityWarning,
                 stacklevel=2,
             )
-        flags |= cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_FOCAL_LENGTH
+            flags |= cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_FOCAL_LENGTH
 
         if cam_type is CameraType.pinhole:
             # fix distortion at zero
@@ -247,7 +251,11 @@ def fit_frame(
         calib_func = cv2.fisheye.calibrate
         # the oty fisheye camera does not have skew/alpha and CALIB_RECOMPUTE_EXTRINSIC improves
         # accuracy
-        flags = cv2.fisheye.CALIB_FIX_SKEW | cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
+        flags = (
+            cv2.fisheye.CALIB_FIX_SKEW
+            | cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
+            | cv2.fisheye.CALIB_USE_INTRINSIC_GUESS
+        )
 
         # Fix initial intrinsic matrix if there are not enough GCPs to estimate all params (+4 is
         # for 2 focal lengths (you can't fix fisheye aspect ratio) and 2 principal points).
@@ -267,8 +275,6 @@ def fit_frame(
         jis = [ji[None, :] for ji in jis]
 
     # calibrate
-    K = np.eye(3, dtype='float32')
-    dist_param = np.zeros(len(_frame_dist_params[cam_type]), dtype='float32')
     err, K, dist_param, rs, ts = calib_func(
         xyzs, jis, im_size, K, dist_param, flags=flags, criteria=criteria
     )
