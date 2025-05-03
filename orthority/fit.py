@@ -150,7 +150,7 @@ def _gcps_to_cv_coords(
         xyzs.append(xyz)
 
     # offset world coordinates and convert to float32
-    ref_xyz = np.vstack(xyzs).min(axis=0)
+    ref_xyz = np.vstack(xyzs).mean(axis=0)
     xyzs = [(xyz - ref_xyz).astype('float32') for xyz in xyzs]
     return jis, xyzs, ref_xyz
 
