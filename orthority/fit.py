@@ -212,13 +212,8 @@ def fit_frame(
         "are {2}.  The initial intrinsic matrix will not be globally optimised."
     )
 
-    # initial interior params
-    K = cv2.initCameraMatrix2D(xyzs, jis, im_size)
-    dist_param = np.zeros(len(_frame_dist_params[cam_type]), dtype='float32')
-
     # setup calibration flags & params based on cam_type and number of GCPs
     if cam_type is not CameraType.fisheye:
-        calib_func = cv2.calibrateCamera
         # force square pixels always
         flags = cv2.CALIB_FIX_ASPECT_RATIO | cv2.CALIB_USE_INTRINSIC_GUESS
 
@@ -242,20 +237,23 @@ def fit_frame(
             # enable full OpenCV model
             flags |= cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
 
+        # initial interior params
+        K = cv2.initCameraMatrix2D(xyzs, jis, im_size)
+        dist_param = np.zeros(len(_frame_dist_params[cam_type]), dtype='float32')
+
+        # calibrate
+        err, K, dist_param, rs, ts = cv2.calibrateCamera(
+            xyzs, jis, im_size, K, dist_param, flags=flags, criteria=criteria
+        )
     else:
         # TODO: fisheye needs at least 5 gcps (per image or in ttl?)  so the test above needs
         #  updating
         # TODO: with >5 gcps fisheye.calibrate always runs, for low num gcps it seems to fix
         #  dist_param & K, but I'm not sure if this is based on the num gcps, or some numerical
         #  property of them
-        calib_func = cv2.fisheye.calibrate
         # the oty fisheye camera does not have skew/alpha and CALIB_RECOMPUTE_EXTRINSIC improves
         # accuracy
-        flags = (
-            cv2.fisheye.CALIB_FIX_SKEW
-            | cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
-            | cv2.fisheye.CALIB_USE_INTRINSIC_GUESS
-        )
+        flags = cv2.fisheye.CALIB_FIX_SKEW | cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
 
         # Fix initial intrinsic matrix if there are not enough GCPs to estimate all params (+4 is
         # for 2 focal lengths (you can't fix fisheye aspect ratio) and 2 principal points).
@@ -274,10 +272,10 @@ def fit_frame(
         xyzs = [xyz[None, :] for xyz in xyzs]
         jis = [ji[None, :] for ji in jis]
 
-    # calibrate
-    err, K, dist_param, rs, ts = calib_func(
-        xyzs, jis, im_size, K, dist_param, flags=flags, criteria=criteria
-    )
+        # calibrate
+        err, K, dist_param, rs, ts = cv2.fisheye.calibrate(
+            xyzs, jis, im_size, None, None, flags=flags, criteria=criteria
+        )
     logger.debug(
         f"RMS reprojection error for fit of '{cam_type}' model to {ttl_gcps} GCPs: {err:.4f}"
     )
