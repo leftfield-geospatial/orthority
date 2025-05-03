@@ -261,8 +261,10 @@ def fit_frame(
         jis = [ji[None, :] for ji in jis]
 
     # calibrate
+    K = np.eye(3, dtype='float32')
+    dist_param = np.zeros(len(_frame_dist_params[cam_type]), dtype='float32')
     err, K, dist_param, rs, ts = calib_func(
-        xyzs, jis, im_size, None, None, flags=flags, criteria=criteria
+        xyzs, jis, im_size, K, dist_param, flags=flags, criteria=criteria
     )
     logger.debug(
         f"RMS reprojection error for fit of '{cam_type}' model to {ttl_gcps} GCPs: {err:.4f}"
@@ -277,10 +279,10 @@ def fit_frame(
     int_param = dict(
         cam_type=cam_type,
         im_size=im_size,
-        focal_len=(K[0, 0], K[1, 1]),
+        focal_len=(float(K[0, 0]), float(K[1, 1])),
         sensor_size=(float(im_size[0]), float(im_size[1])),
-        cx=c_xy[0],
-        cy=c_xy[1],
+        cx=float(c_xy[0]),
+        cy=float(c_xy[1]),
         **dist_param,
     )
     int_param_dict = {cam_id: int_param}
