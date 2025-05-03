@@ -243,13 +243,10 @@ def fit_frame(
         # accuracy
         flags = cv2.fisheye.CALIB_FIX_SKEW | cv2.fisheye.CALIB_RECOMPUTE_EXTRINSIC
 
-        # fix initial intrinsic matrix if there are not enough GCPs to estimate all params (+4 is
+        # Fix initial intrinsic matrix if there are not enough GCPs to estimate all params (+4 is
         # for 2 focal lengths (you can't fix fisheye aspect ratio) and 2 principal points).
-        # TODO: cv2.fisheye.calibrate() behaviour is different to cv2.fisheye.calibrateCamera().
-        #  It still runs with ttl_gcps < req_gcps, and seems to fix dist_param at zero up until
-        #  >> req_gcps.  It also fixes K for low num GCPs w/o the flags telling it do so.  And
-        #  frequently gives conditioning errors with seemingly legit GCPs.  Perhaps it is buggy,
-        #  and/or does better with an initial K.
+        # (Note that cv2.fisheye.calibrate() behaves differently to cv2.fisheye.calibrate(): it
+        # still runs with ttl_gcps < req_gcps, apparently fixing K and distortion coefficients.)
         req_gcps = ceil((_frame_num_params[cam_type] + 4 + 1) / 2)
         if ttl_gcps < req_gcps:
             warnings.warn(
