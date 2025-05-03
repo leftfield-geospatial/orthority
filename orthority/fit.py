@@ -227,7 +227,7 @@ def fit_frame(
                 category=OrthorityWarning,
                 stacklevel=2,
             )
-            flags |= cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_FOCAL_LENGTH
+        flags |= cv2.CALIB_FIX_PRINCIPAL_POINT | cv2.CALIB_FIX_FOCAL_LENGTH
 
         if cam_type is CameraType.pinhole:
             # fix distortion at zero
@@ -239,6 +239,11 @@ def fit_frame(
             flags |= cv2.CALIB_RATIONAL_MODEL | cv2.CALIB_THIN_PRISM_MODEL | cv2.CALIB_TILTED_MODEL
 
     else:
+        # TODO: fisheye needs at least 5 gcps (per image or in ttl?)  so the test above needs
+        #  updating
+        # TODO: with >5 gcps fisheye.calibrate always runs, for low num gcps it seems to fix
+        #  dist_param & K, but I'm not sure if this is based on the num gcps, or some numerical
+        #  property of them
         calib_func = cv2.fisheye.calibrate
         # the oty fisheye camera does not have skew/alpha and CALIB_RECOMPUTE_EXTRINSIC improves
         # accuracy
