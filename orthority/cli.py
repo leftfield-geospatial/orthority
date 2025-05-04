@@ -566,7 +566,7 @@ export_params_option = click.option(
     type=click.BOOL,
     default=False,
     show_default=True,
-    help='Export camera parameters to orthority format file(s), and exit.',
+    help='Export camera parameters to Orthority format file(s), and exit.',
 )
 out_dir_option = click.option(
     '-od',

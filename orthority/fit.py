@@ -275,15 +275,15 @@ def _fit_frame(
     cam_id = f'{cam_type!r}_fit_to_{ttl_gcps}_gcps'
     c_xy = (K[0, 2], K[1, 2]) - (np.array(im_size) - 1) / 2
     c_xy /= max(im_size)
-    dist_param = dict(zip(_frame_dist_params[cam_type], dist_param.squeeze().tolist()))
+    dist_param = dict(zip(_frame_dist_params[cam_type], dist_param.squeeze().tolist()))cast
 
     int_param = dict(
         cam_type=cam_type,
         im_size=im_size,
-        focal_len=(K[0, 0], K[1, 1]),
+        focal_len=(float(K[0, 0]), float(K[1, 1])),
         sensor_size=(float(im_size[0]), float(im_size[1])),
-        cx=c_xy[0],
-        cy=c_xy[1],
+        cx=float(c_xy[0]),
+        cy=float(c_xy[1]),
         **dist_param,
     )
     int_param_dict = {cam_id: int_param}
