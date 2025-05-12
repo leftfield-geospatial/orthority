@@ -447,7 +447,7 @@ resolution_option = click.option(
     multiple=True,
     callback=_resolution_cb,
     help='Ortho image resolution in units of the ``--crs``.  Can be used twice for non-square '
-    'pixels: ``--res PIXEL_WIDTH --res PIXEL_HEIGHT``.',
+    'pixels: ``--res WIDTH --res HEIGHT``.',
 )
 dem_band_option = click.option(
     '-db',
@@ -563,7 +563,6 @@ export_params_option = click.option(
     '-e',
     '--export-params',
     is_flag=True,
-    type=click.BOOL,
     default=False,
     show_default=True,
     help='Export camera parameters to Orthority format file(s), and exit.',
@@ -581,7 +580,6 @@ overwrite_option = click.option(
     '-o',
     '--overwrite',
     is_flag=True,
-    type=click.BOOL,
     default=False,
     show_default=True,
     help='Overwrite existing output(s).',
