@@ -62,15 +62,15 @@ def test_oty_verbosity(
     """Test ``oty -v frame`` generates debug logs."""
     cli_str = f'-v {frame_legacy_ngi_cli_str} --res 50 --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
-    assert 'DEBUG:' in result.stdout
+    assert result.exit_code == 0, result.output
+    assert 'DEBUG:' in result.output
 
 
 def test_frame_help(runner: CliRunner):
     """Test ``oty frame --help``."""
     result = runner.invoke(cli, 'frame --help'.split())
-    assert result.exit_code == 0, result.stdout
-    assert len(result.stdout) > 0
+    assert result.exit_code == 0, result.output
+    assert len(result.output) > 0
 
 
 def test_frame_src_file_wildcard(
@@ -110,9 +110,9 @@ def test_frame_src_file_not_found_error(
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {src_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        'SOURCE' in result.stdout and 'No such file' in result.stdout and src_file in result.stdout
+        'SOURCE' in result.output and 'No such file' in result.output and src_file in result.output
     )
 
 
@@ -129,8 +129,8 @@ def test_frame_dem_missing_error(
         f'--out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--dem' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--dem' in result.output and 'missing' in result.output.lower()
 
 
 def test_frame_dem_not_found_error(
@@ -147,9 +147,9 @@ def test_frame_dem_not_found_error(
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--dem' in result.stdout and 'No such file' in result.stdout and dem_file in result.stdout
+        '--dem' in result.output and 'No such file' in result.output and dem_file in result.output
     )
 
 
@@ -166,8 +166,8 @@ def test_frame_int_param_missing_error(
         f'{ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--int-param' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--int-param' in result.output and 'missing' in result.output.lower()
 
 
 def test_frame_int_param_not_found_error(
@@ -184,8 +184,8 @@ def test_frame_int_param_not_found_error(
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'No such file' in result.stdout and int_param_file in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'No such file' in result.output and int_param_file in result.output
 
 
 def test_frame_int_param_ext_error(
@@ -201,8 +201,8 @@ def test_frame_int_param_ext_error(
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'interior parameter' in result.stdout and 'not supported' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'interior parameter' in result.output and 'not supported' in result.output
 
 
 def test_frame_int_param_invalid_error(
@@ -219,8 +219,8 @@ def test_frame_int_param_invalid_error(
         f'--ext-param {ngi_oty_ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'Could not parse' in result.stdout and rpc_param_file.name in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'Could not parse' in result.output and rpc_param_file.name in result.output
 
 
 def test_frame_ext_param_missing_error(
@@ -236,8 +236,8 @@ def test_frame_ext_param_missing_error(
         f'{ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--ext-param' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--ext-param' in result.output and 'missing' in result.output.lower()
 
 
 def test_frame_ext_param_not_found_error(
@@ -254,8 +254,8 @@ def test_frame_ext_param_not_found_error(
         f'--ext-param {ext_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'No such file' in result.stdout and ext_param_file in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'No such file' in result.output and ext_param_file in result.output
 
 
 def test_frame_ext_param_ext_error(
@@ -271,8 +271,8 @@ def test_frame_ext_param_ext_error(
         f'--ext-param {ngi_oty_int_param_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'exterior parameter' in result.stdout and 'not supported' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'exterior parameter' in result.output and 'not supported' in result.output
 
 
 def test_frame_ext_param_invalid_error(
@@ -289,8 +289,8 @@ def test_frame_ext_param_invalid_error(
         f'--ext-param {gcp_file} --out-dir {tmp_path} {ngi_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'Could not parse' in result.stdout and gcp_file.name in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'Could not parse' in result.output and gcp_file.name in result.output
 
 
 def test_frame_crs_src(
@@ -299,7 +299,7 @@ def test_frame_crs_src(
     """Test ``oty frame`` reads the world / ortho CRS from a projected source image."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -322,7 +322,7 @@ def test_frame_crs_auto(
         f'--ext-param {odm_lla_rpy_csv_file} --out-dir {tmp_path} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -347,7 +347,7 @@ def test_frame_crs_cli(
         f'{odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -375,7 +375,7 @@ def test_frame_crs_file(
         f'{odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -405,7 +405,7 @@ def test_frame_crs_prj(
         f'--out-dir {tmp_path} --res 5 {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -428,8 +428,8 @@ def test_frame_crs_missing_error(
         f'--ext-param {odm_xyz_opk_csv_file} --out-dir {tmp_path} {odm_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--crs' in result.output and 'missing' in result.output.lower()
 
 
 def test_frame_crs_geographic_error(
@@ -438,16 +438,16 @@ def test_frame_crs_geographic_error(
     """Test ``oty frame`` raises an error when ``--crs`` is geographic."""
     cli_str = frame_legacy_ngi_cli_str + ' --crs EPSG:4326'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'projected' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--crs' in result.output and 'projected' in result.output
 
 
 def test_frame_crs_invalid_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty frame`` raises an error when ``--crs`` is invalid."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --crs unknown'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--crs' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_resolution_square(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -455,7 +455,7 @@ def test_frame_resolution_square(frame_legacy_ngi_cli_str: str, tmp_path: Path, 
     resolution = (96.0, 96.0)
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res {resolution[0]}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -473,7 +473,7 @@ def test_frame_resolution_non_square(
         + f' --out-dir {tmp_path} --res {resolution[0]} --res {resolution[1]}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -485,7 +485,7 @@ def test_frame_resolution_auto(frame_legacy_ngi_cli_str: str, tmp_path: Path, ru
     """Test ``oty frame`` generates an ortho without the ``--res`` option."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -494,7 +494,7 @@ def test_frame_dem_band(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
     """Test ``oty frame --dem-band`` with valid band."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 1'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -503,8 +503,8 @@ def test_frame_dem_band_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, run
     """Test ``oty frame --dem-band`` raises an error with an out of range band."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --dem-band 2'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--dem-band' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--dem-band' in result.output
 
 
 def test_frame_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -519,7 +519,7 @@ def test_frame_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: Cli
             + f' --out-dir {out_dir} --res 24 --compress deflate --interp {interp}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -536,8 +536,8 @@ def test_frame_interp_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runne
     """Test ``oty frame --interp`` raises an error with an invalid interpolation value."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --interp other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--interp' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--interp' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_dem_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -554,7 +554,7 @@ def test_frame_dem_interp(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner:
             + f' --out-dir {out_dir} --res 30 --compress deflate --dem-interp {dem_interp}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -571,8 +571,8 @@ def test_frame_dem_interp_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, r
     """Test ``oty frame --dem-interp`` raises an error with an invalid interpolation value."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --dem-interp other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--dem-interp' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--dem-interp' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_per_band(
@@ -620,7 +620,7 @@ def test_frame_per_band(
             mem_peaks.append(mem_end[1] - mem_start[0])
             tracemalloc.clear_traces()  # clears the peak
 
-            assert result.exit_code == 0, result.stdout
+            assert result.exit_code == 0, result.output
             ortho_files = [*out_dir.glob('*_ORTHO.tif')]
             assert len(ortho_files) == 1
     finally:
@@ -650,7 +650,7 @@ def test_frame_full_remap(
             f'--compress deflate --{full_remap} {odm_image_file}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -682,7 +682,7 @@ def test_frame_alpha(
             f'--compress deflate --no-full-remap --alpha {alpha} {odm_image_file}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -698,8 +698,8 @@ def test_frame_alpha_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner
     """Test ``oty frame --alpha`` raises an error with an invalid alpha value."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --no-full-remap --alpha 2'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--alpha' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--alpha' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_lla_crs(
@@ -727,7 +727,7 @@ def test_frame_lla_crs(
             f'--crs {odm_crs}+3855 --lla-crs {lla_crs} {odm_image_file}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -745,8 +745,8 @@ def test_frame_lla_crs_projected_error(
     """Test ``oty frame --lla-crs`` raises an error with a projected CRS value."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --lla-crs {ngi_crs}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--lla-crs' in result.stdout and 'geographic' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--lla-crs' in result.output and 'geographic' in result.output
 
 
 def test_frame_lla_crs_invalid_error(
@@ -755,8 +755,8 @@ def test_frame_lla_crs_invalid_error(
     """Test ``oty frame`` raises an error when ``--lla_crs`` is invalid."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --lla-crs unknown'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--lla-crs' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--lla-crs' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_radians(
@@ -784,7 +784,7 @@ def test_frame_radians(
             f'--{radians} {ngi_image_file}'
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -800,7 +800,7 @@ def test_frame_driver(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: Cli
     """Test ``oty frame --driver`` creates an ortho with the correct driver."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --driver cog'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -813,8 +813,8 @@ def test_frame_driver_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runne
     """Test ``oty frame --diver`` with an invalid driver raises an error."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --driver other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--driver' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--driver' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_write_mask(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -825,7 +825,7 @@ def test_frame_write_mask(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner:
         frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --write-mask --res 24'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -842,7 +842,7 @@ def test_frame_dtype(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliR
         + f' --out-dir {tmp_path} --compress deflate --dtype {dtype} --res 24'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -854,8 +854,8 @@ def test_frame_dtype_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner
     """Test ``oty frame --dtype`` with an invalid dtype raises an error."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress deflate --dtype int32'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--dtype' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_compress(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -863,7 +863,7 @@ def test_frame_compress(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: C
     compress = 'lzw'
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress {compress} --res 24'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -875,15 +875,15 @@ def test_frame_compress_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, run
     """Test ``oty frame --compress`` with an invalid compression raises an error."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --compress other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--compress' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--compress' in result.output and 'invalid' in result.output.lower()
 
 
 def test_frame_build_ovw(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
     """Test ``oty frame --build-ovw`` builds overviews."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 5 --build-ovw'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -895,7 +895,7 @@ def test_frame_no_build_ovw(frame_legacy_ngi_cli_str: str, tmp_path: Path, runne
     """Test ``oty frame --no-build-ovw`` does not build overviews."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 5 --no-build-ovw'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -909,7 +909,7 @@ def test_frame_creation_option(frame_legacy_ngi_cli_str: str, tmp_path: Path, ru
         f' --out-dir {tmp_path} -co tiled=yes -co compress=jpeg -co jpeg_quality=50'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -925,8 +925,8 @@ def test_frame_creation_option_error(
     """Test ``oty frame --creation-option`` raises an error with invalid syntax."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} -co compress jpeg'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--creation-option' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--creation-option' in result.output and 'invalid' in result.output.lower()
 
 
 @pytest.mark.parametrize(
@@ -956,7 +956,7 @@ def test_frame_export_params(
     )
 
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     int_param_file = tmp_path.joinpath('int_param.yaml')
     ext_param_file = tmp_path.joinpath('ext_param.geojson')
     assert int_param_file.exists() and ext_param_file.exists()
@@ -967,9 +967,9 @@ def test_frame_out_dir_error(frame_legacy_ngi_cli_str: str, tmp_path: Path, runn
     out_dir = 'unknown'
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {out_dir} --res 24'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--out-dir' in result.stdout and 'directory' in result.stdout and out_dir in result.stdout
+        '--out-dir' in result.output and 'directory' in result.output and out_dir in result.output
     )
 
 
@@ -982,7 +982,7 @@ def test_frame_overwrite(
 
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24 --overwrite'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
     assert ortho_file == ortho_files[0]
@@ -1000,8 +1000,8 @@ def test_frame_overwrite_error(
 
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path} --res 24'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'exists' in result.stdout and ortho_file.name in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'exists' in result.output and ortho_file.name in result.output
 
 
 def test_frame_urls(
@@ -1018,7 +1018,7 @@ def test_frame_urls(
         f'--ext-param {ngi_oty_ext_param_url} --out-dir {tmp_path} {ngi_image_url}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1029,11 +1029,11 @@ def test_exif_source_error(
     """Test ``oty exif`` raises an error with a non-EXIF source image."""
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        'SOURCE' in result.stdout
-        and 'tags' in result.stdout
-        and ngi_image_file.name in result.stdout
+        'SOURCE' in result.output
+        and 'tags' in result.output
+        and ngi_image_file.name in result.output
     )
 
 
@@ -1044,11 +1044,11 @@ def test_exif_source_not_found_error(
     src_file = 'unknown.tif'
     cli_str = f'exif --dem {ngi_dem_file} --out-dir {tmp_path} {src_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        'SOURCE' in result.stdout
-        and 'No such file' in result.stdout
-        and src_file in result.stdout.lower()
+        'SOURCE' in result.output
+        and 'No such file' in result.output
+        and src_file in result.output.lower()
     )
 
 
@@ -1059,7 +1059,7 @@ def test_exif_crs(
     crs = odm_crs + '+3855'  # differentiate from auto CRS
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res 5 --crs {crs} {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1073,7 +1073,7 @@ def test_exif_crs_auto(
     """Test ``oty exif`` auto determines the CRS."""
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res 5 {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1087,8 +1087,8 @@ def test_exif_crs_geographic_error(
     """Test ``oty exif`` raises an error when ``--crs`` is geographic."""
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --crs EPSG:4326 {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'projected' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--crs' in result.output and 'projected' in result.output
 
 
 def test_exif_crs_invalid_error(
@@ -1097,8 +1097,8 @@ def test_exif_crs_invalid_error(
     """Test ``oty exif`` raises an error when ``--crs`` is invalid."""
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --crs unknown {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--crs' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--crs' in result.output and 'invalid' in result.output.lower()
 
 
 def test_exif_option(
@@ -1108,7 +1108,7 @@ def test_exif_option(
     res = 5
     cli_str = f'exif --dem {odm_dem_file} --out-dir {tmp_path} --res {res} {odm_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1138,7 +1138,7 @@ def test_exif_lla_crs(
         )
 
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -1157,7 +1157,7 @@ def test_odm_dataset_dir(
     shutil.copytree(odm_dataset_dir, tmp_path, dirs_exist_ok=True)  # copy test data to tmp_path
     cli_str = f'odm --dataset-dir {tmp_path} --res 5 --overwrite'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.joinpath('orthority').glob('*_ORTHO.tif')]
     src_files = [*tmp_path.joinpath('images').glob('*.tif')]
     assert len(ortho_files) == len(src_files)
@@ -1169,7 +1169,7 @@ def test_odm_out_dir(
     """Test ``oty odm --out-dir`` creates orthos in the ``--out-dir`` folder."""
     cli_str = f'odm --dataset-dir {odm_dataset_dir} --res 5 --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     src_files = [*odm_dataset_dir.joinpath('images').glob('*.tif')]
     assert len(ortho_files) == len(src_files)
@@ -1182,7 +1182,7 @@ def test_odm_option(
     res = 5
     cli_str = f'odm --dataset-dir {odm_dataset_dir} --res {res} --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
 
     with rio.open(odm_dem_file, 'r') as dem_im:
@@ -1198,11 +1198,11 @@ def test_odm_dataset_dir_error(tmp_path: Path, runner: CliRunner):
     dataset_dir = 'unknown'
     cli_str = f'odm --dataset-dir {dataset_dir}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--dataset-dir' in result.stdout
-        and 'directory' in result.stdout
-        and dataset_dir in result.stdout
+        '--dataset-dir' in result.output
+        and 'directory' in result.output
+        and dataset_dir in result.output
     )
 
 
@@ -1210,7 +1210,7 @@ def test_rpc_image(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, run
     """Test ``oty rpc`` with a source image that has RPC metadata."""
     cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {rpc_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
 
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
@@ -1224,11 +1224,11 @@ def test_rpc_image_no_rpc_error(
     """Test ``oty rpc`` raises an error with a source image that has no RPC metadata."""
     cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {ngi_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        'SOURCE' in result.stdout
-        and ngi_image_file.name in result.stdout
-        and 'No RPC parameters' in result.stdout
+        'SOURCE' in result.output
+        and ngi_image_file.name in result.output
+        and 'No RPC parameters' in result.output
     )
 
 
@@ -1237,9 +1237,9 @@ def test_rpc_image_not_found_error(ngi_dem_file: Path, tmp_path: Path, runner: C
     src_file = 'unknown.tif'
     cli_str = f'rpc --dem {ngi_dem_file} --out-dir {tmp_path} {src_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        'SOURCE' in result.stdout and 'No such file' in result.stdout and src_file in result.stdout
+        'SOURCE' in result.output and 'No such file' in result.output and src_file in result.output
     )
 
 
@@ -1264,7 +1264,7 @@ def test_rpc_param_file(
         f'rpc --dem {ngi_dem_file} --rpc-param {rpc_param_file} --out-dir {tmp_path} {src_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
 
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
@@ -1285,11 +1285,11 @@ def test_rpc_param_file_invalid_error(
         f' {rpc_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--rpc-param' in result.stdout
-        and 'Could not parse' in result.stdout
-        and ngi_oty_int_param_file.name in result.stdout
+        '--rpc-param' in result.output
+        and 'Could not parse' in result.output
+        and ngi_oty_int_param_file.name in result.output
     )
 
 
@@ -1303,11 +1303,11 @@ def test_rpc_param_file_not_found_error(
         f' {rpc_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--rpc-param' in result.stdout
-        and 'No such file' in result.stdout
-        and rpc_param_file in result.stdout
+        '--rpc-param' in result.output
+        and 'No such file' in result.output
+        and rpc_param_file in result.output
     )
 
 
@@ -1318,7 +1318,7 @@ def test_rpc_image_crs(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path,
     crs = 'EPSG:3857'
     cli_str = f'rpc --dem {ngi_dem_file} --crs {crs} --res 30 --out-dir {tmp_path} {rpc_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1345,7 +1345,7 @@ def _test_rpc_param_file_crs(
         f'--out-dir {tmp_path} {rpc_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1358,7 +1358,7 @@ def test_rpc_option(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path, ru
     res = 0.0005  # degrees
     cli_str = f'rpc --dem {ngi_dem_file} --res {res} --out-dir {tmp_path} {rpc_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
 
@@ -1393,7 +1393,7 @@ def test_rpc_gcp_refine(
         out_dir.mkdir()
         cli_str = f"rpc --dem {ngi_dem_file} {gcp_refine_str} --out-dir {out_dir} -o {src_file}"
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -1419,11 +1419,11 @@ def test_rpc_gcp_refine_file_invalid_error(
         f' {rpc_image_file}'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--gcp-refine' in result.stdout
-        and 'Could not parse' in result.stdout
-        and odm_reconstruction_file.name in result.stdout
+        '--gcp-refine' in result.output
+        and 'Could not parse' in result.output
+        and odm_reconstruction_file.name in result.output
     )
 
 
@@ -1436,11 +1436,11 @@ def test_rpc_gcp_refine_file_not_found_error(
     """Test ``oty rpc`` with ``--gcp-refine`` raises an error with a non-existent GCP file."""
     cli_str = f'rpc --dem {ngi_dem_file} --gcp-refine unknown --out-dir {tmp_path} {rpc_image_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--gcp-refine' in result.stdout
-        and 'No such file' in result.stdout
-        and 'unknown' in result.stdout
+        '--gcp-refine' in result.output
+        and 'No such file' in result.output
+        and 'unknown' in result.output
     )
 
 
@@ -1460,7 +1460,7 @@ def test_rpc_refine_method(
             f"--out-dir {out_dir} -o {rpc_image_file}"
         )
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         ortho_files = [*out_dir.glob('*_ORTHO.tif')]
         assert len(ortho_files) == 1
 
@@ -1477,7 +1477,7 @@ def test_sharpen(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
     with rio.open(out_file, 'r'):
         pass
@@ -1488,8 +1488,8 @@ def test_sharpen_pan_missing_error(ms_file: Path, tmp_path: Path, runner: CliRun
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = f'sharpen --multispectral {ms_file} --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--pan' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--pan' in result.output and 'missing' in result.output.lower()
 
 
 def test_sharpen_pan_not_found_error(ms_file: Path, tmp_path: Path, runner: CliRunner):
@@ -1498,9 +1498,9 @@ def test_sharpen_pan_not_found_error(ms_file: Path, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file} --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--pan' in result.stdout and 'No such file' in result.stdout and pan_file in result.stdout
+        '--pan' in result.output and 'No such file' in result.output and pan_file in result.output
     )
 
 
@@ -1509,8 +1509,8 @@ def test_sharpen_ms_missing_error(pan_file: Path, tmp_path: Path, runner: CliRun
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = f'sharpen --pan {pan_file} --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--multispectral' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--multispectral' in result.output and 'missing' in result.output.lower()
 
 
 def test_sharpen_ms_not_found_error(pan_file: Path, tmp_path: Path, runner: CliRunner):
@@ -1519,11 +1519,11 @@ def test_sharpen_ms_not_found_error(pan_file: Path, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file} --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
+    assert result.exit_code != 0, result.output
     assert (
-        '--multispectral' in result.stdout
-        and 'No such file' in result.stdout
-        and ms_file in result.stdout
+        '--multispectral' in result.output
+        and 'No such file' in result.output
+        and ms_file in result.output
     )
 
 
@@ -1531,8 +1531,8 @@ def test_sharpen_out_file_missing_error(pan_file: Path, ms_file: Path, runner: C
     """Test ``oty sharpen`` without --out-file raises an error."""
     cli_str = f'sharpen --pan {pan_file} --multispectral {ms_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--out-file' in result.stdout and 'missing' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--out-file' in result.output and 'missing' in result.output.lower()
 
 
 def test_sharpen_pan_index_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1540,8 +1540,8 @@ def test_sharpen_pan_index_error(sharpen_cli_str: str, tmp_path: Path, runner: C
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --pan-index 2'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--pan-index' in result.stdout and 'out of range' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--pan-index' in result.output and 'out of range' in result.output
 
 
 def test_sharpen_ms_index(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1549,7 +1549,7 @@ def test_sharpen_ms_index(sharpen_cli_str: str, tmp_path: Path, runner: CliRunne
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --ms-index 1 --ms-index 2'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
     with rio.open(out_file, 'r') as out_im:
         assert out_im.count == 2
@@ -1560,8 +1560,8 @@ def test_sharpen_ms_index_error(sharpen_cli_str: str, tmp_path: Path, runner: Cl
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --ms-index 1 --ms-index 0'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--ms-index' in result.stdout and 'out of range' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert '--ms-index' in result.output and 'out of range' in result.output
 
 
 def test_sharpen_weight(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1578,7 +1578,7 @@ def test_sharpen_weight(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner)
         out_file = tmp_path.joinpath(out_filename)
         cli_str = sharpen_cli_str + f' --out-file {out_file} {weight_str}'
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         assert out_file.exists()
 
         with rio.open(out_file, 'r') as im:
@@ -1592,13 +1592,13 @@ def test_sharpen_weight_error(sharpen_cli_str: str, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight 1'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'weights' in result.stdout and 'same number' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'weights' in result.output and 'same number' in result.output
 
     cli_str = sharpen_cli_str + f' --out-file {out_file} --weight 1 --weight -1'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'Weight values' in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'Weight values' in result.output
 
 
 def test_sharpen_interp(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1610,7 +1610,7 @@ def test_sharpen_interp(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner)
         out_file = tmp_path.joinpath(f'{interp}.tif')
         cli_str = sharpen_cli_str + f' --out-file {out_file} --interp {interp}'
         result = runner.invoke(cli, cli_str.split())
-        assert result.exit_code == 0, result.stdout
+        assert result.exit_code == 0, result.output
         assert out_file.exists()
 
         with rio.open(out_file, 'r') as im:
@@ -1624,8 +1624,8 @@ def test_sharpen_interp_error(sharpen_cli_str: str, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --interp other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--interp' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--interp' in result.output and 'invalid' in result.output.lower()
 
 
 def test_sharpen_driver(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1633,7 +1633,7 @@ def test_sharpen_driver(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner)
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --driver cog'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1646,8 +1646,8 @@ def test_sharpen_driver_error(sharpen_cli_str: str, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --driver other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--driver' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--driver' in result.output and 'invalid' in result.output.lower()
 
 
 def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1657,7 +1657,7 @@ def test_sharpen_write_mask(sharpen_cli_str: str, tmp_path: Path, runner: CliRun
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --write-mask'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1671,7 +1671,7 @@ def test_sharpen_dtype(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --dtype {dtype}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1683,8 +1683,8 @@ def test_sharpen_dtype_error(sharpen_cli_str: str, tmp_path: Path, runner: CliRu
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress deflate --dtype int32'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--dtype' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--dtype' in result.output and 'invalid' in result.output.lower()
 
 
 def test_sharpen_compress(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1693,7 +1693,7 @@ def test_sharpen_compress(sharpen_cli_str: str, tmp_path: Path, runner: CliRunne
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress {compress}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1705,8 +1705,8 @@ def test_sharpen_compress_error(sharpen_cli_str: str, tmp_path: Path, runner: Cl
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --compress other'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert '--compress' in result.stdout and 'invalid' in result.stdout.lower()
+    assert result.exit_code != 0, result.output
+    assert '--compress' in result.output and 'invalid' in result.output.lower()
 
 
 def test_sharpen_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -1714,7 +1714,7 @@ def test_sharpen_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliRunn
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --build-ovw'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1726,7 +1726,7 @@ def test_sharpen_no_build_ovw(sharpen_cli_str: str, tmp_path: Path, runner: CliR
     out_file = tmp_path.joinpath('pan_sharp.tif')
     cli_str = sharpen_cli_str + f' --out-file {out_file} --no-build-ovw'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1742,7 +1742,7 @@ def test_sharpen_creation_option(sharpen_cli_str: str, tmp_path: Path, runner: C
         f' --out-file {out_file} -co tiled=yes -co compress=jpeg -co jpeg_quality=50'
     )
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
@@ -1757,7 +1757,7 @@ def test_sharpen_overwrite(sharpen_cli_str: str, tmp_path: Path, runner: CliRunn
     out_file.touch()
     cli_str = sharpen_cli_str + f' --out-file {out_file} --overwrite'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code == 0, result.stdout
+    assert result.exit_code == 0, result.output
     assert out_file.exists()
 
     with rio.open(out_file, 'r'):
@@ -1770,8 +1770,8 @@ def test_sharpen_overwrite_error(sharpen_cli_str: str, tmp_path: Path, runner: C
     out_file.touch()
     cli_str = sharpen_cli_str + f' --out-file {out_file}'
     result = runner.invoke(cli, cli_str.split())
-    assert result.exit_code != 0, result.stdout
-    assert 'exists' in result.stdout and out_file.name in result.stdout
+    assert result.exit_code != 0, result.output
+    assert 'exists' in result.output and out_file.name in result.output
 
 
 def test_simple_ortho(
