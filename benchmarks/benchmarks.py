@@ -4,6 +4,7 @@ import functools
 import inspect
 import os
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Sequence
 from datetime import datetime
@@ -12,11 +13,16 @@ from multiprocessing import Process
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import psutil
+import rasterio as rio
 import yappi
 from tqdm import tqdm
 
-from orthority import cli, version
+from orthority import cli, common, version
+
+sys.path.append('../tests/data')
+from create_test_data import downsample_image
 
 yappi.LINESEP = '\n'  # prevent double newlines in yappi output
 src_path = Path('D:/OneDrive/Data/Leftfield/test/orthority')
@@ -55,6 +61,8 @@ def _bench_func(
     write_pstat: bool = False,
 ):
     """Report func() performance and memory usage."""
+    proc = psutil.Process()
+    proc.nice(psutil.HIGH_PRIORITY_CLASS)
     dt = datetime.now()
     yappi.set_clock_type('wall')
     yappi.start()
@@ -65,7 +73,7 @@ def _bench_func(
         wall_end, cpu_end = time.perf_counter(), time.process_time()
     finally:
         yappi.stop()
-    mem_info = psutil.Process().memory_full_info()
+    mem_info = proc.memory_full_info()
 
     wall_time = wall_end - wall_start
     cpu_time = cpu_end - cpu_start
@@ -75,6 +83,7 @@ def _bench_func(
     name = name or func.__name__
     print('BENCHMARK\n---------')
     print(f'Name: {name}')
+    print(f'Computer: {os.getenv("COMPUTERNAME")}')
     print(f'Date: {dt.strftime("%Y-%m-%d %H:%M:%S")}')
     print(f'Loops: {loops}')
 
@@ -143,7 +152,7 @@ def odm_bench_func_params() -> dict[str, Any]:
         f'frame --dem {odm_path.joinpath("odm_dem/dsm.tif")} '
         f'--int-param {odm_path.joinpath("opensfm/reconstruction.json")} '
         f'--ext-param {odm_path.joinpath("opensfm/reconstruction.json")} -od {bench_path} -o '
-        f'{odm_path.joinpath("images/100_0005_0018.JPG")}'
+        f'{odm_path.joinpath("images/100_0005_0140.JPG")}'
     )
     func = functools.partial(_oty_cli, args=cli_str.split())
     func_names = [*ortho_func_names, 'BrownCamera.read', 'BrownCamera.remap', 'cv2_remap']
@@ -155,13 +164,53 @@ def rpc_bench_func_params() -> dict[str, Any]:
     """Return bench_func() parameters to orthorectify a satellite image using RPC tags."""
     cli_str = (
         f'rpc --dem {src_path.joinpath("ngi/x3324cb_2015_L3a.tif")} '
-        f'--res 2e-5 -od {bench_path} -o '
+        f'--res 3e-5 -od {bench_path} -o '
         f'{src_path.joinpath("rpc/03NOV18082012-P1BS-056844553010_01_P001.TIF")}'
     )
     func = functools.partial(_oty_cli, args=cli_str.split())
     func_names = [*ortho_func_names, 'RpcCamera.read', 'RpcCamera.remap', 'cv2_remap']
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
-    return dict(func=func, name='RPC', loops=1, filter_callback=filter_callback, write_pstat=True)
+    return dict(func=func, name='RPC', loops=5, filter_callback=filter_callback, write_pstat=True)
+
+
+def pan_sharp_bench_func_params() -> dict[str, Any]:
+    """Return bench_func() parameters to pan sharpen simulated pan / MS drone images."""
+    src_image_file = src_path.joinpath('odm/images/100_0005_0140.JPG')
+    ms_image_file = bench_path.joinpath('ms.tif')
+    pan_image_file = bench_path.joinpath('pan.tif')
+
+    # convert RGB source image to pan
+    with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), rio.open(src_image_file, 'r') as src_im:
+        src_array = src_im.read()
+        pan_array = src_array.mean(axis=0).round().astype('uint8')
+        pan_array = np.expand_dims(pan_array, axis=0)
+        profile, _ = common.create_profile(
+            'gtiff', pan_array.shape, pan_array.dtype, compress='deflate', write_mask=False
+        )
+        profile.update(nodata=None)
+        with rio.open(pan_image_file, 'w', **profile) as pan_im:
+            pan_im.write(pan_array)
+
+        # downsample RGB source image to MS resolution
+        downsample_image(src_image_file, ms_image_file, ds_fact=4, compress='deflate')
+
+    cli_str = (
+        f'sharpen -p {pan_image_file} -ms {ms_image_file} --compress deflate '
+        f'-of {bench_path.joinpath("pan_sharp.tif")} -o '
+    )
+    func = functools.partial(_oty_cli, args=cli_str.split())
+    func_names = [
+        'PanSharpen._get_stats',
+        'get_tile_stats',
+        'PanSharpen._get_params',
+        'PanSharpen._process_tile_array',
+        'PanSharpen._process_tile',
+        'PanSharpen.process',
+    ]
+    filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
+    return dict(
+        func=func, name='Sharpen', loops=5, filter_callback=filter_callback, write_pstat=True
+    )
 
 
 def run_benchmarks(param_funcs: Sequence[Callable]) -> None:
@@ -186,5 +235,10 @@ def run_benchmarks(param_funcs: Sequence[Callable]) -> None:
 
 
 if __name__ == '__main__':
-    param_funcs = [ngi_bench_func_params, odm_bench_func_params, rpc_bench_func_params]
+    param_funcs = [
+        ngi_bench_func_params,
+        odm_bench_func_params,
+        rpc_bench_func_params,
+        pan_sharp_bench_func_params,
+    ]
     run_benchmarks(param_funcs)

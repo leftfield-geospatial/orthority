@@ -1,103 +1,135 @@
 Orthority version: 0.6.1
-Current git commit: bcb5d83
+Current git commit: b18c680
 
 BENCHMARK
 ---------
 Name: NGI
-Date: 2026-03-26 14:41:07
+Computer: INSPIRON-15-700
+Date: 2026-03-29 21:40:05
 Loops: 5
 
 PERFORMANCE
-Mean wall time: 28.80s
-Mean CPU time: 136.28s
-CPU usage: 59.14%
+Mean wall time: 27.03s
+Mean CPU time: 135.51s
+CPU usage: 62.66%
 
 MEMORY
-Peak RSS: 2.60GB
-Current RSS: 147MB
-Page faults / sec: 50963.22
+Peak RSS: 2.59GB
+Current RSS: 148MB
+Page faults / sec: 51303.01
 
 PROFILE
 Clock type: WALL
 Ordered by: ttot, desc
 
 name                                  ncall  tsub      ttot      tavg      
-ortho.py:345 Ortho._remap_tile        2240   22.84091  433.8110  0.193666
-camera.py:1063 FrameCamera.remap      2240   3.764345  376.6839  0.168162
-camera.py:319 FrameCamera.remap       2240   25.77547  372.9153  0.166480
-ortho.py:487 Ortho.process            5      0.587802  141.5682  28.31365
-camera.py:387 cv2_remap               2240   0.332492  105.2885  0.047004
-ortho.py:404 Ortho._remap             5      0.027566  85.27662  17.05532
-ortho.py:394 write_tile               2240   32.82784  33.35514  0.014891
-camera.py:1024 FrameCamera.read       5      0.000047  30.42946  6.085892
-camera.py:287 FrameCamera.read        5      30.42681  30.42941  6.085883
-ortho.py:234 Ortho._reproject_dem     5      0.000657  22.67958  4.535915
-ortho.py:292 Ortho._mask_dem          5      1.292119  3.768816  0.753763
-ortho.py:127 Ortho._get_init_dem      5      0.732245  0.913082  0.182616
+ortho.py:345 Ortho._remap_tile        2240   18.44302  401.7780  0.179365
+camera.py:1063 FrameCamera.remap      2240   3.263147  356.3497  0.159085
+camera.py:319 FrameCamera.remap       2240   19.79237  353.0836  0.157627
+ortho.py:487 Ortho.process            5      0.573824  133.2524  26.65048
+camera.py:387 cv2_remap               2240   0.264598  105.3131  0.047015
+ortho.py:404 Ortho._remap             5      0.015493  79.80999  15.96200
+camera.py:1024 FrameCamera.read       5      0.000037  28.46074  5.692149
+camera.py:287 FrameCamera.read        5      28.45864  28.46071  5.692141
+ortho.py:394 write_tile               2240   25.67150  26.14456  0.011672
+ortho.py:234 Ortho._reproject_dem     5      0.000701  21.08911  4.217822
+ortho.py:292 Ortho._mask_dem          5      1.192104  3.481199  0.696240
+ortho.py:127 Ortho._get_init_dem      5      0.397847  0.555926  0.111185
 
 BENCHMARK
 ---------
 Name: ODM
-Date: 2026-03-26 14:43:33
+Computer: INSPIRON-15-700
+Date: 2026-03-29 21:42:22
 Loops: 5
 
 PERFORMANCE
-Mean wall time: 13.58s
-Mean CPU time: 53.35s
-CPU usage: 49.10%
+Mean wall time: 13.70s
+Mean CPU time: 57.07s
+CPU usage: 52.08%
 
 MEMORY
-Peak RSS: 1.11GB
+Peak RSS: 1.44GB
 Current RSS: 144MB
-Page faults / sec: 70517.08
+Page faults / sec: 73007.27
 
 PROFILE
 Clock type: WALL
 Ordered by: ttot, desc
 
 name                                  ncall  tsub      ttot      tavg      
-ortho.py:345 Ortho._remap_tile        630    6.258917  178.4564  0.283264
-camera.py:1063 BrownCamera.remap      630    1.071002  160.2298  0.254333
-camera.py:319 BrownCamera.remap       630    6.287918  159.1577  0.252631
-ortho.py:487 Ortho.process            5      0.086418  39.56161  7.912322
-ortho.py:404 Ortho._remap             5      0.012137  23.61798  4.723596
-camera.py:387 cv2_remap               630    0.081730  13.24721  0.021027
-ortho.py:394 write_tile               630    11.27111  11.62544  0.018453
-ortho.py:234 Ortho._reproject_dem     5      0.001085  10.12722  2.025443
-ortho.py:127 Ortho._get_init_dem      5      3.009745  4.324069  0.864814
-ortho.py:292 Ortho._mask_dem          5      0.535533  2.092231  0.418446
-camera.py:1024 BrownCamera.read       5      0.000041  0.960653  0.192131
-camera.py:287 BrownCamera.read        5      0.958130  0.960613  0.192123
+ortho.py:345 Ortho._remap_tile        675    5.321419  168.2410  0.249246
+camera.py:1063 BrownCamera.remap      675    1.136656  153.3353  0.227163
+camera.py:319 BrownCamera.remap       675    5.377265  152.1978  0.225478
+ortho.py:487 Ortho.process            5      0.090220  39.69396  7.938791
+ortho.py:404 Ortho._remap             5      0.005240  23.22804  4.645607
+camera.py:387 cv2_remap               675    0.073465  21.63331  0.032049
+ortho.py:234 Ortho._reproject_dem     5      0.000707  10.82732  2.165464
+ortho.py:394 write_tile               675    8.895431  9.225535  0.013667
+ortho.py:127 Ortho._get_init_dem      5      4.962697  6.896577  1.379315
+ortho.py:292 Ortho._mask_dem          5      0.526612  2.010756  0.402151
+camera.py:1024 BrownCamera.read       5      0.000040  0.942817  0.188563
+camera.py:287 BrownCamera.read        5      0.940730  0.942777  0.188555
 
 BENCHMARK
 ---------
 Name: RPC
-Date: 2026-03-26 14:44:42
-Loops: 1
+Computer: INSPIRON-15-700
+Date: 2026-03-29 21:43:32
+Loops: 5
 
 PERFORMANCE
-Mean wall time: 59.05s
-Mean CPU time: 220.78s
-CPU usage: 46.74%
+Mean wall time: 26.37s
+Mean CPU time: 111.93s
+CPU usage: 53.05%
 
 MEMORY
-Peak RSS: 2.80GB
+Peak RSS: 2.63GB
 Current RSS: 155MB
-Page faults / sec: 105947.21
+Page faults / sec: 99525.98
 
 PROFILE
 Clock type: WALL
 Ordered by: ttot, desc
 
 name                                  ncall  tsub      ttot      tavg      
-ortho.py:345 Ortho._remap_tile        300    3.442655  282.0097  0.940032
-camera.py:319 RpcCamera.remap         300    3.101804  276.6907  0.922302
-ortho.py:487 Ortho.process            1      0.113024  55.13491  55.13491
-ortho.py:404 Ortho._remap             1      0.006793  47.30544  47.30544
-camera.py:287 RpcCamera.read          1      11.93854  11.93892  11.93892
-ortho.py:234 Ortho._reproject_dem     1      0.000176  6.149049  6.149049
-ortho.py:127 Ortho._get_init_dem      1      2.721283  3.007284  3.007284
-camera.py:387 cv2_remap               300    0.020459  2.689913  0.008966
-ortho.py:394 write_tile               300    1.660218  1.734836  0.005783
-ortho.py:292 Ortho._mask_dem          1      0.147040  0.699032  0.699032
+ortho.py:345 Ortho._remap_tile        650    7.159257  576.0238  0.886190
+camera.py:319 RpcCamera.remap         650    6.194691  564.6012  0.868617
+ortho.py:487 Ortho.process            5      0.663233  124.4827  24.89654
+ortho.py:404 Ortho._remap             5      0.015430  81.46890  16.29378
+ortho.py:234 Ortho._reproject_dem     5      0.000670  19.02529  3.805058
+camera.py:287 RpcCamera.read          5      8.617191  8.620032  1.724006
+camera.py:387 cv2_remap               650    0.036771  6.285949  0.009671
+ortho.py:127 Ortho._get_init_dem      5      3.699327  4.391207  0.878241
+ortho.py:394 write_tile               650    3.820516  3.974159  0.006114
+ortho.py:292 Ortho._mask_dem          5      0.344668  2.024176  0.404835
+
+BENCHMARK
+---------
+Name: Sharpen
+Computer: INSPIRON-15-700
+Date: 2026-03-29 21:45:48
+Loops: 5
+
+PERFORMANCE
+Mean wall time: 14.31s
+Mean CPU time: 79.33s
+CPU usage: 69.28%
+
+MEMORY
+Peak RSS: 975MB
+Current RSS: 136MB
+Page faults / sec: 25889.98
+
+PROFILE
+Clock type: WALL
+Ordered by: ttot, desc
+
+name                                  ncall  tsub      ttot      tavg      
+..rp.py:480 PanSharpen._process_tile  440    464.2123  482.5247  1.096647
+pan_sharp.py:517 PanSharpen.process   5      0.011775  71.45424  14.29085
+..418 PanSharpen._process_tile_array  440    0.982221  13.08507  0.029739
+pan_sharp.py:241 get_tile_stats       10     4.150007  4.410363  0.441036
+..sharp.py:228 PanSharpen._get_stats  5      0.005501  2.390908  0.478182
+..harp.py:311 PanSharpen._get_params  5      0.000111  0.066589  0.013318
 
