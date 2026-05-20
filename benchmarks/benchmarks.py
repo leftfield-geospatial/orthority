@@ -16,6 +16,7 @@ import numpy as np
 import psutil
 import rasterio as rio
 import yappi
+from rasterio.windows import Window
 from tqdm import tqdm
 
 from orthority import cli, common, version
@@ -29,7 +30,7 @@ mag_src_path = Path('D:/OneDrive/Data/Leftfield/test/orthority')
 ssd_src_path = Path('C:/Temp/Leftfield/test/orthority')
 src_path: Path = mag_src_path
 mag_out_path = Path('D:/Temp')
-out_path: Path = bench_path
+out_path: Path = mag_out_path
 ortho_func_names = [
     '_ortho',
     'Ortho._get_init_dem',
@@ -54,8 +55,10 @@ def _yappi_filter_by_names(x: yappi.YFuncStat, names: Sequence[str] = ()) -> boo
 
 def _purge_ram():
     """Purge RAM with RAMMap (requires admin privileges)."""
+    # don't use the -Ew option which writes working sets to pagefile.sys and results
+    # in some apps reading their working sets back while benchmarks are running
     rammap = str(bench_path.joinpath('rammap.exe'))
-    for option in ['-Ew', '-Es', '-Em', '-Et', '-E0']:
+    for option in ['-Em', '-E0', '-Et']:
         subprocess.run([rammap, option])
 
 
@@ -98,6 +101,7 @@ def _bench_func(
         cpu_times.append(cpu_end - cpu_start)
 
     mem_info = proc.memory_full_info()
+    io_info = proc.io_counters()
     func_stats = yappi.get_func_stats(filter_callback=filter_callback)
     func_stats = func_stats.strip_dirs().sort('ttot', 'desc')
     name = name or func.__name__
@@ -124,9 +128,15 @@ def _bench_func(
         f'{mem_info.num_page_faults / (1e-9 if ttl_cpu_times == 0 else ttl_cpu_times):.2f}'
     )
 
+    print('\nIO')
+    print(f'Read count: {io_info.read_count}')
+    print(f'Read bytes: {tqdm.format_sizeof(io_info.read_bytes, suffix="B")}')
+    print(f'Write count: {io_info.write_count}')
+    print(f'Write bytes: {tqdm.format_sizeof(io_info.write_bytes, suffix="B")}')
+
     print('\nPROFILE', end='')
     func_stats.print_all()
-    print('', flush=True)
+    print('\n', flush=True)
 
     if write_pstat:
         yappi.get_func_stats().save(out_path.joinpath(f'{name.lower()}.pstat'), type='pstat')
@@ -160,7 +170,6 @@ def bench_func(
 
 def ngi_bench_func():
     """Benchmarking func() to orthorectify an NGI image."""
-    # setup
     ngi_path = src_path.joinpath('ngi')
     if untiled_src_files:
         im_file = Path(
@@ -193,6 +202,7 @@ def ngi_bench_params() -> dict[str, Any]:
         'FrameCamera.remap',
         'FrameCamera.read_remap',
         'cv2_remap',
+        'FrameCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
     return dict(
@@ -229,6 +239,7 @@ def odm_bench_params() -> dict[str, Any]:
         'BrownCamera.remap',
         'BrownCamera.read_remap',
         'cv2_remap',
+        'BrownCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
     return dict(
@@ -238,22 +249,47 @@ def odm_bench_params() -> dict[str, Any]:
 
 def rpc_bench_func():
     """Benchmarking func() to orthorectify a satellite image using RPC tags."""
+    src_im_file = src_path.joinpath("rpc/03NOV18082012-P1BS-056844553010_01_P001.TIF")
     if untiled_src_files:
-        im_file = Path(
-            "V:/Data/Digital Globe/056844553010_01/056844553010_01_P001_PAN/03NOV18082012-P1BS"
-            "-056844553010_01_P001.TIF"
-        )
+        crop_im_file = out_path.joinpath(f'{src_im_file.stem}_CROP_UNTILED.tif')
     else:
-        im_file = src_path.joinpath("rpc/03NOV18082012-P1BS-056844553010_01_P001.TIF")
-    cli_str = (
-        f'rpc --dem {src_path.joinpath("ngi/x3324cb_2015_L3a.tif")} --res 3e-5 -od {out_path} -o '
-    )
+        crop_im_file = out_path.joinpath(f'{src_im_file.stem}_CROP.tif')
+
+    if not crop_im_file.exists():
+        # create a cropped version of src_im_file to reduce processing time
+        ds_fact = 1
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), rio.open(src_im_file, 'r') as src_im:
+            rpcs = src_im.rpcs
+            win = Window(10500, 8000, 8000, 6000)
+
+            # adjust RPCs for crop
+            rpcs.line_off = (rpcs.line_off - win.row_off + 0.5) / ds_fact - 0.5
+            rpcs.samp_off = (rpcs.samp_off - win.col_off + 0.5) / ds_fact - 0.5
+            rpcs.line_scale /= ds_fact
+            rpcs.samp_scale /= ds_fact
+
+            # write the cropped image
+            array = src_im.read(window=win)
+            profile, _ = common.create_profile(
+                'gtiff', array.shape, array.dtype, compress='deflate', write_mask=False
+            )
+            if untiled_src_files:
+                profile.update(
+                    crs=src_im.crs, rpcs=rpcs, tiled=False, blockxsize=None, blockysize=None
+                )
+            else:
+                profile.update(crs=src_im.crs, rpcs=rpcs, overviews='none')
+
+            with rio.open(crop_im_file, 'w', **profile) as dst_im:
+                dst_im.write(array)
+
+    cli_str = f'rpc --dem {src_path.joinpath("ngi/x3324cb_2015_L3a.tif")} -od {out_path} -o '
     # purge cached disk reads etc
     _purge_ram()
     # delete any previous ortho file
-    out_path.joinpath(f'{im_file.stem}_ORTHO.tif').unlink(missing_ok=True)
+    out_path.joinpath(f'{crop_im_file.stem}_ORTHO.tif').unlink(missing_ok=True)
     yield
-    _oty_cli(args=[*cli_str.split(), str(im_file)])
+    _oty_cli(args=[*cli_str.split(), str(crop_im_file)])
     yield
 
 
@@ -266,6 +302,7 @@ def rpc_bench_params() -> dict[str, Any]:
         'RpcCamera.remap',
         'RpcCamera.read_remap',
         'cv2_remap',
+        'RpcCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
     return dict(
