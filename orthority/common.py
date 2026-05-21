@@ -566,17 +566,19 @@ def get_tqdm_kwargs(**kwargs) -> dict:
 
 
 def block_windows(
-    im: DatasetReaderBase | DatasetWriter, block_shape: tuple[int, int] = None
+    im: DatasetReaderBase | DatasetWriter, block_shape: tuple[int, int] | None = None
 ) -> Generator[Window]:
-    """Block window generator for the given image, and optional block shape."""
+    """Block window generator for the given dataset and optional block shape. Blocks are generated
+    row-wise, as they would be stored on disk.
+    """
     driver = im.driver.lower()
     block_shape = block_shape or (
         (im.profile.get('blocksize', 512),) * 2 if driver == 'cog' else im.block_shapes[0]
     )
 
-    xrange = range(0, im.width, block_shape[1])
-    yrange = range(0, im.height, block_shape[0])
-    for xstart, ystart in product(xrange, yrange):
-        xstop = min(xstart + block_shape[1], im.width)
-        ystop = min(ystart + block_shape[0], im.height)
-        yield Window(xstart, ystart, xstop - xstart, ystop - ystart)
+    i_range = range(0, im.height, block_shape[0])
+    j_range = range(0, im.width, block_shape[1])
+    for i_start, j_start in product(i_range, j_range):
+        i_stop = min(i_start + block_shape[0], im.height)
+        j_stop = min(j_start + block_shape[1], im.width)
+        yield Window(j_start, i_start, j_stop - j_start, i_stop - i_start)
