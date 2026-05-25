@@ -90,8 +90,21 @@ def expand_window_to_grid(win: Window, expand_pixels: tuple[int, int] = (0, 0)) 
 
 
 def nan_equals(a: np.ndarray | float, b: np.ndarray | float) -> np.ndarray:
-    """Compare two numpy objects a & b, returning true where elements of both a & b are nan."""
-    return (a == b) | (np.isnan(a) & np.isnan(b))
+    """Compare two numpy objects, returning True where elements of both are nan."""
+
+    def _nan_equals(obj, scalar) -> np.ndarray:
+        if np.isnan(scalar):
+            return np.isnan(obj)
+        else:
+            return obj == scalar
+
+    # use _nan_equals() to speed up the special cases where a or b is a scalar
+    if np.isscalar(a):
+        return _nan_equals(b, a)
+    elif np.isscalar(b):
+        return _nan_equals(a, b)
+    else:
+        return (a == b) | (np.isnan(a) & np.isnan(b))
 
 
 def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) -> np.ndarray:
