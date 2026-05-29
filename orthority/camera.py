@@ -21,6 +21,7 @@ import logging
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
+from itertools import product
 from os import PathLike
 
 import cv2
@@ -84,19 +85,61 @@ class Camera(ABC):
                 "'z' should be a single value or 1-by-N array where 'ji' is 2-by-N or 2-by-1."
             )
 
+    @staticmethod
+    def _get_remap_crop_slices(
+        im_size: tuple[int, int],
+        j: np.ndarray,
+        i: np.ndarray,
+        pad: int = 4,  # for a worst case of 8x8 lanczos resampling
+        excl_nan: bool = True,
+    ) -> tuple[slice, slice]:
+        """Return (row, col) slices to crop an image of size ``im_size`` to the minimum and
+        maximum pixel coordinates in ``j`` and ``i`` with a padding of ``pad``.
+        """
+        min_fn, max_fn = (np.nanmin, np.nanmax) if excl_nan else (np.min, np.max)
+        slices = []
+        for coord, dim in zip([i, j], im_size[::-1], strict=True):
+            min_coord, max_coord = np.floor(min_fn(coord)), np.ceil(max_fn(coord))
+            if np.isnan(min_coord) or np.isnan(max_coord):
+                # return empty slices when all of j & i are masked (nan)
+                start_coord = end_coord = 0
+            else:
+                start_coord = np.clip(min_coord - pad, a_min=0, a_max=dim).astype(int)
+                end_coord = np.clip(max_coord + 1 + pad, a_min=0, a_max=dim).astype(int)
+            slices.append(slice(start_coord, end_coord))
+        return tuple(slices)
+
+    @staticmethod
+    def _per_band_remap(
+        im_array: np.ndarray,
+        maps: tuple[np.ndarray, np.ndarray],
+        remap_array: np.ndarray,
+        interp: str | Interp = Interp.cubic,
+    ) -> np.ndarray:
+        """Apply ``cv2.remap()`` to arrays with RasterIO band ordering by looping over bands."""
+        # Note that cv2.remap() does not support RasterIO band ordering, does not support
+        # images with >4 bands, and is slower on an OpenCV ordered image (including
+        # re-ordering) than on a RasterIO ordered image looping over bands
+        for bi in range(im_array.shape[0]):
+            cv2.remap(
+                im_array[bi],
+                *maps,
+                Interp[interp].to_cv(),
+                dst=remap_array[bi],
+                borderMode=cv2.BORDER_TRANSPARENT,
+            )
+        return remap_array
+
     def _validate_image(self, im_array: np.ndarray) -> None:
         """Utility function to validate an image dtype and dimensions for remapping."""
-        if str(im_array.dtype) not in Camera._valid_dtypes:
-            raise ValueError(f"'im_array' data type '{im_array.dtype}' not supported.")
+        if im_array.dtype.name not in Camera._valid_dtypes:
+            raise ValueError(f"'im_array' data type '{im_array.dtype.name}' not supported.")
         if not im_array.ndim == 3:
             raise ValueError("'im_array' should have 3 dimensions.")
-        if np.any(np.array(im_array.shape[-2:]) > Camera._shrt_max):
-            raise ValueError(
-                f"'im_array' width and height should be less than {Camera._shrt_max} pixels."
-            )
         if im_array.shape[-2:] != self.im_size[::-1]:
             warnings.warn(
                 "'im_array' does not have the same size as the camera 'im_size'.",
+                stacklevel=2,
                 category=OrthorityWarning,
             )
 
@@ -106,20 +149,16 @@ class Camera(ABC):
         z: np.ndarray,
         transform: rio.Affine,
         interp: str | Interp = Interp.cubic,
-        min_z: float = None,
-        max_z: float = None,
+        min_z: float | None = None,
+        max_z: float | None = None,
     ) -> np.ndarray:
         """Return the world coordinate intersections of rays defined by pixel coordinates ``ji``,
         with the height array (DEM) ``z``.
         """
-        if str(z.dtype) not in Camera._valid_dtypes:
-            raise ValueError(f"'z' data type '{z.dtype}' not supported.")
-        if np.any(np.array(z.shape[-2:]) > Camera._shrt_max):
-            raise ValueError(f"'z' width and height should be less than {Camera._shrt_max} pixels.")
+        if z.dtype.name not in Camera._valid_dtypes:
+            raise ValueError(f"'z' data type '{z.dtype.name}' not supported.")
 
         # create a transform from world (x, y) to center (j, i) pixel coordinates
-        # TODO: see if an opencv or numpy equiv affine transform is faster (here, and all places
-        #  rio.Affine is used)
         inv_transform = ~(transform * rio.Affine.translation(0.5, 0.5))
 
         # find / initialise z surface minimum and maximum
@@ -132,7 +171,9 @@ class Camera(ABC):
 
         # heuristic limit on ray length to conserve memory
         max_ray_steps = 2 * np.sqrt(np.square(z.shape, dtype='int64').sum()).astype('int')
-        max_ray_steps = max(max_ray_steps, self._shrt_max)
+        # clip max_ray_steps for the cv2.remap() 32K size limit (the extra -1 ensures slices
+        # returned by _get_remap_crop_slices() also stay under 32K)
+        max_ray_steps = max(max_ray_steps, Camera._shrt_max - 1 - 1)
         xyz = np.zeros((3, ji.shape[1]))
 
         # find z surface (x, y, z) world coordinate intersections for each (j, i) pixel
@@ -146,14 +187,30 @@ class Camera(ABC):
             ray_steps = min(np.ceil(ray_steps.max()).astype('int') + 1, max_ray_steps)
             ray_z = np.linspace(max_z, min_z, ray_steps)
             # TODO: for frame cameras, linspace rather than pixel_to_world_z can be used to form
-            #  the ray
+            #  the ray.
             ray_xyz = self.pixel_to_world_z(src_pt.reshape(-1, 1), ray_z)
 
-            # find the z surface values corresponding to the ray (the remapped surface will be
-            # nan outside its bounds and for already masked / nan pixels)
+            # find the z surface pixel coordinates of the ray
             zsurf_ji = np.array(inv_transform * ray_xyz[:2]).astype('float32', copy=False)
             zsurf_z = np.full((zsurf_ji.shape[1],), dtype=z.dtype, fill_value=float('nan'))
-            cv2.remap(z, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
+
+            if np.any(np.array(z.shape[-2:]) >= Camera._shrt_max):
+                # crop z and offset zsurf_ji to work around cv2.remap() 32K size limit
+
+                # pad for lanczos 8x8 resampling if possible
+                pad = 4 if zsurf_ji.shape[1] < Camera._shrt_max - 8 - 1 else 0
+                # ray_steps is chosen so that zsurf_ji.shape < Camera._shrt_max-1 and the average
+                # pixel step in zsurf_ji is <= 1. This should guarantee the zsurf_ji coordinate
+                # range is < Camera._shrt_max-1, and the shape of z_ is < Camera._shrt_max.
+                crop_slices = self._get_remap_crop_slices(z.shape[::-1], *zsurf_ji, pad=pad)
+                z_ = z[crop_slices[0], crop_slices[1]]
+                zsurf_ji -= np.array([s.start for s in crop_slices[::-1]]).reshape(-1, 1)
+            else:
+                z_ = z
+
+            # find the z_ surface values corresponding to the ray (the remapped surface will be
+            # nan outside its bounds and for already masked / nan pixels)
+            cv2.remap(z_, *zsurf_ji, interp.to_cv(), dst=zsurf_z, borderMode=cv2.BORDER_TRANSPARENT)
 
             # store the first ray-z intersection point if it exists, otherwise the z_min point
             zsurf_min_xyz = ray_xyz[:, -1]
@@ -311,6 +368,8 @@ class Camera(ABC):
         # add an empty dimension to indexes if it is scalar so that image is read as 3D
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
 
+        # TODO: rio.Env has no effect on already opened datasets, which is I think is always how
+        #  this method is used, rather leave it to user?
         env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
         with common.suppress_no_georef(), env, common.OpenRaster(im_file) as im:
             dtype = dtype or im.dtypes[0]
@@ -362,37 +421,53 @@ class Camera(ABC):
             raise ValueError("'x' and 'y' should have 'float64' data type.")
         if not np.issubdtype(z.dtype, np.floating):
             raise ValueError("'z' should have 'float64' or 'float32' data type.")
+        # limit the dimensions of x, y & z so we don't need to remap in chunks like
+        # FrameCamera._undistort_im() (internally this method is only called for 512x512 tiles)
+        if np.any(np.array(x.shape) >= Camera._shrt_max):
+            raise ValueError(
+                f"'x', 'y' and 'z' should have a width and height less than {Camera._shrt_max} "
+                f"pixels."
+            )
+
+        # initialise ortho / remapped array
         if nodata is None:
-            nodata = common._nodata_vals[im_array.dtype]
+            nodata = common._nodata_vals[im_array.dtype.name]
+        remap_array = np.full(
+            (im_array.shape[0], *x.shape), dtype=im_array.dtype, fill_value=nodata
+        )
+
+        # skip remapping when the remapped array would be all nodata
+        if np.all(np.isnan(x) | np.isnan(y) | np.isnan(z)):
+            remap_mask = np.full(x.shape, dtype='bool', fill_value=True)
+            return remap_array, remap_mask
 
         # find (j, i) image pixel coords corresponding to (x, y, z) world coords
         ji = self.world_to_pixel(np.array((x.reshape(-1), y.reshape(-1), z.reshape(-1))))
 
+        if np.any(np.array(im_array.shape[-2:]) >= Camera._shrt_max):
+            # crop im_array and offset ji to work around the cv2.remap() 32K limit
+            crop_slices = self._get_remap_crop_slices(im_array.shape[1:][::-1], *ji)
+            im_array_ = im_array[:, crop_slices[0], crop_slices[1]]
+            if np.any(np.array(im_array_.shape[-2:]) >= Camera._shrt_max):
+                # unlikely but could occur for coarse ortho (x,y,z) resolution relative to the GSD
+                raise ValueError(
+                    f"Unable to crop 'im_array' to width and height less than {Camera._shrt_max} "
+                    f"pixels."
+                )
+            ji -= np.array([s.start for s in crop_slices[::-1]]).reshape(-1, 1)
+        else:
+            im_array_ = im_array
+
         # separate ji into (j, i) grids, converting to float32 for compatibility with
-        # cv2.remap (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
+        # cv2.remap() (nans are converted to -1 as cv2.remap maps nans to 0 (the first src pixel)
         # on some packages/platforms see
         # https://answers.opencv.org/question/1057/behavior-of-not-a-number-nan-values-in-remap/)
         ji[np.isnan(ji)] = -1
         j = ji[0].reshape(*x.shape).astype('float32')
         i = ji[1].reshape(*x.shape).astype('float32')
 
-        # initialise ortho / remapped array
-        remap_array = np.full(
-            (im_array.shape[0], *x.shape), dtype=im_array.dtype, fill_value=nodata
-        )
-
-        # remap image to ortho, looping over band(s) (cv2.remap does not support rasterio
-        # band ordering, does not support 3D images with >4 bands, and is slower on a re-ordered
-        # 3D image than in a loop over bands)
-        for oi in range(0, im_array.shape[0]):
-            cv2.remap(
-                im_array[oi],
-                j,
-                i,
-                Interp[interp].to_cv(),
-                dst=remap_array[oi],
-                borderMode=cv2.BORDER_TRANSPARENT,
-            )
+        # remap image to ortho
+        self._per_band_remap(im_array_, (j, i), remap_array, interp=interp)
 
         # find nodata mask
         remap_mask = np.all(common.nan_equals(remap_array, nodata), axis=0)
@@ -920,23 +995,42 @@ class FrameCamera(Camera):
         if self._undistort_maps is None:
             return im_array
 
-        # remap image, looping over band(s) (cv2.remap does not support rasterio band ordering,
-        # does not support 3D images with >4 bands, and is slower on a re-ordered 3D image than
-        # in a loop over bands)
         if nodata is None:
-            nodata = common._nodata_vals[im_array.dtype]
-        und_array = np.full(im_array.shape, dtype=im_array.dtype, fill_value=nodata)
+            nodata = common._nodata_vals[im_array.dtype.name]
+        remap_array = np.full(im_array.shape, dtype=im_array.dtype, fill_value=nodata)
 
-        for bi in range(im_array.shape[0]):
-            cv2.remap(
-                im_array[bi],
-                *self._undistort_maps,
-                Interp[interp].to_cv(),
-                dst=und_array[bi],
-                borderMode=cv2.BORDER_TRANSPARENT,
-            )
+        # remap image
+        if np.all(np.array(im_array.shape[-2:]) < Camera._shrt_max):
+            self._per_band_remap(im_array, self._undistort_maps, remap_array, interp=interp)
+        else:
+            # remap in chunks to work around the cv2.remap() 32K limit
+            step = 1024
+            for start_i, start_j in product(
+                range(0, im_array.shape[1], step), range(0, im_array.shape[2], step)
+            ):
+                map_slices = (slice(start_i, start_i + step), slice(start_j, start_j + step))
+                # crop and copy maps before offsetting so that self._undistort_maps are left
+                # unchanged for any subsequent _undistort_im() calls
+                maps = [m[map_slices[0], map_slices[1]].copy() for m in self._undistort_maps]
+                remap_array_ = remap_array[:, map_slices[0], map_slices[1]]
 
-        return und_array
+                # crop im_array and offset maps
+                im_slices = self._get_remap_crop_slices(
+                    im_array.shape[1:][::-1], *maps, excl_nan=False
+                )
+                im_array_ = im_array[:, im_slices[0], im_slices[1]]
+                if np.any(np.array(im_array_.shape) == 0):
+                    # One or more map has all its coordinates outside the image bounds (i.e. the
+                    # remapped image will be all nodata). cv2.remap() raises an error in this
+                    # situation with interp=average|bilinear, but in any case, the remapped image
+                    # is initialised to nodata, so remapping wastes processing time.
+                    continue
+                for map, im_slice in zip(maps, im_slices[::-1], strict=True):
+                    map -= im_slice.start
+
+                self._per_band_remap(im_array_, maps, remap_array_, interp=interp)
+
+        return remap_array
 
     def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
         """
@@ -1053,7 +1147,7 @@ class FrameCamera(Camera):
 
         if not self._distort:
             if nodata is None:
-                nodata = common._nodata_vals[image.dtype]
+                nodata = common._nodata_vals[image.dtype.name]
             image = self._undistort_im(image, nodata=nodata, interp=interp)
         return image
 
@@ -1111,7 +1205,7 @@ class FrameCamera(Camera):
             mask = cv2.dilate(mask.view(np.uint8), kernel).view(bool)
 
             if nodata is None:
-                nodata = common._nodata_vals[image.dtype]
+                nodata = common._nodata_vals[image.dtype.name]
             remap[:, mask] = nodata
 
         return remap, mask
