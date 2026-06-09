@@ -13,6 +13,7 @@
 # You should have received a copy of the GNU Affero General Public License along with Orthority.
 # If not, see <https://www.gnu.org/licenses/>.
 """Pan-sharpening."""
+
 from __future__ import annotations
 
 import logging
@@ -27,16 +28,16 @@ from typing import Sequence
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
-from rasterio.enums import Resampling, ColorInterp
+from rasterio.enums import ColorInterp, Resampling
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
-from rasterio.windows import intersect, Window
+from rasterio.windows import Window, intersect
 from rasterio.windows import transform as window_transform
 from tqdm.auto import tqdm
 
 from orthority import common
-from orthority.enums import Compress, Interp, Driver
-from orthority.errors import OrthorityWarning, OrthorityError
+from orthority.enums import Compress, Driver, Interp
+from orthority.errors import OrthorityError, OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
@@ -285,7 +286,7 @@ class PanSharpen:
             executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
             futures = [
                 executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
-                for tile_win in common.block_windows(ms_im, block_shape=(1024, 1024))
+                for tile_win in common.block_windows(ms_im, block_shape=(512, 1024))
             ]
 
             for future in tqdm(as_completed(futures), **progress, total=len(futures)):
@@ -489,6 +490,7 @@ class PanSharpen:
         **params,
     ) -> None:
         """Thread-safe function to pan-sharpen a MS tile and write it to a dataset."""
+
         # read pan and MS tiles (without masked arrays which don't release GIL)
         with self._pan_lock:
             pan_array = pan_im.read(indexes=pan_index, window=tile_win)
@@ -651,7 +653,9 @@ class PanSharpen:
                     write_mask,
                     **params,
                 )
-                for tile_win in common.block_windows(out_im)
+                # empirically, a block_shape of (512, 1024) gives the best overall performance &
+                # memory usage
+                for tile_win in common.block_windows(out_im, block_shape=(512, 1024))
             ]
 
             pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))
