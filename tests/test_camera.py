@@ -15,8 +15,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import cv2
 import numpy as np
@@ -28,15 +28,15 @@ from orthority import common
 from orthority.camera import (
     BrownCamera,
     Camera,
-    create_camera,
     FisheyeCamera,
     FrameCamera,
     OpenCVCamera,
     PinholeCamera,
     RpcCamera,
+    create_camera,
 )
 from orthority.enums import CameraType, Interp
-from orthority.errors import CameraInitError, OrthorityWarning, OrthorityError
+from orthority.errors import CameraInitError, OrthorityError, OrthorityWarning
 from tests.conftest import _dem_offset, checkerboard, create_zsurf, ortho_bounds
 
 
@@ -689,6 +689,154 @@ def test_frame_pixel_boundary_undistort(
     assert cc[0, 1] > 0.95
 
 
+def _get_remap_dst(
+    src: np.ndarray, maps: tuple[np.ndarray, np.ndarray], fill_value: float = 0
+) -> np.ndarray:
+    """Return a ``dst`` array for Camera._remap()."""
+    return np.full((src.shape[0], *maps[0].shape), dtype=src.dtype, fill_value=fill_value)
+
+
+def test__remap_crop_and_chunk(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+    """Test ``Camera._remap()`` cropping and chunking behaviour."""
+    interp = Interp.bilinear
+    kwargs = dict(maps_contain_nans=False)
+    src = checkerboard(im_size[::-1]).astype('float32')
+    src = np.stack((src,) * 3, axis=0)
+
+    # test no cropping or chunking (with src shape < _shrt_max, map shape < _shrt_max and map
+    # ranges < _shrt_max)
+    maps = np.meshgrid(*(np.arange(0, dim, dtype='float32') for dim in im_size), indexing='xy')
+    dst = _get_remap_dst(src, maps)
+    Camera._remap(src, maps, interp, dst, **kwargs)
+    assert np.all(dst == src)
+
+    # test src cropped to map ranges (with src shape >= shrt_max, map shape < _shrt_max and map
+    # ranges < _shrt_max)
+    buffer = 50
+    with monkeypatch.context() as mp:
+        map_ranges = [np.arange(buffer, dim - buffer, dtype='float32') for dim in im_size]
+        maps = np.meshgrid(*map_ranges, indexing='xy')
+        indexes = [m.astype(int) for m in maps[::-1]]  # create before inplace map offsets
+        mp.setattr(Camera, '_shrt_max', np.max(src.shape[1:]))
+        dst = _get_remap_dst(src, maps)
+        Camera._remap(src, maps, interp, dst, **kwargs)
+        assert np.all(dst == src[:, indexes[0], indexes[1]])
+
+    # test src cropped to chunked map ranges (with src shape < _shrt_max, map shape >= _shrt_max
+    # and map ranges < _shrt_max)
+    with monkeypatch.context() as mp:
+        # create doubled up ranges like [0, 0, 1, 1, ...] so map shape is twice src shape
+        map_ranges = [
+            np.column_stack((np.arange(0, dim, dtype='float32'),) * 2).flatten() for dim in im_size
+        ]
+        maps = np.meshgrid(*map_ranges, indexing='xy')
+        indexes = [m.astype(int) for m in maps[::-1]]  # create before inplace map offsets
+        mp.setattr(Camera, '_shrt_max', np.min(maps[0].shape))
+        dst = _get_remap_dst(src, maps)
+        Camera._remap(src, maps, interp, dst, **kwargs)
+        assert np.all(dst == src[:, indexes[0], indexes[1]])
+
+    # test src cropped to chunked map ranges (with src shape >= shrt_max, map shape < _shrt_max
+    # and map ranges >= _shrt_max)
+    with monkeypatch.context() as mp:
+        # create ranges with a step size of 2 so map ranges are twice the map shape
+        map_ranges = [np.arange(buffer, dim - buffer, 2, dtype='float32') for dim in im_size]
+        maps = np.meshgrid(*map_ranges, indexing='xy')
+        indexes = [m.astype(int) for m in maps[::-1]]  # create before inplace map offsets
+        mp.setattr(Camera, '_shrt_max', np.max(maps[0].shape) + 1)
+        dst = _get_remap_dst(src, maps)
+        Camera._remap(src, maps, interp, dst, **kwargs)
+        assert np.all(dst == src[:, indexes[0], indexes[1]])
+
+
+def test__remap_padding(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+    """Test ``Camera._remap()`` pads ``src`` when cropping to map chunks by comparing unchunked and
+    chunked ``dst`` arrays.
+    """
+    interp = Interp.lanczos  # largest of the interpolation kernels
+    kwargs = dict(maps_contain_nans=False)
+    src = checkerboard(im_size[::-1]).astype('float32')
+    src = np.stack((src,) * 3, axis=0)
+
+    # create a reference dst with no cropping or chunking
+    maps = np.meshgrid(*(np.arange(0, dim, 0.5, dtype='float32') for dim in im_size), indexing='xy')
+    ref_dst = _get_remap_dst(src, maps)
+    Camera._remap(src, maps, interp, ref_dst, **kwargs)
+
+    # create a test dst with src cropped to chunked map ranges
+    with monkeypatch.context() as mp:
+        mp.setattr(Camera, '_shrt_max', np.min(src.shape[1:]))
+        test_dst = _get_remap_dst(src, maps)
+        Camera._remap(src, maps, interp, test_dst, **kwargs)
+
+    assert not np.any(ref_dst == 0)
+    assert np.all(test_dst == ref_dst)
+
+
+def test__remap_change_maps_inplace(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+    """Test the ``Camera._remap()`` ``change_maps_inplace`` parameter."""
+    interp = Interp.nearest
+    src = np.ones((1, *im_size[::-1]), dtype='uint8')
+
+    # test maps changes with map chunk offsetting
+    with monkeypatch.context() as mp:
+        maps = np.meshgrid(*(np.arange(0, dim, dtype='float32') for dim in im_size), indexing='xy')
+        ref_maps = [m.copy() for m in maps]
+        dst = _get_remap_dst(src, maps)
+        mp.setattr(Camera, '_shrt_max', np.min(src.shape[1:]))
+        Camera._remap(src, maps, interp, dst, change_maps_inplace=False, maps_contain_nans=False)
+        assert all(np.all(rm == tm) for rm, tm in zip(ref_maps, maps, strict=True))
+        Camera._remap(src, maps, interp, dst, change_maps_inplace=True, maps_contain_nans=False)
+        assert all(np.any(rm != tm) for rm, tm in zip(ref_maps, maps, strict=True))
+
+    # test maps changes with map nans and maps_contain_nans=True
+    maps = np.meshgrid(*(np.arange(0, dim, dtype='float32') for dim in im_size), indexing='xy')
+    for map in maps:
+        map[::10, ::10] = np.nan
+    ref_maps = [m.copy() for m in maps]
+    dst = _get_remap_dst(src, maps)
+    Camera._remap(src, maps, interp, dst, change_maps_inplace=False, maps_contain_nans=True)
+    assert all(np.all(common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
+    Camera._remap(src, maps, interp, dst, change_maps_inplace=True, maps_contain_nans=True)
+    assert all(np.any(~common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
+
+
+def test__remap_maps_contain_nans(im_size: tuple(int, int)):
+    """Test the ``Camera._remap()`` ``maps_contain_nans`` parameter."""
+    interp = Interp.nearest
+    src = np.ones((1, *im_size[::-1]), dtype='uint8')
+    maps = np.meshgrid(*(np.arange(0, dim, dtype='float32') for dim in im_size), indexing='xy')
+    for map in maps:
+        map[::10, ::10] = np.nan
+    dst = _get_remap_dst(src, maps)
+
+    # test map nans are left unchanged with maps_contain_nans=False
+    ref_maps = [m.copy() for m in maps]
+    Camera._remap(src, maps, interp, dst, change_maps_inplace=True, maps_contain_nans=False)
+    assert all(np.all(common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
+
+    # test map nans are set to -1 with maps_contain_nans=True
+    for ref_map in ref_maps:
+        ref_map[np.isnan(ref_map)] = -1
+    Camera._remap(src, maps, interp, dst, change_maps_inplace=True, maps_contain_nans=True)
+    assert all(np.all(common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
+
+
+def test__remap_chunking_error(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+    """Test the ``Camera._remap()`` raises an error when chunking can't avoid the ``cv2.remap()``
+    SHRT_MAX limitation.
+    """
+    src = np.ones((1, *im_size[::-1]), dtype='uint8')
+    # create maps with a highly non-uniform coordinate spacing
+    map_ranges = [np.geomspace(1e-9, dim, dim, endpoint=False, dtype='float32') for dim in im_size]
+    maps = np.meshgrid(*map_ranges, indexing='xy')
+    dst = _get_remap_dst(src, maps)
+
+    with monkeypatch.context() as mp, pytest.raises(RuntimeError, match='size limit'):
+        mp.setattr(Camera, '_shrt_max', int(src.shape[1] / 2))
+        Camera._remap(src, maps, Interp.nearest, dst)
+
+
 @pytest.mark.parametrize(
     'camera, num_pts',
     [
@@ -755,7 +903,6 @@ def _test_world_boundary_zsurf(
     """Test ``camera.world_boundary()`` z surface intersection by comparing with the
     ``camera.remap( )`` mask.
     """
-
     # remap to get reference mask
     nodata = 0
     im_array = np.full((1, *camera.im_size[::-1]), fill_value=127, dtype='uint8')
@@ -891,11 +1038,6 @@ def test_world_boundary_errors(camera: str, request: pytest.FixtureRequest):
         camera.world_boundary(z=np.ones((10, 10)), transform=None)
     assert "transform" in str(ex.value)
 
-    # z is 2D array with width and or height > 2**15 - 1
-    with pytest.raises(ValueError) as ex:
-        camera.world_boundary(z=np.ones((1, 2**15)), transform=rio.Affine.identity())
-    assert "'z'" in str(ex.value) and "width" in str(ex.value)
-
 
 @pytest.mark.parametrize('indexes, dtype', [(None, None), ([1, 2, 3], 'uint8'), (1, 'float32')])
 def test_read(
@@ -958,11 +1100,6 @@ def test_frame_undistort_errors(pinhole_camera: FrameCamera):
     # im_array size does not match camera im_size
     with pytest.warns(OrthorityWarning, match='im_size'):
         pinhole_camera._undistort_im(np.ones((1, 10, 10), dtype='uint8'))
-
-    # im_array width and or height > 2**15 - 1
-    with pytest.raises(ValueError) as ex:
-        pinhole_camera._undistort_im(np.ones((1, 1, 2**15), dtype='uint8'))
-    assert "'im_array'" in str(ex.value) and "width" in str(ex.value)
 
 
 @pytest.mark.parametrize(
@@ -1275,11 +1412,3 @@ def test_remap_errors(rpc_camera: RpcCamera, xyz_grids: tuple[tuple, rio.Affine]
     with pytest.raises(ValueError) as ex:
         rpc_camera.remap(np.ones((1, 10, 10), dtype='uint8'), x.astype('float32'), y, z[0])
     assert 'float64' in str(ex.value)
-
-    # im_array width and or height > 2**15 - 1
-    with pytest.raises(ValueError) as ex:
-        rpc_camera.remap(np.ones((1, 1, 2**15)), x, y, z)
-    assert "'im_array'" in str(ex.value) and "width" in str(ex.value)
-
-
-##
