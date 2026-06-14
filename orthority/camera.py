@@ -48,7 +48,6 @@ class Camera(ABC):
     _valid_dtypes = ['uint8', 'uint16', 'int16', 'float32', 'float64']
     # cv2.remap() maximum image dimension
     _shrt_max = (1 << 15) - 1
-    _shrt_max = 512
 
     @abstractmethod
     def __init__(self, **kwargs):
@@ -125,7 +124,7 @@ class Camera(ABC):
             return dst
 
         # copy maps if they will be changed and change_maps_inplace is False
-        if not change_maps_inplace and ((map_offsets is not None) or maps_contain_nans):
+        if (not change_maps_inplace) and ((map_offsets is not None) or maps_contain_nans):
             maps = [m.copy() for m in maps]
 
         if map_offsets is not None:
@@ -217,6 +216,13 @@ class Camera(ABC):
             )
             return dst
 
+        num_chunks = np.ceil(map_shape / chunk_shape).prod().astype(int)
+        warnings.warn(
+            f'Remapping with {num_chunks} chunks of shape: {tuple(chunk_shape.tolist())}.',
+            category=OrthorityWarning,
+            stacklevel=2,
+        )
+
         # remap with src cropped to chunked map ranges
         for start_i, start_j in product(
             range(0, map_shape[0], chunk_shape[0]), range(0, map_shape[1], chunk_shape[1])
@@ -254,8 +260,8 @@ class Camera(ABC):
         if im_array.shape[-2:] != self.im_size[::-1]:
             warnings.warn(
                 "'im_array' does not have the same size as the camera 'im_size'.",
-                stacklevel=2,
                 category=OrthorityWarning,
+                stacklevel=2,
             )
 
     def _pixel_to_world_surf(
@@ -827,6 +833,7 @@ class FrameCamera(Camera):
                 "'sensor_size' not specified, assuming square pixels and 'focal_len' normalised by "
                 "sensor width.",
                 category=OrthorityWarning,
+                stacklevel=2,
             )
             sigma_xy = (focal_len * im_size[0]) * np.ones(2)
         else:
