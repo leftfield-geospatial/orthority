@@ -22,6 +22,7 @@ import logging
 import os
 import posixpath
 import pstats
+import threading
 import tracemalloc
 import warnings
 from collections.abc import Generator, Sequence
@@ -49,6 +50,7 @@ from rasterio.crs import CRS
 from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
 from rasterio.io import DatasetReaderBase, DatasetWriter
 from rasterio.windows import Window
+from threadpoolctl import ThreadpoolController
 
 from orthority.enums import Compress, Driver, Interp
 from orthority.errors import OrthorityError, OrthorityWarning
@@ -595,3 +597,50 @@ def block_windows(
         i_stop = min(i_start + block_shape[0], im.height)
         j_stop = min(j_start + block_shape[1], im.width)
         yield Window(j_start, i_start, j_stop - j_start, i_stop - i_start)
+
+
+@contextmanager
+def limit_cv_threads(num_threads: int):
+    """Context manager to limit the number of OpenCV threads process-wide.  Not thread-safe."""
+    curr_num_threads = cv2.getNumThreads()
+    cv2.setNumThreads(num_threads)
+    try:
+        yield
+    finally:
+        cv2.setNumThreads(curr_num_threads)
+
+
+@contextmanager
+def limit_blas_omp_threads(limits=None, user_api=None):
+    """Context manager to limit the number of BLAS and OpenMP threads using threadpoolctl.
+
+    Some BLAS / OpenMP libraries use process-wide limits, others use per-thread limits.  This
+    context manager sets process-wide limits, and thread limits on the current thread.  It is not
+    thread-safe.  The ``initialiser()`` method of the returned object can be used to set
+    per-thread limits in other threads.
+
+    Based on https://github.com/joblib/threadpoolctl/issues/208#issuecomment-4745983423.
+    """
+    lock = threading.Lock()
+    with warnings.catch_warnings():
+        # The windows conda-forge numpy package loads multiple OpenMP libraries. Ignore the
+        # threadpoolctl warning about this.
+        warnings.filterwarnings(
+            'ignore',
+            message=r'\sFound Intel OpenMP',
+            category=RuntimeWarning,
+            module='threadpoolctl',
+        )
+        # On first call, ThreadpoolController() does not find all the windows conda-forge numpy
+        # libraries, so call it twice.
+        _ = ThreadpoolController()
+        ctrl = ThreadpoolController()
+
+    def initialiser():
+        """Thread-safe function to set per-thread limits."""
+        with lock:
+            ctrl.limit(limits=limits, user_api=user_api)
+
+    with ctrl.limit(limits=limits, user_api=user_api) as limiter:
+        limiter.initialiser = initialiser
+        yield limiter
