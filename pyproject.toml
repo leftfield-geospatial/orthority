@@ -5,7 +5,7 @@ readme = 'README.rst'
 requires-python = '>=3.10'
 dependencies = [
     'rasterio>=1.5',
-    'opencv-python>=4.8',
+    'opencv-python>=4.8,<5',
     'pyyaml>=5',
     'click>=8.3',
     'tqdm>=4',
