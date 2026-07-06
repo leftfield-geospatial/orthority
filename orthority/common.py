@@ -621,20 +621,34 @@ def limit_blas_omp_threads(limits=None, user_api=None):
 
     Based on https://github.com/joblib/threadpoolctl/issues/208#issuecomment-4745983423.
     """
-    lock = threading.Lock()
+    # force NumPy's BLAS to load its OpenMP DLL(s) so these can be found by threadpoolctl (for
+    # conda-forge NumPy on Windows)
+    a = np.ones((3, 3))
+    np.dot(a, a)
+
     with warnings.catch_warnings():
-        # The windows conda-forge numpy package loads multiple OpenMP libraries. Ignore the
-        # threadpoolctl warning about this.
+        # ignore the threadpoolctl warning about
+        # https://github.com/conda-forge/blas-feedstock/issues/170
         warnings.filterwarnings(
             'ignore',
             message=r'\sFound Intel OpenMP',
             category=RuntimeWarning,
             module='threadpoolctl',
         )
-        # On first call, ThreadpoolController() does not find all the windows conda-forge numpy
-        # libraries, so call it twice.
-        _ = ThreadpoolController()
-        ctrl = ThreadpoolController()
+
+        # create a ThreadpoolController, with retries to work around
+        # https://github.com/joblib/threadpoolctl/issues/217
+        max_retries = 10
+        for retry in range(max_retries + 1):
+            try:
+                ctrl = ThreadpoolController()
+                break
+            except OSError as ex:
+                if 'GetModuleFileNameEx failed' not in str(ex) or retry == max_retries:
+                    raise
+                continue
+
+    lock = threading.Lock()
 
     def initialiser():
         """Thread-safe function to set per-thread limits."""
