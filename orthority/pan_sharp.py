@@ -19,11 +19,12 @@ from __future__ import annotations
 import logging
 import os
 import warnings
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from os import PathLike
 from threading import Lock
-from typing import Sequence
+from typing import Any, ClassVar
 
 import numpy as np
 import rasterio as rio
@@ -65,7 +66,9 @@ class PanSharpen:
     _working_nodata = common._nodata_vals[_working_dtype]
 
     # default algorithm configuration values for PanSharpen.process()
-    _default_alg_config = dict(ms_indexes=None, pan_index=1, weights=None, interp=Interp.cubic)
+    _default_alg_config: ClassVar[dict[str, Any]] = dict(
+        ms_indexes=None, pan_index=1, weights=None, interp=Interp.cubic
+    )
 
     def __init__(
         self,
@@ -103,6 +106,7 @@ class PanSharpen:
                     'Multispectral image is not georeferenced with a CRS and affine transform - '
                     'assuming its CRS and bounds match the pan image.',
                     category=OrthorityWarning,
+                    stacklevel=2,
                 )
                 # create a custom MS transform that matches MS to pan bounds
                 ms_scale = np.array(pan_ds.shape[::-1]) / ms_ds.shape[::-1]
@@ -117,6 +121,7 @@ class PanSharpen:
                     'Pan image is not georeferenced with a CRS and affine transform - assuming '
                     'its CRS and bounds match the multispectral image.',
                     category=OrthorityWarning,
+                    stacklevel=2,
                 )
                 # create a custom pan transform that matches pan to MS bounds
                 pan_scale = np.array(ms_ds.shape[::-1]) / pan_ds.shape[::-1]
@@ -279,11 +284,15 @@ class PanSharpen:
             )
             ms_im = ex_stack.enter_context(WarpedVRT(ms_im, **self._profiles['ms_to_ms']))
 
-            # find tile stats in a thread pool and aggregate
+            # find tile stats in a thread pool and aggregate (with each pool thread's BLAS /
+            # OpenMP pools limited to 1 thread)
             n = 0
             means = np.zeros(len(ms_indexes) + 1, dtype=self._working_dtype)
             prod = np.zeros((len(ms_indexes) + 1,) * 2, dtype=self._working_dtype)
-            executor = ex_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
+            limiter = ex_stack.enter_context(common.limit_blas_omp_threads(limits=1))
+            executor = ex_stack.enter_context(
+                ThreadPoolExecutor(max_workers=os.cpu_count(), initializer=limiter.initialiser)
+            )
             futures = [
                 executor.submit(get_tile_stats, pan_im, ms_im, ms_indexes, tile_win)
                 for tile_win in common.block_windows(ms_im, block_shape=(512, 1024))
@@ -293,7 +302,7 @@ class PanSharpen:
                 try:
                     tile_n, tile_mean, tile_prod = future.result()
                 except Exception as ex:
-                    executor.shutdown(wait=False)
+                    executor.shutdown(wait=False, cancel_futures=True)
                     raise RuntimeError('Could not get tile statistics.') from ex
 
                 if tile_n > 0:
@@ -313,7 +322,7 @@ class PanSharpen:
         """Return the Gram-Schmidt pan-sharpening parameters for the given pan / MS means &
         covariances, and optional MS to pan weights.  If MS to pan weights are not provided,
         they are estimated from the data.  Uses the "How to Pan-sharpen Images Using the
-        Gram-Schmidt Pan-sharpen Method – A Recipe" method described in
+        Gram-Schmidt Pan-sharpen Method - A Recipe" method described in
         https://doi.org/10.5194/isprsarchives-XL-1-W1-239-2013.
         """
 
@@ -332,6 +341,7 @@ class PanSharpen:
                         f'Weights contain negative value(s): {tuple(weights.round(4).tolist())}, '
                         f're-estimating positive weights.',
                         category=OrthorityWarning,
+                        stacklevel=2,
                     )
                     ms_indexes_ = np.where(weights > 0)[0] + 1
                     ms_cov = cov[ms_indexes_, :][:, ms_indexes_]
@@ -352,6 +362,7 @@ class PanSharpen:
                     f'Weights contain negative value(s): {tuple(weights.round(4).tolist())}, '
                     f'setting to zero and normalising.',
                     category=OrthorityWarning,
+                    stacklevel=2,
                 )
                 weights = weights.clip(0, None)
             return weights / weights.sum()
@@ -371,11 +382,11 @@ class PanSharpen:
                     a[k] = e[k - 1] - np.dot(coeffs[k - 1], a[:k])
 
                 # eq 3 from paper
-                for l in range(k + 1):
-                    num = a[l].dot(cov[k])
-                    den = (a[l].reshape(-1, 1).dot(a[l].reshape(1, -1)) * cov).sum()
+                for L in range(k + 1):
+                    num = a[L].dot(cov[k])
+                    den = (a[L].reshape(-1, 1).dot(a[L].reshape(1, -1)) * cov).sum()
                     # the 'if' below avoids dividing by zero with canonical weight vectors
-                    coeffs[k][l] = num / den if np.any(a[l] != 0) else 0
+                    coeffs[k][L] = num / den if np.any(a[L] != 0) else 0
 
             return coeffs
 
@@ -410,7 +421,7 @@ class PanSharpen:
         if logger.getEffectiveLevel() <= logging.DEBUG:
             logger.debug(f"Pan / multispectral means: {means.round(4)}.")
             logger.debug(f"Pan / multispectral covariance: \n{cov.round(4)}.")
-            logger.debug(f"Multispectral to pan weights: {weights.round(4).tolist()}.")
+            logger.debug(f"Multispectral to pan weights: {weights.round(4)}.")
             coeffs_str = '\n'.join([str(c.round(4).tolist()) for c in coeffs])
             logger.debug(f"Gram-Schmidt coefficients: \n{coeffs_str}")
             logger.debug(f"Simulated pan gain: {gain:.4f}, bias: {bias:.4f}.")
@@ -639,8 +650,12 @@ class PanSharpen:
                 WarpedVRT(ms_im, **self._profiles['ms_to_pan'], resampling=interp),
             )
 
-            # pan-sharpen tiles in a thread pool
-            executor = exit_stack.enter_context(ThreadPoolExecutor(max_workers=os.cpu_count()))
+            # pan-sharpen tiles in a thread pool (with each pool thread's BLAS / OpenMP pools
+            # limited to 1 thread)
+            limiter = exit_stack.enter_context(common.limit_blas_omp_threads(limits=1))
+            executor = exit_stack.enter_context(
+                ThreadPoolExecutor(max_workers=os.cpu_count(), initializer=limiter.initialiser)
+            )
             futures = [
                 executor.submit(
                     self._process_tile,
@@ -659,13 +674,11 @@ class PanSharpen:
             ]
 
             pbar = exit_stack.enter_context(tqdm(**progress[1], total=len(futures)))
-            for future in futures:
+            for future in as_completed(futures):
                 try:
                     future.result()
                 except Exception as ex:
-                    # TODO: add cancel_futures=True to all thread pool shutdowns when supported py
-                    #  versions are > 3.8
-                    executor.shutdown(wait=False)
+                    executor.shutdown(wait=False, cancel_futures=True)
                     raise RuntimeError('Could not process tile.') from ex
                 pbar.update()
             pbar.refresh()
