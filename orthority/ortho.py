@@ -22,9 +22,10 @@ import os
 import threading
 import warnings
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from os import PathLike
+from typing import Any, ClassVar
 
 import cv2
 import numpy as np
@@ -71,13 +72,13 @@ class Ortho:
     """
 
     # default algorithm configuration values for Ortho.process()
-    _default_alg_config = dict(
+    _default_alg_config: ClassVar[dict[str, Any]] = dict(
         dem_band=1, resolution=None, interp=Interp.cubic, dem_interp=Interp.cubic, per_band=False
     )
 
     # EGM96/EGM2008 geoid altitude range i.e. minimum and maximum possible vertical difference with
     # the WGS84 ellipsoid (meters)
-    _egm_minmax = [-106.71, 82.28]
+    _egm_minmax = (-106.71, 82.28)
 
     # Maximum possible ellipsoidal height i.e. approx. that of Everest (meters)
     _z_max = 8850.0
@@ -167,7 +168,9 @@ class Ortho:
                 try:
                     dem_win = dem_full_win.intersection(dem_win)
                 except rio.errors.WindowError:
-                    raise OrthorityError(f"Ortho for '{self._src_name}' lies outside the DEM.")
+                    raise OrthorityError(
+                        f"Ortho for '{self._src_name}' lies outside the DEM."
+                    ) from None
                 return common.expand_window_to_grid(dem_win)
 
             # get a dem window containing the ortho bounds at min & max possible altitude
@@ -200,9 +203,14 @@ class Ortho:
             ]
             dem_transform = dem_im.window_transform(dem_win)
 
-            # cast dem_array to float32 and set nodata to nan (to persist masking through cv2.remap)
-            dem_array = dem_array.astype('float32', copy=False).filled(np.nan)
-            return dem_array, dem_transform, dem_im.crs
+            # copy the cropped view so the outer portion is not kept in memory
+            dem_array_copy = dem_array.data.astype('float32', copy=True)
+
+            # set nodata to nan if necessary
+            if not np.isnan(dem_array.fill_value):
+                dem_array_copy[dem_array.mask] = np.nan
+
+            return dem_array_copy, dem_transform, dem_im.crs
 
     def _get_gsd(self) -> float:
         """Return a GSD estimate in units of the world / ortho CRS, that gives approx as many valid
@@ -242,7 +250,7 @@ class Ortho:
         """
         # return if dem in world / ortho crs and ortho resolution
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
-        if (self._dem_crs == self._crs) and np.all(resolution == dem_res):
+        if np.all(resolution == dem_res) and (self._dem_crs == self._crs):
             return self._dem_array.copy(), self._dem_transform
 
         # error check resolution
@@ -268,8 +276,6 @@ class Ortho:
         #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
         #  bounds so am leaving as is for now.
         # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
-        # TODO: if possible, read (,mask) and reproject the dem from dataset in blocks as the ortho
-        #  is written.  or read the dem and src image in parallel, avoiding masked reads
 
         # reproject dem_array to world / ortho crs and ortho resolution
         dem_array, dem_transform = reproject(
@@ -326,6 +332,7 @@ class Ortho:
             warnings.warn(
                 f"Ortho for '{self._src_name}' is not fully covered by the DEM.",
                 category=OrthorityWarning,
+                stacklevel=2,
             )
 
         if crop:
@@ -425,24 +432,22 @@ class Ortho:
         center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
         init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
 
-        # create list of band indexes to read, remap & write all bands at once (per_band==False),
-        # or per-band (per_band==True)
+        # create a list of source band indexes to be read and processed together
         if per_band:
             index_list = [[i] for i in range(1, src_im.count + 1)]
         else:
             index_list = [[*range(1, src_im.count + 1)]]
 
-        # create a list of ortho tile windows (assumes all bands configured to same tile shape)
+        # create a list of ortho tile windows
         tile_wins = [*common.block_windows(ortho_im)]
         progress.total = len(tile_wins) * len(index_list)
 
         # TODO: Memory increases ~linearly with number of threads, but does processing speed?
         #  Make number of threads configurable and place a limit on the default value
-        with ThreadPoolExecutor(max_workers=os.cpu_count()) as executor:
-            # read, process and write bands, one row of indexes at a time
+        with ExitStack() as stack:
+            # read, process and write bands, one nested list of indexes at a time
             for indexes in index_list:
-                # read source, and optionally undistort, image band(s) (ortho dtype is
-                # required for cv2.remap() to set invalid ortho areas to ortho nodata value)
+                # read source band(s)
                 dtype_nodata = common._nodata_vals[ortho_im.profile['dtype']]
                 src_array = self._camera.read(
                     src_im,
@@ -452,9 +457,13 @@ class Ortho:
                     interp=interp,
                 )
 
-                # remap ortho tiles concurrently (tiles are written as they are completed in a
-                # possibly non-sequential order, this saves queueing up completed tiles in
-                # memory, and is much the same speed as sequential writes)
+                # remap & write ortho tiles in a thread pool (with each pool thread's OpenCV
+                # calcs and BLAS / OpenMP pools limited to 1 thread)
+                stack.enter_context(common.limit_cv_threads(1))
+                limiter = stack.enter_context(common.limit_blas_omp_threads(limits=1))
+                executor = stack.enter_context(
+                    ThreadPoolExecutor(max_workers=os.cpu_count(), initializer=limiter.initialiser)
+                )
                 futures = [
                     executor.submit(
                         self._remap_tile,
@@ -470,13 +479,11 @@ class Ortho:
                     )
                     for tile_win in tile_wins
                 ]
-                for future in futures:
+                for future in as_completed(futures):
                     try:
                         future.result()
                     except Exception as ex:
-                        # TODO: add cancel_futures=True here and in all executors when min
-                        #  supported python >= 3.9
-                        executor.shutdown(wait=False)
+                        executor.shutdown(wait=False, cancel_futures=True)
                         raise RuntimeError('Could not remap tile.') from ex
                     progress.update()
                 progress.refresh()
@@ -555,8 +562,7 @@ class Ortho:
         # TODO: clarify creation_options docstring - see issue #23.  it should say driver
         #  specific.  and perhaps we can allow other drivers, but then there are no defaults and
         #  its up to the user to supply creation_options
-        exit_stack = ExitStack()
-        with exit_stack:
+        with ExitStack() as exit_stack:
             # create the progress bar
             if progress is True:
                 progress = common.get_tqdm_kwargs(unit='blocks')
@@ -583,7 +589,8 @@ class Ortho:
             if src_im.shape[::-1] != self._camera.im_size:
                 warnings.warn(
                     f"Source image '{self._src_name}' size: {src_im.shape[::-1]} does not "
-                    f"match camera image size: {self._camera.im_size}."
+                    f"match camera image size: {self._camera.im_size}.",
+                    stacklevel=2,
                 )
 
             # get dem array covering ortho extents in world / ortho crs and ortho resolution
@@ -626,6 +633,3 @@ class Ortho:
 
             if build_ovw:
                 common.build_overviews(ortho_im)
-
-
-##
