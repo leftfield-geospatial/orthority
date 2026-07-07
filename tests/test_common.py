@@ -15,15 +15,18 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
 
+import cv2
 import fsspec
 import numpy as np
 import pytest
 import rasterio as rio
-from rasterio.enums import PhotometricInterp, MaskFlags
+from rasterio.enums import MaskFlags, PhotometricInterp
+from threadpoolctl import threadpool_limits
 
 from orthority import common
 from orthority.enums import Compress, Driver
@@ -688,3 +691,42 @@ def test_block_windows(ms_float_src_file):
         ref_block_wins = [win for _, win in im.block_windows(1)]
 
     assert test_block_wins == ref_block_wins
+
+
+def test_limit_cv_threads():
+    """Test ``limit_cv_threads()``."""
+    start_limit = cv2.getNumThreads()
+    limit = 1 if start_limit > 1 else 2
+    with common.limit_cv_threads(limit):
+        assert cv2.getNumThreads() == limit
+    assert cv2.getNumThreads() == start_limit
+
+
+def test_limit_blas_omp_threads():
+    """Test ``limit_blas_omp_threads()``."""
+    import numpy  # ensure numpy is imported  # noqa: F401
+
+    # get starting info (avoiding known issues)
+    with common.limit_blas_omp_threads() as limiter:
+        start_info = limiter._controller.info()
+
+    # test limits are set correctly inside the context
+    limits = 1  # assumes the limits are not 1 already
+    with common.limit_blas_omp_threads(limits=limits) as limiter:
+        info = limiter._controller.info()
+        assert len(info) > 1
+        assert all(i['num_threads'] == limits for i in info)
+        os.cpu_count()
+
+    # test limits revert to their starting values
+    assert limiter._controller.info() == start_info
+
+    try:
+        # test thread initialiser sets limits correctly
+        limiter.initialiser()
+        info = limiter._controller.info()
+        assert len(info) > 1
+        assert all(i['num_threads'] == limits for i in info)
+    finally:
+        # revert to starting values
+        threadpool_limits(start_info)
