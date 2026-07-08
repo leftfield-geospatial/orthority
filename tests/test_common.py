@@ -694,15 +694,11 @@ def test_block_windows(ms_float_src_file):
     assert test_block_wins == ref_block_wins
 
 
-# @pytest.mark.skipif(
-#     sys.platform == 'darwin', reason="Unsupported"
-# )  # https://github.com/opencv/opencv/issues/23091
+# both PyPI and conda-forge OpenCV packages for macOS are built with GCD which is not supported by
+# cv2.setNumThreads() (see https://github.com/opencv/opencv/issues/23091)
+@pytest.mark.skipif(sys.platform == 'darwin', reason='Not supported')
 def test_limit_cv_threads():
     """Test ``limit_cv_threads()``."""
-    # TODO: macos gcd does not support cv2.setNumThreads():
-    #  https://github.com/opencv/opencv/issues/23091.  both pypi and conda-forge macos opencv
-    #  packages seem to be using gcd. can we test for gcd specifically or just macos?
-    print(cv2.getBuildInformation())
     start_limit = cv2.getNumThreads()
     limit = 1 if start_limit > 1 else 2
     with common.limit_cv_threads(limit):
@@ -710,18 +706,12 @@ def test_limit_cv_threads():
     assert cv2.getNumThreads() == start_limit
 
 
-# @pytest.mark.skipif(
-#     sys.platform == 'darwin', reason="Unsupported"
-# )  # https://github.com/joblib/threadpoolctl/issues/135
+# the PyPI NumPy package for macOS uses Accelerate which is not supported by threadpoolctl
+# (see https://github.com/joblib/threadpoolctl/issues/135)
+@pytest.mark.skipif(sys.platform == 'darwin', reason="Not supported")
 def test_limit_blas_omp_threads():
     """Test ``limit_blas_omp_threads()``."""
     import numpy as np  # ensure numpy is imported  # noqa: F401
-
-    # TODO: pypi's macos numpy's blas uses 'accelerate', which is not detected by threadpoolctl:
-    #  https://github.com/joblib/threadpoolctl/issues/135.  while accelerate is not the default
-    #  blas for conda-forge's numpy, that could change, and users could also install the accelerate
-    #  blas in place of the default)
-    print(np.show_config())
 
     # get starting info (avoiding known issues)
     with common.limit_blas_omp_threads() as limiter:
@@ -739,7 +729,7 @@ def test_limit_blas_omp_threads():
     assert limiter._controller.info() == start_info
 
     try:
-        # test thread initialiser sets limits correctly
+        # test thread initialiser() sets limits correctly
         limiter.initialiser()
         info = limiter._controller.info()
         assert len(info) >= 1
