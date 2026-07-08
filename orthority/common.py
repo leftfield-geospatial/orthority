@@ -603,6 +603,18 @@ def block_windows(
 def limit_cv_threads(num_threads: int):
     """Context manager to limit the number of OpenCV threads process-wide.  Not thread-safe."""
     curr_num_threads = cv2.getNumThreads()
+
+    # cv2.setNumThreads() has no effect when OpenCV is built with Apple's GCD (see
+    # https://github.com/opencv/opencv/issues/23091)
+    limit = 1 if curr_num_threads != 1 else 2
+    cv2.setNumThreads(limit)
+    if cv2.getNumThreads() != limit:
+        warnings.warn(
+            'Not limiting OpenCV threads - not supported on this build.',
+            category=OrthorityWarning,
+            stacklevel=2,
+        )
+
     cv2.setNumThreads(num_threads)
     try:
         yield
@@ -648,6 +660,15 @@ def limit_blas_omp_threads(limits=None, user_api=None):
                     raise
                 continue
 
+    # threadpoolctl does not support Apple's Accelerate BLAS library (see
+    # https://github.com/joblib/threadpoolctl/issues/135)
+    if len(ctrl.info()) == 0:
+        warnings.warn(
+            'Not limiting BLAS / OpenMP threads - no supported libraries found.',
+            category=OrthorityWarning,
+            stacklevel=2,
+        )
+
     lock = threading.Lock()
 
     def initialiser():
@@ -658,3 +679,4 @@ def limit_blas_omp_threads(limits=None, user_api=None):
     with ctrl.limit(limits=limits, user_api=user_api) as limiter:
         limiter.initialiser = initialiser
         yield limiter
+    pass
