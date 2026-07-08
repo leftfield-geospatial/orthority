@@ -35,7 +35,7 @@ jobs:
       - name: Install dependencies
         run: |
           conda info
-          conda install -c conda-forge rasterio "opencv <5 headless*" numpy click tqdm pyyaml fsspec requests aiohttp threadpoolctl pytest pytest-cov
+          conda install -c conda-forge rasterio "opencv <5" numpy click tqdm pyyaml fsspec requests aiohttp threadpoolctl pytest pytest-cov
           conda list
 
       - name: Install OpenCV Linux dependencies
