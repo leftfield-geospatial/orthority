@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4  # for the test data
+        uses: actions/checkout@v7  # for the test data
 
       - name: Set up conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           python-version: ${{ matrix.python-version }}
           channels: conda-forge
@@ -30,7 +30,7 @@ jobs:
       - name: Install package
         run: |
           conda info
-          conda install orthority>=0.6.1
+          conda install -q orthority>=0.6.1
           conda list
 
       - name: Install OpenCV Linux dependencies
