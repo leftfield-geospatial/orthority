@@ -17,21 +17,24 @@
 
 from __future__ import annotations
 
-import cProfile
 import logging
 import os
 import posixpath
-import pstats
+import subprocess
 import threading
-import tracemalloc
+import time
 import warnings
-from collections.abc import Generator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from contextlib import ExitStack, contextmanager
+from datetime import datetime
+from inspect import getsourcefile
 from io import IOBase
 from itertools import product
+from multiprocessing import Process
 from os import PathLike
 from pathlib import Path
-from typing import IO
+from threading import Thread
+from typing import IO, Any
 
 import cv2
 import fsspec
@@ -39,6 +42,9 @@ import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
 from rasterio.enums import Resampling
+from tqdm.auto import tqdm
+
+from orthority import version
 
 try:
     from fsspec.implementations.http import HTTPFileSystem
@@ -60,7 +66,7 @@ logger = logging.getLogger(__name__)
 _nodata_vals = dict(
     uint8=0, uint16=0, int16=np.iinfo('int16').min, float32=float('nan'), float64=float('nan')
 )
-"""Nodata values for supported dtypes.  OpenCV remap doesn't support int8 or uint32, 
+"""Nodata values for supported dtypes.  OpenCV remap doesn't support int8 or uint32,
 and only supports int32, uint64, int64 with nearest interpolation, so these dtypes are excluded.
 """
 
@@ -72,7 +78,7 @@ _default_out_config = dict(
 
 @contextmanager
 def suppress_no_georef():
-    """Context manager to suppress rasterio's NotGeoreferencedWarning."""
+    """Context manager to suppress Rasterio's NotGeoreferencedWarning."""
     # TODO: warnings.catch_warnings is not thread-safe and warnings.simplefilter should rather be
     #  called once in cli.  consider what this does to API doc examples though - perhaps it can
     #  go in __init__.py.
@@ -143,31 +149,6 @@ def distort_image(camera, image: np.ndarray, nodata=0, interp=Interp.nearest) ->
     return dist_image
 
 
-@contextmanager
-def profiler():
-    """Context manager for profiling in DEBUG log level."""
-    if logger.getEffectiveLevel() <= logging.DEBUG:
-        proc_profile = cProfile.Profile()
-        tracemalloc.start()
-        proc_profile.enable()
-
-        yield
-
-        proc_profile.disable()
-        # tottime is the total time spent in the function alone. cumtime is the total time spent
-        # in the function plus all functions that this function called
-        proc_stats = pstats.Stats(proc_profile).sort_stats('cumtime')
-        logger.debug('Processing times:')
-        proc_stats.print_stats(20)
-        current, peak = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-        logger.debug(
-            f"Memory usage: current: {current / 10**6:.1f} MB, peak: {peak / 10**6:.1f} MB"
-        )
-    else:
-        yield
-
-
 def utm_crs_from_latlon(lat: float, lon: float) -> CRS:
     """Return a 2D rasterio UTM CRS for the given (lat, lon) coordinates in degrees."""
     # adapted from https://gis.stackexchange.com/questions/269518/auto-select-suitable-utm-zone-based-on-grid-intersection
@@ -185,7 +166,7 @@ def validate_collection(schema: dict | list, coll: dict | list):
     ``schema`` dict, if it has one item with a type key.  Otherwise, ``coll`` items are validated
     against the same key ``schema`` item.
     - All items in a ``coll`` list are validated against the first item in the corresponding
-    ``schema`` list, if it has one item.  Otherwise ``coll`` items are validated against
+    ``schema`` list, if it has one item.  Otherwise, ``coll`` items are validated against
     corresponding ``schema`` items.
     - ``coll`` values are not validated against corresponding None values in ``schema``.
     """
@@ -193,7 +174,7 @@ def validate_collection(schema: dict | list, coll: dict | list):
     #  -schema-of-dictionary-in-python
     if isinstance(schema, dict) and isinstance(coll, dict):
         # schema is a dict
-        first_key = [*schema][0]
+        first_key = next(iter(schema))
         if len(schema) == 1 and isinstance(first_key, type):
             for k in coll:
                 if not isinstance(k, first_key):
@@ -213,7 +194,7 @@ def validate_collection(schema: dict | list, coll: dict | list):
         else:
             if len(coll) != len(schema):
                 raise ValueError(f'{coll} should have {len(schema)} items.')
-            for template_item, coll_item in zip(schema, coll):
+            for template_item, coll_item in zip(schema, coll, strict=True):
                 validate_collection(template_item, coll_item)
     elif isinstance(schema, type):
         # schema is a type
@@ -252,7 +233,9 @@ def get_filename(file: str | PathLike | OpenFile | DatasetReaderBase | IO) -> st
     return filename
 
 
-def join_ofile(base: str | PathLike | OpenFile, rel: str, mode: str = None, **kwargs) -> OpenFile:
+def join_ofile(
+    base: str | PathLike | OpenFile, rel: str, mode: str | None = None, **kwargs
+) -> OpenFile:
     """Return an fsspec OpenFile whose path is a join of the ``base`` path with the ``rel`` path."""
     if not isinstance(base, OpenFile):
         base = fsspec.open(os.fspath(base), mode or 'rt')
@@ -336,7 +319,7 @@ class OpenRaster:
                 except RasterioIOError as ex:
                     ex_str = str(ex)
                     if 'no such file or directory' in ex_str.lower():
-                        raise FileNotFoundError(ex_str)
+                        raise FileNotFoundError(ex_str) from ex
                     else:
                         raise
             else:
@@ -476,6 +459,7 @@ def create_profile(
                         'Attempting a 12 bit JPEG ortho configuration.  Support is rasterio build '
                         'dependent.',
                         category=OrthorityWarning,
+                        stacklevel=2,
                     )
                     profile.update(nbits=12)
                 elif dtype != 'uint8':
@@ -680,3 +664,146 @@ def limit_blas_omp_threads(limits=None, user_api=None):
         limiter.initialiser = initialiser
         yield limiter
     pass
+
+
+def _bench_func(
+    func: Callable,
+    name: str | None = None,
+    loops: int = 1,
+    filter_callback: Callable[[Any], bool] | None = None,
+    write_pstat: bool = False,
+) -> None:
+    """Report ``func()`` system utilisation and profile."""
+    try:
+        import psutil
+    except ImportError as ex:
+        raise ImportError("'psutil' is required for benchmarking.") from ex
+    try:
+        import yappi
+    except ImportError as ex:
+        raise ImportError("'yappi' is required for benchmarking.") from ex
+
+    proc = psutil.Process()
+    proc.nice(psutil.HIGH_PRIORITY_CLASS)
+    dt = datetime.now()
+    yappi.set_clock_type('wall')
+    wall_times, cpu_times = [], []
+    for _ in range(loops):
+        func_gen = func()
+        next(func_gen)  # setup
+        yappi.start()
+        # note that time.process_time() has a resolution of 16ms on Windows, so cpu_time should
+        # be >> 16ms for it to be accurate
+        wall_start, cpu_start = time.perf_counter(), time.process_time()
+        try:
+            next(func_gen)  # benchmark
+            wall_end, cpu_end = time.perf_counter(), time.process_time()
+        finally:
+            yappi.stop()
+        try:
+            next(func_gen)  # teardown
+        except StopIteration:
+            pass
+        wall_times.append(wall_end - wall_start)
+        cpu_times.append(cpu_end - cpu_start)
+
+    mem_info = proc.memory_full_info()
+    io_info = proc.io_counters()
+    proc.threads()
+    func_stats = yappi.get_func_stats(filter_callback=filter_callback)
+    func_stats = func_stats.strip_dirs().sort('ttot', 'desc')
+    name = name or func.__name__
+    ttl_cpu_times = sum(cpu_times)
+    ttl_wall_times = sum(wall_times)
+
+    print('BENCHMARK\n---------')
+    print(f'Name: {name}')
+    print(f'Computer: {os.getenv("COMPUTERNAME")}')
+    print(f'Date: {dt.strftime("%Y-%m-%d %H:%M:%S")}')
+    print(f'Loops: {loops}')
+
+    print('\nPERFORMANCE')
+    print(f'Mean (std) wall time: {np.mean(wall_times):.6f}s ({np.std(wall_times):.6f}s)')
+    print(f'Mean (std) CPU time: {np.mean(cpu_times):.6f}s ({np.std(cpu_times):.6f}s)')
+    print(f'CPU usage: {(100 / os.cpu_count()) * (ttl_cpu_times / ttl_wall_times):.2f}%')
+
+    print('\nMEMORY')
+    print(f'Peak RSS: {tqdm.format_sizeof(mem_info.peak_wset, suffix="B")}')
+    print(f'Current RSS: {tqdm.format_sizeof(mem_info.rss, suffix="B")}')
+    # TODO: report by major/minor page fault type with p.page_faults() when psutil updates to v8
+    print(
+        f'Page faults / sec: '
+        f'{mem_info.num_page_faults / (1e-9 if ttl_cpu_times == 0 else ttl_cpu_times):.2f}'
+    )
+
+    print('\nIO')
+    print(f'Read count: {io_info.read_count}')
+    print(f'Read bytes: {tqdm.format_sizeof(io_info.read_bytes, suffix="B")}')
+    print(f'Write count: {io_info.write_count}')
+    print(f'Write bytes: {tqdm.format_sizeof(io_info.write_bytes, suffix="B")}')
+
+    print('\nTHREADS')
+    print(f'Num threads: {proc.num_threads()}')
+
+    print('\nPROFILE', end='')
+    func_stats.print_all()
+    print('\n', flush=True)
+
+    if write_pstat:
+        bench_path = Path(getsourcefile(bench_func)).parent
+        yappi.get_func_stats().save(bench_path.joinpath(f'{name.lower()}.pstat'), type='pstat')
+    yappi.clear_stats()
+
+
+def bench_func(
+    func: Generator,
+    name: str | None = None,
+    loops: int = 1,
+    filter_callback: Callable[[Any], bool] | None = None,
+    write_pstat: bool = False,
+    container: type[Process | Thread] = Process,
+) -> None:
+    """
+    Report ``func()`` system utilisation and profile.
+
+    :param func:
+        A generator that performs any setup, yields, runs the code to benchmark, yields, then
+        performs any teardown.
+    :param name:
+        Benchmark name.  Defaults to the ``func`` name.
+    :param loops:
+        Number of times to run ``func``.  Wall and CPU times are reported as the mean and standard
+        deviation over the runs.
+    :param filter_callback:
+        A Yappi callback to `filter profiling results
+        <https://github.com/sumerc/yappi#different-ways-to-filtersort-stats>`__.
+    :param write_pstat:
+        Whether to write profiling results to a pstat format file with path
+        :file:`{parent of source file containing func()}/{benchmark name}.pstat`
+    :param container:
+        Type of 'container' in which to run the benchmark.  By default ``Process`` is used to
+        separate benchmark memory utilisation from the caller.
+    """
+    c = container(
+        target=_bench_func,
+        args=(func,),
+        kwargs=dict(
+            name=name,
+            loops=loops,
+            filter_callback=filter_callback,
+            write_pstat=write_pstat,
+        ),
+    )
+    c.start()
+    c.join()
+
+
+def run_benchmarks(params: Sequence[dict[str, Any]]) -> None:
+    """Run benchmarks defined by a sequence of ``bench_func()`` parameter dictionaries."""
+    print(f'Orthority version: {version.__version__}')
+    # from https://stackoverflow.com/a/21901260
+    git_rev = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'])
+    git_rev = git_rev.decode('utf8').strip()
+    print(f'Current git commit: {git_rev}\n', flush=True)
+    for param in params:
+        bench_func(**param)
