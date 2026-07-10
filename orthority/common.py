@@ -750,7 +750,7 @@ def _bench_func(
     print('\n', flush=True)
 
     if write_pstat:
-        bench_path = Path(getsourcefile(bench_func)).parent
+        bench_path = Path(getsourcefile(func)).parent
         yappi.get_func_stats().save(bench_path.joinpath(f'{name.lower()}.pstat'), type='pstat')
     yappi.clear_stats()
 
