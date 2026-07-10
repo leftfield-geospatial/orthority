@@ -1,25 +1,19 @@
 """Performance and memory benchmarking."""
 
 import functools
-import os
 import subprocess
 import sys
-import time
-from collections.abc import Callable, Generator, Sequence
-from datetime import datetime
+from collections.abc import Sequence
 from inspect import getsourcefile
-from multiprocessing import Process
 from pathlib import Path
 from typing import Any
 
 import numpy as np
-import psutil
 import rasterio as rio
 import yappi
 from rasterio.windows import Window
-from tqdm import tqdm
 
-from orthority import cli, common, version
+from orthority import cli, common
 
 bench_path = Path(getsourcefile(lambda: None)).parent
 sys.path.append(bench_path.joinpath('../tests/data').absolute().as_posix())
@@ -31,7 +25,7 @@ ssd_src_path = Path('C:/Temp/Leftfield/test/orthority')
 src_path: Path = mag_src_path
 mag_out_path = Path('D:/Temp')
 out_path: Path = mag_out_path
-ortho_func_names = [
+common_ortho_func_names = [
     '_ortho',
     'Ortho._get_init_dem',
     'Ortho.process',
@@ -41,9 +35,9 @@ ortho_func_names = [
     'Ortho._remap_tile',
     'Ortho._read_remap_tile',
     'build_overviews',
-    'write_tile',
-    '_write_tile',
-    'im_read',
+    '_remap',
+    '_per_band_remap',
+    '_get_remap_slices',
 ]
 untiled_src_files = False
 
@@ -68,106 +62,6 @@ def _oty_cli(**kwargs) -> None:
     cli.cli.main(**kwargs)
 
 
-def _bench_func(
-    func: Callable,
-    name: str | None = None,
-    loops: int = 1,
-    filter_callback: Callable[[yappi.YFuncStat], bool] | None = None,
-    write_pstat: bool = False,
-):
-    """Report func() performance and memory usage."""
-    proc = psutil.Process()
-    proc.nice(psutil.HIGH_PRIORITY_CLASS)
-    dt = datetime.now()
-    yappi.set_clock_type('wall')
-    wall_times, cpu_times = [], []
-    for _ in range(loops):
-        func_gen = func()
-        next(func_gen)  # setup
-        yappi.start()
-        # note that time.process_time() has a resolution of 16ms on windows, so cpu_time should
-        # be >> 16ms for it to be accurate
-        wall_start, cpu_start = time.perf_counter(), time.process_time()
-        try:
-            next(func_gen)  # benchmark
-            wall_end, cpu_end = time.perf_counter(), time.process_time()
-        finally:
-            yappi.stop()
-        try:
-            next(func_gen)  # teardown
-        except StopIteration:
-            pass
-        wall_times.append(wall_end - wall_start)
-        cpu_times.append(cpu_end - cpu_start)
-
-    mem_info = proc.memory_full_info()
-    io_info = proc.io_counters()
-    func_stats = yappi.get_func_stats(filter_callback=filter_callback)
-    func_stats = func_stats.strip_dirs().sort('ttot', 'desc')
-    name = name or func.__name__
-    ttl_cpu_times = sum(cpu_times)
-    ttl_wall_times = sum(wall_times)
-
-    print('BENCHMARK\n---------')
-    print(f'Name: {name}')
-    print(f'Computer: {os.getenv("COMPUTERNAME")}')
-    print(f'Date: {dt.strftime("%Y-%m-%d %H:%M:%S")}')
-    print(f'Loops: {loops}')
-
-    print('\nPERFORMANCE')
-    print(f'Mean (std) wall time: {np.mean(wall_times):.4f}s ({np.std(wall_times):.4f}s)')
-    print(f'Mean (std) CPU time: {np.mean(cpu_times):.4f}s ({np.std(cpu_times):.4f}s)')
-    print(f'CPU usage: {(100 / os.cpu_count()) * (ttl_cpu_times / ttl_wall_times):.2f}%')
-
-    print('\nMEMORY')
-    print(f'Peak RSS: {tqdm.format_sizeof(mem_info.peak_wset, suffix="B")}')
-    print(f'Current RSS: {tqdm.format_sizeof(mem_info.rss, suffix="B")}')
-    # TODO: report by major/minor page fault type with p.page_faults() when psutil updates to v8
-    print(
-        f'Page faults / sec: '
-        f'{mem_info.num_page_faults / (1e-9 if ttl_cpu_times == 0 else ttl_cpu_times):.2f}'
-    )
-
-    print('\nIO')
-    print(f'Read count: {io_info.read_count}')
-    print(f'Read bytes: {tqdm.format_sizeof(io_info.read_bytes, suffix="B")}')
-    print(f'Write count: {io_info.write_count}')
-    print(f'Write bytes: {tqdm.format_sizeof(io_info.write_bytes, suffix="B")}')
-
-    print('\nPROFILE', end='')
-    func_stats.print_all()
-    print('\n', flush=True)
-
-    if write_pstat:
-        yappi.get_func_stats().save(out_path.joinpath(f'{name.lower()}.pstat'), type='pstat')
-    yappi.clear_stats()
-
-
-def bench_func(
-    func: Generator,
-    name: str | None = None,
-    loops: int = 1,
-    filter_callback: Callable[[yappi.YFuncStat], bool] | None = None,
-    write_pstat: bool = False,
-):
-    """Report func() performance and memory usage.  func() should be a generator that performs
-    any setup, yields, runs the code to benchmark, yields, then performs any teardown.
-    Benchmarking is run in a separate process to separate memory usage from the calling process.
-    """
-    proc = Process(
-        target=_bench_func,
-        args=(func,),
-        kwargs=dict(
-            name=name,
-            loops=loops,
-            filter_callback=filter_callback,
-            write_pstat=write_pstat,
-        ),
-    )
-    proc.start()
-    proc.join()
-
-
 def ngi_bench_func():
     """Benchmarking func() to orthorectify an NGI image."""
     ngi_path = src_path.joinpath('ngi')
@@ -179,7 +73,7 @@ def ngi_bench_func():
         im_file = ngi_path.joinpath('3324c_2015_1004_05_0182_RGBN.tif')
 
     cli_str = (
-        f'frame --dem {ngi_path.joinpath("x3324cb_2015_L3a.tif")} '
+        f'-v frame --dem {ngi_path.joinpath("x3324cb_2015_L3a.tif")} '
         f'--int-param {ngi_path.joinpath("int_param.yaml")} '
         f'--ext-param {ngi_path.joinpath("ext_param.csv")} -od {out_path} -o '
     )
@@ -196,12 +90,10 @@ def ngi_bench_func():
 def ngi_bench_params() -> dict[str, Any]:
     """Return bench_func() parameters to orthorectify an NGI image."""
     func_names = [
-        *ortho_func_names,
+        *common_ortho_func_names,
         'frame',
         'FrameCamera.read',
         'FrameCamera.remap',
-        'FrameCamera.read_remap',
-        'cv2_remap',
         'FrameCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
@@ -215,7 +107,7 @@ def odm_bench_func() -> dict[str, Any]:
     odm_path = src_path.joinpath('odm')
     im_file = odm_path.joinpath("images/100_0005_0140.JPG")
     cli_str = (
-        f'frame --dem {odm_path.joinpath("odm_dem/dsm.tif")} '
+        f'-v frame --dem {odm_path.joinpath("odm_dem/dsm.tif")} '
         f'--int-param {odm_path.joinpath("opensfm/reconstruction.json")} '
         f'--ext-param {odm_path.joinpath("opensfm/reconstruction.json")} -od {out_path} -o '
         f'{im_file}'
@@ -233,12 +125,10 @@ def odm_bench_func() -> dict[str, Any]:
 def odm_bench_params() -> dict[str, Any]:
     """Return bench_func() parameters to orthorectify a drone image."""
     func_names = [
-        *ortho_func_names,
+        *common_ortho_func_names,
         'frame',
         'BrownCamera.read',
         'BrownCamera.remap',
-        'BrownCamera.read_remap',
-        'cv2_remap',
         'BrownCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
@@ -283,7 +173,7 @@ def rpc_bench_func():
             with rio.open(crop_im_file, 'w', **profile) as dst_im:
                 dst_im.write(array)
 
-    cli_str = f'rpc --dem {src_path.joinpath("ngi/x3324cb_2015_L3a.tif")} -od {out_path} -o '
+    cli_str = f'-v rpc --dem {src_path.joinpath("ngi/x3324cb_2015_L3a.tif")} -od {out_path} -o '
     # purge cached disk reads etc
     _purge_ram()
     # delete any previous ortho file
@@ -296,12 +186,10 @@ def rpc_bench_func():
 def rpc_bench_params() -> dict[str, Any]:
     """Return bench_func() parameters to orthorectify a satellite image using RPC tags."""
     func_names = [
-        *ortho_func_names,
+        *common_ortho_func_names,
         'rpc',
         'RpcCamera.read',
         'RpcCamera.remap',
-        'RpcCamera.read_remap',
-        'cv2_remap',
         'RpcCamera.world_to_pixel',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
@@ -313,8 +201,9 @@ def rpc_bench_params() -> dict[str, Any]:
 def pan_sharp_bench_func() -> dict[str, Any]:
     """Benchmarking func() to pan sharpen simulated pan / MS drone images."""
     src_file = src_path.joinpath('odm/images/100_0005_0140.JPG')
-    ms_file = out_path.joinpath('ms.tif')
-    pan_file = out_path.joinpath('pan.tif')
+    postfix = '_untiled' if untiled_src_files else ''
+    ms_file = out_path.joinpath(f'ms{postfix}.tif')
+    pan_file = out_path.joinpath(f'pan{postfix}.tif')
 
     if not pan_file.exists() or not ms_file.exists():
         # convert RGB source image to pan
@@ -326,11 +215,18 @@ def pan_sharp_bench_func() -> dict[str, Any]:
                 'gtiff', pan_array.shape, pan_array.dtype, compress='deflate', write_mask=False
             )
             profile.update(nodata=None)
+
+            if untiled_src_files:
+                tile_kwargs = dict(tiled=False, blockxsize=None, blockysize=None)
+            else:
+                tile_kwargs = dict()
+            profile.update(**tile_kwargs)
+
             with rio.open(pan_file, 'w', **profile) as pan_im:
                 pan_im.write(pan_array)
 
             # downsample RGB source image to MS resolution
-            downsample_image(src_file, ms_file, ds_fact=4, compress='deflate')
+            downsample_image(src_file, ms_file, ds_fact=4, compress='deflate', **tile_kwargs)
 
     pan_sharp_file = out_path.joinpath("pan_sharp.tif")
     cli_str = f'sharpen -p {pan_file} -ms {ms_file} --compress deflate -of {pan_sharp_file} -o '
@@ -353,9 +249,6 @@ def pan_sharp_bench_params() -> dict[str, Any]:
         'PanSharpen._process_tile_array',
         'PanSharpen._process_tile',
         'PanSharpen.process',
-        'read_pan',
-        'read_ms',
-        'write_sharp',
     ]
     filter_callback = functools.partial(_yappi_filter_by_names, names=func_names)
     return dict(
@@ -367,17 +260,12 @@ def pan_sharp_bench_params() -> dict[str, Any]:
     )
 
 
-def run_benchmarks(params: Sequence[dict[str, Any]]) -> None:
-    """Run benchmarks defined by a sequence of bench_func() parameter dictionaries."""
-    print(f'Orthority version: {version.__version__}')
-    # from https://stackoverflow.com/a/21901260
-    git_rev = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'])
-    git_rev = git_rev.decode('utf8').strip()
-    print(f'Current git commit: {git_rev}\n', flush=True)
-    for param in params:
-        bench_func(**param)
-
-
 if __name__ == '__main__':
     params = [ngi_bench_params(), odm_bench_params(), rpc_bench_params(), pan_sharp_bench_params()]
-    run_benchmarks(params)
+    common.run_benchmarks(params)
+
+# TODO:
+#  - why does the RPC benchmark not have a higher CPU usage during remapping?
+#  - benchmark using numexpr for camera models
+#  - does limiting openmp threads affect rasterio write performance with conda-forge rasterio
+#  which uses vcomp?
