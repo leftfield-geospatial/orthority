@@ -1,4 +1,4 @@
-"""Functions to create NGI & ODM test data sets."""
+"""Functions to create test data."""
 
 from __future__ import annotations
 
@@ -85,6 +85,7 @@ def downsample_image(
             colorinterp=[src_im.colorinterp[ci - 1] for ci in src_indexes],
             nodata=nodata,
         )
+        profile.update(**kwargs)
 
         # scale and clip the image array
         if scale:
@@ -96,7 +97,7 @@ def downsample_image(
         array = array.astype(dtype, copy=False)
 
         # write destination file
-        with rio.open(dst_file, 'w', **profile, **kwargs) as dst_im:
+        with rio.open(dst_file, 'w', **profile) as dst_im:
             if copy_tags:
                 # copy metadata
                 dst_im.update_tags(**src_im.tags())
