@@ -111,11 +111,7 @@ class Exif:
 
     def __init__(self, file: str | PathLike | OpenFile | rio.DatasetReader):
         self._filename = common.get_filename(file)
-        with (
-            common.suppress_no_georef(),
-            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
-            common.OpenRaster(file, 'r') as ds,
-        ):
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(file, 'r') as ds:
             # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset
             # compared to ds.tags() with known ns=
             exif_dict = ds.tags()

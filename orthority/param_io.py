@@ -25,6 +25,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from csv import Dialect, DictReader, Sniffer
 from io import StringIO
 from os import PathLike
@@ -326,7 +327,8 @@ def read_exif_int_param(
         File to read.  Can be a path or URI string, an :class:`~fsspec.core.OpenFile` object in
         binary mode (``'rb'``), or a dataset reader.
     """
-    return _read_exif_int_param(Exif(file))
+    with common.suppress_no_georef():
+        return _read_exif_int_param(Exif(file))
 
 
 def read_im_rpc_param(
@@ -350,11 +352,7 @@ def read_im_rpc_param(
     ) -> dict[str, dict[str, Any]]:
         """Read RPC camera parameters from an image file."""
         filename = common.get_filename(file)
-        with (
-            common.suppress_no_georef(),
-            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
-            common.OpenRaster(file, 'r') as im,
-        ):
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(file, 'r') as im:
             # TODO: what is the speed of this for a large remote image?  does it just read the
             #  metadata, or the whole image?
             im_size = (im.width, im.height)
@@ -370,7 +368,9 @@ def read_im_rpc_param(
 
     # read RPC params in a thread pool, populating rpc_param_dict in same order as files
     rpc_param_dict = {}
-    with ThreadPoolExecutor() as executor:
+    with ExitStack() as exit_stack:
+        executor = exit_stack.enter_context(ThreadPoolExecutor())
+        exit_stack.enter_context(common.suppress_no_georef())
         futures = [executor.submit(_read_im_rpc_param, file) for file in files]
 
         # set up progress bar
@@ -467,11 +467,7 @@ def read_im_gcps(
     ) -> dict[str, dict[str, Any]]:
         """Read GCPs from an image file."""
         filename = common.get_filename(file)
-        with (
-            common.suppress_no_georef(),
-            rio.Env(GDAL_NUM_THREADS='ALL_CPUS'),
-            common.OpenRaster(file, 'r') as im,
-        ):
+        with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(file, 'r') as im:
             gcps, crs = im.gcps
 
         if gcps is None or len(gcps) == 0:
@@ -495,7 +491,10 @@ def read_im_gcps(
 
     # read GCPs in a thread pool, populating gcp_dict in same order as files
     gcp_dict = {}
-    with ThreadPoolExecutor() as executor:
+    with ExitStack() as exit_stack:
+        executor = exit_stack.enter_context(ThreadPoolExecutor())
+        exit_stack.enter_context(common.suppress_no_georef())
+
         futures = [executor.submit(_read_im_gcps, file) for file in files]
 
         # set up progress bar
@@ -1306,7 +1305,10 @@ class ExifReader(FrameReader):
         """Return a dictionary of Exif objects for the given images."""
         # read exif tags in thread pool, populating exif_dict in same order as files
         exif_dict = {}
-        with ThreadPoolExecutor() as executor:
+        with ExitStack() as exit_stack:
+            executor = exit_stack.enter_context(ThreadPoolExecutor())
+            exit_stack.enter_context(common.suppress_no_georef())
+
             futures = [executor.submit(Exif, file) for file in files]
 
             # set up progress bar
