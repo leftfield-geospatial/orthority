@@ -611,7 +611,13 @@ class PanSharpen:
             exit_stack.enter_context(common.suppress_no_georef())
 
             # open pan & MS images
-            exit_stack.enter_context(rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False))
+            exit_stack.enter_context(
+                rio.Env(
+                    GDAL_NUM_THREADS='ALL_CPUS',
+                    GTIFF_FORCE_RGBA=False,
+                    GDAL_TIFF_INTERNAL_MASK=True,
+                )
+            )
             pan_im = exit_stack.enter_context(common.OpenRaster(self._pan_file, 'r'))
             ms_im = exit_stack.enter_context(common.OpenRaster(self._ms_file, 'r'))
 
