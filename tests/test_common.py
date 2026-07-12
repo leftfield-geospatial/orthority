@@ -40,7 +40,9 @@ from tests.conftest import checkerboard, create_profile
 
 def test_suppress_nogeoref():
     """Test ``suppress_nogeoref()``."""
-    with warnings.catch_warnings(action='error', category=NotGeoreferencedWarning):
+    with warnings.catch_warnings():
+        warnings.simplefilter(action='error', category=NotGeoreferencedWarning)
+
         with common.suppress_no_georef():
             warnings.warn('test', category=NotGeoreferencedWarning, stacklevel=2)
 
