@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 from contextlib import contextmanager
 from io import BytesIO, TextIOWrapper
 from pathlib import Path
+from threading import Thread
 
 import cv2
 import fsspec
@@ -27,12 +29,34 @@ import numpy as np
 import pytest
 import rasterio as rio
 from rasterio.enums import MaskFlags, PhotometricInterp
+from rasterio.errors import NotGeoreferencedWarning
 from threadpoolctl import threadpool_limits
 
 from orthority import common
 from orthority.enums import Compress, Driver
 from orthority.errors import OrthorityError
 from tests.conftest import checkerboard, create_profile
+
+
+def test_suppress_nogeoref():
+    """Test ``suppress_nogeoref()``."""
+    with warnings.catch_warnings(action='error', category=NotGeoreferencedWarning):
+        with common.suppress_no_georef():
+            warnings.warn('test', category=NotGeoreferencedWarning, stacklevel=2)
+
+        # test nesting of suppress_no_georef()
+        with common.suppress_no_georef(), common.suppress_no_georef():
+            warnings.warn('test', category=NotGeoreferencedWarning, stacklevel=2)
+
+        # test context applies to created threads
+        with common.suppress_no_georef():
+
+            def issue_warning():
+                warnings.warn('test', category=NotGeoreferencedWarning, stacklevel=2)
+
+            thread = Thread(target=issue_warning)
+            thread.start()
+            thread.join()
 
 
 @pytest.mark.parametrize(
