@@ -60,6 +60,40 @@ def test_suppress_nogeoref():
 
 
 @pytest.mark.parametrize(
+    'a, b, exp_res',
+    [
+        # a & b arrays without nans
+        (np.array([[0, 1, 2]]), np.array([[2, 1, 0]]), np.array([[False, True, False]])),
+        # a & b arrays with nans
+        (
+            np.array([[np.nan, 1, np.nan]]),
+            np.array([[np.nan, 1, 0]]),
+            np.array([[True, True, False]]),
+        ),
+        # a an array and b a scalar
+        (np.array([[np.nan, 1, 2]]), np.nan, np.array([[True, False, False]])),
+        # a a scalar and b an array
+        (1, np.array([[np.nan, 1, 2]]), np.array([[False, True, False]])),
+    ],
+)
+def test_nan_equals(a: np.ndarray, b: np.ndarray, exp_res: np.ndarray):
+    """Test ``nan_equals()``."""
+    res = common.nan_equals(a, b)
+    assert res.shape == exp_res.shape
+    assert np.all(res == exp_res)
+
+
+@pytest.mark.parametrize(
+    'lat, lon, exp_epsg',
+    [(-33, 23, 32734), (33, 23, 32634), (-33, 23 + 360, 32734), (33, 23 - 360, 32634)],
+)
+def test_utm_crs_from_latlon(lat: float, lon: float, exp_epsg: int):
+    """Test ``utm_crs_from_latlon()``."""
+    epsg = common.utm_crs_from_latlon(lat, lon)
+    assert epsg == exp_epsg
+
+
+@pytest.mark.parametrize(
     'schema, coll',
     [
         ({str: int}, dict(a=1, b=2)),
