@@ -79,9 +79,6 @@ _default_out_config = dict(
 @contextmanager
 def suppress_no_georef():
     """Context manager to suppress Rasterio's NotGeoreferencedWarning."""
-    # TODO: warnings.catch_warnings is not thread-safe and warnings.simplefilter should rather be
-    #  called once in cli.  consider what this does to API doc examples though - perhaps it can
-    #  go in __init__.py.
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', category=NotGeoreferencedWarning)
         yield
@@ -283,16 +280,6 @@ class OpenRaster:
             self._dataset = file
 
         elif isinstance(file, (str, PathLike, OpenFile)):
-            # TODO: use the opener arg to rio.open() and pin the rasterio dependency version when
-            #  rasterio 1.4 is released, rather than passing an open file object.  this should
-            #  allow sidecar files to read / written (test that it does).  also test that files
-            #  are not buffered in memory with this option, and currently problematic fsspec
-            #  protocols (e.g. github) no longer cause a seg fault.
-            # TODO: following on the above, the opener arg cannot be used when writing to remote
-            #  fsspec files as they don't support random seek.  so use the geedim approach of
-            #  writing to MemoryFile cache locally, then to fsspec file object, for writing
-            #  remote files.  the opener= arg can be used with an fsspec file for reading
-            #  remote files as these do support random seek.
             if isinstance(file, OpenFile):
                 if mode + 'b' != file.mode:
                     raise OSError(
@@ -303,10 +290,6 @@ class OpenRaster:
             else:
                 ofile = fsspec.open(os.fspath(file), mode + 'b')
 
-            # TODO: delete sidecar files if overwriting (note that DatasetReader has a files
-            #  attribute that lists associated files)
-            # TODO: if a file is partially written (e.g. because of an error), rasterio fails when
-            #  overwriting it
             if not overwrite and 'w' in mode and ofile.fs.exists(ofile.path):
                 raise FileExistsError(f"File exists: '{ofile.path}'")
 
@@ -359,7 +342,7 @@ class Open:
     :param overwrite:
         Whether to overwrite an existing file in `'`w*'`` mode.  Ignored in ``'r*'`` mode.
     :param kwargs:
-        Keyword arguments to pass to :func:`fsspec.open` or ``opener`` if it is specified.
+        Keyword arguments to pass to :func:`fsspec.open`.
     """
 
     def __init__(
@@ -369,7 +352,6 @@ class Open:
         overwrite: bool = False,
         **kwargs,
     ):
-        # TODO: text encoding defaults to utf-8, which can't be changed from the CLI
         self._exit_stack = ExitStack()
         if isinstance(file, IOBase):
             if file.closed:
@@ -466,9 +448,7 @@ def create_profile(
                     raise OrthorityError(
                         "JPEG compression is supported for 'uint8' and 'uint16' data types only."
                     )
-        # TODO: pixel interleaving with deflate compression can be much bigger than band
-        #  interleaving - does it depend on data being written band-by=band? (see e.g.
-        #  geedim/scripts/xee_rioxarray_exp.py)
+
         profile.update(compress=compress.value)
 
         if driver is Driver.gtiff:
