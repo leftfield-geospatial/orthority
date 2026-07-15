@@ -30,7 +30,7 @@ import rasterio as rio
 import yaml
 from fsspec.core import OpenFile
 from tqdm.auto import tqdm
-from tqdm.contrib.logging import logging_redirect_tqdm
+from tqdm.contrib.logging import _TqdmLoggingHandler
 
 from orthority import common, root_path
 from orthority.camera import FrameCamera, create_camera
@@ -101,42 +101,25 @@ class RstCommand(click.Command):
 
 
 def _configure_logging(verbosity: int):
-    """Configure python logging level."""
-    # TODO: simplify as in geedim
-
-    def showwarning(message, category, filename, lineno, file=None, line=None):
-        """Redirect orthority warnings to the source module's logger, otherwise show warning as
-        usual.
-        """
-        # adapted from https://discuss.python.org/t/some-easy-and-pythonic-way-to-bind-warnings-to-loggers/14009/2
-        package_root = Path(__file__).parents[1]
-        file_path = Path(filename)
-        try:
-            module_path = file_path.relative_to(package_root)
-            is_relative_to = True
-        except ValueError:
-            is_relative_to = False
-
-        if file is not None or not is_relative_to:
-            orig_show_warning(message, category, filename, lineno, file, line)
-        else:
-            module_name = module_path.with_suffix('').as_posix().replace('/', '.')
-            logger = logging.getLogger(module_name)
-            logger.warning(str(message))
-
-    # redirect orthority warnings to module logger
-    orig_show_warning = warnings.showwarning
-    warnings.showwarning = showwarning
-
-    # Configure the package logger, leaving logs from dependencies on their defaults (e.g. for
-    # rasterio, they stay hidden).
-    # Adapted from rasterio: https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py.
-    log_level = max(10, 20 - 10 * verbosity)
+    """Configure logging level, redirecting warnings to the logger and logs to
+    ``tqdm.write()``.
+    """
+    # configure the package logger (adapted from rasterio:
+    # https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py)
     pkg_logger = logging.getLogger(__package__)
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter('%(levelname)s:%(name)s: %(message)s'))
+    log_level = max(10, 20 - 10 * verbosity)
+    # route logs through tqdm handler so they don't interfere with progress bars
+    handler = _TqdmLoggingHandler(tqdm_class=tqdm)
+    handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     pkg_logger.addHandler(handler)
     pkg_logger.setLevel(log_level)
+
+    # redirect warnings to package logger
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        """Redirect warnings to the package logger."""
+        pkg_logger.warning(message)
+
+    warnings.showwarning = showwarning
 
 
 def _read_crs(crs: str):
@@ -594,16 +577,12 @@ overwrite_option = click.option(
 def cli(ctx: click.Context, verbose, quiet) -> None:
     """Orthorectification toolkit."""
     # configure logging
-    verbosity = verbose - quiet
-    _configure_logging(verbosity)
+    _configure_logging(verbose - quiet)
 
     # enter context managers for sub-command raster operations
-    env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False, GDAL_TIFF_INTERNAL_MASK=True)
+    env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
     ctx.with_resource(common.suppress_no_georef())
     ctx.with_resource(env)
-
-    # redirect logs through tqdm.write, so they do not interfere with progress bars
-    ctx.with_resource(logging_redirect_tqdm([logging.getLogger(__package__)], tqdm_class=tqdm))
 
 
 @cli.command(
