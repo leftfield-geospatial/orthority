@@ -145,7 +145,7 @@ def _crs_cb(ctx: click.Context, param: click.Parameter, crs: str):
         try:
             crs = _read_crs(crs)
         except Exception as ex:
-            raise click.BadParameter(f'{ex!s}', param=param)
+            raise click.BadParameter(str(ex), param=param) from None
     return crs
 
 
@@ -160,7 +160,7 @@ def _src_files_cb(
     try:
         src_files = fsspec.open_files(src_files, 'rb')
     except Exception as ex:
-        raise click.BadParameter(str(ex), param=param)
+        raise click.BadParameter(str(ex), param=param) from None
     if len(src_files) == 0:
         raise click.BadParameter('No source image(s) found.', param=param)
     return src_files
@@ -175,7 +175,7 @@ def _file_cb(
         try:
             ofile = fsspec.open(path_uri, mode)
         except Exception as ex:
-            raise click.BadParameter(str(ex), param=param)
+            raise click.BadParameter(str(ex), param=param) from None
     return ofile
 
 
@@ -185,7 +185,7 @@ def _lla_crs_cb(ctx: click.Context, param: click.Parameter, lla_crs: str) -> str
         try:
             lla_crs = _read_crs(lla_crs)
         except Exception as ex:
-            raise click.BadParameter(f'{ex!s}', param=param)
+            raise click.BadParameter(str(ex), param=param) from None
         if not lla_crs.is_geographic:
             raise click.BadParameter("CRS should be a geographic system.", param=param)
     return lla_crs
@@ -209,7 +209,7 @@ def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFi
         # some dirs (e.g. gcs buckets) don't work with a trailing slash on the path, so strip it
         ofile = fsspec.open(uri_path.rstrip('/'))
     except Exception as ex:
-        raise click.BadParameter(str(ex), param=param)
+        raise click.BadParameter(str(ex), param=param) from None
 
     # TODO: still necessary?  it seems fsspec / rasterio creates directories automatically.  See
     #  geedim...
@@ -250,7 +250,9 @@ def _odm_out_dir_cb(ctx: click.Context, param: click.Parameter, out_dir: str) ->
             # --dataset-dir.
             ofile.fs.mkdirs(ofile.path, exist_ok=True)
         except Exception as ex:
-            raise click.BadParameter(f"Cannot create / access '{out_dir}'. {ex!s}", param=param)
+            raise click.BadParameter(
+                f"Cannot create / access '{out_dir}'. {ex!s}", param=param
+            ) from None
     else:
         ofile = _dir_cb(ctx, param, out_dir)
     return ofile
@@ -291,17 +293,15 @@ def _ortho(
 
     Backend function for orthorectification sub-commands.
     """
-    # TODO: investigate simplifying progress bars with rich
-
     if export_params:
         # convert interior / exterior params to oty format files & exit
         logger.info('Writing parameter files...')
         try:
             cameras.write_param(out_dir, overwrite=overwrite)
         except FileExistsError as ex:
-            raise click.UsageError(str(ex))
+            raise click.UsageError(str(ex)) from None
         except CrsMissingError:
-            raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
+            raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option') from None
         return
     elif not dem_file:
         raise click.MissingParameter(param_hint="'-d' / '--dem'", param_type='option')
@@ -311,7 +311,7 @@ def _ortho(
     try:
         dem_ctx = common.OpenRaster(dem_file, 'r')
     except FileNotFoundError as ex:
-        raise click.BadParameter(str(ex), param_hint="'-d' / '--dem'")
+        raise click.BadParameter(str(ex), param_hint="'-d' / '--dem'") from None
 
     with dem_ctx as dem_im:
         # validate dem_band
@@ -327,13 +327,13 @@ def _ortho(
             try:
                 camera = cameras.get(src_file)
             except OrthorityError as ex:
-                raise click.UsageError(str(ex))
+                raise click.UsageError(str(ex)) from None
 
             # open & validate src_file (open it once here so it is not opened repeatedly)
             try:
                 src_ctx = common.OpenRaster(src_file, 'r')
             except FileNotFoundError as ex:
-                raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+                raise click.BadParameter(str(ex), param_hint="'SOURCE...'") from None
 
             with src_ctx as src_im:
                 # finalise and validate world / ortho crs
@@ -353,7 +353,7 @@ def _ortho(
                     ortho = Ortho(src_im, dem_im, camera, crs, dem_band=dem_band)
                     ortho.process(ortho_ofile, overwrite=overwrite, progress=tqdm_kwargs, **kwargs)
                 except (FileExistsError, OrthorityError) as ex:
-                    raise click.UsageError(str(ex))
+                    raise click.UsageError(str(ex)) from None
 
 
 # Define click options that are common to more than one command
@@ -659,11 +659,11 @@ def frame(
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
     except CrsMissingError:
-        raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option')
+        raise click.MissingParameter(param_hint="'-c' / '--crs'", param_type='option') from None
     except CrsError as ex:
-        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'") from None
     except (FileNotFoundError, OrthorityError) as ex:
-        raise click.UsageError(str(ex))
+        raise click.UsageError(str(ex)) from None
 
     # get factory CRS if not set already
     crs = crs or cameras.crs
@@ -741,9 +741,9 @@ def exif(
             cam_kwargs=dict(distort=full_remap, alpha=alpha),
         )
     except CrsError as ex:
-        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'")
+        raise click.BadParameter(str(ex), param_hint="'-c' / '--crs'") from None
     except (FileNotFoundError, OrthorityError) as ex:
-        raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+        raise click.BadParameter(str(ex), param_hint="'SOURCE...'") from None
 
     # get auto UTM CRS, if CRS not set already
     crs = crs or cameras.crs
@@ -834,7 +834,7 @@ def odm(
         raise click.BadParameter(
             f"No DSM found in '<dataset-dir>/odm_dem/'. {ex!s}",
             param_hint="'-dd' / '--dataset-dir'",
-        )
+        ) from None
     with dem_ctx as dem_im:
         crs = crs or dem_im.crs
 
@@ -851,9 +851,9 @@ def odm(
         raise click.BadParameter(
             f"No 'reconstruction.json' file found in '<dataset-dir>/opensfm/'. {ex!s}",
             param_hint="'-dd' / '--dataset-dir'",
-        )
+        ) from None
     except OrthorityError as ex:
-        raise click.UsageError(str(ex))
+        raise click.UsageError(str(ex)) from None
 
     # orthorectify
     _ortho(
@@ -967,7 +967,7 @@ def rpc(
         try:
             cameras = RpcCameras(rpc_param_file, cam_kwargs=cam_kwargs)
         except (FileNotFoundError, OrthorityError) as ex:
-            raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'")
+            raise click.BadParameter(str(ex), param_hint="'-rp' / '--rpc-param'") from None
     else:
         # set up progress bar args
         tqdm_kwargs = common.get_tqdm_kwargs(desc='Reading parameters', unit='files', leave=False)
@@ -978,7 +978,7 @@ def rpc(
                 src_files, io_kwargs=dict(progress=tqdm_kwargs), cam_kwargs=cam_kwargs
             )
         except (FileNotFoundError, OrthorityError) as ex:
-            raise click.BadParameter(str(ex), param_hint="'SOURCE...'")
+            raise click.BadParameter(str(ex), param_hint="'SOURCE...'") from None
 
     if gcp_refine is not None:
         # refine model(s) with GCPs
@@ -993,7 +993,7 @@ def rpc(
             else:
                 cameras.refine(gcp_refine, fit_kwargs=fit_kwargs)
         except (FileNotFoundError, OrthorityError) as ex:
-            raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'")
+            raise click.BadParameter(str(ex), param_hint="'-gr / --gcp-refine'") from None
 
     # orthorectify
     _ortho(src_files=src_files, cameras=cameras, crs=crs, **kwargs)
@@ -1150,12 +1150,12 @@ def sharpen(
     try:
         pan_ctx = common.OpenRaster(pan_file, 'r')
     except FileNotFoundError as ex:
-        raise click.BadParameter(str(ex), param_hint="'-p' / '--pan'")
+        raise click.BadParameter(str(ex), param_hint="'-p' / '--pan'") from None
 
     try:
         ms_ctx = common.OpenRaster(ms_file, 'r')
     except FileNotFoundError as ex:
-        raise click.BadParameter(str(ex), param_hint="'-ms' / '--multispectral'")
+        raise click.BadParameter(str(ex), param_hint="'-ms' / '--multispectral'") from None
 
     with pan_ctx as pan_im, ms_ctx as ms_im:
         # validate indexes
@@ -1183,7 +1183,7 @@ def sharpen(
                 pan_index=pan_index, ms_indexes=ms_indexes, weights=weights, progress=True, **kwargs
             )
         except (FileExistsError, OrthorityError) as ex:
-            raise click.UsageError(str(ex))
+            raise click.UsageError(str(ex)) from None
 
 
 def _simple_ortho(
@@ -1365,7 +1365,8 @@ def _get_simple_ortho_parser():
     parser.add_argument(
         "-od",
         "--ortho-dir",
-        help="write ortho image(s) to this directory (default: write ortho image(s) to source directory)",
+        help="write ortho image(s) to this directory (default: write ortho image(s) to source "
+        "directory)",
         type=str,
     )
     parser.add_argument(
@@ -1395,5 +1396,3 @@ def simple_ortho(argv=None):
 
 if __name__ == '__main__':
     cli()
-
-##
