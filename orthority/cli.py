@@ -17,6 +17,7 @@ from __future__ import annotations
 import argparse
 import csv
 import logging
+import posixpath
 import re
 import warnings
 from contextlib import contextmanager
@@ -190,18 +191,13 @@ def _resolution_cb(
 def _dir_cb(ctx: click.Context, param: click.Parameter, uri_path: str) -> OpenFile:
     """Click callback to convert a directory to an fsspec OpenFile, and validate."""
     try:
-        # TODO: I'm not sure the slash behaviour still applies like this.  See geedim...
-        # some dirs (e.g. gcs buckets) don't work with a trailing slash on the path, so strip it
-        ofile = fsspec.open(uri_path.rstrip('/'))
+        ofile = fsspec.open(uri_path)
     except Exception as ex:
-        raise click.BadParameter(str(ex), param=param) from None
+        raise click.BadParameter(str(ex)) from ex
 
-    # TODO: still necessary?  it seems fsspec / rasterio creates directories automatically.  See
-    #  geedim...
-    if not ofile.fs.isdir(ofile.path):
-        raise click.BadParameter(
-            f"'{uri_path}' is not a directory or cannot be accessed.", param=param
-        )
+    # isdir() requires a trailing slash on some file systems (e.g. gcs)
+    if not ofile.fs.isdir(posixpath.join(ofile.path, '')):
+        raise click.BadParameter(f"'{uri_path}' is not a directory or cannot be accessed.")
     return ofile
 
 
@@ -396,7 +392,6 @@ lla_crs_option = click.option(
     help='CRS of any geographic coordinate exterior parameters as an EPSG, proj4, or WKT string; '
     'path / URI of a text file containing string; or path / URI of an image with metadata CRS.',
 )
-# TODO: link :option: in options too - see geedim for e.g.
 radians_option = click.option(
     '-rd/-dg',
     '--radians/--degrees',
