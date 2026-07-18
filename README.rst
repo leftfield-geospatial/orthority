@@ -17,7 +17,7 @@ Orthority provides a command line toolkit and Python API for orthorectifying dro
 Installation
 ------------
 
-Orthority is a python 3 package that can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://docs.anaconda.com/free/miniconda/>`_.
+Orthority is a python 3 package that can be installed with `pip <https://pip.pypa.io/>`_ or `conda <https://www.anaconda.com/docs/getting-started/concepts/anaconda-or-miniconda/>`_.
 
 pip
 ~~~
@@ -181,7 +181,7 @@ Portions of the `AGPLv3 <https://github.com/OpenDroneMap/ODM/blob/master/LICENSE
 Acknowledgements
 ----------------
 
-Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__ & the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial Information <https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and aero-triangulation data that form part of the package test data.
+Special thanks to `Yu-Huang Wang <https://community.opendronemap.org/t/2019-04-11-tuniu-river-toufeng-miaoli-county-taiwan/3292>`__ & the `OpenDroneMap Community <https://community.opendronemap.org/>`__, `National Geo-spatial Information <https://ngi.dlrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery>`__ and the `Centre for Geographical Analysis <https://www0.sun.ac.za/cga/>`__ for sharing imagery, DEM and aero-triangulation data that form part of the package test data.
 
 .. |Tests| image:: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml/badge.svg
    :target: https://github.com/leftfield-geospatial/orthority/actions/workflows/run-unit-tests_pypi.yml

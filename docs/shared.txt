@@ -1,6 +1,6 @@
-.. _NGI: https://ngi.dalrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery
+.. _NGI: https://ngi.dlrrd.gov.za/index.php/what-we-do/aerial-photography-and-imagery
 .. _Rasterio: https://rasterio.readthedocs.io
 .. _GDAL: https://gdal.org
 .. _pip: https://pip.pypa.io
-.. _conda: https://docs.anaconda.com/free/miniconda
+.. _conda: https://www.anaconda.com/docs/getting-started/concepts/anaconda-or-miniconda
 .. _OpenDroneMap: https://github.com/OpenDroneMap/ODM
