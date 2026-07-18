@@ -14,19 +14,21 @@
 # If not, see <https://www.gnu.org/licenses/>.
 
 """Factories for creating camera models from parameter files and dictionaries."""
+
 from __future__ import annotations
 
 import warnings
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from os import PathLike
 from pathlib import Path
-from typing import IO, Sequence
+from typing import IO
 
 import rasterio as rio
 from fsspec.core import OpenFile
 
-from orthority import param_io, common
-from orthority.camera import Camera, create_camera, FrameCamera, RpcCamera
+from orthority import common, param_io
+from orthority.camera import Camera, FrameCamera, RpcCamera, create_camera
 from orthority.errors import CrsMissingError, OrthorityWarning, ParamError
 from orthority.fit import refine_rpc
 
@@ -99,8 +101,8 @@ class FrameCameras(Cameras):
         self,
         int_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
         ext_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
-        io_kwargs: dict = None,
-        cam_kwargs: dict = None,
+        io_kwargs: dict | None = None,
+        cam_kwargs: dict | None = None,
     ):
         self._int_param_dict, self._ext_param_dict, self._crs = self._read_param(
             int_param, ext_param, **(io_kwargs or {})
@@ -112,8 +114,8 @@ class FrameCameras(Cameras):
     def from_images(
         cls,
         files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
-        io_kwargs: dict = None,
-        cam_kwargs: dict = None,
+        io_kwargs: dict | None = None,
+        cam_kwargs: dict | None = None,
     ):
         """
         Create frame camera factory from :doc:`image file(s) with EXIF / XMP tags
@@ -218,7 +220,7 @@ class FrameCameras(Cameras):
                 raise ParamError(f"Could not find interior parameters for camera '{cam_id}'.")
             int_param = self._int_param_dict[cam_id]
         elif len(self._int_param_dict) == 1:
-            int_param = list(self._int_param_dict.values())[0]
+            int_param = next(iter(self._int_param_dict.values()))
         else:
             raise ParamError(
                 f"Exterior parameters for '{filename.name}' should define a 'camera' ID."
@@ -264,7 +266,7 @@ class RpcCameras(Cameras):
     def __init__(
         self,
         rpc_param: str | PathLike | OpenFile | IO[str] | dict[str, dict],
-        cam_kwargs: dict = None,
+        cam_kwargs: dict | None = None,
     ):
         if not isinstance(rpc_param, dict):
             self._rpc_param_dict = param_io.read_oty_rpc_param(rpc_param)
@@ -279,8 +281,8 @@ class RpcCameras(Cameras):
     def from_images(
         cls,
         files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
-        io_kwargs: dict = None,
-        cam_kwargs: dict = None,
+        io_kwargs: dict | None = None,
+        cam_kwargs: dict | None = None,
     ):
         """
         Create RPC camera factory from :doc:`image file(s) with RPC tags / sidecar file(s)
@@ -315,8 +317,8 @@ class RpcCameras(Cameras):
             | Sequence[str | PathLike | OpenFile | rio.DatasetReader]
             | dict[str, list[dict]]
         ),
-        io_kwargs: dict = None,
-        fit_kwargs: dict = None,
+        io_kwargs: dict | None = None,
+        fit_kwargs: dict | None = None,
     ):
         """
         Refine RPC models with GCPs.
@@ -358,7 +360,9 @@ class RpcCameras(Cameras):
                 rpc_param['rpc'] = refine_rpc(rpc_param['rpc'], gcps, **(fit_kwargs or {}))
             else:
                 warnings.warn(
-                    f"Could not find any GCPs for '{filename}'.", category=OrthorityWarning
+                    f"Could not find any GCPs for '{filename}'.",
+                    category=OrthorityWarning,
+                    stacklevel=2,
                 )
 
     def get(self, filename: str | PathLike | OpenFile | rio.DatasetReader) -> RpcCamera:

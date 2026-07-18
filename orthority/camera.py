@@ -45,7 +45,7 @@ class Camera(ABC):
     """Base camera class."""
 
     # data types accepted by cv2.remap()
-    _valid_dtypes = ['uint8', 'uint16', 'int16', 'float32', 'float64']
+    _valid_dtypes = ('uint8', 'uint16', 'int16', 'float32', 'float64')
     # cv2.remap() maximum image dimension
     _shrt_max = (1 << 15) - 1
 
@@ -360,7 +360,7 @@ class Camera(ABC):
             dimension.
         """
 
-    def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
+    def pixel_boundary(self, num_pts: int | None = None) -> np.ndarray:
         """
         A rectangle of 2D pixel coordinates along the image boundary.
 
@@ -408,8 +408,8 @@ class Camera(ABC):
     def world_boundary(
         self,
         z: float | np.ndarray,
-        num_pts: int = None,
-        transform: rio.Affine = None,
+        num_pts: int | None = None,
+        transform: rio.Affine | None = None,
         interp: str | Interp = Interp.cubic,
         **kwargs,
     ) -> np.ndarray:
@@ -450,8 +450,8 @@ class Camera(ABC):
     def read(
         self,
         im_file: str | PathLike | OpenFile | rio.DatasetReader,
-        indexes: Sequence[int] | int = None,
-        dtype: str = None,
+        indexes: Sequence[int] | int | None = None,
+        dtype: str | None = None,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -487,7 +487,7 @@ class Camera(ABC):
         x: np.ndarray,
         y: np.ndarray,
         z: np.ndarray,
-        nodata: float | int = None,
+        nodata: float | int | None = None,
         interp: str | Interp = Interp.cubic,
         **kwargs,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -896,9 +896,9 @@ class FrameCamera(Camera):
         Return a new camera intrinsic matrix, and its inverse, for an undistorted image that is
         the same size as the source image.
 
-        ``alpha`` (``0``-``1``) controls the portion of the source included in the distorted image. 0
-        includes the largest portion of the source image that allows all undistorted pixels to be
-        valid.  ``1`` includes all source pixels in the undistorted image.
+        ``alpha`` (``0``-``1``) controls the portion of the source included in the distorted
+        image. 0 includes the largest portion of the source image that allows all undistorted
+        pixels to be valid.  ``1`` includes all source pixels in the undistorted image.
         """
 
         # Adapted from and equivalent to:
@@ -1064,7 +1064,10 @@ class FrameCamera(Camera):
         return ji
 
     def _undistort_im(
-        self, im_array: np.ndarray, nodata: float | int = None, interp: str | Interp = Interp.cubic
+        self,
+        im_array: np.ndarray,
+        nodata: float | int | None = None,
+        interp: str | Interp = Interp.cubic,
     ) -> np.ndarray:
         """Return an undistorted image as a 3D array with the same number of bands as
         ``im_array``, and the same band size as :attr:`~Camera.im_size`.
@@ -1092,7 +1095,7 @@ class FrameCamera(Camera):
         )
         return remap_array
 
-    def pixel_boundary(self, num_pts: int = None) -> np.ndarray:
+    def pixel_boundary(self, num_pts: int | None = None) -> np.ndarray:
         """
         A polygon of 2D pixel coordinates along the image boundary.  If
         :attr:`~FrameCamera.distort` is ``False``, coordinates will be along the boundary of the
@@ -1115,8 +1118,8 @@ class FrameCamera(Camera):
     def world_boundary(
         self,
         z: float | np.ndarray,
-        num_pts: int = None,
-        transform: rio.Affine = None,
+        num_pts: int | None = None,
+        transform: rio.Affine | None = None,
         interp: str | Interp = Interp.cubic,
         clip: bool = True,
     ) -> np.ndarray:
@@ -1175,9 +1178,9 @@ class FrameCamera(Camera):
     def read(
         self,
         im_file: str | PathLike | OpenFile | rio.DatasetReader,
-        indexes: Sequence[int] = None,
-        dtype: str = None,
-        nodata: float | int = None,
+        indexes: Sequence[int] | None = None,
+        dtype: str | None = None,
+        nodata: float | int | None = None,
         interp: str | Interp = Interp.cubic,
     ) -> np.ndarray:
         """
