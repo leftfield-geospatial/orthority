@@ -19,6 +19,7 @@ import csv
 import logging
 import re
 import warnings
+from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlparse
@@ -74,26 +75,36 @@ def _wrap_text(text: str, *args, **kwargs) -> str:
 click.formatting.wrap_text = _wrap_text
 
 
+@contextmanager
 def _configure_logging(verbosity: int):
-    """Configure logging level, redirecting warnings to the logger and logs to
+    """Context manager to configure logging level, redirect warnings to the logger and logs to
     ``tqdm.write()``.
     """
     # configure the package logger (adapted from rasterio:
     # https://github.com/rasterio/rasterio/blob/main/rasterio/rio/main.py)
     pkg_logger = logging.getLogger(__package__)
-    log_level = max(10, 20 - 10 * verbosity)
+    pkg_log_level = pkg_logger.level
+    pkg_logger.setLevel(max(10, 20 - 10 * verbosity))
     # route logs through tqdm handler so they don't interfere with progress bars
     handler = _TqdmLoggingHandler(tqdm_class=tqdm)
     handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
     pkg_logger.addHandler(handler)
-    pkg_logger.setLevel(log_level)
 
-    # redirect warnings to package logger
+    warnings_showwarning = warnings.showwarning
+
     def showwarning(message, category, filename, lineno, file=None, line=None):
-        """Redirect warnings to the package logger."""
+        """Log warnings with the package logger."""
         pkg_logger.warning(message)
 
-    warnings.showwarning = showwarning
+    try:
+        # redirect warnings to package logger
+        warnings.showwarning = showwarning
+        yield
+    finally:
+        # restore the initial state
+        warnings.showwarning = warnings_showwarning
+        pkg_logger.removeHandler(handler)
+        pkg_logger.setLevel(pkg_log_level)
 
 
 def _read_crs(crs: str):
@@ -551,7 +562,7 @@ overwrite_option = click.option(
 def cli(ctx: click.Context, verbose, quiet) -> None:
     """Orthorectification toolkit."""
     # configure logging
-    _configure_logging(verbose - quiet)
+    ctx.with_resource(_configure_logging(verbose - quiet))
 
     # enter context managers for sub-command raster operations
     env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
