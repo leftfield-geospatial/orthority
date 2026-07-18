@@ -47,57 +47,31 @@ logger = logging.getLogger(__name__)
 # TODO: use universal_pathlib if/when it matures for all filename options instead of OpenFile,
 #  and the common.get_filename and common.join_ofile work arounds.
 
+click_wrap_text = click.formatting.wrap_text
 
-class RstCommand(click.Command):
-    """click.Command subclass for formatting help with RST markup."""
 
-    def get_help(self, ctx: click.Context):
-        """
-        Strip some RST markup from the help text for CLI display.
+def _wrap_text(text: str, *args, **kwargs) -> str:
+    """click.formatting.wrap_text() replacement that strips some RST markup from help
+    text for CLI display.
+    """
+    subs = {
+        # convert from '``literal``' to 'literal'
+        '``(.*?)``': r'\g<1>',
+        # convert ':option:`--name <group-command --name>`' or ':option:`--name`' to '--name'
+        r':option:`(.*?)(\s+<.*?>)?`': r'\g<1>',
+        # convert ':file:`file/na.me`' to "'file/na.me'"
+        ':file:`(.*?)`': r"'\g<1>'",
+        # convert from '`name <link>`__' to 'name'
+        r'`(.*?)(\s+<.*?>)?`_+': r'\g<1>',
+    }
 
-        Doesn't work with grid tables.
-        """
-        # TODO: simplify as in geedim
+    for sub_key, sub_value in subs.items():
+        text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
 
-        # Note that this can't easily be done in __init__, as each sub-command's __init__ gets
-        # called, which ends up re-assigning self.wrap_text to reformat_text
-        if not hasattr(self, 'click_wrap_text'):
-            self.click_wrap_text = click.formatting.wrap_text
+    return click_wrap_text(text, *args, **kwargs)
 
-        sub_strings = {
-            # convert from RST friendly to click literal (unwrapped) block marker
-            '\b\n': '\n\b',
-            # strip RST literal (unwrapped) marker in e.g. tables and bullet lists
-            r'\| ': '',
-            # strip RST ref directive '\n.. _<name>:\n'
-            r'\n\.\. _.*:\n': '',
-            # convert from RST '::' to ':'
-            '::': ':',
-            # convert from RST '``literal``' to 'literal'
-            '``(.*?)``': r'\g<1>',
-            # convert ':option:`--name <group-command --name>`' to '--name'
-            r':option:`(.*?)(\s+<.*?>)?`': r'\g<1>',
-            # convert ':option:`--name`' to '--name'
-            ':option:`(.*?)`': r'\g<1>',
-            # convert ':file:`file/na.me`' to "'file/na.me'"
-            ':file:`(.*?)`': r"'\g<1>'",
-            # strip '----...'
-            # '-{4,}': r'',
-            # convert from RST cross-ref '`<name> <link>`__' to 'name'
-            r'`(.*?)(\s+<.*?>)?`_+': r'\g<1>',
-            # # convert from RST cross-ref '`<name> <link>`__' to 'link'
-            # r'`(.*?)<(.*?)>`_+': r'\g<2>',
-        }
 
-        def reformat_text(text, width, **kwargs):
-            for sub_key, sub_value in sub_strings.items():
-                text = re.sub(sub_key, sub_value, text, flags=re.DOTALL)
-            wr_text = self.click_wrap_text(text, width, **kwargs)
-            # change double newline to single newline separated list
-            return re.sub('\n\n(\\s*?)- ', '\n- ', wr_text, flags=re.DOTALL)
-
-        click.formatting.wrap_text = reformat_text
-        return click.Command.get_help(self, ctx)
+click.formatting.wrap_text = _wrap_text
 
 
 def _configure_logging(verbosity: int):
@@ -126,7 +100,7 @@ def _read_crs(crs: str):
     """Read a CRS from a string, text file, or image file."""
     crs_path = Path(crs)
     if crs_path.suffix.lower() in ['.tif', '.tiff']:
-        # read CRS from geotiff path / URL
+        # read CRS from geotiff path / URI
         with common.suppress_no_georef(), common.OpenRaster(crs, 'r') as im:
             crs = im.crs
     else:
@@ -418,7 +392,7 @@ radians_option = click.option(
     type=click.BOOL,
     default=False,
     show_default=True,
-    help='Orientation angle units. Only used for ``--ext-param`` in CSV format.',
+    help='Orientation angle units. Only used for :option:`--ext-param` in CSV format.',
 )
 resolution_option = click.option(
     '-r',
@@ -429,8 +403,8 @@ resolution_option = click.option(
     show_default='ground sampling distance',
     multiple=True,
     callback=_resolution_cb,
-    help='Ortho image resolution in units of the ``--crs``.  Can be used twice for non-square '
-    'pixels: ``--res WIDTH --res HEIGHT``.',
+    help='Ortho image resolution in units of the :option:`--crs`.  Can be used twice for '
+    'non-square pixels: ``--res WIDTH --res HEIGHT``.',
 )
 dem_band_option = click.option(
     '-db',
@@ -464,7 +438,7 @@ per_band_option = click.option(
     default=Ortho._default_alg_config['per_band'],
     show_default=True,
     help='Orthorectify band-by-band (``--per-band``) or all bands at once (``--no-per-band``). '
-    '``--no-per-band`` is faster but uses more memory.',
+    '``--no-per-band`` is faster but can require more memory.',
 )
 full_remap_option = click.option(
     '-fr/-nfr',
@@ -483,7 +457,7 @@ alpha_option = click.option(
     nargs=1,
     default=1,
     show_default=True,
-    help='Scaling of the ``--no-full-remap`` undistorted image: ``0`` includes the largest '
+    help='Scaling of the :option:`--no-full-remap` undistorted image: ``0`` includes the largest '
     'source image portion that allows all undistorted pixels to be valid.  ``1`` includes all '
     'source pixels in the undistorted image.',
 )
@@ -500,9 +474,9 @@ write_mask_option = click.option(
     '--write-mask/--no-write-mask',
     type=click.BOOL,
     default=common._default_out_config['write_mask'],
-    show_default='true for jpeg compression.',
+    show_default='true for jpeg compression',
     help='Mask valid pixels with an internal mask (``--write-mask``), or with a nodata value '
-    'based on ``--dtype`` (``--no-write-mask``). An internal mask helps remove nodata noise '
+    'based on :option:`--dtype` (``--no-write-mask``). An internal mask helps remove nodata noise '
     'caused by lossy compression.',
 )
 dtype_option = click.option(
@@ -510,7 +484,7 @@ dtype_option = click.option(
     '--dtype',
     type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
-    show_default='source image data type.',
+    show_default='source image data type',
     help='Ortho image data type.',
 )
 compress_option = click.option(
@@ -538,8 +512,8 @@ creation_option = click.option(
     default=(),
     show_default='auto',
     callback=_creation_option_cb,
-    help='Creation option(s) for the ortho image(s).  If supplied, ``--compress`` is '
-    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`_  '
+    help='Creation option(s) for the ortho image(s).  If supplied, :option:`--compress` is '
+    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`__ '
     'for details.',
 )
 export_params_option = click.option(
@@ -586,9 +560,9 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 
 
 @cli.command(
-    cls=RstCommand,
     short_help='Orthorectify with interior and exterior parameter files.',
-    epilog='See https://orthority.readthedocs.io/ for more detail on file formats and usage.',
+    epilog='See https://orthority.readthedocs.io/ for more detail on usage and supported file '
+    'formats.',
 )
 @src_files_arg
 @dem_file_option
@@ -637,15 +611,11 @@ def frame(
     The :option:`--int-param <oty-frame --int-param>` and :option:`--ext-param <oty-frame
     --ext-param>` options are required.  The :option:`--dem <oty-frame --dem>` option is
     required, except when exporting camera parameters with :option:`--export-params <oty-frame
-    --export-params>`.  Depending on the input file formats, :option:`--crs <oty-frame --crs>`
-    may also be required::
-
-        oty frame --dem dem.tif --int-param int_param.yaml --ext-param ext_param.csv --crs EPSG:32651 source*.tif
+    --export-params>`.  :option:`--crs <oty-frame --crs>` may also be required, depending on the
+    input file formats.
 
     Camera parameters can be exported to Orthority format files with :option:`--export-params
-    <oty-frame --export-params>`::
-
-        oty frame --int-param reconstruction.json --ext-param reconstruction.json --export-params
+    <oty-frame --export-params>`.
 
     Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-frame --out-dir>`.
@@ -673,7 +643,6 @@ def frame(
 
 
 @cli.command(
-    cls=RstCommand,
     short_help='Orthorectify with image EXIF / XMP tags.',
     epilog='See https://orthority.readthedocs.io/ for more detail.',
 )
@@ -710,22 +679,18 @@ def exif(
 
     SOURCE images can be specified with paths, URIs or path / URI wildcard patterns.
 
-    SOURCE image tags should include DewarpData, focal length & sensor size or 35mm equivalent
-    focal length; camera position and camera roll, pitch & yaw.  DewarpData is converted to a
-    Brown model if it is present, otherwise a pinhole model is used.  Pinhole approximation and
-    tag value accuracy affect ortho image accuracy.
+    SOURCE image tags should include DewarpData, focal length & sensor size, or 35mm focal length
+    for the interior parameters; and camera position, roll, pitch & yaw for the exterior
+    parameters.  DewarpData is converted to a Brown model if it is present, otherwise a pinhole
+    model is used.  Pinhole approximation and tag value accuracy affect ortho image accuracy.
 
     The :option:`--dem <oty-exif --dem>` option is required, except when exporting camera
     parameters with :option:`--export-params <oty-exif --export-params>`.  If :option:`--crs
     <oty-exif --crs>` is not supplied, a UTM world / ortho CRS is auto-determined from the camera
-    positions::
-
-        oty exif --dem dem.tif source*.tif
+    positions.
 
     Camera parameters can be exported to Orthority format files with :option:`--export-params
-    <oty-exif --export-params>`::
-
-        oty exif ---export-params source*.tif
+    <oty-exif --export-params>`.
 
     Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-exif --out-dir>`.
@@ -753,7 +718,6 @@ def exif(
 
 
 @cli.command(
-    cls=RstCommand,
     short_help='Orthorectify with OpenDroneMap outputs.',
     epilog='See https://orthority.readthedocs.io/ for more detail.',
 )
@@ -802,17 +766,13 @@ def odm(
     Orthorectify images in a processed OpenDroneMap dataset that includes a DSM.
 
     The images, DSM and camera models are read from the dataset. If :option:`--crs <oty-odm
-    --crs>` is not supplied (recommended), the world / ortho CRS is also read from the dataset.
-    :option:`--dataset-dir <oty-odm --dataset-dir>` is the only required option::
-
-        oty odm --dataset-dir dataset
+    --crs>` is not supplied, it is also read from the dataset (recommended).
+    :option:`--dataset-dir <oty-odm --dataset-dir>` is the only required option.
 
     Camera parameters can be exported to Orthority format files with :option:`--export-params
-    <oty-odm --export-params>`::
+    <oty-odm --export-params>`.
 
-        oty odm --dataset-dir dataset --export-params
-
-    Ortho images and exported files are placed in the :file:`{dataset}/orthority` subdirectory
+    Ortho images and exported files are placed in the :file:`<dataset-dir>/orthority` subdirectory
     by default.  This can be changed with :option:`--out-dir <oty-odm --out-dir>`.
     """
     # find source images
@@ -869,8 +829,6 @@ def odm(
 
 
 @cli.command(
-    # make these short help messages consistent between frame / rpc models
-    cls=RstCommand,
     short_help='Orthorectify with RPC camera model(s).',
     epilog='See https://orthority.readthedocs.io/ for more detail.',
 )
@@ -900,7 +858,7 @@ def odm(
     type=click.Choice(RpcRefine, case_sensitive=True),
     default=_default_rpc_refine_method,
     show_default=True,
-    help='Refinement method to use with ``--gcp-refine``.',
+    help='Refinement method to use with :option:`--gcp-refine`.',
 )
 @crs_option
 @resolution_option
@@ -935,21 +893,15 @@ def rpc(
 
     The :option:`--dem <oty-rpc --dem>` option is required, except when exporting camera
     parameters with :option:`--export-params <oty-rpc --export-params>`.  If :option:`--crs
-    <oty-rpc --crs>` is not supplied, a 3D WGS84 geographic world / ortho CRS is used::
-
-        oty rpc --dem dem.tif source*.tif
+    <oty-rpc --crs>` is not supplied, a 3D WGS84 geographic world / ortho CRS is used.
 
     Camera parameters can be refined with GCPs using :option:`--gcp-refine <oty-rpc
-    --gcp-refine>`::
-
-        oty rpc --dem dem.tif --gcp-refine tags source*.tif
+    --gcp-refine>`.
 
     Camera parameters can be exported to Orthority format file(s) with :option:`--export-params
     <oty-rpc --export-params>`.  If :option:`--export-params <oty-rpc --export-params>` is
     supplied with :option:`--gcp-refine <oty-rpc --gcp-refine>`, the refined parameters are
-    exported as well as the GCPs::
-
-        oty rpc ---export-params --gcp-refine tags source*.tif
+    exported as well as the GCPs.
 
     Ortho images and exported files are placed in the current working directory by default. This
     can be changed with :option:`--out-dir <oty-rpc --out-dir>`.
@@ -1000,9 +952,7 @@ def rpc(
 
 
 @cli.command(
-    cls=RstCommand,
-    short_help='Pan-sharpen.',
-    epilog='See https://orthority.readthedocs.io/ for more detail.',
+    short_help='Pan-sharpen.', epilog='See https://orthority.readthedocs.io/ for more detail.'
 )
 @click.option(
     '-p',
@@ -1073,7 +1023,7 @@ def rpc(
     '--dtype',
     type=click.Choice(list(common._nodata_vals.keys()), case_sensitive=True),
     default=common._default_out_config['dtype'],
-    show_default='source image data type.',
+    show_default='source image data type',
     help='Pan-sharpened image data type.',
 )
 @click.option(
@@ -1101,8 +1051,8 @@ def rpc(
     default=(),
     show_default='auto',
     callback=_creation_option_cb,
-    help='Creation option(s) for the pan-sharpened image.  If supplied, ``--compress`` is '
-    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`_  '
+    help='Creation option(s) for the pan-sharpened image.  If supplied, :option:`--compress` is '
+    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`__ '
     'for details.',
 )
 @click.option(
@@ -1123,7 +1073,7 @@ def sharpen(
     **kwargs,
 ) -> None:
     """
-    Increases the resolution of a multispectral image to that of a panchromatic image using the
+    Increase the resolution of a multispectral image to that of a panchromatic image using the
     Gram-Schmidt pan-sharpening method.
 
     Panchromatic and multispectral image bounds should overlap if they are georeferenced. If one
@@ -1131,20 +1081,12 @@ def sharpen(
 
     Panchromatic and multispectral images are specified with :option:`--pan <oty-sharpen --pan>`
     and :option:`--multispectral <oty-sharpen --multispectral>`, and the pan-sharpened output
-    with :option:`--out-file <oty-sharpen --out-file>`::
-
-        oty sharpen --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+    with :option:`--out-file <oty-sharpen --out-file>`.  These are the only required options.
 
     A subset of multispectral bands for sharpening can be specified with :option:`--ms-index
-    <oty-sharpen --ms-index>`::
-
-        oty sharpen -mi 3 -mi 2 -mi 1 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
-
-    Multispectral to panchromatic weights are estimated from the images by default.  User values
-    can be provided with :option:`--weight <oty-sharpen --weight>`.  There should be as many
-    weights as multispectral bands::
-
-        oty sharpen -mi 3 -mi 2 -mi 1 -w 0.4 -w 0.5 -w 0.3 --pan pan.tif --multispectral ms.tif --out-file pan_sharp.tif
+    <oty-sharpen --ms-index>`.  Multispectral to panchromatic weights are estimated from the
+    images by default.  User values can be provided with :option:`--weight <oty-sharpen
+    --weight>`.  There should be as many weights as multispectral bands.
     """
     # open pan & ms files
     try:
