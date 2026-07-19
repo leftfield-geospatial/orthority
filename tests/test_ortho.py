@@ -160,7 +160,7 @@ def test_init_dem_coverage_error(
     assert 'DEM' in str(ex.value)
 
 
-def test_init_horizon_fov_error(
+def test_init_horizontal_fov_error(
     rgb_byte_src_file: Path, float_utm34n_dem_file: Path, frame_args: dict, utm34n_crs: str
 ):
     """Test Ortho initialisation with a horizontal FOV camera raises an error."""
@@ -170,7 +170,7 @@ def test_init_horizon_fov_error(
 
     with pytest.raises(OrthorityError) as ex:
         _ = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs)
-    assert 'horizon' in str(ex.value)
+    assert 'horizontal' in str(ex.value)
 
 
 def test_dem_above_camera_error(

@@ -502,22 +502,22 @@ def test_frame_intrinsic_nonsquare_pixels(
         (CameraType.fisheye, 'fisheye_dist_param'),
     ],
 )
-def test_frame_horizon_fov(
+def test_frame_horizontal_fov(
     cam_type: CameraType,
     dist_param: str,
     frame_args: dict,
     xyz: tuple,
     request: pytest.FixtureRequest,
 ):
-    """Test ``FrameCamera._horizon_fov()`` validity."""
+    """Test ``FrameCamera._horizontal_fov()`` validity."""
     dist_param: dict = request.getfixturevalue(dist_param)
     camera: FrameCamera = create_camera(cam_type, **frame_args, **dist_param)
-    assert not camera._horizon_fov()
+    assert not camera._horizontal_fov()
 
     camera.update(xyz, (np.pi / 2, 0, 0))
-    assert camera._horizon_fov()
+    assert camera._horizontal_fov()
     camera.update(xyz, (0, np.pi, 0))
-    assert camera._horizon_fov()
+    assert camera._horizontal_fov()
 
 
 @pytest.mark.parametrize(
@@ -936,7 +936,7 @@ def _test_world_boundary_zsurf(
 @pytest.mark.parametrize(
     'xyz_offset, opk_offset',
     [
-        # varying rotations starting at ``rotation`` fixture value and keeping FOV below horizon
+        # varying rotations starting at ``rotation`` fixture value and keeping FOV below horizontal
         ((0, 0, 0), (0, 0, 0)),
         ((0, 0, 0), (-15, 10, 0)),
         ((0, 0, 0), (-30, 20, 0)),
