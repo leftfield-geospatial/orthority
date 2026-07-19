@@ -482,10 +482,7 @@ class Camera(ABC):
         # add an empty dimension to indexes if it is scalar so that image is read as 3D
         indexes = np.expand_dims(indexes, 0) if np.isscalar(indexes) else indexes
 
-        # TODO: rio.Env has no effect on already opened datasets, which is I think is always how
-        #  this method is used, rather leave it to user?
-        env = rio.Env(GDAL_NUM_THREADS='ALL_CPUS', GTIFF_FORCE_RGBA=False)
-        with common.suppress_no_georef(), env, common.OpenRaster(im_file) as im:
+        with common.OpenRaster(im_file) as im:
             dtype = dtype or im.dtypes[0]
             return im.read(indexes, out_dtype=dtype)
 
@@ -613,9 +610,6 @@ class RpcCamera(Camera):
 
     def world_to_pixel(self, xyz: np.ndarray) -> np.ndarray:
         self._validate_world_coords(xyz)
-        # TODO: make rasterio feature / pull request to release gil on crs & rpc transform,
-        #  and to not copy coordinates back and forth between python/c formats in for loops (see
-        #  e.g. pyproj for a way of doing this efficiently).
         if self._crs:
             # warp from world / ortho to geographic / RPC coordinates, removing, and replacing nans
             # around the warp call (which raises errors on nans)
@@ -664,7 +658,6 @@ class RpcCamera(Camera):
         xy = np.full(ji.shape, fill_value=np.nan)
         z[~mask] = np.nan
         with RPCTransformer(self._rpc, **self._rpc_options) as tform:
-            # TODO: the center offset in .xy below & in GcpCamera is inefficient
             xy[:, mask] = tform.xy(ji[1, mask], ji[0, mask], zs=z[mask], offset='center')
 
         xyz = np.array([*xy, z])
@@ -884,9 +877,8 @@ class FrameCamera(Camera):
         if self._R is None or self._T is None:
             raise CameraInitError('Exterior parameters not initialised.')
 
-    def _horizon_fov(self) -> bool:
-        """Whether this camera's field of view includes, or is above, the horizon."""
-        # TODO: actually a world horizontal plane in line with camera, not a horizon
+    def _horizontal_fov(self) -> bool:
+        """Whether this camera's field of view includes, or is above, the horizontal."""
         self._test_init()
         # camera coords for image boundary
         w, h = np.array(self._im_size) - 1
@@ -1023,10 +1015,6 @@ class FrameCamera(Camera):
             3D world (x, y, z) coordinates as a 3-by-N array, with (x, y, z) along the first
             dimension.
         """
-        # TODO: consider only returning (x, y).  the z dimension is redundant, and it is used this
-        #  way in most (all?) places.
-        # TODO: i have noticed that the results with e.g. z=0 sometimes have z close to but not
-        #  equal 0.  is there a way of re-organising this so that doesn't happen?
         self._test_init()
         self._validate_pixel_coords(ji)
         self._validate_z(z, ji)
@@ -1039,7 +1027,7 @@ class FrameCamera(Camera):
         xyz_r = self._R.dot(xyz_)
 
         # find scales to reach z (offset for camera z)
-        scales = (z - self.pos[2]) / xyz_r[2]
+        scales = (z - self._T[2, 0]) / xyz_r[2]
 
         # scale to z with origin on camera, then offset to world
         xyz = (xyz_r * scales) + self._T
@@ -1157,9 +1145,9 @@ class FrameCamera(Camera):
             array, are given at the minimum of ``z``.
         """
         self._test_init()
-        if self._horizon_fov():
+        if self._horizontal_fov():
             raise OrthorityError(
-                "Camera has a field of view that includes, or is above, the horizon."
+                "Camera has a field of view that includes, or is above, the horizontal."
             )
 
         ji = self.pixel_boundary(num_pts=num_pts)
