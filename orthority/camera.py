@@ -365,37 +365,44 @@ class Camera(ABC):
         A rectangle of 2D pixel coordinates along the image boundary.
 
         :param num_pts:
-            Number of boundary points to include.  If set to ``None`` (the default), eight points
-            are included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include (should be even).  If set to ``None`` (the
+            default), eight points are included, with points at the image corners and mid-points
+            of the sides.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
             first dimension.
         """
-        # TODO: this does not always return the correct number of pts e.g. num_pts=7 / 11
 
         def rect_boundary(im_size: np.ndarray, num_pts: int) -> np.ndarray:
             """Return a rectangular pixel coordinate boundary of ``num_pts`` ~evenly spaced points
             for the given image size ``im_size``.
             """
+            if ((num_pts % 2) != 0) or (num_pts <= 0):
+                raise OrthorityError("'num_pts' should be even and greater than zero.")
+
             br = im_size - 1
-            perim = 2 * br.sum()
+            # num of pts along width & height (fractional parts sum to 1)
+            num_side_pts = (num_pts / 2) * br / br.sum()
+            # round num_side_pts, dealing with the case where fractional parts are 0.5, so that
+            # the rounded vals sum to num_pts / 2
+            num_side_pts[:] = (
+                [np.ceil(num_side_pts[0]), np.floor(num_side_pts[1])]
+                if np.all(num_side_pts % 1 == 0.5)
+                else np.round(num_side_pts)
+            )
+
+            num_side_pts = np.tile(num_side_pts.astype(int), 2)
             cnr_ji = np.array([[0, 0], [br[0], 0], br, [0, br[1]], [0, 0]])
-            dist = np.sum(np.abs(np.diff(cnr_ji, axis=0)), axis=1)
             return np.vstack(
                 [
-                    np.linspace(
-                        cnr_ji[i],
-                        cnr_ji[i + 1],
-                        np.round(num_pts * dist[i] / perim).astype('int'),
-                        endpoint=False,
-                    )
+                    np.linspace(cnr_ji[i], cnr_ji[i + 1], num_side_pts[i], endpoint=False)
                     for i in range(0, 4)
                 ]
             ).T
 
         im_size = np.array(self._im_size)
-        if not num_pts:
+        if num_pts is None:
             w, h = im_size - 1
             ji = np.array(
                 [[0, 0], [w / 2, 0], [w, 0], [w, h / 2], [w, h], [w / 2, h], [0, h], [0, h / 2]]
@@ -420,8 +427,9 @@ class Camera(ABC):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include.  If set to ``None`` (the default), eight points
-            are included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include (should be even).  If set to ``None`` (the
+            default), eight points are included, with points at the image corners and mid-points
+            of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.
@@ -1102,8 +1110,9 @@ class FrameCamera(Camera):
         valid area in the undistorted image returned by :meth:`~FrameCamera.read`.
 
         :param num_pts:
-            Number of boundary points to include in the polygon.  If set to ``None`` (the default),
-            eight points are included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include (should be even).  If set to ``None`` (the
+            default), eight points are included, with points at the image corners and mid-points
+            of the sides.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
@@ -1130,8 +1139,9 @@ class FrameCamera(Camera):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include.  If set to ``None`` (the default), eight points
-            are included, with points at the image corners and mid-points of the sides.
+            Number of boundary points to include (should be even).  If set to ``None`` (the
+            default), eight points are included, with points at the image corners and mid-points
+            of the sides.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.

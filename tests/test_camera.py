@@ -644,6 +644,14 @@ def test_pixel_boundary(rpc_camera: Camera, num_pts: int | None):
     assert test_ji == ref_ji
 
 
+def test_pixel_boundary_error(rpc_camera: Camera):
+    """Test ``Camera.pixel_boundary()`` raises an error when ``num_pts`` is odd or <= 0."""
+    with pytest.raises(OrthorityError, match='should be even'):
+        _ = rpc_camera.pixel_boundary(num_pts=3)
+    with pytest.raises(OrthorityError, match='greater than zero'):
+        _ = rpc_camera.pixel_boundary(num_pts=0)
+
+
 @pytest.mark.parametrize(
     'camera, num_pts',
     [
