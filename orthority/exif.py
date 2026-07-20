@@ -19,9 +19,9 @@ from __future__ import annotations
 
 import logging
 import warnings
+from collections.abc import Sequence
 from os import PathLike
-from typing import Sequence
-from xml.etree import cElementTree as ET
+from xml.etree import ElementTree as ET
 
 import numpy as np
 import rasterio as rio
@@ -76,8 +76,9 @@ _xmp_schemas = dict(
 """
 A schema of known XMP keys.
 
-Uses xml namespace qualified keys which are unique, rather than xmltodict type prefix qualified 
-keys, which can have different prefixes referring to the same namespace."""
+Uses xml namespace qualified keys which are unique, rather than xmltodict type prefix qualified
+keys, which can have different prefixes referring to the same namespace.
+"""
 
 
 def _xml_to_flat_dict(xmp_str: str) -> dict[str, str]:
@@ -200,7 +201,7 @@ class Exif:
 
     @property
     def orientation(self) -> int | None:
-        """Image orientation code (see https://exiftool.org/TagNames/EXIF.html)."""
+        """Image orientation code (see https://exiftool.sourceforge.net/TagNames/EXIF.html)."""
         return self._orientation
 
     @property
@@ -275,7 +276,9 @@ class Exif:
         mm_per_unit = mm_per_unit_dict.get(unit_code, None)
         if not mm_per_unit:
             warnings.warn(
-                f'Unknown focal plane resolution unit: {unit_code}', category=OrthorityWarning
+                f'Unknown focal plane resolution unit: {unit_code}',
+                category=OrthorityWarning,
+                stacklevel=2,
             )
             return None
 
@@ -332,7 +335,7 @@ class Exif:
     @staticmethod
     def _get_xmp_lla(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
         """Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
-        for schema_name, xmp_schema in _xmp_schemas.items():
+        for xmp_schema in _xmp_schemas.values():
             if sum([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]) == 3:
                 lla = [float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']]
                 return lla[0], lla[1], lla[2]
@@ -341,7 +344,7 @@ class Exif:
     @staticmethod
     def _get_xmp_rpy(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
         """Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist."""
-        for schema_name, xmp_schema in _xmp_schemas.items():
+        for xmp_schema in _xmp_schemas.values():
             if sum([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]) == 3:
                 rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
                 rpy *= np.array(xmp_schema['rpy_gains'])
@@ -352,7 +355,7 @@ class Exif:
     @staticmethod
     def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> list[float] | None:
         """Return the camera dewarp parameters if they exist."""
-        for schema_name, xmp_schema in _xmp_schemas.items():
+        for xmp_schema in _xmp_schemas.values():
             dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
             if dewarp_str:
                 return [float(ps) for ps in dewarp_str.split(';')[-1].split(',')]
