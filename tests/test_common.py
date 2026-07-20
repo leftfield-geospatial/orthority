@@ -422,6 +422,7 @@ def test_create_profile_non_config_items(driver: Driver, exp_profile: dict):
         ('uint8', 'deflate', 'deflate'),
         ('uint16', 'jpeg', 'jpeg'),
         ('int16', 'lzw', 'lzw'),
+        ('float32', 'zstd', 'zstd'),
     ],
 )
 def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
@@ -566,10 +567,12 @@ def test_create_profile_creation_options():
         (Driver.gtiff, (1, 1, 1), 'uint16', Compress.deflate, True),
         (Driver.gtiff, (3, 1, 1), 'float32', Compress.lzw, False),
         (Driver.gtiff, (3, 1, 1), 'uint8', Compress.jpeg, True),
+        (Driver.gtiff, (3, 1, 1), 'float64', Compress.zstd, False),
         (Driver.cog, (1, 1, 1), 'uint8', Compress.jpeg, False),
         (Driver.cog, (1, 1, 1), 'uint16', Compress.deflate, True),
         (Driver.cog, (3, 1, 1), 'float32', Compress.lzw, False),
         (Driver.cog, (3, 1, 1), 'uint8', Compress.jpeg, True),
+        (Driver.cog, (3, 1, 1), 'float64', Compress.zstd, False),
     ],
 )
 def test_create_profile_image(
@@ -596,7 +599,7 @@ def test_create_profile_image(
             assert im_struct['LAYOUT'].lower() == 'cog'
 
         # tiling
-        assert im.profile['tiled'] == True
+        assert im.profile['tiled']
         assert im.profile['blockxsize'] == im.profile['blockysize'] == 512
 
         # dtype and compression

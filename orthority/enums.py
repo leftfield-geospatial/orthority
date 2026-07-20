@@ -118,6 +118,8 @@ class Compress(_StrChoiceEnum):
     """Deflate compression."""
     lzw = 'lzw'
     """LZW compression."""
+    zstd = 'zstd'
+    """Zstd compression."""
 
 
 class CsvFormat(Enum):
