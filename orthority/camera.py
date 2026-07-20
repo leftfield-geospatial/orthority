@@ -365,9 +365,9 @@ class Camera(ABC):
         A rectangle of 2D pixel coordinates along the image boundary.
 
         :param num_pts:
-            Number of boundary points to include (should be even).  If set to ``None`` (the
-            default), eight points are included, with points at the image corners and mid-points
-            of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
+            Otherwise, it should be even.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
@@ -427,9 +427,9 @@ class Camera(ABC):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include (should be even).  If set to ``None`` (the
-            default), eight points are included, with points at the image corners and mid-points
-            of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
+            Otherwise, it should be even.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.
@@ -1098,9 +1098,9 @@ class FrameCamera(Camera):
         valid area in the undistorted image returned by :meth:`~FrameCamera.read`.
 
         :param num_pts:
-            Number of boundary points to include (should be even).  If set to ``None`` (the
-            default), eight points are included, with points at the image corners and mid-points
-            of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
+            Otherwise, it should be even.
 
         :return:
             Boundary pixel (j=column, i=row) coordinates as a 2-by-N array, with (j, i) along the
@@ -1127,9 +1127,9 @@ class FrameCamera(Camera):
         :param z:
             Z values(s) as a single value or a 2D array (surface).
         :param num_pts:
-            Number of boundary points to include (should be even).  If set to ``None`` (the
-            default), eight points are included, with points at the image corners and mid-points
-            of the sides.
+            Number of boundary points to include.  If set to ``None`` (the default), eight points
+            are included, with points at the image corners and mid-points of the sides.
+            Otherwise, it should be even.
         :param transform:
             Affine transform defining the (x, y) world coordinates of ``z`` when it is an array.
             Required when ``z`` is an array and not used otherwise.
