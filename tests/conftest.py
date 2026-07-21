@@ -984,10 +984,12 @@ def exif_image_file(odm_image_file: Path, tmp_path_factory: pytest.TempPathFacto
         dst_profile['compress'] = 'jpeg'
         with rio.open(dst_filename, 'w', **dst_profile) as dst_im:
             dst_tags = src_im.tags()
+            # set tags to give a sensor size of 13.2mm x 8.8mm (4 * ... is for the downsampling
+            # factor used when creating the test data)
             dst_tags.update(
-                EXIF_FocalPlaneResolutionUnit='4',
-                EXIF_FocalPlaneXResolution=f'({dst_profile["width"] / 13.2:.4f})',
-                EXIF_FocalPlaneYResolution=f'({dst_profile["height"] / 8.8:.4f})',
+                EXIF_FocalPlaneResolutionUnit='4',  # mm
+                EXIF_FocalPlaneXResolution=f'({4 * dst_profile["width"] / 13.2:.4f})',
+                EXIF_FocalPlaneYResolution=f'({4 * dst_profile["height"] / 8.8:.4f})',
             )
             dst_im.update_tags(**dst_tags)
             dst_im.write(src_im.read())
