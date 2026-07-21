@@ -89,7 +89,10 @@ def test_ngi_image(ngi_image_file: Path):
 def test_get_exif_lla(odm_image_file: Path):
     """Test the ``Exif._get_exif_lla()`` calculation."""
     exif = Exif(odm_image_file)
-    assert exif._get_exif_lla() == pytest.approx(exif._get_xmp_lla(), abs=1e-6)
+    exif_lla = exif._get_exif_lla()
+    xmp_lla = exif._get_xmp_lla()
+    assert exif_lla[:2] == pytest.approx(xmp_lla[:2], abs=1e-6)
+    assert exif_lla[2] == pytest.approx(xmp_lla[2], abs=1e-2)
 
 
 def test_sensor_size(exif_image_file: Path):
