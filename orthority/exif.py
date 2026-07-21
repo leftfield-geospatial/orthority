@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 import warnings
 from collections.abc import Sequence
+from functools import cached_property
 from os import PathLike
 from xml.etree import ElementTree as ET
 
@@ -76,7 +77,7 @@ _xmp_schemas = dict(
 """
 A schema of known XMP keys.
 
-Uses xml namespace qualified keys which are unique, rather than xmltodict type prefix qualified
+Uses XML namespace qualified keys which are unique, rather than xmltodict type prefix qualified
 keys, which can have different prefixes referring to the same namespace.
 """
 
@@ -115,166 +116,90 @@ class Exif:
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(file, 'r') as ds:
             # NB: avoid calling ds.tag_namespaces() which reads more (all?) of the dataset
             # compared to ds.tags() with known ns=
-            exif_dict = ds.tags()
-            exif_dict = ds.tags(ns='EXIF') if len(exif_dict) == 0 else exif_dict
+            self._exif_dict = ds.tags()
+            self._exif_dict = ds.tags(ns='EXIF') if len(self._exif_dict) == 0 else self._exif_dict
             self._im_size = ds.shape[::-1]
 
-            xmp_dict = ds.tags(ns='xml:XMP')
-            if len(xmp_dict) > 0:
-                xmp_str = xmp_dict['xml:XMP'].strip('xml:XMP=')
-                xmp_dict = _xml_to_flat_dict(xmp_str)
+            self._xmp_dict = ds.tags(ns='xml:XMP')
+            if len(self._xmp_dict) > 0:
+                xmp_str = self._xmp_dict['xml:XMP'].strip('xml:XMP=')
+                self._xmp_dict = _xml_to_flat_dict(xmp_str)
             else:
                 logger.debug(f"'{self._filename}' contains no XMP metadata")
 
-        self._make, self._model, self._serial = self._get_make_model_serial(exif_dict)
-        self._tag_im_size = self._get_tag_im_size(exif_dict)
-        self._sensor_size = self._get_sensor_size(exif_dict, self._im_size)
-        self._focal_len, self._focal_len_35 = self._get_focal_len(exif_dict)
-        self._orientation = self._get_orientation(exif_dict)
-        self._lla = self._get_xmp_lla(xmp_dict) or self._get_lla(exif_dict)
-        self._rpy = self._get_xmp_rpy(xmp_dict)
-        self._dewarp = self._get_xmp_dewarp(xmp_dict)
-
     def __str__(self):
-        lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._lla) if self._lla else 'None'
-        rpy_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self._rpy) if self._rpy else 'None'
-        dewarp_str = ', '.join([f'{p:.4f}' for p in self._dewarp]) if self._dewarp else 'None'
+        lla_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self.lla) if self.lla else 'None'
+        rpy_str = '({:.4f}, {:.4f}, {:.4f})'.format(*self.rpy) if self.rpy else 'None'
+        dewarp_str = ', '.join([f'{p:.4f}' for p in self.dewarp]) if self.dewarp else 'None'
         return (
-            f'Image: {self._filename}'
-            f'\nCamera: {self._make} {self._model}'
+            f'Image: {self.filename}'
+            f'\nCamera: {self.make} {self.model}'
             f'\nActual image size: {self.im_size}'
-            f'\nTagged image size: {self._tag_im_size}'
-            f'\nFocal length: {self._focal_len}'
-            f'\nFocal length (35mm): {self._focal_len_35}'
-            f'\nSensor size: {self._sensor_size}'
-            f'\nOrientation: {self._orientation}'
+            f'\nTagged image size: {self.tag_im_size}'
+            f'\nFocal length: {self.focal_len}'
+            f'\nFocal length (35mm): {self.focal_len_35}'
+            f'\nSensor size: {self.sensor_size}'
+            f'\nOrientation: {self.orientation}'
             f'\nLatitude, longitude, altitude: {lla_str}'
             f'\nRoll, pitch, yaw: {rpy_str}'
             f'\nDewarp: {dewarp_str}'
         )
 
-    # TODO: used cached properties instead of _get_*() methods and @property properties
     @property
     def filename(self) -> str:
         """Image filename."""
         return self._filename
 
-    @property
+    @cached_property
     def make(self) -> str | None:
         """Camera make."""
-        return self._make
+        make = self._exif_dict.get('EXIF_Make')
+        return make.lower() if make is not None else None
 
-    @property
+    @cached_property
     def model(self) -> str | None:
         """Camera model."""
-        return self._model
+        model = self._exif_dict.get('EXIF_Model')
+        return model.lower() if model is not None else None
 
-    @property
+    @cached_property
     def serial(self) -> str | None:
         """Camera serial number."""
-        return self._serial
+        return self._exif_dict.get('EXIF_BodySerialNumber')
 
     @property
     def im_size(self) -> tuple[int, int] | None:
         """Actual image (width, height) in pixels."""
         return self._im_size
 
-    @property
+    @cached_property
     def tag_im_size(self) -> tuple[int, int] | None:
         """Tagged image (width, height) in pixels."""
-        return self._tag_im_size
+        width = self._get_exif_value('EXIF_PixelXDimension')
+        height = self._get_exif_value('EXIF_PixelYDimension')
+        return (int(width), int(height)) if width is not None and height is not None else None
 
-    @property
+    @cached_property
     def sensor_size(self) -> tuple[float, float] | None:
         """Sensor (width, height) in mm."""
-        return self._sensor_size
-
-    @property
-    def focal_len(self) -> float | None:
-        """Focal length in mm."""
-        return self._focal_len
-
-    @property
-    def focal_len_35(self) -> float | None:
-        """35mm equivalent focal length in mm."""
-        return self._focal_len_35
-
-    @property
-    def orientation(self) -> int | None:
-        """Image orientation code (see https://exiftool.sourceforge.net/TagNames/EXIF.html)."""
-        return self._orientation
-
-    @property
-    def lla(self) -> tuple[float, float, float] | None:
-        """(latitude, longitude, altitude) coordinates with latitude and longitude in decimal
-        degrees, and altitude in meters.
-        """
-        return self._lla
-
-    @property
-    def rpy(self) -> tuple[float, float, float] | None:
-        """(roll, pitch, yaw) camera/gimbal angles in degrees."""
-        return self._rpy
-
-    @property
-    def dewarp(self) -> list[float] | None:
-        """Dewarp parameters."""
-        return self._dewarp
-
-    @staticmethod
-    def _get_exif_float(exif_dict: dict[str, str], key: str) -> float | tuple[float, ...] | None:
-        """Convert numeric EXIF tag to float(s)."""
-        if key not in exif_dict:
-            return None
-        val_list = [
-            float(val_str.strip(' (')) for val_str in exif_dict[key].split(')') if len(val_str) > 0
-        ]
-        return val_list[0] if len(val_list) == 1 else tuple(val_list)
-
-    @staticmethod
-    def _get_make_model_serial(
-        exif_dict: dict[str, str],
-    ) -> tuple[str | None, str | None, str | None]:
-        """Return camera make and model string."""
-        make_key = 'EXIF_Make'
-        model_key = 'EXIF_Model'
-        serial_key = 'EXIF_BodySerialNumber'
-        make = exif_dict[make_key].lower() if make_key in exif_dict else None
-        model = exif_dict[model_key].lower() if model_key in exif_dict else None
-        serial = exif_dict[serial_key] if serial_key in exif_dict else None
-        return make, model, serial
-
-    @staticmethod
-    def _get_tag_im_size(exif_dict: dict[str, str]) -> tuple[int, int] | None:
-        """Return the tagged image (width, height) in pixels."""
-        width = Exif._get_exif_float(exif_dict, 'EXIF_PixelXDimension')
-        height = Exif._get_exif_float(exif_dict, 'EXIF_PixelYDimension')
-        return (int(width), int(height)) if width and height else None
-
-    @staticmethod
-    def _get_sensor_size(
-        exif_dict: dict[str, str], im_size: tuple[int, int] | np.ndarray
-    ) -> tuple[float, float] | None:
-        """Return the sensor (width, height) in mm."""
-
         unit_key = 'EXIF_FocalPlaneResolutionUnit'
         xres_key = 'EXIF_FocalPlaneXResolution'
         yres_key = 'EXIF_FocalPlaneYResolution'
 
-        if unit_key not in exif_dict or xres_key not in exif_dict or yres_key not in exif_dict:
+        if not {unit_key, xres_key, yres_key}.issubset(self._exif_dict.keys()):
             return None
 
         # find mm per resolution unit
-        unit_code = int(exif_dict["EXIF_FocalPlaneResolutionUnit"])
+        unit_code = int(self._exif_dict[unit_key])
         mm_per_unit_dict = {
-            # https://www.sno.phy.queensu.ca/~phil/exiftool/TagNames/EXIF.html
+            # https://exiftool.sourceforge.net/TagNames/EXIF.html
             2: 25.4,  # inches
             3: 10.0,  # cm
             4: 1.0,  # mm
             5: 0.001,  # um
         }
-        mm_per_unit = mm_per_unit_dict.get(unit_code, None)
-        if not mm_per_unit:
+        mm_per_unit = mm_per_unit_dict.get(unit_code)
+        if mm_per_unit is None:
             warnings.warn(
                 f'Unknown focal plane resolution unit: {unit_code}',
                 category=OrthorityWarning,
@@ -283,26 +208,65 @@ class Exif:
             return None
 
         # return sensor size in mm
-        pixels_per_unit = np.array(
-            [Exif._get_exif_float(exif_dict, xres_key), Exif._get_exif_float(exif_dict, yres_key)]
-        )
-        return tuple((mm_per_unit * np.array(im_size) / pixels_per_unit).tolist())
+        pixels_per_unit = np.array([self._get_exif_value(xres_key), self._get_exif_value(yres_key)])
+        sensor_size = mm_per_unit * np.array(self.im_size) / pixels_per_unit
+        return tuple(sensor_size.tolist())
 
-    @staticmethod
-    def _get_focal_len(exif_dict: dict[str, str]) -> tuple[float | None, float | None]:
-        """Return the actual and 35mm equivalent focal lengths in mm."""
-        focal_35 = Exif._get_exif_float(exif_dict, 'EXIF_FocalLengthIn35mmFilm')
-        focal = Exif._get_exif_float(exif_dict, 'EXIF_FocalLength')
-        return focal, focal_35
+    @cached_property
+    def focal_len(self) -> float | None:
+        """Focal length in mm."""
+        return self._get_exif_value('EXIF_FocalLength')
 
-    @staticmethod
-    def _get_orientation(exif_dict: dict[str, str]) -> int | None:
-        ori_key = 'EXIF_Orientation'
-        orientation = int(exif_dict[ori_key]) if ori_key in exif_dict else None
-        return orientation
+    @cached_property
+    def focal_len_35(self) -> float | None:
+        """35mm equivalent focal length in mm."""
+        return self._get_exif_value('EXIF_FocalLengthIn35mmFilm')
 
-    @staticmethod
-    def _get_lla(exif_dict: dict[str, str]) -> tuple[float, float, float] | None:
+    @cached_property
+    def orientation(self) -> int | None:
+        """Image orientation code (see https://exiftool.sourceforge.net/TagNames/EXIF.html)."""
+        orientation = self._exif_dict.get('EXIF_Orientation')
+        return int(orientation) if orientation is not None else None
+
+    @cached_property
+    def lla(self) -> tuple[float, float, float] | None:
+        """(latitude, longitude, altitude) coordinates with latitude and longitude in decimal
+        degrees, and altitude in meters.
+        """
+        return self._get_xmp_lla() or self._get_exif_lla()
+
+    @cached_property
+    def rpy(self) -> tuple[float, float, float] | None:
+        """(roll, pitch, yaw) camera/gimbal angles in degrees."""
+        for xmp_schema in _xmp_schemas.values():
+            if len(set(xmp_schema['rpy_keys']).intersection(self._xmp_dict.keys())) == 3:
+                rpy = np.array([float(self._xmp_dict[key]) for key in xmp_schema['rpy_keys']])
+                rpy *= np.array(xmp_schema['rpy_gains'])
+                rpy += np.array(xmp_schema['rpy_offsets'])
+                return tuple(rpy.tolist())
+        return None
+
+    @cached_property
+    def dewarp(self) -> tuple[float, ...] | None:
+        """Dewarp parameters."""
+        for xmp_schema in _xmp_schemas.values():
+            dewarp_str = self._xmp_dict.get(xmp_schema['dewarp_key'])
+            if dewarp_str:
+                return tuple([float(ps) for ps in dewarp_str.split(';')[-1].split(',')])
+        return None
+
+    def _get_exif_value(self, key: str) -> float | tuple[float, ...] | None:
+        """Get the float value(s) for a numeric EXIF tag."""
+        if key not in self._exif_dict:
+            return None
+        values = [
+            float(val_str.strip(' ('))
+            for val_str in self._exif_dict[key].split(')')
+            if len(val_str) > 0
+        ]
+        return values[0] if len(values) == 1 else tuple(values)
+
+    def _get_exif_lla(self) -> tuple[float, float, float] | None:
         """Return the (latitude, longitude, altitude) EXIF image location with latitude, longitude
         in decimal degrees, and altitude in meters.
         """
@@ -310,7 +274,7 @@ class Exif:
         lon_ref_key = 'EXIF_GPSLongitudeRef'
         lat_key = 'EXIF_GPSLatitude'
         lon_key = 'EXIF_GPSLongitude'
-        if any([key not in exif_dict for key in [lat_ref_key, lon_ref_key, lat_key, lon_key]]):
+        if not {lat_ref_key, lon_ref_key, lat_key, lon_key}.issubset(self._exif_dict.keys()):
             return None
 
         # get latitude, longitude
@@ -321,46 +285,29 @@ class Exif:
             sign = 1 if ref in 'NE' else -1
             return ((dms[2] / 60 + dms[1]) / 60 + dms[0]) * sign
 
-        lat = dms_to_decimal(Exif._get_exif_float(exif_dict, lat_key), exif_dict[lat_ref_key])
-        lon = dms_to_decimal(Exif._get_exif_float(exif_dict, lon_key), exif_dict[lon_ref_key])
+        lat = dms_to_decimal(self._get_exif_value(lat_key), self._exif_dict[lat_ref_key])
+        lon = dms_to_decimal(self._get_exif_value(lon_key), self._exif_dict[lon_ref_key])
 
         # get altitude
-        alt = Exif._get_exif_float(exif_dict, 'EXIF_GPSAltitude') or 0.0
-        alt_ref = int(exif_dict.get('EXIF_GPSAltitudeRef', '0x00'), 0)
+        alt = self._get_exif_value('EXIF_GPSAltitude') or 0.0
+        alt_ref = int(self._exif_dict.get('EXIF_GPSAltitudeRef', '0x00'), base=0)
         if alt_ref == 1:
             alt *= -1
 
         return lat, lon, alt
 
-    @staticmethod
-    def _get_xmp_lla(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
+    def _get_xmp_lla(self) -> tuple[float, float, float] | None:
         """Return the XMP (latitude, longitude, altitude) values if all of them exist. ."""
         for xmp_schema in _xmp_schemas.values():
-            if sum([lla_key in xmp_dict for lla_key in xmp_schema['lla_keys']]) == 3:
-                lla = [float(xmp_dict[lla_key]) for lla_key in xmp_schema['lla_keys']]
-                return lla[0], lla[1], lla[2]
-        return None
-
-    @staticmethod
-    def _get_xmp_rpy(xmp_dict: dict[str, str]) -> tuple[float, float, float] | None:
-        """Return the camera / gimbal (roll, pitch, yaw) angles in degrees if they exist."""
-        for xmp_schema in _xmp_schemas.values():
-            if sum([rpy_key in xmp_dict for rpy_key in xmp_schema['rpy_keys']]) == 3:
-                rpy = np.array([float(xmp_dict[rpy_key]) for rpy_key in xmp_schema['rpy_keys']])
-                rpy *= np.array(xmp_schema['rpy_gains'])
-                rpy += np.array(xmp_schema['rpy_offsets'])
-                return tuple(rpy.tolist())
-        return None
-
-    @staticmethod
-    def _get_xmp_dewarp(xmp_dict: dict[str, str]) -> list[float] | None:
-        """Return the camera dewarp parameters if they exist."""
-        for xmp_schema in _xmp_schemas.values():
-            dewarp_str = xmp_dict.get(xmp_schema['dewarp_key'], None)
-            if dewarp_str:
-                return [float(ps) for ps in dewarp_str.split(';')[-1].split(',')]
+            if len(set(xmp_schema['lla_keys']).intersection(self._xmp_dict.keys())) == 3:
+                lla = [float(self._xmp_dict[key]) for key in xmp_schema['lla_keys']]
+                return tuple(lla)
         return None
 
     def to_dict(self) -> dict[str, object]:
         """Convert to a property dictionary."""
-        return {k: getattr(self, k) for k, v in vars(type(self)).items() if isinstance(v, property)}
+        return {
+            k: getattr(self, k)
+            for k, v in vars(type(self)).items()
+            if isinstance(v, (property, cached_property))
+        }
