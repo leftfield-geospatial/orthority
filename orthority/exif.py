@@ -186,7 +186,10 @@ class Exif:
         xres_key = 'EXIF_FocalPlaneXResolution'
         yres_key = 'EXIF_FocalPlaneYResolution'
 
-        if not {unit_key, xres_key, yres_key}.issubset(self._exif_dict.keys()):
+        if (
+            not {unit_key, xres_key, yres_key}.issubset(self._exif_dict.keys())
+            or self.tag_im_size is None
+        ):
             return None
 
         # find mm per resolution unit
@@ -209,7 +212,7 @@ class Exif:
 
         # return sensor size in mm
         pixels_per_unit = np.array([self._get_exif_value(xres_key), self._get_exif_value(yres_key)])
-        sensor_size = mm_per_unit * np.array(self.im_size) / pixels_per_unit
+        sensor_size = mm_per_unit * np.array(self.tag_im_size) / pixels_per_unit
         return tuple(sensor_size.tolist())
 
     @cached_property
