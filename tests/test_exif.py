@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import fsspec
+import pytest
 import rasterio as rio
 
 from orthority.exif import Exif
@@ -85,19 +86,31 @@ def test_ngi_image(ngi_image_file: Path):
         assert getattr(exif, attr) is None
 
 
-def test_dataset(odm_image_file: str):
+def test_get_exif_lla(odm_image_file: Path):
+    """Test the ``Exif._get_exif_lla()`` calculation."""
+    exif = Exif(odm_image_file)
+    assert exif._get_exif_lla() == pytest.approx(exif._get_xmp_lla(), abs=1e-6)
+
+
+def test_sensor_size(exif_image_file: Path):
+    """Test the ``sensor_size`` calculation."""
+    exif = Exif(exif_image_file)
+    assert exif.sensor_size == pytest.approx((13.2, 8.8), abs=1e-5)
+
+
+def test_dataset(odm_image_file: Path):
     """Test reading an image from an open dataset."""
     with rio.open(odm_image_file, 'r') as ds:
         exif = Exif(ds)
         assert not ds.closed
     assert ds.closed
-    assert exif.filename == Path(odm_image_file).name
+    assert exif.filename == odm_image_file.name
     assert exif.im_size is not None
 
 
-def test_open_file(odm_image_file: str):
+def test_open_file(odm_image_file: Path):
     """Test reading an image from an fsspec OpenFile instance."""
     ofile = fsspec.open(odm_image_file, 'rb')
     exif = Exif(ofile)
-    assert exif.filename == Path(odm_image_file).name
+    assert exif.filename == odm_image_file.name
     assert exif.im_size is not None
