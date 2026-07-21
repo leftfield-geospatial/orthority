@@ -684,13 +684,13 @@ def odm_dataset_dir() -> Path:
 @pytest.fixture(scope='session')
 def odm_image_files(odm_dataset_dir: Path) -> list[Path]:
     """ODM drone image files."""
-    return [fn for fn in odm_dataset_dir.joinpath('images').glob('*.tif')]
+    return sorted(odm_dataset_dir.joinpath('images').glob('*.tif'))
 
 
 @pytest.fixture(scope='session')
-def odm_image_file(odm_dataset_dir: Path) -> Path:
+def odm_image_file(odm_image_files: list[Path]) -> Path:
     """ODM drone image file."""
-    return next(iter(odm_dataset_dir.joinpath('images').glob('*.tif')))
+    return odm_image_files[0]
 
 
 @pytest.fixture(scope='session')
@@ -728,13 +728,13 @@ def odm_crs(odm_dem_file) -> str:
 @pytest.fixture(scope='session')
 def ngi_image_files() -> list[Path]:
     """NGI image files."""
-    return [fn for fn in root_path.joinpath('tests/data/ngi').glob('*RGB.tif')]
+    return sorted(root_path.joinpath('tests/data/ngi').glob('*RGB.tif'))
 
 
 @pytest.fixture(scope='session')
-def ngi_image_file() -> Path:
+def ngi_image_file(ngi_image_files: list[Path]) -> Path:
     """NGI aerial image file."""
-    return next(iter(root_path.joinpath('tests/data/ngi').glob('*RGB.tif')))
+    return ngi_image_files[0]
 
 
 @pytest.fixture(scope='session')
