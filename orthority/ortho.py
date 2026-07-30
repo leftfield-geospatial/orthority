@@ -31,10 +31,10 @@ import cv2
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from rasterio import warp
 from rasterio.crs import CRS
 from rasterio.io import DatasetWriter
 from rasterio.transform import array_bounds
-from rasterio.warp import reproject, transform, transform_bounds
 from rasterio.windows import Window
 from tqdm.auto import tqdm
 
@@ -137,6 +137,13 @@ class Ortho:
                 raise OrthorityError(
                     f"DEM band {dem_band} is invalid for '{dem_name}' with {dem_im.count} band(s)"
                 )
+            dem_xform = dem_im.transform
+            if not (dem_xform.a > 0 and dem_xform.e < 0 and dem_xform.b == dem_xform.d == 0):
+                # North-up is required by e.g. DatasetReader.window(), transform.array_bounds()
+                # and warp.aligned_target()
+                dem_name = common.get_filename(dem_file)
+                raise OrthorityError(f"'{dem_name}' is not in a standard North-up orientation.")
+
             # crs comparison is time-consuming - perform it once here
             crs_equal = self._crs == dem_im.crs
 
@@ -147,7 +154,7 @@ class Ortho:
             ji = np.array(self.camera.im_size).reshape(-1, 1) / 2
             world_xyz = self.camera.pixel_to_world_z(ji, 0)
             for z in [0, 1]:
-                ref_xyz = transform(self._crs, ref_crs, world_xyz[0], world_xyz[1], [z])
+                ref_xyz = warp.transform(self._crs, ref_crs, world_xyz[0], world_xyz[1], [z])
                 zs.append(ref_xyz[2][0])
             z_scale = 1 / (zs[1] - zs[0])
             dem_full_win = Window(0, 0, dem_im.width, dem_im.height)
@@ -160,7 +167,7 @@ class Ortho:
                 world_xyz = np.column_stack(world_xyz)
                 world_bounds = [*np.min(world_xyz[:2], axis=1), *np.max(world_xyz[:2], axis=1)]
                 dem_bounds = (
-                    transform_bounds(self._crs, dem_im.crs, *world_bounds)
+                    warp.transform_bounds(self._crs, dem_im.crs, *world_bounds)
                     if not crs_equal
                     else world_bounds
                 )
@@ -186,7 +193,7 @@ class Ortho:
             for index in [dem_array.argmin(), dem_array.argmax()]:
                 ij = np.unravel_index(index, dem_array.shape)
                 dem_xyz = (*(dem_im.window_transform(dem_win) * ij[::-1]), dem_array[ij])
-                world_xyz = transform(dem_im.crs, self._crs, *[[coord] for coord in dem_xyz])
+                world_xyz = warp.transform(dem_im.crs, self._crs, *[[coord] for coord in dem_xyz])
                 zs.append(world_xyz[2][0])
 
             dem_win = get_win_at_zs(zs)
@@ -231,7 +238,7 @@ class Ortho:
         dem_z = np.nanmedian(self._dem_array)
         dem_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
         dem_xyz = (*(self._dem_transform * dem_ji), dem_z)
-        world_z = transform(self._dem_crs, self._crs, *[[coord] for coord in dem_xyz])[2][0]
+        world_z = warp.transform(self._dem_crs, self._crs, *[[coord] for coord in dem_xyz])[2][0]
         world_xy = self._camera.world_boundary(world_z)[:2]
 
         # return the average pixel resolution inside the world boundary
@@ -240,11 +247,12 @@ class Ortho:
         return np.sqrt(world_area / pixel_area)
 
     def _reproject_dem(
-        self, dem_interp: Interp, resolution: tuple[float, float]
+        self, dem_interp: Interp, resolution: tuple[float, float], aligned_pixels: bool = False
     ) -> tuple[np.ndarray, rio.Affine]:
         """
         Reproject self._dem_array to the world / ortho CRS and ortho resolution, given reprojection
-        interpolation and resolution parameters.
+        interpolation and resolution parameters.  Requires self._dem_transform to be in the
+        standard 'North-up' orientation.
 
         Returns the reprojected DEM array and corresponding transform.
         """
@@ -254,46 +262,51 @@ class Ortho:
             return self._dem_array.copy(), self._dem_transform
 
         # error check resolution
-        init_bounds = array_bounds(*self._dem_array.shape, self._dem_transform)
-        ortho_bounds = np.array(transform_bounds(self._dem_crs, self._crs, *init_bounds))
-        ortho_size = ortho_bounds[2:] - ortho_bounds[:2]
-        if np.any(resolution > ortho_size):
+        src_bounds = array_bounds(*self._dem_array.shape, self._dem_transform)
+        dst_bounds = np.array(warp.transform_bounds(self._dem_crs, self._crs, *src_bounds))
+        dst_size = dst_bounds[2:] - dst_bounds[:2]
+        if np.any(resolution > dst_size):
             raise OrthorityError(
                 f"Ortho resolution for '{self._src_name}' is larger than the ortho bounds."
             )
 
         # find z scaling from dem to world / ortho crs to set MULT_FACTOR_VERTICAL_SHIFT
         # (rasterio does not set it automatically, as GDAL does)
-        dem_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
-        dem_xy = self._dem_transform * dem_ji
-        world_zs = []
+        src_ji = (np.array(self._dem_array.shape[::-1]) - 1) / 2
+        src_xy = self._dem_transform * src_ji
+        dst_zs = []
         for z in [0, 1]:
-            world_xyz = transform(self._dem_crs, self._crs, [dem_xy[0]], [dem_xy[1]], [z])
-            world_zs.append(world_xyz[2][0])
-        z_scale = world_zs[1] - world_zs[0]
+            dst_xyz = warp.transform(self._dem_crs, self._crs, [src_xy[0]], [src_xy[1]], [z])
+            dst_zs.append(dst_xyz[2][0])
+        z_scale = dst_zs[1] - dst_zs[0]
 
-        # TODO: rasterio/GDAL sometimes finds bounds for the reprojected dem that lie just inside
-        #  the source dem bounds.  This seems suspect, although is unlikely to affect ortho
-        #  bounds so am leaving as is for now.
-        # TODO: option to align the reprojected transform to whole number of pixels from 0 offset
+        # find the transform and shape of the reprojected DEM
+        dst_transform = rio.Affine(
+            resolution[0], 0, dst_bounds[0], 0, -resolution[1], dst_bounds[3]
+        )
+        dst_width, dst_height = np.ceil(dst_size / resolution).astype(int)
+        if aligned_pixels:
+            dst_transform, dst_width, dst_height = warp.aligned_target(
+                dst_transform, dst_width, dst_height, resolution
+            )
 
-        # reproject dem_array to world / ortho crs and ortho resolution
-        dem_array, dem_transform = reproject(
+        # reproject self._dem_array to world / ortho crs and ortho resolution
+        dst_array = np.full((dst_height, dst_width), fill_value=np.nan, dtype='float32')
+        warp.reproject(
             self._dem_array,
-            None,
+            destination=dst_array,
             src_crs=self._dem_crs,
             src_transform=self._dem_transform,
             src_nodata=float('nan'),
             dst_crs=self._crs,
-            dst_resolution=resolution,
+            dst_transform=dst_transform,
             resampling=dem_interp.to_rio(),
-            dst_nodata=float('nan'),
-            init_dest_nodata=True,
+            init_dest_nodata=False,
             apply_vertical_shift=True,
             mult_factor_vertical_shift=z_scale,
             num_threads=os.cpu_count(),
         )
-        return dem_array.squeeze(), dem_transform
+        return dst_array, dst_transform
 
     def _mask_dem(
         self,
@@ -503,6 +516,7 @@ class Ortho:
         driver: str | Driver = common._default_out_config['driver'],
         overwrite: bool = common._default_out_config['overwrite'],
         progress: bool | dict = False,
+        aligned_pixels: bool = False,
     ) -> None:
         """
         Orthorectify the source image.
@@ -529,7 +543,7 @@ class Ortho:
             Interpolation method for reprojecting the DEM.
         :param per_band:
             Remap the source to ortho image all bands at once (``False``), or band-by-band
-            (``True``). ``False`` is faster but requires more memory.
+            (``True``). ``False`` is faster but can require more memory.
         :param write_mask:
             Mask valid ortho pixels with an internal mask (``True``), or with a nodata value
             based on ``dtype`` (``False``). An internal mask helps remove nodata noise caused by
@@ -539,11 +553,12 @@ class Ortho:
             Ortho image data type (``uint8``, ``uint16``, ``int16``, ``float32`` or ``float64``).
             If set to ``None`` (the default), the source image data type is used.
         :param compress:
-            Ortho image compression type (``jpeg``, ``deflate`` or ``lzw``).  ``deflate`` and
-            ``lzw`` can be used with any ``dtype``, and ``jpeg`` with the uint8 ``dtype``.  With
-            supporting Rasterio builds, ``jpeg`` can also be used with uint16, in which case the
-            ortho is 12 bit JPEG compressed. If ``compress`` is set to ``None`` (the default),
-            ``jpeg`` is used for the uint8 ``dtype``, and ``deflate`` otherwise.
+            Ortho image compression type (``jpeg``, ``deflate``, ``lzw`` or ``zstd``).
+            ``deflate``, ``lzw`` and ``zstd`` can be used with any ``dtype``, and ``jpeg`` with
+            the uint8 ``dtype``.  With supporting Rasterio builds, ``jpeg`` can also be used with
+            uint16, in which case the ortho is 12 bit JPEG compressed. If ``compress`` is set to
+            ``None`` (the default), ``jpeg`` is used for the uint8 ``dtype``, and ``deflate``
+            otherwise.
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param creation_options:
@@ -558,6 +573,9 @@ class Ortho:
             Whether to display a progress bar monitoring the portion of ortho tiles written.  Can
             be set to a dictionary of arguments for a custom `tqdm
             <https://tqdm.github.io/docs/tqdm/>`_ bar.
+        :param aligned_pixels:
+            Whether to align ortho pixels to ``resolution``.  If ``True``, ``x / resolution[0]``
+            and ``y / resolution[1]`` are integers, where ``(x, y)`` are pixel world coordinates.
         """
         # TODO: clarify creation_options docstring - see issue #23.  it should say driver
         #  specific.  and perhaps we can allow other drivers, but then there are no defaults and
@@ -569,13 +587,19 @@ class Ortho:
             elif progress is False:
                 progress = dict(disable=True, leave=False)
             progress = exit_stack.enter_context(tqdm(**progress))
-            # exit_stack.enter_context(common.profiler())  # run common.profiler in DEBUG log level
 
-            # use the GSD for auto resolution if resolution not provided
             if not resolution:
+                # use the GSD for auto resolution
                 resolution = (self._gsd, self._gsd)
                 res_str = ('{:.4e}' if resolution[0] < 1e-3 else '{:.4f}').format(resolution[0])
                 logger.debug('Using auto resolution: ' + res_str)
+            else:
+                resolution_ = np.array(resolution)
+                if len(resolution_) != 2 or np.any(resolution_ <= 0):
+                    raise OrthorityError(
+                        "'resolution' should be a sequence of two resolutions, both greater than "
+                        "zero."
+                    )
 
             # open source image
             env = rio.Env(
@@ -595,7 +619,9 @@ class Ortho:
 
             # get dem array covering ortho extents in world / ortho crs and ortho resolution
             dem_interp = Interp(dem_interp)
-            dem_array, dem_transform = self._reproject_dem(dem_interp, resolution)
+            dem_array, dem_transform = self._reproject_dem(
+                dem_interp, resolution, aligned_pixels=aligned_pixels
+            )
             # TODO: Don't mask dem if camera is pinhole or frame with distort=False. Or make dem
             #  masking an option which defaults to not masking with pinhole / frame camera w
             #  distort=False. Note though that dem masking is like occlusion masking for
