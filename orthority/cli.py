@@ -412,6 +412,15 @@ resolution_option = click.option(
     help='Ortho image resolution in units of the :option:`--crs`.  Can be used twice for '
     'non-square pixels: ``--res WIDTH --res HEIGHT``.',
 )
+aligned_pixels_option = click.option(
+    '-ap / -nap',
+    '--aligned-pixels / --no-aligned-pixels',
+    is_flag=True,
+    default=False,
+    show_default=True,
+    help="Align ortho image(s) so their pixels' world / ortho coordinates are multiples of "
+    ":option:`--res`.",
+)
 dem_band_option = click.option(
     '-db',
     '--dem-band',
@@ -576,6 +585,7 @@ def cli(ctx: click.Context, verbose, quiet) -> None:
 @ext_param_file_option
 @crs_option
 @resolution_option
+@aligned_pixels_option
 @dem_band_option
 @interp_option
 @dem_interp_option
@@ -656,6 +666,7 @@ def frame(
 @dem_file_option
 @crs_option
 @resolution_option
+@aligned_pixels_option
 @dem_band_option
 @interp_option
 @dem_interp_option
@@ -737,6 +748,7 @@ def exif(
 )
 @crs_option
 @resolution_option
+@aligned_pixels_option
 @interp_option
 @dem_interp_option
 @per_band_option
@@ -868,6 +880,7 @@ def odm(
 )
 @crs_option
 @resolution_option
+@aligned_pixels_option
 @dem_band_option
 @interp_option
 @dem_interp_option
