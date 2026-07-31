@@ -576,8 +576,8 @@ class Ortho:
             be set to a dictionary of arguments for a custom `tqdm
             <https://tqdm.github.io/docs/tqdm/>`_ bar.
         :param aligned_pixels:
-            Whether to align ortho pixels to ``resolution``.  If ``True``, ``x / resolution[0]``
-            and ``y / resolution[1]`` are integers, where ``(x, y)`` are pixel world coordinates.
+            Whether to align the ortho image so its pixels' world / ortho coordinates are
+            multiples of ``resolution``.
         """
         # TODO: clarify creation_options docstring - see issue #23.  it should say driver
         #  specific.  and perhaps we can allow other drivers, but then there are no defaults and
