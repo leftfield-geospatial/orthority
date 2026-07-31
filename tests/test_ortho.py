@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import logging
 import tracemalloc
+from collections.abc import Sequence
 from itertools import product
 from math import factorial
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import pytest
@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 
 def _validate_ortho_files(
-    files: Sequence[Path], cc_thresh: float = 0.75, num_ovl_thresh: int = None
+    files: Sequence[Path], cc_thresh: float = 0.75, num_ovl_thresh: int | None = None
 ):
     """Validate the similarity of overlapping areas in ortho files."""
     cc_array = np.full((len(files),) * 2, fill_value=np.nan)
@@ -268,9 +268,7 @@ def test_get_gsd_opk(
     ortho = Ortho(rgb_byte_src_file, float_utm34n_dem_file, camera, crs=utm34n_crs, dem_band=2)
     resolution = (ortho._get_gsd(),) * 2
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
-    dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, crop=False, mask=True
-    )
+    dem_array_mask, _ = ortho._mask_dem(dem_array, dem_transform, dem_interp, crop=False, mask=True)
     mask = ~np.isnan(dem_array_mask)
 
     assert np.array(camera.im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
@@ -303,9 +301,7 @@ def test_get_gsd_vert_crs(
     # find the gsd resolution and masked dem
     resolution = (ortho._get_gsd(),) * 2
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
-    dem_array_mask, dem_transform_mask = ortho._mask_dem(
-        dem_array, dem_transform, dem_interp, crop=True, mask=True
-    )
+    dem_array_mask, _ = ortho._mask_dem(dem_array, dem_transform, dem_interp, crop=True, mask=True)
     mask = ~np.isnan(dem_array_mask)
 
     assert np.array(ortho.camera.im_size).prod() == pytest.approx(mask.sum(), rel=0.05)
@@ -313,7 +309,10 @@ def test_get_gsd_vert_crs(
 
 @pytest.mark.parametrize(
     'interp, resolution',
-    [*zip(Interp, [(10, 10)] * len(Interp)), *zip(Interp, [(50, 50)] * len(Interp))],
+    [
+        *zip(Interp, [(10, 10)] * len(Interp), strict=True),
+        *zip(Interp, [(50, 50)] * len(Interp), strict=True),
+    ],
 )
 def test_reproject_dem(
     rgb_byte_src_file: Path,
@@ -465,7 +464,7 @@ def test_reproject_dem_vert_crs_scale(
         crs=utm34n_egm2008_crs,
         dem_band=2,
     )
-    array, transform = ortho._reproject_dem(Interp.cubic, _dem_resolution)
+    array, _ = ortho._reproject_dem(Interp.cubic, _dem_resolution)
     assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array) / 3.28084, abs=1e-3)
 
 
@@ -604,7 +603,7 @@ def test_mask_dem_partial(
     # mask the dem without cropping
     dem_array, dem_transform = ortho._reproject_dem(dem_interp, resolution)
     valid_mask = ~np.isnan(dem_array)
-    dem_array_mask, dem_transform_mask = ortho._mask_dem(
+    _, dem_transform_mask = ortho._mask_dem(
         dem_array.copy(),
         dem_transform,
         dem_interp,
@@ -757,7 +756,7 @@ def test_process_per_band(
     peak_mems = []
     try:
         tracemalloc.start()
-        for ortho_file, per_band in zip(ortho_files, per_bands):
+        for ortho_file, per_band in zip(ortho_files, per_bands, strict=True):
             start_mem = tracemalloc.get_traced_memory()
             ortho = Ortho(ms_float_src_file, float_utm34n_dem_file, camera, utm34n_crs)
             ortho.process(ortho_file, resolution, per_band=per_band, compress=Compress.deflate)
@@ -835,7 +834,7 @@ def test_process_distort(
         assert cc[0, 1] > 0.9
         assert (
             cc[0, 1] == pytest.approx(1.0, abs=1e-3)
-            if type(camera) == PinholeCamera
+            if type(camera) is PinholeCamera
             else cc[0, 1] < 1.0
         )
 
@@ -845,7 +844,7 @@ def test_process_distort(
         assert cc[0, 1] > 0.95
         assert (
             cc[0, 1] == pytest.approx(1.0, abs=1e-3)
-            if type(camera) == PinholeCamera
+            if type(camera) is PinholeCamera
             else cc[0, 1] < 1.0
         )
 
@@ -1096,7 +1095,7 @@ def test_process_creation_options(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Pat
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
-        assert ortho_im.profile['tiled'] == True
+        assert ortho_im.profile['tiled'] is True
         assert ortho_im.profile['compress'].lower() == 'jpeg'
         assert ortho_im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
