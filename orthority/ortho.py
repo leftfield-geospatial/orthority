@@ -256,9 +256,11 @@ class Ortho:
 
         Returns the reprojected DEM array and corresponding transform.
         """
-        # return if dem in world / ortho crs and ortho resolution
+        # return if self._dem_array doesn't require reprojection
         dem_res = np.abs((self._dem_transform[0], self._dem_transform[4]))
-        if np.all(resolution == dem_res) and (self._dem_crs == self._crs):
+        dem_aligned = (self._dem_transform.xoff, self._dem_transform.yoff) % dem_res
+        dem_aligned = not aligned_pixels or np.all(dem_aligned == 0)
+        if np.all(resolution == dem_res) and (self._dem_crs == self._crs) and dem_aligned:
             return self._dem_array.copy(), self._dem_transform
 
         # error check resolution
