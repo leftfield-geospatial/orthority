@@ -341,7 +341,9 @@ def test_reproject_dem(
     assert transform != ortho._dem_transform
     assert array.shape != ortho._dem_array.shape
     assert np.all(np.abs((transform[0], transform[4])) == resolution)
-    assert bounds == pytest.approx(init_bounds, abs=2 * max(resolution))
+    # bounds contain init_bounds by at most one pixel
+    assert np.all((bounds[:2] <= init_bounds[:2]) & (bounds[:2] >= init_bounds[:2] - resolution))
+    assert np.all((bounds[2:] >= init_bounds[2:]) & (bounds[2:] <= init_bounds[2:] + resolution))
     assert np.nanmean(array) == pytest.approx(np.nanmean(ortho._dem_array), abs=1e-3)
 
 
@@ -1159,6 +1161,48 @@ def test_process_progress(
     )
     cap = capsys.readouterr()
     assert desc in cap.err
+
+
+def test_process_aligned_pixels(
+    rgb_byte_src_file: Path,
+    float_wgs84_wgs84_dem_file: Path,
+    pinhole_camera: Camera,
+    utm34n_crs: str,
+    tmp_path: Path,
+):
+    """Test ortho alignment and bounds with ``align_pixels``."""
+    ortho = Ortho(
+        rgb_byte_src_file, float_wgs84_wgs84_dem_file, pinhole_camera, crs=utm34n_crs, dem_band=2
+    )
+    resolution = (15.0, 10.0)
+
+    # create an unaligned ortho
+    unaligned_file = tmp_path.joinpath('unaligned_ortho.tif')
+    ortho.process(unaligned_file, resolution=resolution, aligned_pixels=False)
+    assert unaligned_file.exists()
+
+    # create an aligned ortho
+    aligned_file = tmp_path.joinpath('aligned_ortho.tif')
+    ortho.process(aligned_file, resolution=resolution, aligned_pixels=True)
+    assert aligned_file.exists()
+
+    # test alignment
+    with rio.open(unaligned_file) as unaligned_im:
+        assert unaligned_im.res == resolution
+        tl_xy = np.array((unaligned_im.transform.xoff, unaligned_im.transform.yoff))
+        assert np.all(tl_xy % resolution != 0)
+
+    with rio.open(aligned_file) as aligned_im:
+        assert aligned_im.res == resolution
+        tl_xy = np.array((aligned_im.transform.xoff, aligned_im.transform.yoff))
+        assert np.all(tl_xy % resolution == 0)
+
+    # test aligned bounds differ from the unaligned bounds by at most one pixel
+    with rio.open(unaligned_file) as unaligned_im, rio.open(aligned_file) as aligned_im:
+        unaligned_bounds = np.array(unaligned_im.bounds)
+        aligned_bounds = np.array(aligned_im.bounds)
+        for i in [0, 1]:
+            assert aligned_bounds[i::2] == pytest.approx(unaligned_bounds[i::2], abs=resolution[i])
 
 
 def test_process_ngi(
