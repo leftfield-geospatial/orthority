@@ -748,7 +748,6 @@ def test_frame_lla_crs(
     """Test ``oty frame --lla-crs`` by comparing orthos created with different ``--lla-crs``
     values.
     """
-    # TODO: this doesn't work with PyPI rasterio <1.3.9
     ortho_bounds = []
     res = 5
     for i, lla_crs in enumerate(['EPSG:4326+4326', 'EPSG:4326+3855']):
@@ -1360,7 +1359,7 @@ def test_rpc_image_crs(rpc_image_file: Path, ngi_dem_file: Path, tmp_path: Path,
         assert im.crs == rio.CRS.from_string(crs)
 
 
-def _test_rpc_param_file_crs(
+def test_rpc_param_file_crs(
     rpc_image_file: Path,
     ngi_dem_file: Path,
     rpc_param_file: Path,
@@ -1370,9 +1369,6 @@ def _test_rpc_param_file_crs(
     """Test ``oty rpc`` with ``--crs`` and a ``--rpc-param`` RPC parameter file, generates orthos
     with the correct CRS.
     """
-    # TODO: When this is run directly after test_rpc_image_crs in a conda environment with
-    #  rasterio 1.4.3 and libgdal 1.3.10, there is an intermittent seg fault.  Other than seeing
-    #  that this happens in PROJ, I have not gotten far with debugging.
     crs = 'EPSG:3857'
     cli_str = (
         f'rpc --dem {ngi_dem_file} --rpc-param {rpc_param_file} --crs {crs} --res 30 '
