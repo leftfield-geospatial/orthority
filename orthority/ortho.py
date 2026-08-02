@@ -433,6 +433,9 @@ class Ortho:
         """Map the source to ortho image by interpolation, given open source and ortho datasets, DEM
         array in the ortho CRS and pixel grid, and configuration parameters.
         """
+        # create a list of ortho tile windows
+        tile_wins = [*common.block_windows(ortho_im, (512, 512))]
+
         # Initialise an (x, y) pixel grid for the first tile here, and offset for remaining tiles
         # in _remap_tile (requires N-up transform).
         # float64 precision is needed for the (x, y) ortho grids in world coordinates for e.g. high
@@ -440,9 +443,8 @@ class Ortho:
         # gdal / rio geotransform origin refers to the pixel UL corner while OpenCV remap etc.
         # integer pixel coords refer to pixel centers, so the (x, y) coords are offset by half a
         # pixel to account for this.
-        block_win = next(common.block_windows(ortho_im))
-        j_range = np.arange(0, block_win.width)
-        i_range = np.arange(0, block_win.height)
+        j_range = np.arange(0, tile_wins[0].width)
+        i_range = np.arange(0, tile_wins[0].height)
         init_jgrid, init_igrid = np.meshgrid(j_range, i_range, indexing='xy')
         center_transform = ortho_im.profile['transform'] * rio.Affine.translation(0.5, 0.5)
         init_xgrid, init_ygrid = center_transform * [init_jgrid, init_igrid]
@@ -452,9 +454,6 @@ class Ortho:
             index_list = [[i] for i in range(1, src_im.count + 1)]
         else:
             index_list = [[*range(1, src_im.count + 1)]]
-
-        # create a list of ortho tile windows
-        tile_wins = [*common.block_windows(ortho_im)]
         progress.total = len(tile_wins) * len(index_list)
 
         # TODO: Memory increases ~linearly with number of threads, but does processing speed?
@@ -564,9 +563,12 @@ class Ortho:
         :param build_ovw:
             Whether to build overviews for the ortho image.
         :param creation_options:
-            Ortho image creation options as dictionary of ``name: value`` pairs.  If supplied,
-            ``compress`` is ignored.  See the `GDAL docs
-            <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation-options>`__ for details.
+            Ortho image ``driver`` specific creation options as dictionary of ``name: value``
+            pairs.  If supplied, ``compress`` is ignored and these are the only creation options
+            used.  It is up to the user to specify all options they require.  See the GDAL `GTiff
+            <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation -options>`__ and `COG
+            <https://gdal.org/en/latest/drivers/raster/cog.html#creation -options>`__
+            documentation for details on the options for those drivers.
         :param driver:
             Ortho image driver (``gtiff`` or ``cog``).
         :param overwrite:
@@ -579,9 +581,6 @@ class Ortho:
             Whether to align the ortho image so its pixels' world / ortho coordinates are
             multiples of ``resolution``.
         """
-        # TODO: clarify creation_options docstring - see issue #23.  it should say driver
-        #  specific.  and perhaps we can allow other drivers, but then there are no defaults and
-        #  its up to the user to supply creation_options
         with ExitStack() as exit_stack:
             # create the progress bar
             if progress is True:
@@ -624,10 +623,6 @@ class Ortho:
             dem_array, dem_transform = self._reproject_dem(
                 dem_interp, resolution, aligned_pixels=aligned_pixels
             )
-            # TODO: Don't mask dem if camera is pinhole or frame with distort=False. Or make dem
-            #  masking an option which defaults to not masking with pinhole / frame camera w
-            #  distort=False. Note though that dem masking is like occlusion masking for
-            #  image edges, which applies to any camera.
             dem_array, dem_transform = self._mask_dem(dem_array, dem_transform, dem_interp)
 
             # open the ortho image & resolve write_mask
