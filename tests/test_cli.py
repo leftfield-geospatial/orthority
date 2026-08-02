@@ -482,12 +482,46 @@ def test_frame_resolution_non_square(
 
 
 def test_frame_resolution_auto(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
-    """Test ``oty frame`` generates an ortho without the ``--res`` option."""
+    """Test ``oty frame`` aligns the ortho without the ``--aligned-pixels`` option."""
     cli_str = frame_legacy_ngi_cli_str + f' --out-dir {tmp_path}'
     result = runner.invoke(cli, cli_str.split())
     assert result.exit_code == 0, result.output
     ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
     assert len(ortho_files) == 1
+
+
+def test_frame_aligned_pixels(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty frame`` aligns the ortho with the ``--aligned-pixels`` option."""
+    resolution = (96.0, 96.0)
+    cli_str = frame_legacy_ngi_cli_str + (
+        f' --out-dir {tmp_path} --res {resolution[0]} --aligned-pixels'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.output
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.res == resolution
+        tl_xy = np.array([im.transform.xoff, im.transform.yoff])
+        assert np.all(tl_xy % resolution == 0)
+
+
+def test_frame_no_aligned_pixels(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
+    """Test ``oty frame`` does not align the ortho with the ``--no-aligned-pixels`` option."""
+    resolution = (96.0, 96.0)
+    cli_str = frame_legacy_ngi_cli_str + (
+        f' --out-dir {tmp_path} --res {resolution[0]} --no-aligned-pixels'
+    )
+    result = runner.invoke(cli, cli_str.split())
+    assert result.exit_code == 0, result.output
+    ortho_files = [*tmp_path.glob('*_ORTHO.tif')]
+    assert len(ortho_files) == 1
+
+    with rio.open(ortho_files[0], 'r') as im:
+        assert im.res == resolution
+        tl_xy = np.array([im.transform.xoff, im.transform.yoff])
+        assert np.all(tl_xy % resolution != 0)
 
 
 def test_frame_dem_band(frame_legacy_ngi_cli_str: str, tmp_path: Path, runner: CliRunner):
@@ -773,7 +807,7 @@ def test_frame_radians(
     """
     ortho_arrays = []
     for radians, ext_param_file in zip(
-        ['degrees', 'radians'], [ngi_xyz_opk_csv_file, ngi_xyz_opk_radians_csv_file]
+        ['degrees', 'radians'], [ngi_xyz_opk_csv_file, ngi_xyz_opk_radians_csv_file], strict=True
     ):
         # create ortho
         out_dir = tmp_path.joinpath(radians)
@@ -914,7 +948,7 @@ def test_frame_creation_option(frame_legacy_ngi_cli_str: str, tmp_path: Path, ru
     assert len(ortho_files) == 1
 
     with rio.open(ortho_files[0], 'r') as im:
-        assert im.profile['tiled'] == True
+        assert im.profile['tiled'] is True
         assert im.profile['compress'].lower() == 'jpeg'
         assert im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
@@ -1386,6 +1420,7 @@ def test_rpc_gcp_refine(
         zip(
             ['', '--gcp-refine tags', f'--gcp-refine {gcp_file}'],
             [rpc_image_file, rpc_image_file, no_gcp_file],
+            strict=True,
         )
     ):
         # create ortho
@@ -1574,7 +1609,7 @@ def test_sharpen_weight(sharpen_cli_str: str, tmp_path: Path, runner: CliRunner)
         '--ms-index 1 --ms-index 2 --weight 1 --weight 2',
     ]
     out_arrays = []
-    for out_filename, weight_str in zip(out_filenames, weight_strs):
+    for out_filename, weight_str in zip(out_filenames, weight_strs, strict=True):
         out_file = tmp_path.joinpath(out_filename)
         cli_str = sharpen_cli_str + f' --out-file {out_file} {weight_str}'
         result = runner.invoke(cli, cli_str.split())
@@ -1746,7 +1781,7 @@ def test_sharpen_creation_option(sharpen_cli_str: str, tmp_path: Path, runner: C
     assert out_file.exists()
 
     with rio.open(out_file, 'r') as out_im:
-        assert out_im.profile['tiled'] == True
+        assert out_im.profile['tiled'] is True
         assert out_im.profile['compress'].lower() == 'jpeg'
         assert out_im.tags(ns='IMAGE_STRUCTURE')['JPEG_QUALITY'] == '50'
 
