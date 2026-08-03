@@ -30,7 +30,7 @@ from csv import Dialect, DictReader, Sniffer
 from io import StringIO
 from os import PathLike
 from pathlib import Path
-from typing import IO, Any
+from typing import IO, Any, ClassVar
 
 import cv2
 import fsspec
@@ -85,8 +85,8 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
         proj_type = json_param.pop('projection_type').lower()
         try:
             int_param['cam_type'] = CameraType.from_odm(proj_type)
-        except ValueError:
-            raise ParamError(f"Unsupported projection type '{proj_type}'.")
+        except ValueError as ex:
+            raise ParamError(f"Unsupported projection type '{proj_type}'.") from ex
 
         im_size = (json_param.pop('width'), json_param.pop('height'))
         int_param['im_size'] = im_size
@@ -103,7 +103,7 @@ def _read_osfm_int_param(json_dict: dict) -> dict[str, dict[str, Any]]:
             )
 
         # rename c_x->cx & c_y->cy
-        for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy']):
+        for from_key, to_key in zip(['c_x', 'c_y'], ['cx', 'cy'], strict=True):
             if from_key in json_param:
                 int_param[to_key] = json_param.pop(from_key)
 
@@ -151,13 +151,13 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
             cam_dict = dict(
                 cam_type=CameraType.brown,
                 im_size=exif.im_size,
-                focal_len=tuple(exif.dewarp[:2]),
+                focal_len=exif.dewarp[:2],
                 sensor_size=(float(exif.tag_im_size[0]), float(exif.tag_im_size[1])),
             )
             cam_dict['cx'], cam_dict['cy'] = tuple(
                 (np.array(exif.dewarp[2:4]) / max(exif.tag_im_size)).tolist()
             )
-            dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:]))
+            dist_params = dict(zip(['k1', 'k2', 'p1', 'p2', 'k3'], exif.dewarp[-5:], strict=True))
             cam_dict.update(**dist_params)
             return {_create_exif_cam_id(exif): cam_dict}
 
@@ -177,8 +177,7 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
             cam_dict['focal_len'] = max(exif.sensor_size) * exif.focal_len_35 / 36.0
             cam_dict['sensor_size'] = exif.sensor_size
         else:
-            # normalise 35mm focal length assuming "35mm" = 36 mm max sensor dimension, and find
-            # a normalised sensor size in same units, assuming square pixels
+            # normalise 35mm focal length assuming "35mm" = 36 mm max sensor dimension
             cam_dict['focal_len'] = exif.focal_len_35 / 36.0
     else:
         raise ParamError(
@@ -220,7 +219,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
         except Exception as ex:
             raise ParamError(f"Could not load '{filename}': {ex!s}") from ex
 
-    def parse_yaml_param(yaml_param: dict, cam_id: str = None) -> dict[str, Any]:
+    def parse_yaml_param(yaml_param: dict, cam_id: str | None = None) -> dict[str, Any]:
         """Validate & convert the given YAML dictionary for a single camera."""
         # test required keys for all cameras
         for req_key in ['type', 'im_size', 'focal_len']:
@@ -257,6 +256,7 @@ def read_oty_int_param(file: str | PathLike | OpenFile | IO[str]) -> dict[str, d
             "Support for the 'config.yaml' format is deprecated and will be removed in future. "
             "Please switch to the Orthority interior parameter format.",
             category=FutureWarning,
+            stacklevel=2,
         )
         yaml_dict = yaml_dict['camera']
 
@@ -331,6 +331,7 @@ def read_exif_int_param(
         return _read_exif_int_param(Exif(file))
 
 
+# TODO: replace Sequence with Iterable where appropriate
 def read_im_rpc_param(
     files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
     progress: bool | dict = False,
@@ -379,7 +380,7 @@ def read_im_rpc_param(
         elif progress is False:
             progress = dict(disable=True, leave=False)
 
-        for future, file in zip(tqdm(futures, **progress), files):
+        for future, file in zip(tqdm(futures, **progress), files, strict=True):
             try:
                 rpc_param_dict.update(**future.result())
             except (FileNotFoundError, ParamError):
@@ -483,7 +484,7 @@ def read_im_gcps(
         # https://gdal.org/user/raster_data_model.html#gcps.  This assumes image GCPs are in
         # center of pixel coordinate convention.
         oty_gcps = []
-        for gcp, xyz_ in zip(gcps, xyz.T):
+        for gcp, xyz_ in zip(gcps, xyz.T, strict=True):
             gcp = dict(ji=(gcp.col, gcp.row), xyz=tuple(xyz_.tolist()), id=gcp.id, info=gcp.info)
             oty_gcps.append(gcp)
 
@@ -503,7 +504,7 @@ def read_im_gcps(
         elif progress is False:
             progress = dict(disable=True, leave=False)
 
-        for future, file in zip(tqdm(futures, **progress), files):
+        for future, file in zip(tqdm(futures, **progress), files, strict=True):
             try:
                 gcp_dict.update(**future.result())
             except (FileNotFoundError, ParamError):
@@ -622,7 +623,7 @@ def write_ext_param(
     try:
         crs = CRS.from_string(crs) if isinstance(crs, str) else crs
     except RioCrsError as ex:
-        raise CrsError(f"Could not interpret 'crs': {ex!s}")
+        raise CrsError(f"Could not interpret 'crs': {ex!s}") from ex
     if not crs.is_projected:
         raise CrsError("'crs' should be a projected system.")
 
@@ -807,8 +808,8 @@ def _rpy_to_opk(
 
     # find rotation matrix C_En, to rotate from navigation (n) to world (object E) coordinates
     delta = 1e-7
-    lla1 = lla + (delta, 0, 0)
-    lla2 = lla - (delta, 0, 0)
+    lla1 = lla + np.array((delta, 0, 0))
+    lla2 = lla - np.array((delta, 0, 0))
 
     # p1 & p2 must be in the world CRS, not ECEF as might be understood from the references
     p1 = np.array(transform(lla_crs, crs, [lla1[1]], [lla1[0]], [lla1[2]])).squeeze()
@@ -877,7 +878,7 @@ class FrameReader(ABC):
             try:
                 crs = CRS.from_string(crs) if isinstance(crs, str) else crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'crs': {ex!s}")
+                raise CrsError(f"Could not interpret 'crs': {ex!s}") from ex
             if not crs.is_projected:
                 raise CrsError("'crs' should be a projected system.")
 
@@ -885,7 +886,7 @@ class FrameReader(ABC):
             try:
                 lla_crs = CRS.from_string(lla_crs) if isinstance(lla_crs, str) else lla_crs
             except RioCrsError as ex:
-                raise CrsError(f"Could not interpret 'lla_crs': {ex!s}")
+                raise CrsError(f"Could not interpret 'lla_crs': {ex!s}") from ex
             if not lla_crs.is_geographic:
                 raise CrsError("'lla_crs' should be a geographic system.")
         return crs, lla_crs
@@ -938,7 +939,7 @@ class CsvReader(FrameReader):
         Whether orientation angles are in radians (``True``), or degrees (``False``).
     """
 
-    _type_schema = dict(
+    _type_schema: ClassVar[dict[str, Any]] = dict(
         filename=str,
         x=float,
         y=float,
@@ -954,15 +955,15 @@ class CsvReader(FrameReader):
         yaw=float,
         camera=lambda x: str(x) if x else x,
     )
-    _legacy_fieldnames = ['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa']
+    _legacy_fieldnames = ('filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa')
 
     def __init__(
         self,
         file: str | PathLike | OpenFile | IO[str],
         crs: str | CRS = None,
         lla_crs: str | CRS = _default_lla_crs,
-        fieldnames: Sequence[str] = None,
-        dialect: Dialect = None,
+        fieldnames: Sequence[str] | None = None,
+        dialect: Dialect | None = None,
         radians: bool = False,
         **kwargs,
     ) -> None:
@@ -1026,7 +1027,7 @@ class CsvReader(FrameReader):
 
     @staticmethod
     def _parse_file(
-        buffer: StringIO, fieldnames: Sequence[str] = None, dialect: Dialect = None
+        buffer: StringIO, fieldnames: Sequence[str] | None = None, dialect: Dialect | None = None
     ) -> tuple[Sequence[str], Dialect, bool, CsvFormat]:
         """Determine and validate the CSV file format."""
 
@@ -1094,7 +1095,7 @@ class CsvReader(FrameReader):
                 except FileNotFoundError as ex:
                     logger.debug(f"Could not open '{prj_name}': {ex!s}")
                 except RioCrsError as ex:
-                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {ex!s}")
+                    raise ParamError(f"Could not interpret CRS in '{prj_name}': {ex!s}") from ex
             else:
                 # a file object was passed to __init__ so the CSV file path / URI is unknown and a
                 # .prj file cannot be found
@@ -1182,7 +1183,7 @@ class OsfmReader(FrameReader):
         self,
         file: str | PathLike | OpenFile | IO[str],
         crs: str | CRS = None,
-        lla_crs: str | CRS = CRS.from_epsg(4326),
+        lla_crs: str | CRS = _default_lla_crs,
         **kwargs,
     ) -> None:
         FrameReader.__init__(self, crs=crs, lla_crs=lla_crs)
@@ -1317,7 +1318,7 @@ class ExifReader(FrameReader):
             elif progress is False:
                 progress = dict(disable=True, leave=False)
 
-            for future, file in zip(tqdm(futures, **progress), files):
+            for future, file in zip(tqdm(futures, **progress), files, strict=True):
                 try:
                     exif_obj = future.result()
                 except FileNotFoundError:
@@ -1349,14 +1350,14 @@ class ExifReader(FrameReader):
     def read_int_param(self) -> dict[str, dict[str, Any]]:
         """Read interior camera parameters."""
         int_param_dict = {}
-        for filename, exif in self._exif_dict.items():
+        for exif in self._exif_dict.values():
             int_param = _read_exif_int_param(exif)
             int_param_dict.update(**int_param)
         return int_param_dict
 
     def read_ext_param(self) -> dict[str, dict[str, Any]]:
         ext_param_dict = {}
-        for filename, exif in self._exif_dict.items():
+        for exif in self._exif_dict.values():
             ext_param_dict.update(
                 **_read_exif_ext_param(exif, crs=self._crs, lla_crs=self._lla_crs)
             )
@@ -1410,7 +1411,7 @@ class OtyReader(FrameReader):
             try:
                 crs = CRS.from_string(json_dict['world_crs'])
             except RioCrsError as ex:
-                raise ParamError(f"Could not interpret CRS in '{filename}': {ex!s}")
+                raise ParamError(f"Could not interpret CRS in '{filename}': {ex!s}") from ex
 
         return crs, json_dict
 

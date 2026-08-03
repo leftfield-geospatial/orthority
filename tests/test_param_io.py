@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Collection
 from pathlib import Path
-from typing import Collection
 
 import cv2
 import numpy as np
@@ -31,7 +31,7 @@ from orthority import param_io
 from orthority.camera import FrameCamera
 from orthority.enums import CameraType, CsvFormat, Interp
 from orthority.errors import CrsError, CrsMissingError, ParamError
-from tests.conftest import oty_to_osfm_int_param, create_profile
+from tests.conftest import create_profile, oty_to_osfm_int_param
 
 
 def _validate_int_param_dict(int_param_dict: dict):
@@ -57,10 +57,10 @@ def _validate_int_param_dict(int_param_dict: dict):
         assert set(optional_keys).issubset(param_io._opt_frame_schema[cam_type])
 
 
-def _validate_ext_param_dict(ext_param_dict: dict, cameras: Collection[str | None] = None):
+def _validate_ext_param_dict(ext_param_dict: dict, cameras: Collection[str | None] | None = None):
     """Basic validation of an exterior parameter dictionary."""
     assert len(ext_param_dict) > 0
-    for filename, ext_params in ext_param_dict.items():
+    for ext_params in ext_param_dict.values():
         assert set(ext_params.keys()) == {'opk', 'xyz', 'camera'}
         opk, xyz = np.array(ext_params['opk']), np.array(ext_params['xyz'])
         assert len(opk) == 3 and len(xyz) == 3
@@ -199,8 +199,8 @@ def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_pat
 
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
-    """Test reading ODM / OpenSfM format interior parameters raises an error when the projection type is
-    unsupported.
+    """Test reading ODM / OpenSfM format interior parameters raises an error when the projection
+    type is unsupported.
     """
     osfm_dict = oty_to_osfm_int_param(pinhole_int_param_dict)
     int_params = next(iter(osfm_dict.values()))
@@ -364,7 +364,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
     rpys = np.random.rand(n, 3) * (4 * np.pi) - (2 * np.pi)
     C_En = np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
 
-    for lla, rpy in zip(llas, rpys):
+    for lla, rpy in zip(llas, rpys, strict=True):
         # create orthographic (2D topopcentric) CRS centered on lla
         crs = rio.CRS.from_proj4(
             f'+proj=ortho +lat_0={lla[0]:.4f} +lon_0={lla[1]:.4f} +ellps=WGS84'
@@ -380,7 +380,7 @@ def test_rpy_to_opk(C_bB: np.ndarray):
 def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from a legacy format CSV file."""
     reader = param_io.CsvReader(ngi_legacy_csv_file, crs=ngi_crs)
-    assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
+    assert reader._fieldnames == list(param_io.CsvReader._legacy_fieldnames)
     assert reader._format is CsvFormat.xyz_opk
     assert reader.crs == rio.CRS.from_string(ngi_crs)
 
@@ -393,7 +393,7 @@ def test_csv_reader_legacy(ngi_legacy_csv_file: Path, ngi_crs: str, ngi_image_fi
 def test_csv_reader_xyz_opk(ngi_xyz_opk_csv_file: Path, ngi_crs: str, ngi_image_files: list[Path]):
     """Test reading exterior parameters from an XYZ-OPK format CSV file with a header."""
     reader = param_io.CsvReader(ngi_xyz_opk_csv_file, crs=ngi_crs)
-    assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
+    assert reader._fieldnames == list(param_io.CsvReader._legacy_fieldnames)
     assert reader._format is CsvFormat.xyz_opk
     with open(ngi_xyz_opk_csv_file.with_suffix('.prj')) as f:
         assert reader.crs == rio.CRS.from_string(f.read())
@@ -458,7 +458,7 @@ def test_csv_reader_lla_rpy(
     file_keys = [filename.name for filename in odm_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
 
-    with open(odm_reconstruction_file, 'r') as f:
+    with open(odm_reconstruction_file) as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
@@ -488,7 +488,7 @@ def test_csv_reader_xyz_opk_prj_crs(csv_file: str, ngi_crs: str, request: pytest
     """
     csv_file = str(request.getfixturevalue(csv_file))
     reader = param_io.CsvReader(csv_file, crs=None)
-    assert reader._fieldnames == param_io.CsvReader._legacy_fieldnames
+    assert reader._fieldnames == list(param_io.CsvReader._legacy_fieldnames)
     assert reader.crs == rio.CRS.from_string(ngi_crs)
 
 
@@ -540,7 +540,7 @@ def test_csv_reader_lla_rpy_lla_crs(odm_lla_rpy_csv_file, odm_crs: str, wgs84_eg
     ref_ext_param_dict = ref_reader.read_ext_param()
     test_ext_param_dict = test_reader.read_ext_param()
     for ref_ext_params, test_ext_params in zip(
-        ref_ext_param_dict.values(), test_ext_param_dict.values()
+        ref_ext_param_dict.values(), test_ext_param_dict.values(), strict=True
     ):
         # test z offset changes and rotation stays same
         assert test_ext_params['xyz'][:2] == pytest.approx(ref_ext_params['xyz'][:2], abs=1e-6)
@@ -580,7 +580,7 @@ def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
 @pytest.mark.parametrize('missing_field', param_io.CsvReader._legacy_fieldnames)
 def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_field):
     """Test that CsvReader initialised with a missing fieldname raises an error."""
-    fieldnames = param_io.CsvReader._legacy_fieldnames.copy()
+    fieldnames = list(param_io.CsvReader._legacy_fieldnames)
     fieldnames.remove(missing_field)
     with pytest.raises(ParamError) as ex:
         _ = param_io.CsvReader(ngi_legacy_csv_file, fieldnames=fieldnames)
@@ -660,7 +660,7 @@ def test_csv_reader_dialect(
     """Test reading exterior parameters from CSV files in different dialects."""
     # create test CSV file
     test_filename = tmp_path.joinpath('ext-param-test.csv')
-    with open(odm_lla_rpy_csv_file, 'r') as fin:
+    with open(odm_lla_rpy_csv_file) as fin:
         with open(test_filename, 'w', newline='') as fout:
             reader = csv.reader(fin, delimiter=' ', quotechar='"')
             writer = csv.writer(fout, **dialect)
@@ -676,7 +676,7 @@ def test_csv_reader_dialect(
     # validate dict
     file_keys = [filename.name for filename in odm_image_files]
     assert set(ext_param_dict.keys()).issubset(file_keys)
-    with open(odm_reconstruction_file, 'r') as f:
+    with open(odm_reconstruction_file) as f:
         json_obj = json.load(f)
     cam_id = next(iter(json_obj[0]['cameras'].keys())).strip('v2 ')
     _validate_ext_param_dict(ext_param_dict, cameras=[cam_id])
