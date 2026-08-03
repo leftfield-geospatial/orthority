@@ -527,9 +527,11 @@ creation_option = click.option(
     default=(),
     show_default='auto',
     callback=_creation_option_cb,
-    help='Creation option(s) for the ortho image(s).  If supplied, :option:`--compress` is '
-    'ignored.  See the `GDAL docs <https://gdal.org/en/latest/drivers/raster/index.html>`__ '
-    'for details.',
+    help='Ortho image :option:`--driver` specific creation option(s).  If supplied, '
+    ':option:`--compress` is ignored and these are the only creation options used. See the GDAL '
+    '`GTiff <https://gdal.org/en/latest/drivers/raster/gtiff.html#creation -options>`__ and '
+    '`COG <https://gdal.org/en/latest/drivers/raster/cog.html#creation '
+    '-options>`__ docs for available options.',
 )
 export_params_option = click.option(
     '-e',
