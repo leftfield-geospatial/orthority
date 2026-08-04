@@ -456,8 +456,6 @@ class Ortho:
             index_list = [[*range(1, src_im.count + 1)]]
         progress.total = len(tile_wins) * len(index_list)
 
-        # TODO: Memory increases ~linearly with number of threads, but does processing speed?
-        #  Make number of threads configurable and place a limit on the default value
         with ExitStack() as stack:
             # read, process and write bands, one nested list of indexes at a time
             for indexes in index_list:
