@@ -4,19 +4,19 @@ description = 'Orthorectification of drone, aerial and satellite imagery.'
 readme = 'README.rst'
 requires-python = '>=3.10'
 dependencies = [
-    'rasterio>=1.5',
+    'rasterio>=1.4.4',
     'opencv-python>=4.8,<5',
     'pyyaml>=5',
     'click>=8.3',
     'tqdm>=4',
     'fsspec>=2023.12',
-    'threadpoolctl>=3.6'
+    'threadpoolctl>=3.6',
 ]
 authors = [{ name = 'Leftfield Geospatial' }]
 license = { text = 'AGPL-3.0-or-later' }
 keywords = [
     'orthorectify', 'orthorectification', 'georeference', 'uav', 'drone', 'aerial', 'satellite',
-    'exif', 'xmp', 'image', 'rpc',
+    'exif', 'xmp', 'image', 'rpc', 'pan sharpen',
 ]
 classifiers = [
     'Programming Language :: Python :: 3',
