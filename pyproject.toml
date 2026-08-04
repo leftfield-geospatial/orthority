@@ -31,7 +31,9 @@ simple-ortho = 'orthority.cli:simple_ortho'
 
 [project.optional-dependencies]
 http = ['requests', 'aiohttp']
-tests = ['pytest', 'requests', 'aiohttp']
+
+[dependency-groups]
+tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'requests', 'aiohttp']
 docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
 
 [project.urls]
@@ -64,11 +66,11 @@ format = { quote-style = 'preserve' }
 
 [tool.ruff.lint]
 select = [
-    "B", # flake8-bugbear
-    "E", # pycodestyle error
-    "F", # pyflakes
-    "I", # isort
-    "UP", # pyupgrade
-    "W", # pycodestyle warning
-    "RUF"
+    'B', # flake8-bugbear
+    'E', # pycodestyle error
+    'F', # pyflakes
+    'I', # isort
+    'UP', # pyupgrade
+    'W', # pycodestyle warning
+    'RUF'
 ]
