@@ -51,9 +51,6 @@ from orthority.exif import Exif
 
 logger = logging.getLogger(__name__)
 
-# TODO: define custom file types for e.g. str | Path | OpenFile | IO[str] once sphinx bug with
-#  linking to external type defs in __init__ type hints is fixed
-
 _opt_frame_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
     CameraType.opencv: [
@@ -331,7 +328,6 @@ def read_exif_int_param(
         return _read_exif_int_param(Exif(file))
 
 
-# TODO: replace Sequence with Iterable where appropriate
 def read_im_rpc_param(
     files: Sequence[str | PathLike | OpenFile | rio.DatasetReader],
     progress: bool | dict = False,
@@ -354,17 +350,12 @@ def read_im_rpc_param(
         """Read RPC camera parameters from an image file."""
         filename = common.get_filename(file)
         with rio.Env(GDAL_NUM_THREADS='ALL_CPUS'), common.OpenRaster(file, 'r') as im:
-            # TODO: what is the speed of this for a large remote image?  does it just read the
-            #  metadata, or the whole image?
             im_size = (im.width, im.height)
             rpc: RPC = im.rpcs
 
         if rpc is None:
             raise ParamError(f"No RPC parameters found in '{filename}'.")
         rpc_param = dict(cam_type=CameraType.rpc, im_size=im_size, rpc=rpc.to_dict())
-        # TODO: can filename be made to conform to actual case of the filename on the file
-        #  system? otherwise, in windows the user can pass a different case filename here which
-        #  won't match with GCPs when refining.
         return {filename: rpc_param}
 
     # read RPC params in a thread pool, populating rpc_param_dict in same order as files
@@ -1335,7 +1326,7 @@ class ExifReader(FrameReader):
 
     def _find_utm_crs(self) -> CRS:
         """Return a UTM CRS that covers the mean of the camera positions."""
-        # TODO: use weighted sum as in OpenSfM, then use ExifReader.crs in oty odm, see :
+        # TODO: use weighted sum as in OpenSfM, see :
         #  https://github.com/mapillary/OpenSfM/blob/c6b5acef9376a75b87414d900c258ef876a6413a/opensfm/dataset.py#L985
         llas = []
         for e in self._exif_dict.values():
