@@ -704,7 +704,7 @@ def _get_remap_dst(
     return np.full((src.shape[0], *maps[0].shape), dtype=src.dtype, fill_value=fill_value)
 
 
-def test__remap_crop_and_chunk(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+def test__remap_crop_and_chunk(im_size: tuple[int, int], monkeypatch: pytest.MonkeyPatch):
     """Test ``Camera._remap()`` cropping and chunking behaviour."""
     interp = Interp.bilinear
     kwargs = dict(maps_contain_nans=False)
@@ -757,7 +757,7 @@ def test__remap_crop_and_chunk(im_size: tuple(int, int), monkeypatch: pytest.Mon
         assert np.all(dst == src[:, indexes[0], indexes[1]])
 
 
-def test__remap_padding(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+def test__remap_padding(im_size: tuple[int, int], monkeypatch: pytest.MonkeyPatch):
     """Test ``Camera._remap()`` pads ``src`` when cropping to map chunks by comparing unchunked and
     chunked ``dst`` arrays.
     """
@@ -781,7 +781,7 @@ def test__remap_padding(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatc
     assert np.all(test_dst == ref_dst)
 
 
-def test__remap_change_maps_inplace(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+def test__remap_change_maps_inplace(im_size: tuple[int, int], monkeypatch: pytest.MonkeyPatch):
     """Test the ``Camera._remap()`` ``change_maps_inplace`` parameter."""
     interp = Interp.nearest
     src = np.ones((1, *im_size[::-1]), dtype='uint8')
@@ -809,7 +809,7 @@ def test__remap_change_maps_inplace(im_size: tuple(int, int), monkeypatch: pytes
     assert all(np.any(~common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
 
 
-def test__remap_maps_contain_nans(im_size: tuple(int, int)):
+def test__remap_maps_contain_nans(im_size: tuple[int, int]):
     """Test the ``Camera._remap()`` ``maps_contain_nans`` parameter."""
     interp = Interp.nearest
     src = np.ones((1, *im_size[::-1]), dtype='uint8')
@@ -830,7 +830,7 @@ def test__remap_maps_contain_nans(im_size: tuple(int, int)):
     assert all(np.all(common.nan_equals(rm, tm)) for rm, tm in zip(ref_maps, maps, strict=True))
 
 
-def test__remap_chunking_error(im_size: tuple(int, int), monkeypatch: pytest.MonkeyPatch):
+def test__remap_chunking_error(im_size: tuple[int, int], monkeypatch: pytest.MonkeyPatch):
     """Test the ``Camera._remap()`` raises an error when chunking can't avoid the ``cv2.remap()``
     SHRT_MAX limitation.
     """
