@@ -22,3 +22,4 @@ Documentation
    contributing
    cli/index
    api/index
+   changelog
