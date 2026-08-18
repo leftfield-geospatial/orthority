@@ -269,3 +269,7 @@ if __name__ == '__main__':
 #  - benchmark using numexpr for camera models
 #  - does limiting openmp threads affect rasterio write performance with conda-forge rasterio
 #  which uses vcomp?
+#  - benchmark opencv vs oty browncamera projections
+#  - benchmark opencv full/homogenous matrix approach vs oty's
+#  - benchmark read/write block with rasterio vs gdal
+#  - benchmark if cv2.remap + pyproj generated maps is faster than rasterio's reproject
