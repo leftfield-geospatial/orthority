@@ -41,25 +41,23 @@ import fsspec
 import numpy as np
 import rasterio as rio
 from fsspec.core import OpenFile
+from fsspec.implementations.local import LocalFileSystem
+from rasterio.crs import CRS
 from rasterio.enums import Resampling
+from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
+from rasterio.io import DatasetReaderBase, DatasetWriter
+from rasterio.windows import Window
+from threadpoolctl import ThreadpoolController
 from tqdm.auto import tqdm
 
 from orthority import version
+from orthority.enums import Compress, Driver, Interp
+from orthority.errors import OrthorityError, OrthorityWarning
 
 try:
     from fsspec.implementations.http import HTTPFileSystem
 except ImportError:
     HTTPFileSystem = type('unknown', (), {})
-
-from fsspec.implementations.local import LocalFileSystem
-from rasterio.crs import CRS
-from rasterio.errors import NotGeoreferencedWarning, RasterioIOError
-from rasterio.io import DatasetReaderBase, DatasetWriter
-from rasterio.windows import Window
-from threadpoolctl import ThreadpoolController
-
-from orthority.enums import Compress, Driver, Interp
-from orthority.errors import OrthorityError, OrthorityWarning
 
 logger = logging.getLogger(__name__)
 
