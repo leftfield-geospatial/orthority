@@ -6,22 +6,30 @@ Ortho image configuration
 
 Ortho image resolution and format can be configured.  Configuration options are common to all |oty|_ orthorectification sub-commands and default to sensible values when not supplied.
 
-Resolution, data type and compression
--------------------------------------
+Resolution and alignment
+------------------------
 
-Ortho resolution defaults to an estimate of the `ground sampling distance <https://en.wikipedia.org/wiki/Ground_sample_distance>`__.  This can be changed with ``--res``.  The ortho data type defaults to the source image data type, and can be changed with ``--dtype``.
+Ortho resolution defaults to an estimate of the `ground sampling distance <https://en.wikipedia.org/wiki/Ground_sample_distance>`__.  This can be changed with ``--res``.  The ``--aligned-pixels`` option aligns orthos so that pixel world / ortho coordinates are multiples of the resolution.  When ``--res`` and ``--aligned-pixels`` are combined, orthos will be aligned on the same pixel grid.  This orthorectifies the NGI aerials, aligning orthos on the same 10m pixel grid:
 
-Compression can be configured with ``--compress`` as ``deflate``, ``lzw`` or ``zstd`` (with any ortho data type), or ``jpeg`` (with the ``uint8`` or ``uint16`` ortho data types).  If ``--compress`` is not specified, compression defaults to ``jpeg`` when the ortho data type is ``uint8``, and to ``deflate`` otherwise.  When ``jpeg`` compression is used with the ``uint16`` data type, the ortho is 12 bit ``jpeg`` compressed.
+.. code-block:: bash
+
+    oty frame --dem ngi/dem.tif --int-param io/ngi_int_param.yaml --ext-param io/ngi_ext_param.geojson --res 10 --aligned-pixels ngi/*RGB.tif
+
+
+Driver, data type and compression
+---------------------------------
+
+Orthos can be formatted as a ``gtiff`` (GeoTIFF - the default) or ``cog`` (Cloud Optimised GeoTIFF) with ``--driver``.  The ortho data type defaults to the source image data type, and can be changed with ``--dtype``.  Compression can be configured with ``--compress`` as ``deflate``, ``lzw`` or ``zstd`` (with any ortho data type), or ``jpeg`` (with the ``uint8`` or ``uint16`` ortho data types).  If ``--compress`` is not specified, compression defaults to ``jpeg`` when the ortho data type is ``uint8``, and to ``deflate`` otherwise.  When ``jpeg`` compression is used with the ``uint16`` data type, the ortho is 12 bit ``jpeg`` compressed.
 
 .. note::
 
     Support for 12 bit JPEG compression is Rasterio_ build / package dependent.
 
-The next example orthorectifies using EXIF / XMP tags, and configures the ortho image with a 0.2m resolution, the ``uint8`` data type, and ``deflate`` compression:
+The next example orthorectifies using EXIF / XMP tags, and configures the ortho image as a COG with ``uint8`` data type, and ``deflate`` compression:
 
 .. code-block:: bash
 
-    oty exif --dem odm/odm_dem/dsm.tif --res 0.2 --dtype uint8 --compress deflate odm/images/100_0005_0140.tif
+    oty exif --dem odm/odm_dem/dsm.tif --driver cog --dtype uint8 --compress deflate odm/images/100_0005_0140.tif
 
 Masking and overviews
 ---------------------
@@ -37,15 +45,13 @@ Internal overviews are added by default.  This can be changed with ``--no-build-
 Custom creation options and driver
 ----------------------------------
 
-For ortho image configurations not possible with the above options, custom creation options can be specified with ``--creation-option``.  The ``--compress`` option is ignored, and no other creation options are set by Orthority when this is supplied.
+For ortho image configurations not possible with the above options, custom creation options can be specified with ``--creation-option``.  The ``--compress`` option is ignored, and no other creation options are set by Orthority when ``--creation-option`` is supplied.
 
-The ortho can be formatted as a ``gtiff`` (GeoTIFF - the default) or ``cog`` (Cloud Optimised GeoTIFF) with ``--driver``.
-
-This example formats the ortho as a GeoTIFF with internal masks, and specifies custom creation options for tiled YCbCr JPEG compression with a quality of 90:
+This example formats the ortho as a GeoTIFF with internal masks, and specifies custom creation options for 512 x 512 sized tiles, and YCbCr JPEG compression with a quality of 90:
 
 .. code-block:: bash
 
-    oty exif --dem odm/odm_dem/dsm.tif --write-mask --driver gtiff --creation-option tiled=yes --creation-option compress=jpeg --creation-option photometric=ycbcr --creation-option jpeg_quality=90 odm/images/100_0005_0140.tif
+    oty exif --dem odm/odm_dem/dsm.tif --write-mask --driver gtiff --creation-option tiled=yes --creation-option blockxsize=512 --creation-option blockysize=512 --creation-option compress=jpeg --creation-option photometric=ycbcr --creation-option jpeg_quality=90 odm/images/100_0005_0140.tif
 
 .. note::
 
