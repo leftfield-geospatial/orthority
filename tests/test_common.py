@@ -30,6 +30,7 @@ import pytest
 import rasterio as rio
 from rasterio.enums import MaskFlags, PhotometricInterp
 from rasterio.errors import NotGeoreferencedWarning
+from rio_cogeo import cog_validate
 from threadpoolctl import threadpool_limits
 
 from orthority import common
@@ -378,14 +379,14 @@ def test_open_not_found_error(file: str):
 @pytest.mark.parametrize('driver', Driver)
 def test_create_profile_driver(driver: Driver):
     """Test ``create_profile()`` sets ``driver``."""
-    profile, write_mask = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
+    profile, _ = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
     assert profile['driver'] == driver
 
 
 def test_create_profile_shape():
     """Test ``create_profile()`` sets ``shape`` related items."""
     shape = (3, 2, 1)
-    profile, write_mask = common.create_profile(driver=Driver.gtiff, shape=shape, dtype='uint8')
+    profile, _ = common.create_profile(driver=Driver.gtiff, shape=shape, dtype='uint8')
     assert profile['count'] == shape[0]
     assert profile['height'] == shape[1]
     assert profile['width'] == shape[2]
@@ -394,7 +395,7 @@ def test_create_profile_shape():
 def test_create_profile_dtype():
     """Test ``create_profile()`` sets ``dtype``."""
     dtype = 'uint16'
-    profile, write_mask = common.create_profile(driver=Driver.gtiff, shape=(1, 1, 1), dtype=dtype)
+    profile, _ = common.create_profile(driver=Driver.gtiff, shape=(1, 1, 1), dtype=dtype)
     assert profile['dtype'] == dtype
 
 
@@ -407,7 +408,7 @@ def test_create_profile_dtype():
 )
 def test_create_profile_non_config_items(driver: Driver, exp_profile: dict):
     """Test ``create_profile()`` non-configurable items."""
-    profile, write_mask = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
+    profile, _ = common.create_profile(driver=driver, shape=(1, 1, 1), dtype='uint8')
     for k, v in exp_profile.items():
         assert profile[k] == v
 
@@ -428,7 +429,7 @@ def test_create_profile_non_config_items(driver: Driver, exp_profile: dict):
 def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
     """Test ``create_profile()`` ``compress`` configuration."""
     for driver in Driver:
-        profile, write_mask = common.create_profile(
+        profile, _ = common.create_profile(
             driver=driver, shape=(1, 1, 1), dtype=dtype, compress=compress
         )
 
@@ -446,7 +447,7 @@ def test_create_profile_compress(dtype: str, compress: str, exp_value: str):
 )
 def test_create_profile_photometric(compress: str, shape: tuple, exp_value: str | None):
     """Test ``create_profile()`` ``photometric`` configuration with ``driver='gtiff'``."""
-    profile, write_mask = common.create_profile(
+    profile, _ = common.create_profile(
         driver=Driver.gtiff, shape=shape, dtype='uint8', compress=compress
     )
 
@@ -556,29 +557,30 @@ def test_create_profile_creation_options():
         nodata=0,
         **creation_options,
     )
-    assert write_mask == False
+    assert write_mask is False
     assert profile == exp_profile
 
 
 @pytest.mark.parametrize(
-    'driver, shape, dtype, compress, write_mask',
+    'driver, count, dtype, compress, write_mask',
     [
-        (Driver.gtiff, (1, 1, 1), 'uint8', Compress.jpeg, False),
-        (Driver.gtiff, (1, 1, 1), 'uint16', Compress.deflate, True),
-        (Driver.gtiff, (3, 1, 1), 'float32', Compress.lzw, False),
-        (Driver.gtiff, (3, 1, 1), 'uint8', Compress.jpeg, True),
-        (Driver.gtiff, (3, 1, 1), 'float64', Compress.zstd, False),
-        (Driver.cog, (1, 1, 1), 'uint8', Compress.jpeg, False),
-        (Driver.cog, (1, 1, 1), 'uint16', Compress.deflate, True),
-        (Driver.cog, (3, 1, 1), 'float32', Compress.lzw, False),
-        (Driver.cog, (3, 1, 1), 'uint8', Compress.jpeg, True),
-        (Driver.cog, (3, 1, 1), 'float64', Compress.zstd, False),
+        (Driver.gtiff, 1, 'uint8', Compress.jpeg, False),
+        (Driver.gtiff, 1, 'uint16', Compress.deflate, True),
+        (Driver.gtiff, 3, 'float32', Compress.lzw, False),
+        (Driver.gtiff, 3, 'uint8', Compress.jpeg, True),
+        (Driver.gtiff, 3, 'float64', Compress.zstd, False),
+        (Driver.cog, 1, 'uint8', Compress.jpeg, False),
+        (Driver.cog, 1, 'uint16', Compress.deflate, True),
+        (Driver.cog, 3, 'float32', Compress.lzw, False),
+        (Driver.cog, 3, 'uint8', Compress.jpeg, True),
+        (Driver.cog, 3, 'float64', Compress.zstd, False),
     ],
 )
 def test_create_profile_image(
-    driver: Driver, shape: tuple, dtype: str, compress: Compress, write_mask: bool, tmp_path: Path
+    driver: Driver, count: int, dtype: str, compress: Compress, write_mask: bool, tmp_path: Path
 ):
     """Test the ``create_profile()`` profile generates an image with the correct configuration."""
+    shape = (count, 2, 2)
     profile, write_mask = common.create_profile(
         driver=driver, shape=shape, dtype=dtype, compress=compress, write_mask=write_mask
     )
@@ -588,15 +590,12 @@ def test_create_profile_image(
         im.write(array)
         if write_mask:
             im.write_mask(array > 0)
+        # overviews are required to differentiate between COG and GeoTIFF
+        im.build_overviews([2])
 
     with rio.open(test_file, 'r') as im:
         # driver
         assert im.driver.lower() == 'gtiff'
-        im_struct = im.tags(ns='IMAGE_STRUCTURE')
-        if driver is Driver.gtiff:
-            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
-        else:
-            assert im_struct['LAYOUT'].lower() == 'cog'
 
         # tiling
         assert im.profile['tiled']
@@ -620,6 +619,10 @@ def test_create_profile_image(
             if write_mask
             else common.nan_equals(im.nodata, common._nodata_vals[dtype])
         )
+
+    # COG
+    is_cog, _, _ = cog_validate(test_file, strict=True)
+    assert is_cog is (driver is Driver.cog)
 
 
 @pytest.mark.parametrize(
@@ -645,7 +648,7 @@ def test_create_profile_image_creation_options(
     """Test the ``create_profile()`` profile with ``creation_options`` generates an image with the
     correct configuration.
     """
-    shape = (3, 1, 1)
+    shape = (3, 2, 2)
     dtype = 'uint8'
     write_mask = True
     profile, write_mask = common.create_profile(
@@ -661,24 +664,26 @@ def test_create_profile_image_creation_options(
         im.write(array)
         if write_mask:
             im.write_mask(array > 0)
+        # overviews are required to differentiate between COG and GeoTIFF
+        im.build_overviews([2])
 
     with rio.open(test_file, 'r') as im:
         # driver
         assert im.driver.lower() == 'gtiff'
-        im_struct = im.tags(ns='IMAGE_STRUCTURE')
-        if driver is Driver.gtiff:
-            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
-        else:
-            assert im_struct['LAYOUT'].lower() == 'cog'
 
         # tiling
-        assert im.profile['tiled'] == True
+        assert im.profile['tiled'] is True
         assert im.profile['blockxsize'] == im.profile['blockysize'] == 256
 
         # compression
         assert 'jpeg' in im.profile['compress'].lower()
         assert im.photometric is PhotometricInterp.ycbcr
+        im_struct = im.tags(ns='IMAGE_STRUCTURE')
         assert im_struct['JPEG_QUALITY'] == '90'
+
+    # COG
+    is_cog, _, _ = cog_validate(test_file, strict=True)
+    assert is_cog is (driver is Driver.cog)
 
 
 @pytest.mark.parametrize(

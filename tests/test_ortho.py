@@ -30,6 +30,7 @@ from rasterio.features import shapes
 from rasterio.transform import array_bounds
 from rasterio.warp import transform_bounds
 from rasterio.windows import from_bounds
+from rio_cogeo import cog_validate
 
 from orthority import common, errors, param_io
 from orthority.camera import Camera, PinholeCamera, create_camera
@@ -924,16 +925,17 @@ def test_process_alpha(
 def test_process_driver(rgb_pinhole_utm34n_ortho: Ortho, tmp_path: Path, driver: Driver):
     """Test the ``Ortho.process()`` ``driver`` argument."""
     ortho_file = tmp_path.joinpath('test_ortho.tif')
-    rgb_pinhole_utm34n_ortho.process(ortho_file, _dem_resolution, driver=driver)
+    # choose resolution to give an ortho > 512x512 so that overviews are built
+    rgb_pinhole_utm34n_ortho.process(ortho_file, (0.3, 0.3), driver=driver)
     assert ortho_file.exists()
 
     with rio.open(ortho_file, 'r') as ortho_im:
         assert ortho_im.driver.lower() == 'gtiff'
-        im_struct = ortho_im.tags(ns='IMAGE_STRUCTURE')
-        if driver is Driver.gtiff:
-            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
-        else:
-            assert im_struct['LAYOUT'].lower() == 'cog'
+        # overviews are required to differentiate between COG and GeoTIFF
+        assert len(ortho_im.overviews(1)) > 0
+
+    is_cog, _, _ = cog_validate(ortho_file, strict=True)
+    assert is_cog is (driver is Driver.cog)
 
 
 @pytest.mark.parametrize(
