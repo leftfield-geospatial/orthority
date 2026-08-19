@@ -45,3 +45,6 @@ highlight_language = 'none'
 
 # -- Options for autosectionlabel ----------------------------------------------------
 autosectionlabel_prefix_document = True
+
+# -- Options for linkcheck ----------------------------------------------------
+linkcheck_ignore = ['https://exiftool.sourceforge.net/*', '../../cli/*']
