@@ -33,7 +33,7 @@ simple-ortho = 'orthority.cli:simple_ortho'
 http = ['requests', 'aiohttp']
 
 [dependency-groups]
-tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'requests', 'aiohttp']
+tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'requests', 'aiohttp', 'rio-cogeo']
 docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
 
 [project.urls]
