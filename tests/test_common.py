@@ -30,7 +30,6 @@ import pytest
 import rasterio as rio
 from rasterio.enums import MaskFlags, PhotometricInterp
 from rasterio.errors import NotGeoreferencedWarning
-from rio_cogeo import cog_validate
 from threadpoolctl import threadpool_limits
 
 from orthority import common
@@ -580,7 +579,9 @@ def test_create_profile_image(
     driver: Driver, count: int, dtype: str, compress: Compress, write_mask: bool, tmp_path: Path
 ):
     """Test the ``create_profile()`` profile generates an image with the correct configuration."""
-    shape = (count, 2, 2)
+    # GDAL 3.13.3 sets LAYOUT=COG for any GeoTIFF with 1 tile (even if it has overviews and is
+    # not a COG), so choose shape to produce >1 tile
+    shape = (count, 512, 520)
     profile, write_mask = common.create_profile(
         driver=driver, shape=shape, dtype=dtype, compress=compress, write_mask=write_mask
     )
@@ -590,12 +591,15 @@ def test_create_profile_image(
         im.write(array)
         if write_mask:
             im.write_mask(array > 0)
-        # overviews are required to differentiate between COG and GeoTIFF
-        im.build_overviews([2])
 
     with rio.open(test_file, 'r') as im:
         # driver
         assert im.driver.lower() == 'gtiff'
+        im_struct = im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
 
         # tiling
         assert im.profile['tiled']
@@ -619,10 +623,6 @@ def test_create_profile_image(
             if write_mask
             else common.nan_equals(im.nodata, common._nodata_vals[dtype])
         )
-
-    # COG
-    is_cog, _, _ = cog_validate(test_file, strict=True)
-    assert is_cog is (driver is Driver.cog)
 
 
 @pytest.mark.parametrize(
@@ -648,7 +648,9 @@ def test_create_profile_image_creation_options(
     """Test the ``create_profile()`` profile with ``creation_options`` generates an image with the
     correct configuration.
     """
-    shape = (3, 2, 2)
+    # GDAL 3.13.3 sets LAYOUT=COG for any GeoTIFF with 1 tile (even if it has overviews and is
+    # not a COG), so choose shape to produce >1 tile
+    shape = (3, 512, 520)
     dtype = 'uint8'
     write_mask = True
     profile, write_mask = common.create_profile(
@@ -670,6 +672,11 @@ def test_create_profile_image_creation_options(
     with rio.open(test_file, 'r') as im:
         # driver
         assert im.driver.lower() == 'gtiff'
+        im_struct = im.tags(ns='IMAGE_STRUCTURE')
+        if driver is Driver.gtiff:
+            assert 'LAYOUT' not in im_struct or im_struct['LAYOUT'].lower() != 'cog'
+        else:
+            assert im_struct['LAYOUT'].lower() == 'cog'
 
         # tiling
         assert im.profile['tiled'] is True
@@ -680,10 +687,6 @@ def test_create_profile_image_creation_options(
         assert im.photometric is PhotometricInterp.ycbcr
         im_struct = im.tags(ns='IMAGE_STRUCTURE')
         assert im_struct['JPEG_QUALITY'] == '90'
-
-    # COG
-    is_cog, _, _ = cog_validate(test_file, strict=True)
-    assert is_cog is (driver is Driver.cog)
 
 
 @pytest.mark.parametrize(

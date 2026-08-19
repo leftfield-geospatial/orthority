@@ -34,7 +34,7 @@ jobs:
       - name: Install dependencies
         run: |
           conda info
-          conda install -q rasterio "opencv <5 headless*" numpy click tqdm pyyaml fsspec requests aiohttp threadpoolctl rio-cogeo pytest pytest-xdist
+          conda install -q rasterio "opencv <5 headless*" numpy click tqdm pyyaml fsspec requests aiohttp threadpoolctl pytest pytest-xdist
           conda list
 
       - name: Run unit tests
