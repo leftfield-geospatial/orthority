@@ -4,7 +4,7 @@ description = 'Orthorectification of drone, aerial and satellite imagery.'
 readme = 'README.rst'
 requires-python = '>=3.10'
 dependencies = [
-    'rasterio>=1.4.4',
+    'rasterio>=1.3.6',
     'opencv-python>=4.8,<5',
     'pyyaml>=5',
     'click>=8.3',
@@ -33,7 +33,7 @@ simple-ortho = 'orthority.cli:simple_ortho'
 http = ['requests', 'aiohttp']
 
 [dependency-groups]
-tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'requests', 'aiohttp', 'rio-cogeo']
+tests = ['pytest', 'pytest-xdist', 'pytest-cov', 'requests', 'aiohttp']
 docs = ['sphinx', 'furo', 'sphinx-click', 'sphinx-argparse', 'sphinx-copybutton']
 
 [project.urls]
