@@ -22,15 +22,14 @@ jobs:
         uses: conda-incubator/setup-miniconda@v4
         with:
           python-version: ${{ matrix.python-version }}
-          channels: conda-forge
-          channel-priority: strict
+          miniforge-version: latest
           activate-environment: orthority-test
           conda-solver: libmamba
 
       - name: Install package
         run: |
           conda info
-          conda install -q orthority>=0.6.1
+          conda install -q orthority>=0.7.0
           conda list
 
       - name: Install OpenCV Linux dependencies
