@@ -53,10 +53,8 @@ logger = logging.getLogger(__name__)
 
 _opt_frame_schema = {
     CameraType.pinhole: ['sensor_size', 'cx', 'cy'],
-    CameraType.opencv: [
-        'sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6', 's1', 's2',
-        's3', 's4', 'tx', 'ty',
-    ],
+    CameraType.opencv: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6',
+        's1', 's2', 's3', 's4', 'tx', 'ty', ],
     CameraType.brown: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'p1', 'p2', 'k3'],
     CameraType.fisheye: ['sensor_size', 'cx', 'cy', 'k1', 'k2', 'k3', 'k4'],
 }  # fmt: skip
@@ -180,7 +178,6 @@ def _read_exif_int_param(exif: Exif) -> dict[str, dict[str, Any]]:
         raise ParamError(
             f"No focal length & sensor size, or 35mm focal length tags in '{exif.filename}'."
         )
-
     return {_create_exif_cam_id(exif): cam_dict}
 
 
@@ -751,12 +748,11 @@ def _rpy_to_opk(
     Convert (roll, pitch, yaw) to (omega, phi, kappa) angles for a given CRS.
 
     Coordinate conventions are as `defined by Pix4D
-    <https://s3.amazonaws.com/mics.pix4d.com/KB/documents
-    /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf.>`__
-
-    Note this conversion assumes ``crs`` is orthogonal and uniform scale (cartesian) in the
-    vicinity of ``lla``.  ``crs`` should be conformal, and have its central meridian(s) close to
-    ``lla`` for this assumption to be accurate.
+    <https://data.pix4d.com/misc/KB/documents
+    /Pix4D_Yaw_Pitch_Roll_Omega_to_Phi_Kappa_angles_and_conversion.pdf>`__ Note this conversion
+    assumes ``crs`` is orthogonal and uniform scale (cartesian) in the vicinity of ``lla``.
+    ``crs`` should be conformal, and have its central meridian(s) close to ``lla`` for this
+    assumption to be accurate.
 
     :param rpy:
         (roll, pitch, yaw) angles to rotate from body to navigation coordinates (radians).
