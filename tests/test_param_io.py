@@ -50,9 +50,9 @@ def _validate_int_param_dict(int_param_dict: dict):
                 [isinstance(dim, float) for dim in int_params['sensor_size']]
             )
         assert isinstance(int_params['focal_len'], float) or (
-            len(int_params['focal_len']) == 2
-            and all([isinstance(f, float) for f in int_params['focal_len']])
-        )
+            len(int_params['focal_len']) == 2 and all(
+            [isinstance(f, float) for f in int_params['focal_len']]
+        ))
         optional_keys = set(int_params.keys()).difference(req_keys)
         assert set(optional_keys).issubset(param_io._opt_frame_schema[cam_type])
 
@@ -93,11 +93,9 @@ def test_read_oty_int_param_missing_error(
     param_io.write_int_param(filename, dict(default=int_params))
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert (
-        'Could not parse' in str(ex.value)
-        and missing_key in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+    assert ('Could not parse' in str(ex.value) and missing_key in str(
+        ex.value
+    ) and filename.name in str(ex.value))
 
 
 def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -111,10 +109,9 @@ def test_read_oty_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
     assert (
-        'Could not parse' in str(ex.value)
-        and 'other' in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+        'Could not parse' in str(ex.value) and 'other' in str(ex.value) and filename.name in str(
+        ex.value
+    ))
 
 
 def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -127,11 +124,9 @@ def test_read_oty_int_param_cam_type_error(pinhole_int_param_dict: dict, tmp_pat
     param_io.write_int_param(filename, dict(default=int_params))
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_oty_int_param(filename)
-    assert (
-        'Could not parse' in str(ex.value)
-        and 'camera type' in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+    assert ('Could not parse' in str(ex.value) and 'camera type' in str(
+        ex.value
+    ) and filename.name in str(ex.value))
 
 
 @pytest.mark.parametrize('filename', ['osfm_int_param_file', 'odm_int_param_file'])
@@ -171,11 +166,9 @@ def test_read_osfm_int_param_missing_error(
 
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_osfm_int_param(filename)
-    assert (
-        'Could not parse' in str(ex.value)
-        and missing_key in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+    assert ('Could not parse' in str(ex.value) and missing_key in str(
+        ex.value
+    ) and filename.name in str(ex.value))
 
 
 def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -192,10 +185,9 @@ def test_read_osfm_int_param_unknown_error(pinhole_int_param_dict: dict, tmp_pat
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_osfm_int_param(filename)
     assert (
-        'Could not parse' in str(ex.value)
-        and 'other' in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+        'Could not parse' in str(ex.value) and 'other' in str(ex.value) and filename.name in str(
+        ex.value
+    ))
 
 
 def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_path: Path):
@@ -211,11 +203,9 @@ def test_read_osfm_int_param_proj_type_error(pinhole_int_param_dict: dict, tmp_p
 
     with pytest.raises(ParamError) as ex:
         _ = param_io.read_osfm_int_param(filename)
-    assert (
-        'Could not parse' in str(ex.value)
-        and 'projection type' in str(ex.value)
-        and filename.name in str(ex.value)
-    )
+    assert ('Could not parse' in str(ex.value) and 'projection type' in str(
+        ex.value
+    ) and filename.name in str(ex.value))
 
 
 def test_read_exif_int_param_dewarp(odm_image_file: Path, odm_reconstruction_file: Path):
@@ -245,8 +235,7 @@ def test_read_exif_int_param_no_dewarp(filename: str, request: pytest.FixtureReq
 
 @pytest.mark.parametrize(
     'image_file',
-    ['odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file', 'exif_no_focal_image_file'],
-)
+    ['odm_image_file', 'exif_image_file', 'xmp_no_dewarp_image_file', 'exif_no_focal_image_file'], )
 def test_read_exif_int_param_values(
     image_file: str, odm_reconstruction_file: Path, request: pytest.FixtureRequest
 ):
@@ -285,18 +274,11 @@ def test_aa_to_opk(xyz: tuple, opk: tuple):
 
 @pytest.mark.parametrize(
     'src_crs, dst_crs',
-    [
-        ('wgs84_wgs84_crs', 'utm34n_egm96_crs'),
-        ('wgs84_wgs84_crs', 'utm34n_egm2008_crs'),
-        ('wgs84_egm96_crs', 'utm34n_wgs84_crs'),
-        ('utm34n_egm96_crs', 'wgs84_wgs84_crs'),
-        ('utm34n_egm2008_crs', 'wgs84_wgs84_crs'),
-        ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
-        ('wgs84_wgs84_crs', 'webmerc_egm96_crs'),
-        ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
-        ('wgs84_egm96_crs', 'webmerc_wgs84_crs'),
-    ],
-)
+    [('wgs84_wgs84_crs', 'utm34n_egm96_crs'), ('wgs84_wgs84_crs', 'utm34n_egm2008_crs'),
+        ('wgs84_egm96_crs', 'utm34n_wgs84_crs'), ('utm34n_egm96_crs', 'wgs84_wgs84_crs'),
+        ('utm34n_egm2008_crs', 'wgs84_wgs84_crs'), ('utm34n_wgs84_crs', 'wgs84_egm96_crs'),
+        ('wgs84_wgs84_crs', 'webmerc_egm96_crs'), ('wgs84_wgs84_crs', 'webmerc_egm2008_crs'),
+        ('wgs84_egm96_crs', 'webmerc_wgs84_crs'), ], )
 def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """Test rasterio.warp.transform adjusts the z coordinate with source and destination CRS
     vertical datums specified.
@@ -315,18 +297,11 @@ def test_rio_transform_vdatum_both(src_crs: str, dst_crs: str, request: pytest.F
 
 @pytest.mark.parametrize(
     'src_crs, dst_crs',
-    [
-        ('wgs84_crs', 'utm34n_wgs84_crs'),
-        ('wgs84_crs', 'utm34n_egm96_crs'),
-        ('wgs84_crs', 'utm34n_egm2008_crs'),
-        ('wgs84_crs', 'webmerc_wgs84_crs'),
-        ('wgs84_crs', 'webmerc_egm96_crs'),
-        ('wgs84_crs', 'webmerc_egm2008_crs'),
-        ('utm34n_crs', 'wgs84_wgs84_crs'),
-        ('utm34n_crs', 'wgs84_egm96_crs'),
-        ('utm34n_crs', 'wgs84_egm2008_crs'),
-    ],
-)
+    [('wgs84_crs', 'utm34n_wgs84_crs'), ('wgs84_crs', 'utm34n_egm96_crs'),
+        ('wgs84_crs', 'utm34n_egm2008_crs'), ('wgs84_crs', 'webmerc_wgs84_crs'),
+        ('wgs84_crs', 'webmerc_egm96_crs'), ('wgs84_crs', 'webmerc_egm2008_crs'),
+        ('utm34n_crs', 'wgs84_wgs84_crs'), ('utm34n_crs', 'wgs84_egm96_crs'),
+        ('utm34n_crs', 'wgs84_egm2008_crs'), ], )
 @pytest.mark.skipif(rio.get_proj_version() < (9, 1, 1), reason="requires PROJ 9.1.1 or higher")
 def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.FixtureRequest):
     """Test rasterio.warp.transform does not adjust the z coordinate with one of the source and
@@ -342,11 +317,8 @@ def test_rio_transform_vdatum_one(src_crs: str, dst_crs: str, request: pytest.Fi
 
 @pytest.mark.parametrize(
     'C_bB',
-    [
-        np.array([[0.0, 1.0, 0.0], [1.0, 0, 0], [0, 0, -1]]),
-        np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]),
-    ],
-)
+    [np.array([[0.0, 1.0, 0.0], [1.0, 0, 0], [0, 0, -1]]),
+        np.array([[1, 0, 0], [0, 0, 1], [0, -1, 0]]), ], )
 def test_rpy_to_opk(C_bB: np.ndarray):
     """Test _rpy_to_opk() validity for aligned world and navigation systems."""
     # From https://s3.amazonaws.com/mics.pix4d.com/KB/documents
@@ -436,21 +408,11 @@ def test_csv_reader_lla_rpy(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
     odm_image_files: list[Path],
-    odm_reconstruction_file: Path,
-):
+    odm_reconstruction_file: Path, ):
     """Test reading exterior parameters from an LLA-RPY format CSV file with a header."""
     reader = param_io.CsvReader(odm_lla_rpy_csv_file, crs=odm_crs)
-    assert set(reader._fieldnames) == {
-        'filename',
-        'latitude',
-        'longitude',
-        'altitude',
-        'roll',
-        'pitch',
-        'yaw',
-        'camera',
-        'other',
-    }
+    assert set(reader._fieldnames) == {'filename', 'latitude', 'longitude', 'altitude', 'roll',
+        'pitch', 'yaw', 'camera', 'other', }
     assert reader._format is CsvFormat.lla_rpy
     assert reader.crs == rio.CRS.from_string(odm_crs)
 
@@ -502,11 +464,8 @@ def test_csv_reader_lla_rpy_auto_crs(odm_lla_rpy_csv_file: Path, odm_crs: str):
 
 @pytest.mark.parametrize(
     'fieldnames',
-    [
-        ['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
-        ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
-    ],
-)
+    [['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
+        ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'], ], )
 def test_csv_reader_crs_missing_error(ngi_legacy_csv_file: Path, fieldnames: list):
     """Test that CsvReader initialised with a XYZ-RPY or LLA-OPK format file and no CRS raises an
     error.
@@ -561,17 +520,8 @@ def test_csv_reader_lla_crs_error(ngi_xyz_opk_csv_file: Path):
 
 def test_csv_reader_fieldnames(odm_lla_rpy_csv_file: Path):
     """Test reading exterior parameters from a CSV file with ``fieldnames`` argument."""
-    fieldnames = [
-        'filename',
-        'latitude',
-        'longitude',
-        'altitude',
-        'roll',
-        'pitch',
-        'yaw',
-        'camera',
-        'custom',
-    ]
+    fieldnames = ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw', 'camera',
+        'custom', ]
     reader = param_io.CsvReader(odm_lla_rpy_csv_file, fieldnames=fieldnames)
     assert set(reader._fieldnames) == set(fieldnames)
     _ = reader.read_ext_param()
@@ -589,33 +539,14 @@ def test_csv_reader_missing_fieldname_error(ngi_legacy_csv_file: Path, missing_f
 
 @pytest.mark.parametrize(
     'filename, crs, fieldnames, exp_format',
-    [
-        (
-            'ngi_xyz_opk_csv_file',
-            'ngi_crs',
-            ['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
-            CsvFormat.xyz_opk,
-        ),
-        (
-            'ngi_xyz_opk_csv_file',
-            'ngi_crs',
-            ['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
-            CsvFormat.xyz_rpy,
-        ),
-        (
-            'odm_lla_rpy_csv_file',
-            'odm_crs',
-            ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
-            CsvFormat.lla_opk,
-        ),
-        (
-            'odm_lla_rpy_csv_file',
-            'odm_crs',
-            ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw'],
-            CsvFormat.lla_rpy,
-        ),
-    ],
-)
+    [('ngi_xyz_opk_csv_file', 'ngi_crs', ['filename', 'x', 'y', 'z', 'omega', 'phi', 'kappa'],
+        CsvFormat.xyz_opk,),
+        ('ngi_xyz_opk_csv_file', 'ngi_crs', ['filename', 'x', 'y', 'z', 'roll', 'pitch', 'yaw'],
+            CsvFormat.xyz_rpy,), ('odm_lla_rpy_csv_file', 'odm_crs',
+        ['filename', 'latitude', 'longitude', 'altitude', 'omega', 'phi', 'kappa'],
+        CsvFormat.lla_opk,), ('odm_lla_rpy_csv_file', 'odm_crs',
+        ['filename', 'latitude', 'longitude', 'altitude', 'roll', 'pitch', 'yaw'],
+        CsvFormat.lla_rpy,), ], )
 def test_csv_reader_format(
     filename: str, crs: str, fieldnames: list, exp_format: CsvFormat, request: pytest.FixtureRequest
 ):
@@ -636,8 +567,7 @@ def test_csv_reader_format(
 
 @pytest.mark.parametrize(
     'dialect',
-    [
-        dict(delimiter=' ', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
+    [dict(delimiter=' ', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
         dict(delimiter=' ', lineterminator='\n', quotechar="'", quoting=csv.QUOTE_MINIMAL),
         dict(delimiter=' ', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_ALL),
         dict(delimiter=' ', lineterminator='\n', quotechar="'", quoting=csv.QUOTE_ALL),
@@ -646,17 +576,14 @@ def test_csv_reader_format(
         dict(delimiter=',', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
         dict(delimiter=';', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
         dict(delimiter=':', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
-        dict(delimiter='\t', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL),
-    ],
-)
+        dict(delimiter='\t', lineterminator='\n', quotechar='"', quoting=csv.QUOTE_MINIMAL), ], )
 def test_csv_reader_dialect(
     odm_lla_rpy_csv_file: Path,
     odm_crs: str,
     odm_image_files: list[Path],
     odm_reconstruction_file: Path,
     dialect: dict,
-    tmp_path: Path,
-):
+    tmp_path: Path, ):
     """Test reading exterior parameters from CSV files in different dialects."""
     # create test CSV file
     test_filename = tmp_path.joinpath('ext-param-test.csv')
@@ -852,7 +779,7 @@ def test_read_im_rpc_param(rpc: dict, tmp_path: Path):
                 assert k in test_obj, k
                 compare_objs(v, test_obj[k])
         else:
-            assert ref_obj == pytest.approx(test_obj, rel=0.001), (ref_obj, test_obj)
+            assert ref_obj == pytest.approx(test_obj), (ref_obj, test_obj)
 
     test_rpc_param_dict = param_io.read_im_rpc_param(im_files)
     compare_objs(ref_rpc_param_dict, test_rpc_param_dict)
@@ -907,10 +834,8 @@ def test_read_im_gcps(tmp_path: Path):
     # omitted as rasterio doesn't write # these)
     im_size = (1, 1)
     im_files = (tmp_path.joinpath('gcp1.tif'), tmp_path.joinpath('gcp2.tif'))
-    gcps = [
-        dict(ji=(1.0, 2.0), xyz=(10.0, 20.0, 1000.0)),
-        dict(ji=(1.11, 2.22), xyz=(11.1, 22.2, 1111.1)),
-    ]
+    gcps = [dict(ji=(1.0, 2.0), xyz=(10.0, 20.0, 1000.0)),
+        dict(ji=(1.11, 2.22), xyz=(11.1, 22.2, 1111.1)), ]
     # convert oty GCPs to rasterio format
     rio_gcps = [GroundControlPoint(*gcp['ji'][::-1], *gcp['xyz']) for gcp in gcps]
     array = np.zeros((1, *im_size[::-1]), dtype='uint8')
