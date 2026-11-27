@@ -466,6 +466,22 @@ def test_process_ms_indexes(
     _test_pan_sharp_file(out_file, ms_file, ms_indexes=ms_indexes)
 
 
+def test_process_ms_indexes_zero_weight(pan_file: Path, ms_neg_band_file: Path, tmp_path: Path):
+    """Test pan-sharpened bands do not depend on the ``PanSharpen.process()`` ``ms_indexes``
+    order, when a band with an estimated weight of zero follows all non-zero weighted bands.
+    """
+    out_arrays = []
+    for ms_indexes in [(1, 2, 3, 4), (4, 3, 2, 1)]:
+        pan_sharp = PanSharpen(pan_file, ms_neg_band_file)
+        out_file = tmp_path.joinpath('pan_sharp.tif')
+        with pytest.warns(OrthorityWarning, match='negative'):
+            pan_sharp.process(out_file, ms_indexes=ms_indexes, dtype='float32', overwrite=True)
+        with rio.open(out_file, 'r') as out_im:
+            out_arrays.append(out_im.read(indexes=(np.argsort(ms_indexes) + 1).tolist()))
+
+    assert out_arrays[0] == pytest.approx(out_arrays[1], abs=1e-3)
+
+
 def test_process_ms_indexes_error(pan_sharpen: PanSharpen, tmp_path: Path):
     """Test ``PanSharpen.process()`` raises an error when ``ms_indexes`` is invalid."""
     out_file = tmp_path.joinpath('pan_sharp.tif')
