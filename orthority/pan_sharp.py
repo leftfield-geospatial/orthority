@@ -374,6 +374,7 @@ class PanSharpen:
             a = np.zeros((cov.shape[0], cov.shape[0]))
             coeffs = [np.zeros(k + 1) for k in range(cov.shape[0])]
             e = np.eye(cov.shape[0])
+            ref_var = np.concatenate(([weights.dot(cov).dot(weights)], np.diag(cov)))
             for k in range(cov.shape[0]):
                 # eq 4 from paper
                 if k == 0:
@@ -385,8 +386,10 @@ class PanSharpen:
                 for L in range(k + 1):
                     num = a[L].dot(cov[k])
                     den = (a[L].reshape(-1, 1).dot(a[L].reshape(1, -1)) * cov).sum()
-                    # the 'if' below avoids dividing by zero with canonical weight vectors
-                    coeffs[k][L] = num / den if np.any(a[L] != 0) else 0
+                    # the 'if' below avoids dividing by zero with canonical weight vectors, or when a
+                    # band is a linear combination of the simulated pan and preceding bands (e.g. bands
+                    # that follow all non-zero weighted bands)
+                    coeffs[k][L] = num / den if den > 1e-12 * ref_var[L] else 0
 
             return coeffs
 
